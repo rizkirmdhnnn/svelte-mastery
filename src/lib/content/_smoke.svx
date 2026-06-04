@@ -1,0 +1,100 @@
+---
+title: Smoke Test — Komponen & Playground
+level: 99
+levelTitle: Internal
+order: 1
+description: Modul sementara untuk memverifikasi semua komponen platform berfungsi.
+docs: https://svelte.dev/docs/svelte/overview
+keywords: [smoke, test]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Ini modul **smoke test**. Kalau semua di bawah tampil rapi, platform siap diisi konten.
+
+Inline `code` dan fenced block harus ter-highlight:
+
+```svelte
+<script>
+	let count = $state(0);
+</script>
+
+<button onclick={() => count++}>Klik: {count}</button>
+```
+
+<Callout type="tip">
+Reactivity di Svelte itu seperti <strong>papan tulis ajaib</strong>: ubah satu angka, semua hitungan yang bergantung ikut berubah otomatis.
+</Callout>
+
+## 2. Playground
+
+<Playground code={`<script>
+	let count = $state(0);
+	let double = $derived(count * 2);
+</script>
+
+<h3>Hitungan: {count}</h3>
+<p>Dua kali lipat: {double}</p>
+<button onclick={() => count++}>Tambah</button>`} />
+
+## 3. Perbandingan framework
+
+<FrameworkCompare
+	task="State reaktif sederhana"
+	svelte={`<script>
+	let count = $state(0);
+</script>
+<button onclick={() => count++}>{count}</button>`}
+	react={`function Counter() {
+	const [count, setCount] = useState(0);
+	return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}`}
+	vue={`<script setup>
+import { ref } from 'vue'
+const count = ref(0)
+</script>
+<template>
+	<button @click="count++">{{ count }}</button>
+</template>`}
+	diff={{ react: [2], vue: [3] }}
+	note="Svelte meng-compile reactivity, jadi tak perlu setter atau .value."
+/>
+
+## 4. Legacy vs modern
+
+<LegacyVsModern rows={[
+	{ legacy: 'export let title', modern: 'let { title } = $props()' },
+	{ legacy: '$: double = count * 2', modern: 'let double = $derived(count * 2)' },
+	{ legacy: 'on:click', modern: 'onclick' }
+]} />
+
+## 5. Latihan
+
+<Exercise title="Coba ubah playground">
+Ubah playground di atas agar tombol mengurangi, bukan menambah.
+
+{#snippet solution()}
+
+```svelte
+<button onclick={() => count--}>Kurang</button>
+```
+
+{/snippet}
+</Exercise>
+
+<Callout type="pitfall">
+Jangan lupa: <code>$state</code> hanya berlaku di file <code>.svelte</code> atau <code>.svelte.js/ts</code>.
+</Callout>
+
+## 6. Docs
+
+<DocsLink href="https://svelte.dev/docs/svelte/what-are-runes" label="Apa itu runes — docs resmi" />
