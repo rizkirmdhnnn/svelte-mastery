@@ -121,7 +121,7 @@
 		},
 		{
 			term: 'Scoped styles',
-			def: 'Gaya di <style> komponen otomatis terbatas ke komponen itu saja (tak bocor ke global).'
+			def: 'Gaya di <' + 'style> komponen otomatis terbatas ke komponen itu saja (tak bocor ke global).'
 		}
 	];
 

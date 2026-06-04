@@ -12,7 +12,7 @@
 		{ a: 'useContext / createContext', b: 'getContext / setContext' },
 		{ a: 'cond && <X/> , list.map()', b: '{#if} … {/if} , {#each} … {/each}' },
 		{ a: 'onClick={fn}', b: 'onclick={fn}' },
-		{ a: 'CSS Modules / styled', b: '<style> (scoped otomatis)' },
+		{ a: 'CSS Modules / styled', b: '<' + 'style> (scoped otomatis)' },
 		{ a: 'Redux / Zustand', b: 'runes di .svelte.ts / stores' }
 	];
 
@@ -26,7 +26,7 @@
 		{ a: 'v-if / v-for', b: '{#if} / {#each}' },
 		{ a: '@click', b: 'onclick' },
 		{ a: 'provide / inject', b: 'setContext / getContext' },
-		{ a: '<style scoped>', b: '<style> (scoped otomatis)' },
+		{ a: '<' + 'style scoped>', b: '<' + 'style> (scoped otomatis)' },
 		{ a: 'onMounted / onUnmounted', b: '$effect(() => { return cleanup })' },
 		{ a: 'Pinia', b: 'runes di .svelte.ts / stores' }
 	];
