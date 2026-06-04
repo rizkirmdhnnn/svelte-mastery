@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="id" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="Svelte & SvelteKit Mastery — belajar Svelte 5 (runes) & SvelteKit v2 dari pemula hingga expert, dengan playground interaktif." />
+		<script>
+			// No-flash theme: jalankan sebelum paint pertama.
+			try {
+				const t = localStorage.getItem('mastery:theme');
+				if (t === 'light' || t === 'dark') {
+					document.documentElement.dataset.theme = t;
+				} else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+					document.documentElement.dataset.theme = 'dark';
+				}
+			} catch (e) {}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

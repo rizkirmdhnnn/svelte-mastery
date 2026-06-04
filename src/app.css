@@ -1,0 +1,290 @@
+/* ============================================================
+   Svelte & SvelteKit Mastery — Design tokens & base styles
+   ============================================================ */
+
+:root {
+	/* Brand */
+	--brand: #ff3e00;
+	--brand-2: #ff7a45;
+	--brand-ink: #ffffff;
+
+	/* Framework accents (for FrameworkCompare tabs) */
+	--fw-react: #61dafb;
+	--fw-vue: #42b883;
+	--fw-next: #000000;
+	--fw-nuxt: #00dc82;
+	--fw-nest: #e0234e;
+
+	/* Typography */
+	--font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+		sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+	--font-mono: 'SFMono-Regular', ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, Consolas,
+		'Liberation Mono', monospace;
+
+	--radius: 10px;
+	--radius-sm: 6px;
+	--radius-lg: 16px;
+
+	--maxw: 1340px;
+	--sidebar-w: 300px;
+	--header-h: 60px;
+
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08);
+	--shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.06);
+	--shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.14);
+
+	--ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---------- Light theme (default) ---------- */
+:root,
+[data-theme='light'] {
+	--bg: #ffffff;
+	--bg-subtle: #f7f8fa;
+	--bg-elevated: #ffffff;
+	--bg-code: #f6f8fa;
+	--bg-inset: #eef0f3;
+
+	--text: #1a1d21;
+	--text-muted: #5b6573;
+	--text-faint: #8b94a3;
+
+	--border: #e4e7ec;
+	--border-strong: #d0d5dd;
+
+	--link: #d9360c;
+	--accent-soft: rgba(255, 62, 0, 0.08);
+
+	--ok: #18794e;
+	--warn: #b35900;
+	--danger: #c0362c;
+	--info: #1769aa;
+
+	color-scheme: light;
+}
+
+/* ---------- Dark theme ---------- */
+[data-theme='dark'] {
+	--bg: #0d1117;
+	--bg-subtle: #11161d;
+	--bg-elevated: #161b22;
+	--bg-code: #161b22;
+	--bg-inset: #1c2330;
+
+	--text: #e6edf3;
+	--text-muted: #9da7b3;
+	--text-faint: #6e7781;
+
+	--border: #232a33;
+	--border-strong: #313a46;
+
+	--link: #ff7a45;
+	--accent-soft: rgba(255, 122, 69, 0.12);
+
+	--ok: #3fb950;
+	--warn: #d29922;
+	--danger: #f85149;
+	--info: #58a6ff;
+
+	color-scheme: dark;
+}
+
+/* ---------- Reset / base ---------- */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+	scroll-padding-top: calc(var(--header-h) + 1rem);
+}
+
+body {
+	margin: 0;
+	font-family: var(--font-sans);
+	background: var(--bg);
+	color: var(--text);
+	line-height: 1.6;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+a {
+	color: var(--link);
+	text-decoration: none;
+}
+a:hover {
+	text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	line-height: 1.25;
+	font-weight: 700;
+	scroll-margin-top: calc(var(--header-h) + 1rem);
+}
+
+code,
+kbd {
+	font-family: var(--font-mono);
+	font-size: 0.875em;
+}
+
+:focus-visible {
+	outline: 2px solid var(--brand);
+	outline-offset: 2px;
+	border-radius: 4px;
+}
+
+button {
+	font-family: inherit;
+	cursor: pointer;
+}
+
+/* ============================================================
+   Prose (rendered .svx module content)
+   ============================================================ */
+.prose {
+	max-width: 760px;
+	margin: 0 auto;
+	font-size: 1.02rem;
+}
+.prose h1 {
+	font-size: 2.1rem;
+	margin: 0 0 0.4em;
+	letter-spacing: -0.02em;
+}
+.prose h2 {
+	font-size: 1.5rem;
+	margin: 2.2em 0 0.7em;
+	padding-bottom: 0.3em;
+	border-bottom: 1px solid var(--border);
+}
+.prose h3 {
+	font-size: 1.2rem;
+	margin: 1.8em 0 0.5em;
+}
+.prose p {
+	margin: 0 0 1.1em;
+}
+.prose ul,
+.prose ol {
+	margin: 0 0 1.1em;
+	padding-left: 1.4em;
+}
+.prose li {
+	margin: 0.3em 0;
+}
+.prose strong {
+	font-weight: 700;
+	color: var(--text);
+}
+.prose blockquote {
+	margin: 1.2em 0;
+	padding: 0.4em 1.1em;
+	border-left: 4px solid var(--brand);
+	background: var(--accent-soft);
+	border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+	color: var(--text-muted);
+}
+.prose :not(pre) > code {
+	background: var(--bg-inset);
+	padding: 0.15em 0.4em;
+	border-radius: 5px;
+	border: 1px solid var(--border);
+	white-space: nowrap;
+}
+.prose table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 1.3em 0;
+	font-size: 0.94rem;
+}
+.prose th,
+.prose td {
+	border: 1px solid var(--border);
+	padding: 0.55em 0.8em;
+	text-align: left;
+	vertical-align: top;
+}
+.prose th {
+	background: var(--bg-subtle);
+	font-weight: 600;
+}
+.prose hr {
+	border: none;
+	border-top: 1px solid var(--border);
+	margin: 2em 0;
+}
+
+/* ============================================================
+   Shiki code blocks (dual theme via data-theme)
+   ============================================================ */
+.shiki {
+	margin: 1.2em 0;
+	padding: 1rem 1.1rem;
+	border-radius: var(--radius);
+	border: 1px solid var(--border);
+	overflow-x: auto;
+	font-size: 0.86rem;
+	line-height: 1.6;
+	tab-size: 2;
+}
+.shiki code {
+	font-family: var(--font-mono);
+}
+/* Switch Shiki to its dark palette when the app is dark. */
+[data-theme='dark'] .shiki,
+[data-theme='dark'] .shiki span {
+	color: var(--shiki-dark) !important;
+	background-color: var(--shiki-dark-bg) !important;
+	font-style: var(--shiki-dark-font-style) !important;
+	font-weight: var(--shiki-dark-font-weight) !important;
+	text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* ============================================================
+   Small shared utilities
+   ============================================================ */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45em;
+	padding: 0.5em 0.9em;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--bg-elevated);
+	color: var(--text);
+	font-size: 0.9rem;
+	font-weight: 500;
+	transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.btn:hover {
+	background: var(--bg-subtle);
+	text-decoration: none;
+}
+.btn-primary {
+	background: var(--brand);
+	border-color: var(--brand);
+	color: var(--brand-ink);
+}
+.btn-primary:hover {
+	background: var(--brand-2);
+}
+
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
