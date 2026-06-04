@@ -1,0 +1,339 @@
+---
+title: "Routing: +page/+layout/+server"
+level: 6
+levelTitle: SvelteKit Dasar
+order: 3
+description: Memahami file-based routing SvelteKit — bagaimana struktur folder src/routes memetakan URL ke halaman, layout, endpoint API, dan halaman error lewat file berawalan +.
+docs: https://svelte.dev/docs/kit/routing
+keywords: [routing, +page, +layout, +server, +error, params, file-based]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di kebanyakan framework lama, "routing" itu sebuah daftar yang kamu tulis tangan: di React Router kamu menulis `<Route path="/about" element={...} />`, di Vue Router kamu mengisi array `routes: [{ path: '/about', component: ... }]`. Kamu menghubungkan URL ke komponen secara eksplisit, satu per satu.
+
+SvelteKit memakai pendekatan berbeda: **file-based routing**. Tidak ada daftar rute yang kamu tulis. Sebagai gantinya, **struktur folder di dalam `src/routes` ITULAH peta URL aplikasimu.** Mau ada halaman `/about`? Buat folder `src/routes/about/` lalu taruh file `+page.svelte` di dalamnya. Selesai. Tidak perlu mendaftar apa pun.
+
+### Analogi: rak buku perpustakaan
+
+Bayangkan `src/routes` itu sebuah perpustakaan, dan tiap folder adalah rak. Kamu tidak menyimpan "buku katalog" terpisah yang mencatat di mana tiap buku berada — **letak fisik buku di rak ITULAH alamatnya.** Buku di rak `about` ada di alamat `/about`. Buku di rak `blog`, sub-rak `2024`, ada di alamat `/blog/2024`. Pustakawan (router SvelteKit) cukup melihat lokasi folder untuk tahu URL-nya. Kalau kamu pindahkan foldernya, URL-nya ikut pindah otomatis. Kalau kamu hapus foldernya, rutenya hilang. Tidak ada "katalog" yang harus kamu jaga tetap sinkron.
+
+Yang membuat sistem ini bekerja adalah **konvensi penamaan file**. Di tiap folder rute, file yang diawali tanda `+` punya peran khusus, sementara file lain (tanpa `+`) hanya dianggap komponen pendukung biasa dan tidak membentuk rute. Inilah daftar peran utamanya:
+
+- **`+page.svelte`** — komponen UI untuk URL itu. Ini yang dilihat pengguna. Isinya Svelte 5 biasa (runes, event, markup) yang sudah kamu kuasai.
+- **`+page.js`** (atau `.ts`) — fungsi `load` yang jalan di **server DAN klien** (universal). Cocok untuk data publik yang aman dijalankan di mana saja.
+- **`+page.server.js`** — fungsi `load` (dan form actions) yang jalan **HANYA di server**. Tempat aman untuk query database, baca env rahasia, panggil API pakai secret key.
+- **`+layout.svelte`** — kerangka bersama yang membungkus halaman-halaman di folder itu dan semua sub-foldernya (mis. navbar, footer, sidebar). Halaman dirender di dalamnya lewat `{@render children()}`.
+- **`+layout.js` / `+layout.server.js`** — `load` untuk layout: data yang dibutuhkan semua halaman di bawahnya (mis. info user yang sedang login).
+- **`+server.js`** — endpoint API (bukan halaman HTML). Mengekspor fungsi `GET`, `POST`, `PUT`, `DELETE`, dll. Mengembalikan `Response`/JSON, bukan komponen.
+- **`+error.svelte`** — halaman yang ditampilkan kalau `load` melempar error di cabang rute itu.
+
+### Params: bagian URL yang dinamis
+
+URL sering punya bagian yang berubah-ubah, misal `/blog/halo-dunia` dan `/blog/tips-svelte` — strukturnya sama, hanya "slug"-nya beda. Kamu tidak membuat folder untuk tiap artikel. Sebagai gantinya, kamu memberi nama folder dengan **kurung siku**: `src/routes/blog/[slug]/+page.svelte`. Nama di dalam kurung (`slug`) jadi **parameter** yang bisa kamu baca lewat `params.slug` di fungsi `load`. Ini setara `[slug]` di Next.js dan `[slug].vue` di Nuxt — konsepnya identik, sintaks penamaannya saja yang beda.
+
+### Hierarki layout: bersarang otomatis
+
+Hal yang sering bikin kagum orang baru: **layout itu bersarang mengikuti folder.** `+layout.svelte` di `src/routes/` membungkus SELURUH aplikasi. Tambahkan `+layout.svelte` lagi di `src/routes/dashboard/`, maka halaman di dalam `dashboard` dibungkus dua lapis: layout root DI LUAR, layout dashboard DI DALAM. Kamu tidak perlu mengatur apa pun — SvelteKit menyusun lapisannya berdasarkan kedalaman folder. Ini jauh lebih ringkas dibanding harus membungkus komponen layout secara manual seperti di React tradisional.
+
+## 2. Contoh kode
+
+Mari lihat satu pohon folder lengkap, lalu isi tiap file kunci. Perhatikan bagaimana **lokasi** file menentukan URL-nya.
+
+```text
+src/routes/
+├ +layout.svelte         ← kerangka SEMUA halaman (navbar/footer global)
+├ +page.svelte           ← URL "/"
+├ about/
+│ └ +page.svelte         ← URL "/about"
+├ blog/
+│ ├ +page.svelte         ← URL "/blog" (daftar artikel)
+│ └ [slug]/              ← segmen dinamis: params.slug
+│   ├ +page.svelte       ← URL "/blog/halo" , "/blog/tips" , dst
+│   ├ +page.server.js    ← load() server-only untuk ambil 1 artikel
+│   └ +error.svelte      ← tampil kalau artikel tak ditemukan
+└ api/
+  └ posts/
+    └ +server.js         ← endpoint "/api/posts" (JSON, bukan halaman)
+```
+
+Halaman dinamis menerima data dari `load` lewat prop `data`, dan bisa membaca `params` langsung. Di Svelte 5 keduanya datang dari `$props()`:
+
+```svelte
+<!-- src/routes/blog/[slug]/+page.svelte  ->  URL "/blog/<slug apa pun>" -->
+<script>
+	// `data` = hasil return fungsi load. `params` = segmen dinamis URL.
+	// PageProps adalah tipe yang DIBUAT OTOMATIS oleh SvelteKit per-rute.
+	/** @type {import('./$types').PageProps} */
+	let { data, params } = $props();
+</script>
+
+<p>Slug dari URL: {params.slug}</p>
+<h1>{data.title}</h1>
+<article>{@html data.content}</article>
+```
+
+Datanya diambil di `+page.server.js` (server-only, jadi aman menyentuh database). Perhatikan `error()` dipanggil **tanpa `throw`** — di SvelteKit 2 helper ini melempar sendiri:
+
+```js
+// src/routes/blog/[slug]/+page.server.js  ->  jalan HANYA di server
+import { error } from '@sveltejs/kit';
+import * as db from '$lib/server/database'; // $lib/server hanya bisa diimpor di server
+
+/** @type {import('./$types').PageServerLoad} */
+export async function load({ params }) {
+	const post = await db.getPost(params.slug); // params.slug = bagian [slug] URL
+
+	// SvelteKit 2: error() & redirect() melempar SENDIRI — JANGAN tulis `throw`.
+	if (!post) error(404, 'Artikel tidak ditemukan');
+
+	// Yang di-return jadi `data` di +page.svelte. Harus serializable.
+	return { title: post.title, content: post.content };
+}
+```
+
+Layout membungkus halaman. Slot anak dirender lewat `{@render children()}` (pengganti `<slot>` dari Svelte 4):
+
+```svelte
+<!-- src/routes/+layout.svelte  ->  membungkus SEMUA halaman & sub-folder -->
+<script>
+	// `children` adalah snippet berisi halaman aktif. `data` dari +layout(.server).js.
+	/** @type {import('./$types').LayoutProps} */
+	let { data, children } = $props();
+</script>
+
+<nav>
+	<a href="/">Beranda</a>
+	<a href="/about">Tentang</a>
+	<a href="/blog">Blog</a>
+</nav>
+
+<main>
+	{@render children()}  <!-- halaman aktif disisipkan di sini -->
+</main>
+
+<footer>© 2026</footer>
+```
+
+Endpoint API memakai `+server.js` — bukan halaman, melainkan handler HTTP yang mengembalikan data:
+
+```js
+// src/routes/api/posts/+server.js  ->  endpoint "/api/posts"
+import { json } from '@sveltejs/kit';
+import * as db from '$lib/server/database';
+
+// Nama fungsi = HTTP method. Tanda tangan terbaru memberi event { request, url, ... }.
+/** @type {import('./$types').RequestHandler} */
+export async function GET({ url }) {
+	const limit = Number(url.searchParams.get('limit') ?? 10);
+	const posts = await db.getRecentPosts(limit);
+	return json(posts); // helper json() = Response ber-Content-Type JSON
+}
+
+/** @type {import('./$types').RequestHandler} */
+export async function POST({ request }) {
+	const body = await request.json();
+	const created = await db.createPost(body);
+	return json(created, { status: 201 });
+}
+```
+
+<Callout type="tip">
+Tipe seperti <code>PageProps</code>, <code>PageServerLoad</code>, <code>LayoutProps</code>, dan <code>RequestHandler</code> diimpor dari <code>'./$types'</code> — modul <strong>virtual yang SvelteKit buat otomatis per folder rute</strong>. Kamu tidak menulis tipe-tipe ini; SvelteKit menyimpulkannya dari struktur rutemu (termasuk nama <code>params</code>). Ini salah satu kelebihan file-based routing: type-safety datang gratis dari struktur folder.
+</Callout>
+
+## 3. Coba sendiri
+
+Routing SvelteKit butuh **server** (struktur folder dipetakan ke URL oleh build Kit), jadi tidak bisa dijalankan apa adanya di live playground browser. Tapi inti mentalnya — "satu URL aktif memilih satu konten, dan layout membungkus apa pun yang aktif" — bisa kita tiru sebagai komponen Svelte murni. Playground di bawah mensimulasikan kombinasi **layout (navbar + footer yang selalu ada) + halaman dinamis (params)**. Di SvelteKit asli, pemilihan halaman dan pembacaan `params` ini diurus otomatis oleh router; di sini kita tiru manual dengan `$state`.
+
+<Playground code={`<script>
+	// Tiru "URL aktif". Di SvelteKit asli ini berasal dari struktur folder + router.
+	let path = $state('/');
+	// Tiru data artikel. Di SvelteKit asli ini di-load di +page.server.js dari DB.
+	const posts = {
+		halo: { title: 'Halo Dunia', content: 'Artikel pertama.' },
+		tips: { title: 'Tips Svelte', content: 'Pakai runes, hindari API lama.' }
+	};
+	// Tiru pemetaan URL -> konten + ekstraksi params (bagian [slug]).
+	let view = $derived.by(() => {
+		if (path === '/') return { kind: 'home' };
+		if (path === '/about') return { kind: 'about' };
+		if (path.startsWith('/blog/')) {
+			const slug = path.slice('/blog/'.length); // tiru params.slug
+			return { kind: 'post', slug, post: posts[slug] };
+		}
+		return { kind: 'notfound' };
+	});
+</script>
+<!-- Ini bagian "+layout.svelte": navbar selalu tampil membungkus halaman -->
+<nav style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+	<button onclick={() => path = '/'}>/</button>
+	<button onclick={() => path = '/about'}>/about</button>
+	<button onclick={() => path = '/blog/halo'}>/blog/halo</button>
+	<button onclick={() => path = '/blog/tips'}>/blog/tips</button>
+	<button onclick={() => path = '/blog/hilang'}>/blog/hilang</button>
+</nav>
+<p style="color:gray; font-size:0.85rem;">URL aktif: {path}</p>
+<main style="border:1px solid #ccc; padding:1rem; border-radius:8px;">
+	{#if view.kind === 'home'}
+		<h2>Beranda</h2>
+		<p>Setara src/routes/+page.svelte</p>
+	{:else if view.kind === 'about'}
+		<h2>Tentang</h2>
+		<p>Setara src/routes/about/+page.svelte</p>
+	{:else if view.kind === 'post'}
+		<p style="color:gray; font-size:0.8rem;">params.slug = {view.slug}</p>
+		{#if view.post}
+			<h2>{view.post.title}</h2>
+			<p>{view.post.content}</p>
+		{:else}
+			<!-- Tiru +error.svelte: load "melempar" 404 -->
+			<h2 style="color:crimson;">404 — Artikel tidak ditemukan</h2>
+			<p>Di SvelteKit, ini ditangani +error.svelte saat load() memanggil error(404).</p>
+		{/if}
+	{:else}
+		<h2 style="color:crimson;">404</h2>
+	{/if}
+</main>
+<footer style="margin-top:1rem; color:gray; font-size:0.85rem;">Footer ini bagian dari layout — selalu tampil.</footer>`} />
+
+<Callout type="warning">
+Sekali lagi: playground ini hanya analogi mental. Aplikasi SvelteKit sungguhan TIDAK menyimpan rute dalam satu fungsi <code>if/else</code> seperti ini. Tiap halaman adalah file <code>+page.svelte</code> tersendiri, params datang otomatis dari nama folder <code>[slug]</code>, dan data di-load di server. Yang ditiru di sini hanya "rasa" pemilihan halaman + layout pembungkus + params.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Definisi rute"
+	svelte={`<!-- SvelteKit: struktur folder = peta URL. File berawalan + spesial. -->
+src/routes/blog/[slug]/+page.svelte   ->  UI halaman "/blog/<slug>"
+src/routes/blog/[slug]/+page.server.js->  load() data (server-only)
+src/routes/api/posts/+server.js       ->  endpoint API "/api/posts"
+<!-- +page.svelte (UI) --><script>
+	let { data, params } = $props();
+</script>
+<h1>{data.title}</h1>
+<!-- +page.server.js (data) -->
+export async function load({ params }) {
+	return { title: await getTitle(params.slug) };
+}`}
+	next={`// Next.js App Router: folder = rute juga, tapi nama file beda.
+//
+// app/blog/[slug]/page.tsx    ->  UI + (opsional) data fetch
+// app/api/posts/route.ts      ->  endpoint API (GET/POST = export fungsi)
+//
+// app/blog/[slug]/page.tsx (Server Component: load & UI menyatu)
+export default async function Page(
+	{ params }: { params: Promise<{ slug: string }> }
+) {
+	const { slug } = await params;
+	const title = await getTitle(slug);
+	return <h1>{title}</h1>;
+}
+// app/api/posts/route.ts
+export async function GET() {
+	return Response.json(await getPosts());
+}`}
+	nuxt={`<!-- Nuxt: folder pages/ = rute. Nama file [slug] untuk segmen dinamis. -->
+<!-- pages/blog/[slug].vue     ->  UI halaman "/blog/<slug>" -->
+<!-- server/api/posts.get.ts   ->  endpoint API "/api/posts" (GET) -->
+<!-- pages/blog/[slug].vue --><script setup>
+const route = useRoute();
+const { data } = await useFetch('/api/post/' + route.params.slug);
+</script>
+<template>
+	<h1>{{ data.title }}</h1>
+</template>
+<!-- server/api/posts.get.ts -->
+export default defineEventHandler(async () => {
+	return await getPosts();
+});`}
+	note="Konsep inti SAMA di ketiganya: folder = rute, ada segmen dinamis (params), dan file API terpisah. Yang beda hanya nama/konvensi file. SvelteKit memisahkan UI (+page.svelte) dari data (+page.server.js) secara eksplisit. Next App Router cenderung menyatukan keduanya di Server Component (page.tsx) dan memakai route.ts untuk API. Nuxt memisahkan pages/ (UI) dari server/api/ (endpoint), dengan params via useRoute(). Tidak ada yang 'benar' mutlak — pemisahan eksplisit SvelteKit enak untuk batas client/server yang jelas; penyatuan Next enak untuk colocation."
+/>
+
+## 5. Latihan
+
+<Exercise title="Petakan kebutuhan ke file rute">
+Kamu membangun bagian toko: daftar produk di <code>/products</code>, detail produk di <code>/products/&lt;id&gt;</code>, sebuah endpoint JSON di <code>/api/products</code>, dan navbar yang muncul di SEMUA halaman toko. Detail produk harus menampilkan 404 yang rapi kalau id tidak ada.
+
+Sebutkan **file apa saja** yang kamu buat di dalam `src/routes`, beserta perannya. Tulis juga isi ringkas `+page.server.js` untuk halaman detail (pakai `error()` SvelteKit 2 yang benar).
+
+{#snippet solution()}
+
+  ```text
+  Struktur folder
+  ───────────────
+  src/routes/
+  ├ +layout.svelte               ← navbar yang muncul di semua halaman
+  ├ products/
+  │ ├ +page.svelte               ← UI daftar produk "/products"
+  │ ├ +page.server.js            ← load() daftar produk (server-only)
+  │ └ [id]/
+  │   ├ +page.svelte             ← UI detail "/products/<id>"
+  │   ├ +page.server.js          ← load() 1 produk; error(404) bila kosong
+  │   └ +error.svelte            ← tampilan 404 yang rapi untuk cabang ini
+  └ api/
+    └ products/
+      └ +server.js               ← endpoint JSON GET "/api/products"
+  ```
+
+  ```js
+  // src/routes/products/[id]/+page.server.js
+  import { error } from '@sveltejs/kit';
+  import * as db from '$lib/server/database';
+
+  /** @type {import('./$types').PageServerLoad} */
+  export async function load({ params }) {
+  	const product = await db.getProduct(params.id);
+
+  	// SvelteKit 2: TANPA `throw` — error() melempar sendiri.
+  	// Memicu render +error.svelte di cabang [id].
+  	if (!product) error(404, 'Produk tidak ditemukan');
+
+  	return { product };
+  }
+  ```
+
+  ```svelte
+  <!-- src/routes/products/[id]/+page.svelte -->
+  <script>
+  	/** @type {import('./$types').PageProps} */
+  	let { data } = $props();
+  </script>
+
+  <h1>{data.product.name}</h1>
+  <p>{data.product.price}</p>
+  ```
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong><code>+page.js</code> vs <code>+page.server.js</code> tidak sama.</strong> <code>+page.js</code> jalan di <em>server DAN klien</em> (universal) — JANGAN taruh rahasia (API key, query DB langsung) di sana, karena kodenya ikut terkirim ke browser. <code>+page.server.js</code> jalan <em>hanya di server</em> — di sinilah tempat aman untuk database, secret env, dan apa pun yang impor dari <code>$lib/server</code>. Salah pilih = membocorkan rahasia atau membuat build gagal.
+</Callout>
+
+<Callout type="warning">
+File <code>+</code> itu <strong>case-sensitive dan harus pas</strong>. <code>+page.svelte</code> berbeda dari <code>page.svelte</code> (tanpa <code>+</code> = bukan rute, hanya komponen pendukung). Salah ketik seperti <code>+Page.svelte</code>, <code>+pages.svelte</code>, atau lupa tanda <code>+</code> membuat rute tidak muncul — sering tanpa error yang jelas. Begitu juga segmen dinamis: <code>[slug]</code> benar, <code>{`{slug}`}</code> atau <code>:slug</code> salah (itu konvensi router lain).
+</Callout>
+
+<Callout type="pitfall">
+<code>+server.js</code> dan <code>+page.server.js</code> <strong>tidak boleh hidup berdampingan untuk method yang sama di satu folder</strong> tanpa kamu sadari konsekuensinya. <code>+server.js</code> = endpoint API (balas <code>Response</code>/JSON). <code>+page.server.js</code> = data + form actions untuk halaman HTML. Kalau kamu butuh keduanya di satu folder, request <code>POST</code> default diarahkan ke <code>+server.js</code>; untuk menuju form action di <code>+page.server.js</code> kamu harus set header <code>x-sveltekit-action: true</code>. Untuk pemula, paling aman: pisahkan endpoint API ke folder <code>api/</code> sendiri.
+</Callout>
+
+<Callout type="legacy">
+Di SvelteKit 1 / tutorial lama kamu sering melihat <code>throw error(404)</code> dan <code>throw redirect(303, '/login')</code>. Di <strong>SvelteKit 2</strong> kata <code>throw</code> itu <strong>dihapus</strong> — <code>error()</code> dan <code>redirect()</code> sudah melempar sendiri, jadi tulis <code>error(404, ...)</code> saja. Selain itu, layout lama memakai <code>&lt;slot /&gt;</code> untuk menyisipkan halaman anak; di Svelte 5 gunakan <code>{`{@render children()}`}</code>. Kalau menemukan <code>throw error</code> atau <code>&lt;slot&gt;</code> di kode rute, itu pola lama.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/routing" label="SvelteKit — Routing (+page, +layout, +server, +error, params)" />
+<DocsLink href="https://svelte.dev/docs/kit/load" label="SvelteKit — Loading data (load di +page.js vs +page.server.js)" />

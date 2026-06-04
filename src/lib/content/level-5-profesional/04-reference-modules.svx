@@ -1,0 +1,300 @@
+---
+title: "Reference Modules: motion, transition, easing, action, reactivity, events, store"
+level: 5
+levelTitle: Profesional
+order: 4
+description: Mengenal modul bawaan Svelte 5 — Spring/Tween dari svelte/motion, transition & easing, tipe Action, koleksi reaktif SvelteMap/SvelteSet/SvelteDate, svelte/events, dan svelte/store.
+docs: https://svelte.dev/docs/svelte/svelte-motion
+keywords: [motion, spring, tween, transition, easing, action, reactivity, store]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sejauh ini kamu sudah mengenal "inti" Svelte: runes (`$state`, `$derived`, `$effect`) dan template. Tapi Svelte juga membawa serangkaian **modul bawaan** — paket kecil yang bisa kamu impor dari `'svelte/...'` — yang menutupi kebutuhan umum: animasi nilai, transisi masuk/keluar elemen, kurva easing, koleksi reaktif (Map/Set/Date), DOM action, sampai store gaya lama. Modul ini analog dengan "library standar" di Python atau dengan ekosistem hook pihak ketiga di React, hanya saja di sini semuanya resmi, terkurasi, dan dirancang menyatu dengan sistem reaktivitas Svelte.
+
+Yang penting dipahami sebagai pengguna React/Vue: banyak fitur yang biasanya kamu cari di npm (Framer Motion, react-spring, VueUse) di sini **sudah ada di kotaknya** dan tidak menambah dependency. Mari kita bedah satu per satu.
+
+### `svelte/motion` — angka yang bergerak halus
+
+Bayangkan sebuah angka yang ingin pindah dari `0` ke `100`. Kalau kamu set langsung, ia "teleport" — patah, tidak enak dilihat. `svelte/motion` memberi dua "kelas" yang membuat nilai itu **mengejar** target secara bertahap setiap frame, seperti GPS mobil yang menggambar rute ke tujuan ketimbang langsung memindahkan ikon mobil.
+
+Di Svelte 5 ada dua kelas baru berbasis runes: **`Tween`** dan **`Spring`** (huruf besar — ini class, bukan factory). Bedanya pada "watak" gerakannya:
+
+- **`Tween`** = animasi berdurasi pasti. Kamu bilang "tempuh dalam 400ms dengan kurva `cubicOut`". Cocok untuk progress bar, angka counter, hal yang butuh durasi terkontrol. Analoginya seperti eskalator: kecepatan dan waktu sampai sudah ditentukan.
+- **`Spring`** = animasi berbasis fisika pegas. Kamu tidak menentukan durasi; kamu menentukan `stiffness` (kekakuan pegas) dan `damping` (redaman). Nilai akan "memantul" mendekati target secara alami. Cocok untuk hal yang mengikuti pointer/drag, di mana target bisa berubah kapan saja. Analoginya seperti karet gelang yang ditarik lalu dilepas.
+
+Keduanya punya properti `.current` (nilai animasi sekarang, reaktif — boleh dibaca di template) dan `.target` (tujuan; ubah ini untuk memicu animasi). Ada juga `.set(value, options)` untuk kontrol lebih.
+
+<Callout type="legacy">
+Di Svelte 4 dan awal Svelte 5 ada fungsi <code>spring()</code> dan <code>tweened()</code> (huruf kecil, store-based) dari <code>svelte/motion</code>. Itu kini <strong>deprecated</strong>. Ganti dengan class <code>Spring</code> dan <code>Tween</code> (huruf besar) yang berbasis runes — lebih ringkas dan tak perlu <code>$</code>-prefix store.
+</Callout>
+
+### `svelte/transition` & `svelte/easing` — elemen masuk/keluar
+
+`svelte/transition` berisi fungsi transisi siap pakai: `fade`, `fly`, `slide`, `scale`, `blur`, `draw`, dan `crossfade`. Kamu pasang lewat directive `transition:`, `in:`, atau `out:` pada elemen yang berada di dalam blok `{#if}` / `{#each}`. Saat elemen masuk atau keluar DOM, Svelte menjalankan animasinya otomatis. Ini setara `<Transition>` di Vue atau library seperti Framer Motion `AnimatePresence` di React — tapi tanpa membungkus apa pun, cukup satu directive.
+
+`svelte/easing` adalah teman dekatnya: kumpulan **kurva easing** (fungsi yang memetakan progres 0→1 menjadi 0→1 dengan percepatan tertentu). Contoh: `cubicOut`, `elasticOut`, `quintInOut`, `bounceOut`. Kurva ini dipakai sebagai opsi `easing` pada transition maupun pada `Tween`. Analogi: easing adalah "gaya menyetir" — `linear` itu kecepatan tetap (robotik), `cubicOut` mulai cepat lalu melambat saat sampai (terasa natural), `elasticOut` sedikit melewati lalu balik (terasa hidup).
+
+### `svelte/action` — perilaku DOM yang bisa dipasang ulang
+
+Sebuah **action** adalah fungsi yang dijalankan saat sebuah elemen DOM dibuat, dipasang lewat directive `use:`. Ia menerima `node` (elemen DOM-nya) dan parameter opsional, lalu boleh mengembalikan objek dengan `update` (dipanggil saat parameter berubah) dan `destroy` (saat elemen dilepas). Action adalah cara Svelte untuk "menempelkan logika imperatif" ke elemen — pas untuk integrasi library non-Svelte (tooltip, datepicker, masking), click-outside, autofocus, dan sejenisnya. Padanan React-nya adalah custom hook yang memakai `ref` + `useEffect`; di Vue, sebuah custom directive.
+
+Dari modul `svelte/action` kamu terutama mengimpor **tipe** TypeScript: `Action` dan `ActionReturn`. Action-nya sendiri ditulis sebagai fungsi biasa, tipe inilah yang membuatnya type-safe.
+
+### `svelte/reactivity` — koleksi yang reaktif
+
+Ini sering bikin pendatang dari Vue kaget. `$state` membuat objek dan array menjadi reaktif (deep), **tapi** built-in seperti `Map`, `Set`, dan `Date` tidak ikut terpantau saat kamu memanggil method-nya (mis. `map.set(...)`, `date.setHours(...)`). Alasannya: reaktivitas Svelte bekerja lewat property access (proxy), sedangkan `Map`/`Set` menyimpan datanya di slot internal yang tak terlihat proxy.
+
+Solusinya: `svelte/reactivity` menyediakan **`SvelteMap`**, **`SvelteSet`**, **`SvelteDate`** (dan beberapa lain seperti `SvelteURL`). API-nya 100% sama dengan versi aslinya — `new SvelteMap()`, `.set`, `.get`, `.has`, `.delete` — bedanya operasi itu memicu re-render. Analogi: `Map` biasa itu seperti buku catatan di laci tertutup; kamu mengubahnya tapi tidak ada yang tahu. `SvelteMap` itu papan tulis di tengah ruangan — setiap coretan langsung dilihat semua orang (komponen).
+
+### `svelte/events` — `on` programatik
+
+Modul kecil berisi fungsi `on(target, type, handler, options)` untuk memasang event listener secara imperatif (di luar template), yang mengembalikan fungsi untuk melepasnya. Ini versi modern dari `addEventListener` yang menyatu dengan delegasi event Svelte 5, berguna di dalam action atau `$effect`. Di template kamu tetap pakai atribut `onclick`, `oninput`, dll. — `on()` adalah untuk kasus imperatif.
+
+### `svelte/store` — store klasik (masih ada, jarang perlu)
+
+Sebelum runes, **store** adalah cara berbagi state reaktif lintas komponen: `writable`, `readable`, `derived`, plus auto-subscription lewat prefix `$`. Di Svelte 5, untuk **kebanyakan** kasus kamu cukup pakai `$state` (mis. di file `.svelte.ts` yang diekspor). Tapi store tetap relevan: ekosistem (SvelteKit menyediakan `page`, `navigating` sebagai store), interop dengan kode lama, dan pola tertentu (mis. `derived` async). Store dan runes saling kompatibel — `$store` masih bekerja di komponen, dan kamu bisa membungkus store dengan rune lewat `fromStore`/`toStore` dari `svelte/store`.
+
+## 2. Contoh kode
+
+```svelte
+<!-- motion.svelte — Tween vs Spring (Svelte 5, class baru) -->
+<script>
+	import { Tween, Spring } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
+
+	// Tween: durasi pasti + kurva easing. Bagus untuk progress/counter.
+	const progress = new Tween(0, { duration: 400, easing: cubicOut });
+
+	// Spring: fisika pegas, tanpa durasi. Bagus untuk mengejar target dinamis.
+	const koin = new Spring(0, { stiffness: 0.1, damping: 0.25 });
+
+	function naik() {
+		progress.target = 100; // ubah .target untuk memicu animasi
+		koin.target = 50;
+	}
+</script>
+
+<!-- baca .current (reaktif) untuk nilai yang sedang dianimasikan -->
+<progress value={progress.current} max="100"></progress>
+<p>Koin: {Math.round(koin.current)}</p>
+<button onclick={naik}>Animasikan</button>
+```
+
+```svelte
+<!-- transition.svelte — transition + easing -->
+<script>
+	import { fly, fade } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
+
+	let tampil = $state(true);
+</script>
+
+<button onclick={() => (tampil = !tampil)}>Toggle</button>
+
+{#if tampil}
+	<!-- in:/out: bisa beda. fly pakai easing dari svelte/easing -->
+	<div in:fly={{ y: 20, duration: 300, easing: quintOut }} out:fade>
+		Halo, aku muncul dengan gaya.
+	</div>
+{/if}
+```
+
+```ts
+// tooltip.ts — sebuah Action lengkap dengan tipe dari svelte/action
+import type { Action } from 'svelte/action';
+
+// Action<ElemenTarget, Parameter>. Di sini parameter berupa string teks.
+export const tooltip: Action<HTMLElement, string> = (node, text) => {
+	const el = document.createElement('div');
+	el.className = 'tip';
+
+	const show = () => {
+		el.textContent = text;
+		document.body.appendChild(el);
+	};
+	const hide = () => el.remove();
+
+	node.addEventListener('mouseenter', show);
+	node.addEventListener('mouseleave', hide);
+
+	return {
+		// dipanggil saat parameter (text) berubah
+		update(next) {
+			text = next;
+		},
+		// dipanggil saat elemen dilepas dari DOM — bersihkan!
+		destroy() {
+			hide();
+			node.removeEventListener('mouseenter', show);
+			node.removeEventListener('mouseleave', hide);
+		}
+	};
+};
+// Pemakaian di komponen lain: <button use:tooltip={'Halo'}>Hover aku</button>
+```
+
+```svelte
+<!-- reactivity.svelte — kenapa harus SvelteMap, bukan Map biasa -->
+<script>
+	import { SvelteMap } from 'svelte/reactivity';
+
+	// Map BIASA: .set() TIDAK memicu re-render (tidak reaktif).
+	// SvelteMap: API identik, tapi operasinya reaktif.
+	const stok = new SvelteMap([
+		['kopi', 3],
+		['teh', 5]
+	]);
+
+	function ambil(nama) {
+		stok.set(nama, (stok.get(nama) ?? 0) - 1); // memicu update
+	}
+</script>
+
+{#each [...stok] as [nama, jumlah]}
+	<p>{nama}: {jumlah} <button onclick={() => ambil(nama)}>-1</button></p>
+{/each}
+```
+
+## 3. Coba sendiri
+
+Playground ini menggabungkan tiga modul sekaligus dalam satu komponen murni-klien: `Spring` dari `svelte/motion` (ukuran kotak mengejar nilai acak), `fly` + `cubicOut` dari `svelte/transition` & `svelte/easing` (daftar item masuk beranimasi), dan `SvelteSet` dari `svelte/reactivity` (menyimpan id yang ditandai secara reaktif). Coba klik tombolnya dan perhatikan: ukuran kotak memantul (spring), item baru terbang masuk (transition), dan tanda centang muncul tanpa render manual (SvelteSet reaktif).
+
+<Playground code={`<script>
+	import { Spring } from 'svelte/motion';
+	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
+	import { SvelteSet } from 'svelte/reactivity';
+	const ukuran = new Spring(60, { stiffness: 0.1, damping: 0.3 });
+	let items = $state([{ id: 1, teks: 'Item pertama' }]);
+	let next = 2;
+	// SvelteSet: penambahan/penghapusan memicu update otomatis
+	const ditandai = new SvelteSet();
+	function acakUkuran() {
+		ukuran.target = 40 + Math.floor(Math.random() * 120);
+	}
+	function tambah() {
+		items = [...items, { id: next, teks: 'Item ke-' + next }];
+		next += 1;
+	}
+	function toggle(id) {
+		if (ditandai.has(id)) ditandai.delete(id);
+		else ditandai.add(id);
+	}
+</script>
+<div
+	style="width: {ukuran.current}px; height: {ukuran.current}px; background: teal; border-radius: 8px;"
+></div>
+<button onclick={acakUkuran}>Acak ukuran (Spring)</button>
+<button onclick={tambah}>Tambah item (transition)</button>
+<ul>
+	{#each items as item (item.id)}
+		<li in:fly={{ y: 12, duration: 300, easing: cubicOut }}>
+			<button onclick={() => toggle(item.id)}>
+				{ditandai.has(item.id) ? 'OK ' : 'O '} {item.teks}
+			</button>
+		</li>
+	{/each}
+</ul>
+<p>Ditandai: {ditandai.size}</p>`} />
+
+<Callout type="tip">
+Perhatikan <code>Spring</code> tidak butuh durasi — kamu cukup mengubah <code>.target</code>, dan <code>.current</code> mengejarnya. Karena spring berbasis fisika, kalau kamu ubah target berkali-kali dengan cepat (mis. saat drag), animasinya tetap mulus tanpa "patah". Inilah alasan utama memilih <code>Spring</code> ketimbang <code>Tween</code> untuk nilai yang mengikuti input pengguna secara real-time.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Counter beranimasi + tag reaktif dengan SvelteSet">
+Buat satu komponen `.svelte` yang:
+
+1. Memakai `Tween` dari `svelte/motion` untuk menganimasikan sebuah angka skor. Tombol "+10" menambah target skor sebesar 10, dan angka yang ditampilkan harus naik mulus (durasi `500ms`, easing `cubicOut` dari `svelte/easing`).
+2. Memakai `SvelteSet` dari `svelte/reactivity` untuk menyimpan kumpulan "level yang sudah diraih". Setiap kali skor menembus kelipatan 50, tambahkan kelipatan itu ke set. Tampilkan jumlah level (`.size`) dan daftarnya.
+
+Petunjuk: baca nilai animasi lewat `.current`, ubah tujuan lewat `.target`. Untuk mendeteksi kelipatan 50, hitung dari nilai target (bukan `.current` yang masih bergerak).
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { Tween } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
+	import { SvelteSet } from 'svelte/reactivity';
+
+	// Tween: skor naik mulus selama 500ms dengan kurva cubicOut
+	const skor = new Tween(0, { duration: 500, easing: cubicOut });
+
+	// SvelteSet reaktif: setiap add() langsung memperbarui tampilan
+	const level = new SvelteSet();
+
+	function tambah() {
+		const tujuanBaru = skor.target + 10;
+		skor.target = tujuanBaru;
+
+		// hitung kelipatan 50 dari nilai TARGET (bukan .current yang masih bergerak)
+		const kelipatan = Math.floor(tujuanBaru / 50) * 50;
+		if (kelipatan >= 50) level.add(kelipatan);
+	}
+</script>
+
+<!-- .current adalah nilai animasi; bulatkan agar rapi -->
+<h2>Skor: {Math.round(skor.current)}</h2>
+<button onclick={tambah}>+10</button>
+
+<p>Level diraih: {level.size}</p>
+<ul>
+	{#each [...level] as l}
+		<li>Level {l}</li>
+	{/each}
+</ul>
+```
+
+Kunci jawabannya ada di pemisahan peran: `Tween` mengurus **tampilan** angka yang bergerak (`.current`), sedangkan logika game (deteksi kelipatan 50) memakai **`.target`** — nilai tujuan yang sudah pasti, bukan nilai transisi yang masih merayap. Kalau kamu memakai `.current` untuk mendeteksi kelipatan, kamu akan kehilangan event (animasi mungkin melompati angka pas 50) atau memicu berkali-kali. `SvelteSet` dipakai karena `level.add(...)` harus memicu render; `Set` biasa tidak akan memperbarui `{#each}` maupun `.size`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Memakai <code>Map</code>/<code>Set</code>/<code>Date</code> bawaan JavaScript di dalam <code>$state</code> lalu heran kenapa UI tak berubah saat memanggil <code>.set()</code>/<code>.add()</code>/<code>.setHours()</code>. Itu memang tidak reaktif: method-nya menyentuh slot internal yang tak terlihat proxy Svelte. Pakai <code>SvelteMap</code>, <code>SvelteSet</code>, <code>SvelteDate</code> dari <code>svelte/reactivity</code>. API-nya identik, jadi penggantiannya cuma soal nama konstruktor.
+</Callout>
+
+<Callout type="warning">
+<code>Tween</code> dan <code>Spring</code> adalah <strong>class</strong> (huruf besar) — selalu <code>new Tween(...)</code> / <code>new Spring(...)</code>, dan baca nilainya lewat properti <code>.current</code> (bukan <code>$</code>-prefix). Jangan tertukar dengan <code>tweened()</code>/<code>spring()</code> lama (huruf kecil, store) yang dibaca pakai <code>$nama</code> dan kini deprecated.
+</Callout>
+
+<Callout type="warning">
+Transition (<code>fly</code>, <code>fade</code>, dst.) hanya berjalan untuk elemen yang benar-benar <strong>masuk atau keluar DOM</strong> — yaitu di dalam <code>&#123;#if&#125;</code>, <code>&#123;#each&#125;</code>, <code>&#123;#await&#125;</code>, atau <code>&#123;#key&#125;</code>. Memasang <code>transition:</code> pada elemen yang selalu ada tidak akan menganimasikan apa pun. Kalau kamu hanya mengubah gaya/posisi elemen yang tetap ada, gunakan <code>Spring</code>/<code>Tween</code> atau CSS transition biasa, bukan transition directive.
+</Callout>
+
+<Callout type="tip">
+Selalu bersihkan di dalam <code>destroy()</code> sebuah action: lepas event listener, hentikan interval, hapus node yang kamu buat. Action bisa dibuat dan dihancurkan berulang kali (mis. item dalam <code>&#123;#each&#125;</code> yang berubah), dan kebocoran listener menumpuk diam-diam. Untuk memasang listener di dalam action, <code>on()</code> dari <code>svelte/events</code> praktis karena mengembalikan fungsi pelepas yang tinggal kamu panggil di <code>destroy</code>.
+</Callout>
+
+<Callout type="legacy">
+Untuk berbagi state global, di Svelte 4 reflek pertama adalah <code>writable()</code> dari <code>svelte/store</code> lalu membaca dengan <code>$store</code>. Di Svelte 5, sering kali lebih sederhana mengekspor <code>$state</code> dari file <code>.svelte.ts</code>. Store tidak hilang dan tetap berguna (interop, store dari SvelteKit seperti <code>page</code>), tapi bukan lagi pilihan default. Jembatannya: <code>fromStore</code>/<code>toStore</code> dari <code>svelte/store</code> mengonversi antara store dan rune.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "import { spring } from 'svelte/motion'", modern: "import { Spring } from 'svelte/motion'", note: 'Class baru berbasis runes, baca via .current.' },
+	{ legacy: "import { tweened } from 'svelte/motion'", modern: "import { Tween } from 'svelte/motion'", note: 'Durasi + easing, .current & .target.' },
+	{ legacy: '$spring (baca store)', modern: 'spring.current (baca properti)', note: 'Tak perlu $-prefix lagi.' },
+	{ legacy: 'new Map() di $state (tidak reaktif)', modern: "new SvelteMap() dari 'svelte/reactivity'", note: 'API identik, operasi memicu update.' },
+	{ legacy: "writable() + $store untuk state global", modern: 'export const x = $state(...) di .svelte.ts', note: 'Store masih ada, tapi bukan default.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-motion" label="svelte/motion — Tween & Spring" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-transition" label="svelte/transition — fade, fly, slide, dll." />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-easing" label="svelte/easing — kurva easing" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-action" label="svelte/action — tipe Action & ActionReturn" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-reactivity" label="svelte/reactivity — SvelteMap, SvelteSet, SvelteDate" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-store" label="svelte/store — writable, readable, derived, fromStore/toStore" />

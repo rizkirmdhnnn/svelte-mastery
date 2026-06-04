@@ -1,0 +1,392 @@
+---
+title: Server-only Modules, Snapshots, Shallow Routing, Observability, Packaging
+level: 7
+levelTitle: SvelteKit Lanjutan
+order: 4
+description: Mengamankan kode rahasia di server, menyimpan state UI lewat snapshots, navigasi dangkal dengan shallow routing, observability/tracing, dan mem-package library dengan svelte-package.
+docs: https://svelte.dev/docs/kit/server-only-modules
+keywords: [server-only, snapshots, shallow-routing, observability, packaging, svelte-package]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Modul ini mengumpulkan lima fitur "lanjutan" SvelteKit yang kelihatannya tak berhubungan, tapi semuanya menjawab satu pertanyaan praktis: **bagaimana mengontrol batas (boundary) — antara server vs klien, antara halaman vs navigasi, antara app-mu vs library yang kamu rilis.** Kita bahas satu per satu.
+
+### a. Server-only modules: tembok yang tidak bisa ditembus
+
+Di Next.js kamu mengenal `server-only` package atau direktif `"use server"`. Di Nuxt ada folder `server/`. SvelteKit punya mekanisme serupa tapi **diberlakukan oleh bundler**, bukan sekadar konvensi.
+
+Analogi: bayangkan dapur restoran. Resep rahasia, kompor, dan brankas uang ada di **dapur** (server). Pelanggan duduk di **ruang makan** (klien). Ada pintu satu arah: pelayan boleh membawa **piring jadi** keluar ke pelanggan, tapi pelanggan tidak pernah boleh masuk dapur. SvelteKit memasang pintu itu secara fisik — kalau ada kode ruang-makan yang mencoba mengintip resep rahasia dapur, **build langsung gagal** dengan error, bukan diam-diam membocorkan API key-mu ke bundle browser.
+
+Ada dua cara menandai "ini cuma boleh di dapur":
+
+1. **Berdasarkan lokasi** — apa pun di dalam `$lib/server` (mis. `src/lib/server/secrets.ts`).
+2. **Berdasarkan nama file** — file ber-suffix `.server`, mis. `secrets.server.ts`.
+
+Kalau modul klien meng-`import` salah satu dari itu (langsung atau via rantai import yang panjang), SvelteKit melempar error build dan menunjukkan **jalur import**-nya supaya kamu tahu siapa yang melanggar. Modul lingkungan rahasia seperti `$env/static/private` dan `$env/dynamic/private` juga diperlakukan server-only. Ini berbeda dari sekadar tree-shaking: tujuannya keamanan, jadi pelanggarannya bikin gagal, bukan diam.
+
+<Callout type="tip">
+Aturan ini hanya mengecek pohon import <strong>publik</strong> milik kode klien. File seperti <code>+page.server.ts</code> atau <code>+server.ts</code> memang berjalan di server, jadi mereka bebas meng-import modul server-only — yang dilarang adalah ketika sesuatu yang bisa berakhir di bundle browser (komponen <code>.svelte</code>, <code>+page.ts</code> universal, dsb.) menarik kode server.
+</Callout>
+
+### b. Snapshots: mengingat state UI yang efemeral
+
+Pernah mengisi setengah komentar, klik link, lalu tekan tombol Back — dan kotak komentarmu kosong? Itu karena navigasi SvelteKit me-render ulang halaman dari awal; state komponen yang tidak ada di URL maupun di `load` akan hilang.
+
+Snapshots adalah cara SvelteKit menyimpan **state UI efemeral** (yang tidak layak masuk URL atau database) supaya bertahan saat navigasi dan reload via tombol back/forward. Analogi: seperti **bookmark fisik** yang kamu selipkan di buku — kamu menutup buku, pindah ruangan, lalu kembali dan membuka tepat di halaman tadi.
+
+Cara kerjanya: di `+page.svelte` kamu mengekspor objek `snapshot` dengan dua fungsi — `capture` (ambil potret state sekarang) dan `restore` (pasang kembali). SvelteKit memanggil `capture` sebelum kamu meninggalkan halaman dan menyimpan hasilnya ke `history.state`, lalu memanggil `restore` saat kamu kembali. Karena disimpan ke history state (yang di-serialize ke `sessionStorage`), datanya **harus JSON-serializable** dan sebaiknya kecil.
+
+### c. Shallow routing: mengubah history tanpa pindah halaman
+
+Konsepnya: kadang kamu ingin sebuah **state masuk ke riwayat browser** (supaya tombol Back menutupnya) tanpa benar-benar menavigasi ke route lain. Contoh klasik: modal/sheet/foto galeri. Buka modal → Back harus menutup modal, bukan keluar halaman.
+
+Analogi: shallow routing seperti menaruh **catatan tempel (sticky note)** di entri riwayat saat ini. Halamannya tetap sama, tapi kamu menempelkan informasi "oh, modal sedang terbuka" ke entri history. Tekan Back → catatan tempel hilang → modal tertutup, tanpa memuat ulang apa pun.
+
+Alatnya dari `$app/navigation`:
+
+- `pushState(url, state)` — buat entri history baru dengan `state` custom, tanpa navigasi.
+- `replaceState(url, state)` — ganti entri history saat ini.
+- State-nya dibaca reaktif lewat `page.state` (dari `$app/state`).
+- `preloadData(href)` — muat data `load` untuk sebuah route **lebih awal**, supaya saat kamu buka modal isinya sudah siap (mirip prefetch). Ini yang membuat pola "foto di galeri dibuka sebagai modal, tapi punya URL sendiri kalau di-refresh" terasa instan.
+
+### d. Observability: melihat ke dalam request
+
+Saat app jalan di produksi dan ada request yang lambat, kamu butuh tahu **di mana** waktunya habis: di `load`? di query DB? di fetch eksternal? Observability/tracing menjawab itu.
+
+Analogi: seperti **struk belanja terperinci**. Bukan cuma total "Rp 500.000", tapi rincian tiap item dan harganya, jadi kamu tahu mana yang mahal. Tracing memecah satu request jadi rangkaian **span** berbingkai waktu (load span, handle span, dst.), membentuk pohon yang bisa kamu lihat di tool seperti Jaeger, Grafana Tempo, atau vendor APM.
+
+SvelteKit mendukung **OpenTelemetry** (standar industri yang juga dipakai ekosistem Node/Next). Kamu mengaktifkan instrumentasi lewat opsi `kit.experimental.tracing` / `instrumentation.server.ts`, dan SvelteKit otomatis mengeluarkan span untuk fase-fase internalnya. Kamu juga bisa menambah span sendiri di sekitar kode yang dicurigai lambat.
+
+### e. Packaging: dari app menjadi library
+
+Kalau kamu ingin merilis komponen/util Svelte untuk dipakai orang lain (di npm), kamu butuh mengemasnya jadi format library yang benar — bukan format app. `@sveltejs/package` (perintah `svelte-package`) melakukan ini: mengambil isi `src/lib`, meng-compile/strip TypeScript jadi `.js` + file tipe `.d.ts`, men-generate `exports` map yang benar di `package.json`, dan menaruh hasilnya di folder `dist/`.
+
+Analogi: ada bedanya antara **memasak untuk diri sendiri** (app: bahan mentah berserakan di dapurmu, yang penting matang) dan **menjual makanan beku di supermarket** (library: harus dikemas rapi, diberi label gizi/`exports`, dan harus bisa "dihangatkan" di dapur orang lain yang setup-nya beda). `svelte-package` adalah lini pengemasan itu. Komponen Svelte tetap dikirim sebagai `.svelte` (di-compile oleh app konsumen), sementara TS dikompilasi jadi JS + types.
+
+## 2. Contoh kode
+
+```ts
+// src/lib/server/secrets.ts
+// Server-only KARENA LOKASI: ada di dalam $lib/server.
+// Aman menaruh kredensial; bundler menolak import-nya dari kode klien.
+import { DB_PASSWORD } from '$env/static/private'; // ini juga server-only
+
+export function getDbConfig() {
+	return { user: 'app', password: DB_PASSWORD };
+}
+```
+
+```ts
+// src/routes/+page.ts  (load UNIVERSAL — bisa jalan di klien!)
+// ❌ Import ini akan MENGGAGALKAN build:
+//    "Cannot import $lib/server/secrets.ts into client-side code"
+// import { getDbConfig } from '$lib/server/secrets';
+
+// ✅ Yang benar: ambil rahasia di +page.server.ts (server) lalu kirim
+//    hasil yang AMAN saja ke klien lewat return load.
+```
+
+```ts
+// src/routes/+page.server.ts  (server-only by FILE: suffix .server)
+// File ini hanya jalan di server, jadi BEBAS import modul server-only.
+import { getDbConfig } from '$lib/server/secrets';
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async () => {
+	const cfg = getDbConfig();
+	// kirim hanya yang non-rahasia ke klien
+	return { dbUser: cfg.user };
+};
+```
+
+```svelte
+<!-- src/routes/form/+page.svelte -->
+<!-- Snapshot: simpan isi textarea agar tidak hilang saat back/forward -->
+<script lang="ts">
+	import type { Snapshot } from './$types';
+
+	let comment = $state('');
+
+	// Ekspor objek bernama `snapshot`. WAJIB JSON-serializable & ringan.
+	export const snapshot: Snapshot<string> = {
+		capture: () => comment, // dipanggil SEBELUM meninggalkan halaman
+		restore: (value) => (comment = value) // dipanggil saat KEMBALI
+	};
+</script>
+
+<textarea bind:value={comment} placeholder="Tulis komentar..."></textarea>
+```
+
+```svelte
+<!-- src/routes/photos/+page.svelte -->
+<!-- Shallow routing: buka foto sebagai modal, Back menutup modal -->
+<script lang="ts">
+	import { pushState, preloadData, goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import PhotoModal from './PhotoModal.svelte';
+
+	let { data } = $props();
+
+	async function openPhoto(e: MouseEvent, href: string) {
+		// Hormati niat user (tab baru, dll.) — biarkan default jika perlu
+		if (e.metaKey || e.ctrlKey || innerWidth < 640) return;
+		e.preventDefault();
+
+		// Muat data route /photos/[id] lebih awal supaya modal instan
+		const result = await preloadData(href);
+
+		if (result.type === 'loaded' && result.status === 200) {
+			// Taruh state di entri history saat ini, TANPA navigasi.
+			// URL tetap berubah jadi href (bisa di-share / di-refresh).
+			pushState(href, { selected: result.data });
+		} else {
+			// fallback: navigasi sungguhan kalau preload gagal
+			goto(href);
+		}
+	}
+</script>
+
+{#each data.photos as photo (photo.id)}
+	<a href="/photos/{photo.id}" onclick={(e) => openPhoto(e, '/photos/' + photo.id)}>
+		<img src={photo.thumb} alt={photo.alt} />
+	</a>
+{/each}
+
+<!-- page.state diisi oleh pushState; Back mengosongkannya → modal tertutup -->
+{#if page.state.selected}
+	<PhotoModal data={page.state.selected} close={() => history.back()} />
+{/if}
+```
+
+Untuk observability, instrumentasi diaktifkan via config lalu kamu boleh menambah span manual:
+
+```js
+// svelte.config.js — aktifkan tracing eksperimental
+export default {
+	kit: {
+		experimental: {
+			tracing: { server: true },
+			instrumentation: { server: true }
+		}
+	}
+};
+```
+
+```ts
+// src/routes/+page.server.ts — tambah span manual di sekitar kerja berat
+import { trace } from '@opentelemetry/api';
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async ({ fetch }) => {
+	const tracer = trace.getTracer('app');
+	// startActiveSpan membungkus kerja jadi satu "baris" di struk tracing
+	return tracer.startActiveSpan('load-dashboard', async (span) => {
+		try {
+			const res = await fetch('/api/stats'); // event.fetch (SvelteKit 2)
+			return { stats: await res.json() };
+		} finally {
+			span.end(); // selalu tutup span, walau error
+		}
+	});
+};
+```
+
+Untuk packaging library, alurnya lewat `svelte-package`:
+
+```json
+// package.json (library) — bagian penting
+{
+	"name": "my-svelte-lib",
+	"type": "module",
+	"scripts": {
+		"package": "svelte-package && publint"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"svelte": "./dist/index.js"
+		}
+	},
+	"files": ["dist"],
+	"peerDependencies": { "svelte": "^5.0.0" }
+}
+```
+
+```js
+// src/lib/index.js — entry point library; isi $lib jadi isi paket
+export { default as Button } from './Button.svelte';
+export { formatRupiah } from './format.js';
+```
+
+## 3. Coba sendiri
+
+Server-only modules, tracing, dan packaging butuh server/CLI, jadi tidak bisa dijalankan di playground klien. Tapi **inti shallow routing/snapshot** — "buka panel, lalu tombol Back/tutup memulihkan keadaan" — bisa kita rasakan dengan komponen Svelte murni. Di bawah ini kita tiru pola modal: state UI yang dibuka/ditutup, plus state yang "dipulihkan" seakan kembali dari navigasi.
+
+<Playground code={`<script>
+	// Tiruan page.state: apakah modal terbuka & foto mana yang dipilih.
+	let selected = $state(null);
+	// Tiruan snapshot: draft yang akan kita pulihkan setelah menutup modal.
+	let draft = $state('');
+	let savedDraft = $state('');
+	const photos = [
+		{ id: 1, label: 'Pantai' },
+		{ id: 2, label: 'Gunung' },
+		{ id: 3, label: 'Kota' }
+	];
+	function open(p) {
+		savedDraft = draft;   // capture: simpan draft sebelum pindah
+		selected = p;
+	}
+	function close() {
+		selected = null;
+		draft = savedDraft;   // restore: pulihkan draft saat kembali
+	}
+</script>
+<h4>Galeri (klik untuk buka modal)</h4>
+<div style="display:flex; gap:.5rem;">
+	{#each photos as p (p.id)}
+		<button onclick={() => open(p)}>{p.label}</button>
+	{/each}
+</div>
+<p>Draft komentar (akan dipulihkan setelah menutup modal):</p>
+<input bind:value={draft} placeholder="ketik sesuatu..." />
+{#if selected}
+	<div style="margin-top:1rem; padding:1rem; border:2px solid #888; border-radius:8px;">
+		<strong>Modal: {selected.label}</strong>
+		<p>Tekan tutup (analogi tombol Back) untuk kembali.</p>
+		<button onclick={close}>Tutup (Back)</button>
+	</div>
+{/if}`} />
+
+<Callout type="warning">
+Ini cuma <strong>analogi</strong>. Shallow routing asli memakai <code>pushState</code>/<code>replaceState</code> dari <code>$app/navigation</code> dan membaca <code>page.state</code> dari <code>$app/state</code>, sehingga tombol <em>Back</em> browser benar-benar menutup modal dan URL ikut berubah (bisa di-share). Snapshot asli memakai <code>export const snapshot = &#123; capture, restore &#125;</code> di <code>+page.svelte</code>. Keduanya butuh runtime SvelteKit, bukan komponen tunggal.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Galeri foto dengan shallow routing + snapshot">
+
+Kamu punya halaman galeri `/photos`. Diinginkan:
+
+1. Klik thumbnail membuka foto sebagai **modal** di atas galeri, **tanpa** navigasi penuh — tapi URL berubah ke `/photos/[id]` (jadi kalau di-refresh, tetap tampil sebagai halaman foto). Tombol **Back** harus menutup modal.
+2. Ada `<textarea>` "catatan kurator" di halaman galeri yang isinya **tidak boleh hilang** saat user membuka foto lalu menekan Back.
+
+Tulis bagian relevan dari `+page.svelte`. Asumsikan `data.photos` berisi `{ id, thumb, alt }`, dan route `/photos/[id]` punya `load` yang mengembalikan detail foto. Sebutkan juga kenapa kamu pakai `preloadData`.
+
+{#snippet solution()}
+
+```svelte
+<!-- src/routes/photos/+page.svelte -->
+<script lang="ts">
+	import { pushState, preloadData, goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import type { Snapshot } from './$types';
+	import PhotoModal from './PhotoModal.svelte';
+
+	let { data } = $props();
+
+	// (2) Snapshot: catatan kurator bertahan saat back/forward.
+	let note = $state('');
+	export const snapshot: Snapshot<string> = {
+		capture: () => note,
+		restore: (v) => (note = v)
+	};
+
+	// (1) Shallow routing: buka modal tanpa navigasi penuh.
+	async function openPhoto(e: MouseEvent, href: string) {
+		// Hormati niat user: klik tengah / ctrl / layar kecil → biarkan default
+		if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+		e.preventDefault();
+
+		// preloadData menjalankan load() route /photos/[id] LEBIH AWAL,
+		// jadi saat modal muncul datanya sudah siap (terasa instan,
+		// tanpa flash loading). Tanpa ini, modal harus fetch sendiri.
+		const result = await preloadData(href);
+
+		if (result.type === 'loaded' && result.status === 200) {
+			// Tempelkan state ke entri history baru; URL jadi href.
+			// TIDAK memuat komponen halaman /photos/[id].
+			pushState(href, { photo: result.data });
+		} else {
+			goto(href); // fallback navigasi sungguhan
+		}
+	}
+</script>
+
+<textarea bind:value={note} placeholder="Catatan kurator..."></textarea>
+
+{#each data.photos as p (p.id)}
+	<a href="/photos/{p.id}" onclick={(e) => openPhoto(e, '/photos/' + p.id)}>
+		<img src={p.thumb} alt={p.alt} />
+	</a>
+{/each}
+
+<!-- page.state.photo diisi oleh pushState. Tombol Back mengosongkan
+     page.state → blok ini hilang → modal tertutup, tanpa reload. -->
+{#if page.state.photo}
+	<PhotoModal photo={page.state.photo} close={() => history.back()} />
+{/if}
+```
+
+**Kenapa `preloadData`:** ia menjalankan fungsi `load` milik route `/photos/[id]` di muka, sehingga data detail foto sudah tersedia ketika `pushState` dipanggil dan modal di-render. Hasilnya tidak ada kedipan "loading", dan kalau preload gagal kita jatuh ke `goto(href)` sebagai navigasi normal. Karena URL diset ke `/photos/[id]`, refresh halaman akan memuat foto sebagai halaman penuh (route `[id]` sungguhan), sementara klik dari galeri menampilkannya sebagai modal.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan import modul server-only dari kode universal.</strong> File <code>+page.ts</code> (universal load) dan komponen <code>.svelte</code> bisa berakhir di bundle browser. Meng-import <code>$lib/server/*</code>, file <code>*.server.*</code>, atau <code>$env/*/private</code> dari sana akan <strong>menggagalkan build</strong> dengan jejak import. Ambil rahasia di <code>+page.server.ts</code>, lalu kirim hanya data aman lewat <code>return load</code>.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Snapshot harus kecil & JSON-serializable.</strong> Datanya disimpan ke <code>history.state</code> (lewat <code>sessionStorage</code>). Jangan masukkan objek besar, instance kelas, fungsi, atau <code>Map</code>/<code>Set</code> mentah — yang ideal hanya string/angka/objek polos kecil seperti isi input atau posisi scroll. Untuk state besar/persisten, pakai URL, <code>load</code>, atau database.
+</Callout>
+
+<Callout type="warning">
+<strong>Shallow routing perlu fallback untuk no-JS dan refresh.</strong> <code>pushState</code> hanya jalan di browser dengan JS. Pastikan route <code>/photos/[id]</code> sungguh ada agar refresh/share URL tetap menampilkan halaman, dan biarkan klik default (jangan <code>preventDefault</code>) saat user menahan Ctrl/Cmd atau pada layar kecil. Jangan akses <code>page.state</code> selama SSR awal — saat itu nilainya kosong.
+</Callout>
+
+<Callout type="warning">
+<strong>Tracing/observability masih eksperimental dan menambah overhead.</strong> Aktifkan lewat <code>kit.experimental.tracing</code> + instrumentasi; API-nya bisa berubah antar-versi. Span yang terlalu detail bikin bising dan memperlambat; ukur hanya batas yang berarti (load, query DB, fetch eksternal) dan selalu <code>span.end()</code> di blok <code>finally</code>.
+</Callout>
+
+<Callout type="tip">
+<strong>Saat packaging, jalankan <code>publint</code> dan <code>svelte-check</code>.</strong> Setelah <code>svelte-package</code>, cek <code>package.json</code> punya field <code>exports</code> dengan condition <code>svelte</code> (untuk file <code>.svelte</code> yang dikirim apa adanya) dan <code>types</code> yang menunjuk <code>.d.ts</code>. Taruh <code>svelte</code> di <code>peerDependencies</code>, bukan <code>dependencies</code>, agar tidak ada dua salinan Svelte di app konsumen.
+</Callout>
+
+<Callout type="legacy">
+Beberapa pola lama yang sudah berubah: <code>page</code>/<code>navigating</code> kini diimpor dari <code>$app/state</code> (rune-based), bukan store <code>$page</code> dari <code>$app/stores</code>. Field <code>exports</code> library memakai condition <code>svelte</code>; field lama <code>svelte: "./index.js"</code> di level atas <code>package.json</code> sudah usang. Dan ingat: di SvelteKit 2 <code>error()</code>/<code>redirect()</code> dipanggil <strong>tanpa</strong> <code>throw</code>.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Pola lama"
+	modernLabel="Pola SvelteKit 2 / Svelte 5"
+	rows={[
+		{ legacy: "import { page } from '$app/stores' ($page)", modern: "import { page } from '$app/state'", note: "state berbasis rune; page.state dipakai shallow routing" },
+		{ legacy: "field 'svelte' top-level di package.json", modern: "exports map dengan condition 'svelte'", note: "svelte-package men-generate exports yang benar" },
+		{ legacy: "rahasia diakses langsung di komponen/+page.ts", modern: "$lib/server/* + *.server.ts diakses di +page.server.ts", note: "bundler menolak import server-only dari klien" },
+		{ legacy: "state UI hilang saat back/forward", modern: "export const snapshot = { capture, restore }", note: "state efemeral bertahan via history.state" }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/server-only-modules" label="SvelteKit — Server-only modules (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/kit/snapshots" label="SvelteKit — Snapshots" />
+
+<DocsLink href="https://svelte.dev/docs/kit/shallow-routing" label="SvelteKit — Shallow routing" />
+
+<DocsLink href="https://svelte.dev/docs/kit/observability" label="SvelteKit — Observability / tracing" />
+
+<DocsLink href="https://svelte.dev/docs/kit/packaging" label="SvelteKit — Packaging (svelte-package)" />

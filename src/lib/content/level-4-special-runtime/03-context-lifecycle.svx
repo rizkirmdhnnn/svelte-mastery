@@ -1,0 +1,338 @@
+---
+title: Context API, Lifecycle & Imperative Component API
+level: 4
+levelTitle: Special Elements & Runtime
+order: 3
+description: Cara berbagi data lintas kedalaman komponen lewat setContext/getContext, mengatur lifecycle dengan onMount/onDestroy/tick, dan mengontrol komponen secara imperatif lewat mount/unmount/render.
+docs: https://svelte.dev/docs/svelte/context
+keywords: [setContext, getContext, lifecycle, onMount, onDestroy, mount, tick]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Ada tiga hal yang kelihatannya beda tapi sebenarnya sama-sama soal **runtime** sebuah komponen: bagaimana komponen berbagi data dengan keturunannya (Context), kapan komponen "lahir" dan "mati" (Lifecycle), dan bagaimana kita memasang/membongkar komponen dari luar dunia Svelte (Imperative API). Kita bahas satu per satu, tapi ingat benang merahnya: semuanya tentang *kapan* dan *di mana* sebuah komponen hidup.
+
+### Context: titip pesan lewat keluarga
+
+Bayangkan kamu seorang nenek yang mau menitipkan pesan ke cucu yang tinggal jauh. Kamu **tidak** perlu memanggil anakmu, lalu anakmu memanggil keponakannya, lalu keponakannya memanggil cucumu — operan tangan ke tangan yang melelahkan. Sebagai gantinya, kamu "menaruh" pesan itu di **silsilah keluarga**: siapa pun keturunanmu, sedalam apa pun, bisa langsung mengambilnya kapan saja. Yang bukan keturunanmu (tetangga, misalnya) tidak bisa melihat pesan itu.
+
+Itulah Context. `setContext(key, value)` di komponen induk adalah "menaruh pesan di silsilah". `getContext(key)` di komponen mana pun di bawahnya adalah "mengambil pesan dari silsilah". Anak, cucu, cicit — semua bisa, tanpa harus mengoper lewat prop di tiap lapisan. Inilah obat untuk **prop drilling**: penyakit di mana sebuah data harus dioper turun lewat 5 komponen padahal hanya komponen paling bawah yang butuh.
+
+Beberapa aturan penting yang menentukan "bentuk" Context:
+
+- Context **hanya mengalir ke bawah** (ke keturunan), tidak pernah ke samping atau ke atas. Komponen di pohon yang berbeda tidak akan saling melihat context.
+- `setContext`/`getContext` **wajib dipanggil saat inisialisasi komponen** — yaitu di top-level `<script>`, bukan di dalam fungsi event handler atau callback `setTimeout`. Alasannya: Svelte mengikat context ke komponen yang sedang diinisialisasi, dan "komponen mana yang sedang init" hanya jelas saat fase setup.
+- Nilai context **tidak otomatis reaktif**. `getContext` hanya mengambil referensi *sekali* saat init. Kalau kamu mau cucu ikut update saat data berubah, yang dititipkan harus berupa sesuatu yang reaktif — misalnya objek `$state`, atau sebuah getter — bukan angka mentah.
+
+<Callout type="tip">
+Pola yang sering dipakai: titipkan <strong>objek <code>$state</code></strong> (atau fungsi getter) lewat context, bukan nilai mentah. Karena yang dioper adalah referensi ke objek reaktif, semua keturunan yang membaca <code>getContext</code> akan ikut bereaksi saat properti objek itu berubah. Untuk menghindari tabrakan <code>key</code>, banyak yang memakai <code>Symbol()</code> sebagai key alih-alih string.
+</Callout>
+
+### Lifecycle: jadwal hidup komponen
+
+Setiap komponen punya siklus hidup: ia di-mount (dipasang ke DOM), hidup sebentar sambil bereaksi terhadap perubahan, lalu di-unmount (dibongkar). Lifecycle hooks adalah cara "menyelipkan kode" di momen-momen itu.
+
+- **`onMount(fn)`** — jalan **sekali** setelah komponen pertama kali dirender ke DOM. Ini tempat untuk hal yang butuh DOM nyata atau hanya boleh terjadi di browser: mengambil data dari API, memasang `addEventListener`, menginisialisasi library pihak ketiga (chart, map), atau mengakses elemen lewat `bind:this`. Kalau `onMount` mengembalikan sebuah fungsi, fungsi itu otomatis dipakai sebagai **cleanup** saat komponen di-unmount.
+- **`onDestroy(fn)`** — jalan tepat sebelum komponen dibongkar. Tempat membersihkan apa yang kamu pasang: `clearInterval`, melepas `removeEventListener`, memutus koneksi WebSocket. Berbeda dari `onMount`, `onDestroy` juga jalan di server (SSR), jadi cocok untuk cleanup yang harus berlaku di mana pun.
+- **`tick()`** — bukan benar-benar lifecycle, tapi serumpun. Ia mengembalikan sebuah Promise yang resolve setelah Svelte selesai menerapkan perubahan state ke DOM. Karena Svelte membatch update DOM (demi performa), DOM tidak langsung berubah persis setelah kamu meng-set `$state`. Kalau kamu butuh membaca DOM *setelah* update terbaru, `await tick()` dulu.
+
+<Callout type="tip">
+Di Svelte 5, untuk efek samping yang harus <strong>jalan ulang saat dependency berubah</strong>, alat utamanya adalah <code>$effect</code> (sudah kamu pelajari di level reactivity), bukan lifecycle hook. <code>onMount</code> tetap relevan untuk kode "sekali jalan saat mount" yang murni browser — misalnya integrasi library DOM. Aturan praktisnya: butuh reaktif terhadap state? pakai <code>$effect</code>. Butuh sekali saat mount tanpa dependency? <code>onMount</code> cukup dan niatnya lebih jelas.
+</Callout>
+
+### Imperative API: memasang komponen dari luar Svelte
+
+Biasanya komponen Svelte dirender oleh komponen Svelte lain — deklaratif, di dalam markup. Tapi kadang kamu perlu **memasang komponen secara manual** dari kode JavaScript biasa: misalnya menanam widget Svelte ke dalam aplikasi yang dibangun dengan framework lain, membuat modal/toast yang muncul atas perintah fungsi, atau menulis test.
+
+Untuk itu Svelte 5 menyediakan fungsi imperatif:
+
+- **`mount(Component, { target, props })`** — memasang komponen ke elemen DOM `target` dan mengembalikan objek dengan exports komponen tersebut. Pengganti `new Component({ target })` gaya Svelte 4.
+- **`unmount(instance)`** — membongkar instance yang tadi di-mount.
+- **`render(Component, { props })`** — khusus di server: menghasilkan string HTML (`body`, `head`) untuk SSR tanpa menyentuh DOM.
+
+<Callout type="legacy">
+Di Svelte 4 kamu menulis <code>const app = new Component({`{ target, props }`})</code> lalu <code>app.$destroy()</code>. Di Svelte 5 komponen <strong>bukan class</strong> lagi, jadi <code>new Component()</code> dan method <code>$destroy</code>/<code>$set</code>/<code>$on</code> sudah dihapus. Gantinya fungsi <code>mount()</code> dan <code>unmount()</code> dari <code>'svelte'</code>. Untuk mengganti props secara reaktif setelah mount, oper objek <code>$state</code> sebagai props lalu ubah propertinya.
+</Callout>
+
+## 2. Contoh kode
+
+Context: induk menitipkan tema reaktif, cucu yang jauh mengambilnya tanpa prop drilling.
+
+```svelte
+<!-- Induk.svelte -->
+<script>
+	import { setContext } from 'svelte';
+	import Anak from './Anak.svelte';
+
+	// Yang dititipkan adalah objek $state (reaktif), bukan nilai mentah,
+	// supaya keturunan ikut update saat .nilai berubah.
+	let tema = $state({ nilai: 'gelap' });
+	setContext('tema', tema);
+</script>
+
+<button onclick={() => (tema.nilai = tema.nilai === 'gelap' ? 'terang' : 'gelap')}>
+	Ganti tema
+</button>
+
+<Anak />
+```
+
+```svelte
+<!-- Anak.svelte: lapisan perantara, TIDAK perlu tahu soal tema sama sekali -->
+<script>
+	import Cucu from './Cucu.svelte';
+</script>
+
+<!-- tidak ada prop tema yang dioper di sini -->
+<Cucu />
+```
+
+```svelte
+<!-- Cucu.svelte: langsung ambil dari "silsilah", sedalam apa pun -->
+<script>
+	import { getContext } from 'svelte';
+
+	// getContext mengambil referensi yang sama dengan yang dititipkan induk.
+	const tema = getContext('tema');
+</script>
+
+<p>Tema sekarang: {tema.nilai}</p>
+```
+
+Lifecycle: `onMount` untuk setup browser-only, dengan cleanup lewat nilai kembaliannya.
+
+```svelte
+<script>
+	import { onMount, onDestroy, tick } from 'svelte';
+
+	let lebar = $state(0);
+
+	onMount(() => {
+		// Jalan SEKALI setelah komponen masuk DOM — aman akses window.
+		const update = () => (lebar = window.innerWidth);
+		update();
+		window.addEventListener('resize', update);
+
+		// Fungsi yang dikembalikan onMount dipakai sebagai cleanup saat unmount.
+		return () => window.removeEventListener('resize', update);
+	});
+
+	// onDestroy juga jalan di server; cocok untuk cleanup yang universal.
+	onDestroy(() => {
+		console.log('komponen dibongkar');
+	});
+
+	let kotak;
+	async function fokuskan() {
+		// set state...
+		lebar = lebar + 1;
+		// ...DOM belum tentu sudah ter-update di sini karena Svelte mem-batch.
+		await tick(); // tunggu DOM selesai diperbarui
+		kotak?.focus(); // baru sekarang aman membaca/menyentuh DOM terbaru
+	}
+</script>
+
+<div bind:this={kotak} tabindex="-1">Lebar window: {lebar}px</div>
+<button onclick={fokuskan}>Update lalu fokus</button>
+```
+
+Imperative API: memasang dan membongkar komponen dari JS biasa (bukan di dalam markup).
+
+```js
+// main.js — di luar dunia komponen Svelte
+import { mount, unmount } from 'svelte';
+import App from './App.svelte';
+
+// props sebaiknya objek $state bila ingin diubah reaktif setelah mount.
+const props = $state({ pesan: 'Halo' });
+
+const app = mount(App, {
+	target: document.getElementById('app'),
+	props
+});
+
+// Mengubah props setelah mount: ubah properti objek $state-nya.
+props.pesan = 'Halo lagi';
+
+// Membongkar saat sudah tidak perlu.
+unmount(app);
+```
+
+## 3. Coba sendiri
+
+Playground ini satu komponen mandiri, jadi kita demonstrasikan **lifecycle** yang paling kelihatan: `onMount` memulai sebuah jam (interval), dan cleanup-nya menghentikan interval saat komponen dibongkar. Perhatikan kita kembalikan fungsi dari `onMount` sebagai cleanup — pola yang akan kamu pakai terus. Coba ubah angka 1000 jadi 250 dan rasakan jamnya lebih cepat.
+
+<Playground code={`<script>
+	import { onMount } from 'svelte';
+	let detik = $state(0);
+	let nyala = $state(true);
+	onMount(() => {
+		// dijalankan SEKALI setelah komponen masuk DOM
+		const id = setInterval(() => {
+			detik += 1;
+		}, 1000);
+		// fungsi yang dikembalikan = cleanup saat unmount
+		return () => {
+			clearInterval(id);
+			console.log('interval dibersihkan');
+		};
+	});
+</script>
+<h3>Sudah berjalan: {detik} detik</h3>
+<p>onMount memulai interval; cleanup-nya menghentikannya.</p>
+{#if nyala}
+	<p style='color: green'>Komponen aktif</p>
+{/if}
+<button onclick={() => (nyala = !nyala)}>Toggle teks</button>`} />
+
+<Callout type="tip">
+Buka konsol browser (DevTools) dan lihat pesan "interval dibersihkan" muncul saat komponen di-unmount. Di proyek nyata, lupa membersihkan interval/listener adalah sumber umum <em>memory leak</em> dan bug "kenapa kode lama masih jalan". Cleanup lewat nilai kembalian <code>onMount</code> membuatnya sulit terlupa.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Berbagi data lintas kedalaman & lifecycle"
+	svelte={`<!-- Provider.svelte -->
+<script>
+  import { setContext, onMount } from 'svelte';
+  let user = $state({ nama: 'Ani' });
+  setContext('user', user); // titip ke silsilah
+  onMount(() => {
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t); // cleanup
+  });
+</script>
+<!-- Cucu.svelte (sedalam apa pun) -->
+<script>
+  import { getContext } from 'svelte';
+  const user = getContext('user'); // ambil tanpa prop drilling
+</script>
+<p>{user.nama}</p>`}
+	react={`// Buat Context + Provider
+const UserCtx = createContext(null);
+function Provider({ children }) {
+  const [user, setUser] = useState({ nama: 'Ani' });
+  useEffect(() => {
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t); // cleanup
+  }, []);
+  return (
+    <UserCtx.Provider value={user}>
+      {children}
+    </UserCtx.Provider>
+  );
+}
+// Konsumen (sedalam apa pun)
+function Cucu() {
+  const user = useContext(UserCtx);
+  return <p>{user.nama}</p>;
+}`}
+	vue={`<!-- Provider.vue -->
+<script setup>
+import { provide, ref, onMounted, onUnmounted } from 'vue';
+const user = ref({ nama: 'Ani' });
+provide('user', user); // sediakan ke keturunan
+let t;
+onMounted(() => { t = setInterval(tick, 1000); });
+onUnmounted(() => clearInterval(t)); // cleanup
+</script>
+<!-- Cucu.vue (sedalam apa pun) -->
+<script setup>
+import { inject } from 'vue';
+const user = inject('user'); // ambil tanpa prop drilling
+</script>
+<template><p>{{ user.nama }}</p></template>`}
+	diff={{ react: [5], vue: [5] }}
+	note="React: createContext + Provider membungkus pohon, konsumen pakai useContext; cleanup lewat fungsi return dari useEffect. Vue: provide/inject (provide nilai reaktif spt ref agar konsumen ikut update), lifecycle pakai onMounted/onUnmounted. Svelte: setContext/getContext (wajib dipanggil saat init, bukan dalam callback); titipkan objek $state agar reaktif; lifecycle onMount mengembalikan fungsi cleanup, mirip useEffect React. Trade-off: Svelte tak butuh komponen Provider eksplisit (cukup panggil setContext di induk mana pun), tapi context-nya tidak otomatis reaktif kecuali yang dititipkan memang reaktif."
+/>
+
+## 5. Latihan
+
+<Exercise title="Bagikan keranjang belanja lewat Context, bersih saat unmount">
+Buat komponen `Toko.svelte` yang menitipkan sebuah objek keranjang reaktif lewat `setContext('keranjang', ...)`. Objek keranjang minimal punya properti `jumlah` (angka). Di dalam `Toko`, render sebuah komponen `TombolBeli.svelte` yang **dalam beberapa lapisan** (tidak harus dioper prop) mengambil keranjang lewat `getContext` dan menambah `jumlah` saat diklik. Tampilkan total `jumlah` di `Toko`. Sebagai bonus, di `TombolBeli` pakai `onMount` untuk `console.log` saat ia mount dan kembalikan cleanup yang nge-log saat unmount.
+
+{#snippet solution()}
+
+```svelte
+<!-- Toko.svelte -->
+<script>
+	import { setContext } from 'svelte';
+	import TombolBeli from './TombolBeli.svelte';
+
+	// objek $state -> reaktif -> keturunan ikut update saat berubah
+	let keranjang = $state({ jumlah: 0 });
+	setContext('keranjang', keranjang);
+</script>
+
+<h3>Total item: {keranjang.jumlah}</h3>
+
+<!-- TombolBeli bisa diletakkan di lapisan mana pun di bawah Toko -->
+<TombolBeli />
+```
+
+```svelte
+<!-- TombolBeli.svelte -->
+<script>
+	import { getContext, onMount } from 'svelte';
+
+	// ambil referensi keranjang yang sama dengan yang dititipkan Toko
+	const keranjang = getContext('keranjang');
+
+	onMount(() => {
+		console.log('TombolBeli mount');
+		return () => console.log('TombolBeli unmount');
+	});
+</script>
+
+<!-- mengubah properti objek reaktif -> Toko ikut update -->
+<button onclick={() => (keranjang.jumlah += 1)}>Beli (+1)</button>
+```
+
+Kunci jawabannya: yang dititipkan adalah **objek `$state`**, bukan angka mentah. Karena `getContext` mengambil referensi ke objek yang sama, saat `TombolBeli` mengubah `keranjang.jumlah`, `Toko` yang membaca properti yang sama ikut bereaksi — tanpa satu pun prop dioper di antara mereka. `onMount` yang mengembalikan fungsi memberi kita pasangan log mount/unmount secara rapi.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>setContext</code> dan <code>getContext</code> <strong>wajib dipanggil saat inisialisasi komponen</strong> — di top-level <code>&lt;script&gt;</code>. Memanggilnya di dalam event handler, <code>setTimeout</code>, atau callback async akan error, karena saat itu Svelte tidak tahu lagi "komponen mana yang sedang di-setup". Kalau butuh data context di handler, ambil dulu lewat <code>getContext</code> di top-level, simpan ke variabel, baru pakai di handler.
+</Callout>
+
+<Callout type="warning">
+Nilai context <strong>tidak otomatis reaktif</strong>. <code>getContext</code> hanya menyalin referensi sekali saat init. Kalau kamu menitipkan angka mentah (<code>setContext('n', 5)</code>) lalu nilainya berubah, keturunan tidak akan tahu. Titipkan objek <code>$state</code> atau sebuah getter agar perubahan ikut mengalir ke bawah.
+</Callout>
+
+<Callout type="warning">
+<code>onMount</code> <strong>tidak jalan saat SSR</strong> (server-side rendering) — ia hanya jalan di browser. Jadi jangan taruh logika yang krusial untuk render awal di sana; ia berguna justru karena aman mengakses <code>window</code>/<code>document</code>. Sebaliknya, <code>onDestroy</code> jalan di server maupun browser.
+</Callout>
+
+<Callout type="legacy">
+Hindari <code>beforeUpdate</code> dan <code>afterUpdate</code> dari Svelte 4 — keduanya <strong>deprecated</strong> di runes mode. Gantinya pakai <code>$effect</code> (untuk efek samping setelah perubahan state) atau <code>$effect.pre</code> (untuk yang harus jalan sebelum DOM ter-update), dan <code>tick()</code> bila perlu menunggu DOM selesai diperbarui.
+</Callout>
+
+<Callout type="tip">
+Untuk membungkus context jadi rapi, buat <strong>modul helper</strong>: ekspor dua fungsi <code>setKeranjang(value)</code> dan <code>getKeranjang()</code> yang membungkus <code>setContext</code>/<code>getContext</code> dengan key (idealnya sebuah <code>Symbol</code>) dan tipe yang sama. Ini mencegah salah ketik key dan memberi tipe TypeScript yang konsisten di seluruh aplikasi.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'new Component({ target, props })', modern: "mount(Component, { target, props })", note: 'Komponen bukan class lagi di Svelte 5.' },
+	{ legacy: 'app.$destroy()', modern: 'unmount(app)', note: 'Method $destroy dihapus.' },
+	{ legacy: 'app.$set({ ... })', modern: 'ubah properti objek $state yang dioper sebagai props', note: 'Tak ada $set; reaktivitas lewat $state.' },
+	{ legacy: 'beforeUpdate / afterUpdate', modern: '$effect.pre / $effect', note: 'Deprecated di runes mode.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/context" label="Context — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/lifecycle-hooks" label="Lifecycle hooks (onMount, onDestroy, tick) — Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/imperative-component-api" label="Imperative component API (mount, unmount, render) — Svelte" />

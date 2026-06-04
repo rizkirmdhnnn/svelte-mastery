@@ -1,0 +1,189 @@
+---
+title: Apa itu Svelte & Filosofi Compiler
+level: 1
+levelTitle: Dasar Svelte
+order: 1
+description: Memahami Svelte sebagai compiler yang merakit kode update presisi saat build, bukan runtime ber-Virtual DOM seperti React/Vue.
+docs: https://svelte.dev/docs/svelte/overview
+keywords: [compiler, virtual dom, runtime, reactivity, svelte 5]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Kalau kamu datang dari React atau Vue, kamu sudah punya satu model mental yang melekat: framework itu **library yang ikut dikirim ke browser**. Saat user membuka halaman, browser men-download React (atau Vue), menjalankannya, lalu library itu yang mengurus segalanya — bikin Virtual DOM, membandingkan (diff) state lama vs baru, lalu menentukan bagian DOM mana yang perlu diubah. Semua proses berpikir itu terjadi **saat runtime**, di mesin user, setiap kali ada perubahan.
+
+Svelte membalik urutannya. Svelte bukan library yang jalan di browser — Svelte adalah **compiler** yang jalan di mesin kamu saat build. Ia membaca komponen `.svelte` kamu, lalu menerjemahkannya menjadi JavaScript biasa yang tahu persis simpul DOM mana yang harus diubah ketika sebuah nilai berubah. Yang dikirim ke browser adalah hasil jadi itu — bukan "mesin berpikir" yang harus mencari-cari perubahan saat runtime.
+
+Analoginya begini. Bayangkan kamu beli lemari.
+
+- **React/Vue itu seperti tukang yang datang ke rumahmu** membawa kotak peralatan lengkap (itu si runtime/library). Setiap kali kamu mau ubah posisi rak, tukang ini mengukur ulang seluruh lemari, membandingkan "rencana lama" dengan "rencana baru", baru memutuskan baut mana yang diputar. Tukangnya selalu menginap di rumahmu — selalu ada di setiap halaman, ikut memakan tempat (ukuran bundle) dan tenaga (CPU).
+- **Svelte itu seperti pabrik yang merakit lemari di tempat mereka.** Semua "cara merakit" sudah dihitung di pabrik (saat build). Yang dikirim ke rumahmu hanya lemari jadi plus selembar instruksi super ringkas: "kalau mau geser rak ke kanan, putar baut nomor 7." Tidak ada tukang yang menginap, tidak ada kotak peralatan besar yang menumpuk di ruang tamu.
+
+Karena "pekerjaan berpikir" sudah dipindahkan dari runtime ke build-time, muncul tiga konsekuensi penting:
+
+1. **Tidak ada Virtual DOM.** Svelte tidak perlu membuat representasi DOM di memori lalu men-diff-nya. Compiler sudah tahu, misalnya, bahwa hanya teks di dalam satu `<span>` yang bergantung pada variabel `count`. Maka kode hasil compile-nya cukup berisi instruksi "update textContent span ini" — tanpa diffing.
+2. **Output JS yang ringan.** Komponen sederhana bisa di-compile jadi sangat kecil, dan kamu tidak membayar "pajak" ukuran library framework di setiap halaman. (Catatan jujur: untuk aplikasi sangat besar, perbedaan ukuran ini bisa mengecil secara relatif — Svelte bukan sihir, tapi titik awalnya memang lebih ringan.)
+3. **"Write less code".** Karena reactivity ditangani compiler, kamu tidak perlu boilerplate seperti `useState`, setter, `useMemo`, atau `.value`. Kamu cukup menulis nilai dan mengubahnya; compiler yang menyambungkan kabelnya.
+
+Intinya: di React/Vue, framework adalah **sesuatu yang dijalankan**. Di Svelte, framework adalah **sesuatu yang menghilang** — ia mengompilasi dirinya keluar dari hasil akhir sebanyak mungkin.
+
+## 2. Contoh kode
+
+Mari lihat komponen Svelte 5 paling sederhana, lalu pahami "apa yang sebenarnya dilakukan compiler".
+
+```svelte
+<script>
+	// $state menandai variabel ini "reaktif".
+	// Compiler membaca anotasi ini dan menyiapkan kode update yang presisi.
+	let count = $state(0);
+</script>
+
+<!-- Compiler tahu PERSIS bahwa hanya textContent tombol ini -->
+<!-- yang bergantung pada count. Jadi update-nya cuma menyentuh node itu. -->
+<button onclick={() => count++}>
+	Diklik {count} kali
+</button>
+```
+
+Yang penting dipahami: di sini **tidak ada Virtual DOM, tidak ada diffing**. Saat `count` berubah dari 0 ke 1, kode hasil compile tidak membandingkan pohon DOM lama dan baru. Ia langsung menjalankan sesuatu yang setara dengan "set teks tombol ini ke nilai count yang baru". Surgical, bukan menyapu seluruh ruangan.
+
+Bandingkan dengan komponen yang punya beberapa bagian bergantung pada state berbeda:
+
+```svelte
+<script>
+	let first = $state('Budi');
+	let age = $state(20);
+	// $derived: nilai turunan, otomatis dihitung ulang saat dependensinya berubah.
+	let label = $derived(first + ' berumur ' + age);
+</script>
+
+<input bind:value={first} />
+<input type="number" bind:value={age} />
+
+<!-- Compiler memetakan: label bergantung pada first & age. -->
+<!-- Ubah first  -> hanya teks <p> & nilai input pertama yang di-update. -->
+<!-- Ubah age    -> hanya teks <p> & nilai input kedua yang di-update. -->
+<p>{label}</p>
+```
+
+Di React, perubahan satu state biasanya memicu komponen di-render ulang (fungsi komponen dipanggil lagi), lalu Virtual DOM mencari apa yang berubah. Di Svelte, tidak ada "render ulang fungsi komponen" — yang ada hanya potongan kecil kode update yang dipicu langsung oleh perubahan nilai. Inilah inti "compile-time reactivity".
+
+## 3. Coba sendiri
+
+Ubah-ubah nilai dan amati: tidak ada `useState`, tidak ada setter, tidak ada `.value`. Kamu menulis seolah variabel biasa, dan compiler-lah yang menyambungkan reactivity-nya.
+
+<Playground code={`<script>
+	let count = $state(0);
+	let step = $state(1);
+	let pesan = $derived('Sekarang nilainya ' + count);
+</script>
+<p>{pesan}</p>
+<label>
+	Langkah:
+	<input type="number" bind:value={step} />
+</label>
+<div>
+	<button onclick={() => count += step}>Tambah</button>
+	<button onclick={() => count -= step}>Kurang</button>
+	<button onclick={() => count = 0}>Reset</button>
+</div>`} />
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Model eksekusi: compiler vs Virtual DOM"
+	svelte={`<script>
+	// Compiler memetakan: hanya teks tombol yang bergantung pada count.
+	let count = $state(0);
+</script>
+<button onclick={() => count++}>
+	{count}
+</button>`}
+	react={`import { useState } from 'react';
+function Counter() {
+	// State + setter manual; setiap setCount memicu render ulang fungsi ini,
+	// lalu React men-diff Virtual DOM untuk cari perubahan (saat runtime).
+	const [count, setCount] = useState(0);
+	return (
+		<button onClick={() => setCount(count + 1)}>
+			{count}
+		</button>
+	);
+}`}
+	vue={`<script setup>
+import { ref } from 'vue'
+// ref() membungkus nilai; akses via .value di JS.
+// Vue melacak dependensi & men-diff Virtual DOM saat runtime.
+const count = ref(0)
+</script>
+<template>
+	<button @click="count++">{{ count }}</button>
+</template>`}
+	diff={{ react: [5], vue: [4] }}
+	note="React & Vue membawa runtime yang men-diff Virtual DOM di browser tiap kali state berubah. Svelte tidak punya VDOM: compiler menghasilkan kode update presisi saat build, jadi di runtime hanya node yang relevan yang disentuh. Trade-off-nya: Svelte butuh langkah compile (semua framework modern memang begitu), sementara ekosistem React jauh lebih besar."
+/>
+
+## 5. Latihan
+
+<Exercise title="Jelaskan dengan kata-katamu sendiri">
+Tanpa menjalankan kode, jawab dua hal ini:
+
+1. Di komponen Svelte berisi `let count = $state(0)` dan sebuah `<span>{count}</span>`, apa yang terjadi di runtime ketika `count` berubah — dan apa yang TIDAK terjadi dibanding React?
+2. Kenapa ukuran JavaScript yang dikirim ke browser cenderung lebih kecil di Svelte untuk komponen sederhana?
+
+{#snippet solution()}
+
+  ```svelte
+  <!-- Tidak ada kode untuk dijalankan — ini latihan pemahaman. Jawaban acuan: -->
+
+  <!--
+  1. Saat count berubah, kode hasil compile langsung meng-update textContent
+     span itu saja (instruksi presisi yang sudah disiapkan compiler). Yang TIDAK
+     terjadi: tidak ada fungsi komponen yang dipanggil ulang, tidak ada Virtual
+     DOM yang dibuat, dan tidak ada proses diffing pohon DOM lama vs baru.
+
+  2. Karena "logika reactivity" ditangani saat build oleh compiler, hasil akhir
+     tidak perlu menyertakan library runtime yang berisi mesin Virtual DOM +
+     diffing. Yang dikirim hanyalah kode update spesifik komponen itu, sehingga
+     untuk komponen sederhana bundle-nya lebih ramping.
+  -->
+
+  <script>
+  	let count = $state(0);
+  </script>
+
+  <span>{count}</span>
+  <button onclick={() => count++}>+1</button>
+  ```
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+"Tanpa Virtual DOM" bukan berarti "selalu lebih cepat di semua skenario". Untuk update sederhana, Svelte memang menghindari overhead diffing. Tapi untuk daftar besar yang sering berubah total, pendekatan apa pun tetap harus menyentuh banyak node. Jangan jadikan "no VDOM" sebagai mantra; pahami bahwa keunggulan utamanya adalah <strong>tidak membayar pajak runtime</strong> dan menulis lebih sedikit kode, bukan kemenangan benchmark otomatis.
+</Callout>
+
+<Callout type="warning">
+Karena Svelte adalah compiler, file <code>.svelte</code> kamu <strong>wajib lewat build step</strong> (Vite + plugin Svelte). Kamu tidak bisa <code>import</code> komponen Svelte langsung lewat tag <code>&lt;script&gt;</code> di HTML mentah seperti memuat React via CDN UMD. Ini konsekuensi wajar dari model compiler.
+</Callout>
+
+<Callout type="tip">
+Rune seperti <code>$state</code> dan <code>$derived</code> bukan fungsi biasa yang kamu impor — itu <strong>instruksi untuk compiler</strong>. Maka mereka hanya valid di dalam file <code>.svelte</code> atau <code>.svelte.js</code>/<code>.svelte.ts</code>, bukan di file <code>.js</code> biasa. Anggap mereka sebagai "kata kunci yang dimengerti compiler", bukan API runtime.
+</Callout>
+
+<Callout type="legacy">
+Sebelum Svelte 5, reactivity diumumkan lewat sintaks lama seperti <code>export let</code> untuk props dan label <code>$:</code> untuk nilai turunan. Di modul ini dan seterusnya kita <strong>hanya</strong> memakai runes Svelte 5 (<code>$state</code>, <code>$derived</code>, <code>$props</code>). Kalau kamu menemukan tutorial lama dengan <code>$:</code> atau <code>export let</code>, itu API legacy — konsep compiler-nya sama, tapi sintaksnya sudah berganti.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/overview" label="Svelte — Overview (filosofi compiler & gambaran umum)" />

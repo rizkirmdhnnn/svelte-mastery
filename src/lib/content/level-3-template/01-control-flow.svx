@@ -1,0 +1,300 @@
+---
+title: "{#if}, {#each}, {#key}, {#await}"
+level: 3
+levelTitle: Template Syntax
+order: 1
+description: Menguasai blok logika di markup Svelte — kondisi, perulangan, re-mount, dan menangani Promise langsung di template.
+docs: https://svelte.dev/docs/svelte/if
+keywords: [if, each, key, await, control-flow, template]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di React dan Vue, "logika di dalam tampilan" ditangani dengan cara yang berbeda-beda. React menjejalkan logika itu ke dalam JavaScript: kamu pakai operator `&&`, ternary `? :`, dan `.map()` di tengah JSX. Vue mengambil jalan sebaliknya — ia menaruh logika sebagai *atribut* khusus di elemen: `v-if`, `v-for`, `v-else`.
+
+Svelte memilih jalan ketiga: **blok template**. Logika ditulis sebagai blok eksplisit yang dibuka dengan `{#...}` dan ditutup dengan `{/...}`, dengan cabang opsional `{:...}` di tengahnya. Misalnya `{#if}...{:else}...{/if}`. Ini bukan JavaScript murni (kamu tak bisa menulis ternary bersarang tak terbatas semaumu), tapi juga bukan atribut tersembunyi di elemen — ini sintaks tersendiri yang dibaca compiler.
+
+### Analogi: blok template itu seperti tag pembuka-penutup HTML
+
+Kalau kamu sudah terbiasa menulis `<ul>...</ul>`, kamu sebenarnya sudah paham pola blok Svelte. Bedanya, alih-alih `<ul>`, kamu menulis `{#each ...}`, dan alih-alih `</ul>` kamu menulis `{/each}`. Karakter `#` artinya "buka blok", `/` artinya "tutup blok", dan `:` artinya "cabang/lanjutan di tengah blok yang sama" (seperti `{:else}`).
+
+Kenapa pendekatan ini menarik? Karena strukturnya **terlihat di markup**, bukan tersembunyi di logika JS. Saat membaca template Svelte, kamu langsung tahu di mana kondisi mulai dan berakhir — tidak perlu menelusuri ekspresi JavaScript panjang seperti di JSX. Compiler juga bisa membaca struktur ini dan menghasilkan kode update DOM yang efisien tanpa Virtual DOM.
+
+Ada empat blok logika utama yang akan kita bahas:
+
+- `{#if}` — menampilkan markup secara kondisional (analog `v-if` / `&&` / ternary).
+- `{#each}` — merender list (analog `v-for` / `.map()`).
+- `{#key}` — memaksa sebagian markup di-*destroy* dan dibuat ulang (re-mount) saat sebuah nilai berubah.
+- `{#await}` — menangani sebuah `Promise` langsung di markup, lengkap dengan state loading dan error.
+
+## 2. Contoh kode
+
+```svelte
+<script>
+	let count = $state(3);
+	let user = $state({ loggedIn: false });
+</script>
+
+<!-- {#if} dengan cabang :else if dan :else, mirip if/else JS biasa -->
+{#if count > 5}
+	<p>Banyak ({count})</p>
+{:else if count > 0}
+	<p>Sedikit ({count})</p>
+{:else}
+	<p>Kosong</p>
+{/if}
+
+<!-- {#if} tanpa else juga sah — analog `kondisi && <markup>` di JSX -->
+{#if user.loggedIn}
+	<button>Logout</button>
+{/if}
+```
+
+Sekarang `{#each}`. Perhatikan dua hal penting: **index** (`i`) dan **key** di dalam tanda kurung `(...)`.
+
+```svelte
+<script>
+	let fruits = $state([
+		{ id: 1, name: 'Apel' },
+		{ id: 2, name: 'Mangga' },
+		{ id: 3, name: 'Pisang' }
+	]);
+</script>
+
+<ul>
+	<!--
+		Pola lengkap: {#each list as item, index (key)}
+		- item   : elemen saat ini
+		- index  : posisi (opsional)
+		- (key)  : identitas unik tiap item (sangat dianjurkan)
+		Key membantu Svelte melacak item mana yang pindah/hilang/baru,
+		mirip prop `key` di React .map(). Tanpa key, Svelte mencocokkan
+		berdasarkan posisi — bisa salah saat list diurut ulang/dihapus.
+	-->
+	{#each fruits as fruit, i (fruit.id)}
+		<li>{i + 1}. {fruit.name}</li>
+	{/each}
+</ul>
+
+<!-- {#each} juga punya cabang :else untuk kondisi list kosong -->
+{#each [] as item}
+	<p>{item}</p>
+{:else}
+	<p>Tidak ada data.</p>
+{/each}
+```
+
+Lalu `{#key}` dan `{#await}`. `{#key}` jarang dipakai tapi sangat berguna: ia memaksa isinya dibuang dan dibuat ulang dari nol ketika ekspresinya berubah — berguna untuk mereset state komponen anak atau memicu transisi ulang.
+
+```svelte
+<script>
+	let id = $state(1);
+
+	// Promise yang akan kita tunggu di markup
+	async function loadUser(userId) {
+		const res = await fetch('/api/users/' + userId);
+		if (!res.ok) throw new Error('Gagal memuat');
+		return res.json();
+	}
+
+	let promise = $derived(loadUser(id));
+</script>
+
+<!--
+	{#key id} membuat blok di dalamnya di-MOUNT ULANG setiap kali `id` berubah.
+	Tanpa ini, komponen <Profile> akan dipakai ulang & state internalnya bertahan.
+	Dengan ini, ia benar-benar fresh — animasi enter pun terpicu lagi.
+-->
+{#key id}
+	<Profile {id} />
+{/key}
+
+<!--
+	{#await promise} menangani 3 fase Promise langsung di template:
+	- saat pending  -> blok pertama
+	- saat resolve  -> blok :then (datanya jadi variabel `data`)
+	- saat reject   -> blok :catch (errornya jadi variabel `err`)
+-->
+{#await promise}
+	<p>Memuat…</p>
+{:then data}
+	<p>Halo, {data.name}</p>
+{:catch err}
+	<p style="color:red">Error: {err.message}</p>
+{/await}
+```
+
+<Callout type="tip">
+Kalau kamu tidak butuh menampilkan state loading, ada bentuk singkat <code>&#123;#await promise then data&#125;</code> yang langsung melewati fase pending. Dan kalau Promise-mu tidak mungkin gagal, blok <code>:catch</code> boleh dihilangkan.
+</Callout>
+
+## 3. Coba sendiri
+
+Mainkan ketiga blok di bawah dalam satu komponen. Coba tambah/kurangi `count`, dan amati bagaimana `{#each}` dengan key tetap melacak item dengan benar saat kamu menghapus dari tengah list.
+
+<Playground code={`<script>
+	let count = $state(2);
+	let todos = $state([
+		{ id: 1, text: 'Belajar if' },
+		{ id: 2, text: 'Belajar each' },
+		{ id: 3, text: 'Belajar key' }
+	]);
+	function hapus(id) {
+		todos = todos.filter((t) => t.id !== id);
+	}
+</script>
+<h3>Bagian {'#'}if</h3>
+{#if count > 3}
+	<p>count besar: {count}</p>
+{:else if count > 0}
+	<p>count kecil: {count}</p>
+{:else}
+	<p>count nol</p>
+{/if}
+<button onclick={() => count++}>+1</button>
+<button onclick={() => count--}>-1</button>
+<h3>Bagian {'#'}each (dengan key)</h3>
+<ul>
+	{#each todos as todo, i (todo.id)}
+		<li>
+			{i + 1}. {todo.text}
+			<button onclick={() => hapus(todo.id)}>x</button>
+		</li>
+	{:else}
+		<li>Semua selesai!</li>
+	{/each}
+</ul>`} />
+
+<Callout type="tip">
+Di dalam Playground kita menulis <code>&#123;'#'&#125;if</code> di teks judul sebagai trik agar karakter <code>&#123;'#'&#125;</code> tidak ditafsirkan sebagai pembuka blok. Di proyek aslimu, cukup tulis teks biasa — ini hanya kebutuhan demo.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Kondisi & list rendering"
+	svelte={`<script>
+  let show = $state(true);
+  let items = $state([
+    { id: 1, name: 'A' },
+    { id: 2, name: 'B' }
+  ]);
+</script>
+{#if show}
+  <p>Tampil</p>
+{/if}
+<ul>
+  {#each items as item (item.id)}
+    <li>{item.name}</li>
+  {/each}
+</ul>`}
+	react={`function List() {
+  const [show] = useState(true);
+  const [items] = useState([
+    { id: 1, name: 'A' },
+    { id: 2, name: 'B' }
+  ]);
+  return (
+    <>
+      {show && <p>Tampil</p>}
+      <ul>
+        {items.map((item) => (
+          <li key={item.id}>{item.name}</li>
+        ))}
+      </ul>
+    </>
+  );
+}`}
+	vue={`<script setup>
+import { ref } from 'vue';
+const show = ref(true);
+const items = ref([
+  { id: 1, name: 'A' },
+  { id: 2, name: 'B' }
+]);
+</script>
+<template>
+  <p v-if="show">Tampil</p>
+  <ul>
+    <li v-for="item in items" :key="item.id">
+      {{ item.name }}
+    </li>
+  </ul>
+</template>`}
+	diff={{ react: [9, 12], vue: [10, 11] }}
+	note="React menempel logika ke JS: `&&` untuk kondisi, `.map()` + prop `key` untuk list. Vue memakai direktif atribut `v-if` dan `v-for` dengan `:key`. Svelte memakai blok `&#123;#if&#125;`/`&#123;#each&#125;` dengan key eksplisit di dalam `( )`. Ketiganya menyarankan key unik untuk list; bedanya hanya di mana key itu ditulis."
+/>
+
+<Callout type="tip">
+Satu perbedaan filosofis: di React, list rendering hanyalah pemanggilan fungsi <code>.map()</code> biasa — fleksibel tapi mudah lupa <code>key</code>. Di Svelte, key adalah bagian sintaks blok <code>&#123;#each&#125;</code> yang menonjol secara visual, sehingga lebih sulit terlewat. Tidak ada yang "lebih benar"; ini soal selera struktur eksplisit vs ekspresi JS bebas.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Daftar tugas dengan kondisi kosong">
+Buat komponen dengan sebuah array `tasks` berisi objek `&#123; id, done, text &#125;`. Render list-nya dengan `&#123;#each&#125;` memakai `id` sebagai key. Untuk tiap task, tampilkan teksnya; kalau `done` bernilai `true`, beri awalan tanda centang lewat blok `&#123;#if&#125;`. Tambahkan juga cabang `&#123;:else&#125;` pada `&#123;#each&#125;` yang menampilkan "Belum ada tugas" ketika array kosong.
+
+Bonus: bungkus seluruh list dengan `&#123;#key tasks.length&#125;` dan pikirkan kapan blok itu akan di-mount ulang.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let tasks = $state([
+		{ id: 1, done: true, text: 'Setup proyek' },
+		{ id: 2, done: false, text: 'Tulis fitur' }
+	]);
+</script>
+
+<!--
+	{#key tasks.length} memaksa seluruh <ul> dibuat ulang setiap kali
+	JUMLAH task berubah (bukan saat properti `done` berubah). Berguna
+	misalnya untuk memicu animasi enter setiap kali panjang list berubah.
+-->
+{#key tasks.length}
+	<ul>
+		{#each tasks as task (task.id)}
+			<li>
+				<!-- {#if} tanpa else: hanya menambah penanda saat done -->
+				{#if task.done}✓ {/if}{task.text}
+			</li>
+		{:else}
+			<li>Belum ada tugas</li>
+		{/each}
+	</ul>
+{/key}
+```
+
+Catatan soal `&#123;#key tasks.length&#125;`: ia hanya bereaksi pada perubahan **panjang** array. Jika kamu hanya mengubah `task.done` dari `false` ke `true` (panjang tetap), blok tidak di-mount ulang — yang berubah hanya bagian di dalam `&#123;#if&#125;` berkat reaktivitas normal Svelte. Inilah cara membedakan "perbarui di tempat" (reaktivitas biasa) vs "buat ulang dari nol" (`&#123;#key&#125;`).
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan lupa key di <code>&#123;#each&#125;</code> untuk list yang berubah.</strong> Tanpa <code>(item.id)</code>, Svelte mencocokkan item berdasarkan posisi indeks. Saat kamu menghapus item dari tengah, atau mengurutkan ulang, state lokal (misalnya input yang sedang diketik, atau transisi) bisa "nyangkut" ke item yang salah. Selalu pakai key yang stabil & unik untuk list dinamis.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Jangan jadikan index sebagai key</strong> kalau list bisa diurut ulang atau item bisa dihapus dari tengah. Menulis <code>&#123;#each items as item, i (i)&#125;</code> sama saja seperti tidak punya key sama sekali, karena indeks ikut bergeser saat list berubah. Pakai ID yang melekat pada data, bukan posisinya.
+</Callout>
+
+<Callout type="warning">
+<strong><code>&#123;#await&#125;</code> mengevaluasi ulang setiap kali ekspresinya berubah jadi Promise baru.</strong> Kalau kamu menulis <code>&#123;#await loadData()&#125;</code> dengan memanggil fungsi langsung di markup, fungsi itu bisa terpanggil berkali-kali setiap render. Lebih aman simpan Promise ke variabel reaktif, mis. <code>let p = $derived(loadData(id))</code>, lalu tulis <code>&#123;#await p&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+Butuh me-reset state sebuah komponen anak saat sebuah ID berubah? <code>&#123;#key id&#125;</code> adalah cara paling bersih — jauh lebih sederhana daripada menulis <code>$effect</code> untuk menyetel ulang state secara manual. Di React, ini setara dengan memberi prop <code>key</code> pada komponen untuk memaksa remount.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/if" label="Logic blocks (if / each / key / await) — dokumentasi resmi Svelte" />

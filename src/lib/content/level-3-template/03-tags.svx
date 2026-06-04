@@ -1,0 +1,247 @@
+---
+title: "Tags: {@html}, {@const}, {@debug}, {@attach}"
+level: 3
+levelTitle: Template Syntax
+order: 3
+description: Empat tag spesial Svelte untuk menyuntik HTML mentah, mendeklarasikan konstanta lokal di blok, mendebug nilai, dan menempelkan fungsi ke elemen DOM.
+docs: https://svelte.dev/docs/svelte/@html
+keywords: [html, const, debug, attach, attachment, xss]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sejauh ini kamu menulis ekspresi biasa di dalam satu pasang kurawal: `{name}`, `{price * 2}`. Tapi Svelte punya keluarga sintaks kedua yang diawali dengan tanda `@` di dalam kurawal — disebut **tags**. Bedanya dengan `{#if}`/`{#each}` (yang itu *blok*, punya pembuka & penutup): tag adalah perintah satu baris yang menyuruh Svelte melakukan sesuatu yang istimewa di titik itu. Ada empat yang kita bahas: `{@html}`, `{@const}`, `{@debug}`, dan `{@attach}`.
+
+### `{@html}` itu seperti menempel potongan koran yang sudah jadi
+
+Bayangkan kamu sedang menempel kliping di buku tempel. Biasanya kamu menulis teks sendiri dengan tangan (`{text}` — Svelte meng-escape semuanya, jadi `&lt;b&gt;` muncul sebagai tulisan `&lt;b&gt;` literal, bukan tebal). Tapi kadang kamu punya potongan koran yang **sudah tercetak rapi dengan format** — kamu tinggal menggunting dan menempelnya apa adanya. `{@html string}` adalah aksi tempel-mentah itu: Svelte mengambil string-mu dan menjadikannya HTML asli, tanpa escape.
+
+Masalahnya: kalau potongan "koran" itu ternyata datang dari orang asing (input user, komentar, data API pihak ketiga), bisa saja di dalamnya terselip `&lt;script&gt;` jahat. Inilah celah **XSS** (Cross-Site Scripting). Untuk pembaca React, `{@html}` adalah persis padanan `dangerouslySetInnerHTML` — dan kata "dangerously" di nama React itu memang peringatan yang sama. Di Vue, ini sama dengan direktif `v-html`.
+
+### `{@const}` itu seperti mencatat hasil hitung di pinggir kertas
+
+Saat kamu di dalam `{#each}` atau `{#if}`, kadang kamu butuh satu nilai turunan yang dipakai berkali-kali di markup yang sama — misalnya `item.price * item.qty`. Menulisnya berulang itu boros dan rawan typo, tapi kamu tidak bisa menaruh `let` di tengah markup. `{@const subtotal = item.price * item.qty}` adalah catatan kecil di pinggir kertas: ia menghitung satu nilai **sekali** lalu memberinya nama, yang berlaku hanya di dalam blok itu. Di React kamu cukup menaruh `const` di dalam body `.map(item => { const subtotal = ...; return ... })`. Svelte butuh tag khusus karena markup-nya bukan JavaScript murni.
+
+### `{@debug}` itu seperti rambu "STOP" untuk debugger
+
+`{@debug user}` artinya: "kalau DevTools terbuka, **berhentilah** (seperti breakpoint) setiap kali `user` berubah, dan cetak nilainya." Ini gabungan `console.log` + `debugger` yang reaktif. Berguna saat kamu bingung kenapa sebuah nilai berubah dan ingin memeriksa state pada momen tepat itu.
+
+### `{@attach}` itu stiker fungsi yang menempel ke elemen saat ia muncul di DOM
+
+Ini bintang utamanya. Bayangkan kamu punya **stiker pintar**: begitu kamu tempelkan ke sebuah benda, stiker itu otomatis "menyala" dan melakukan tugasnya (misalnya mengukur benda, menyalakan animasi, atau memasang tooltip). Saat bendanya dibuang, stikernya ikut "mati" dan membereskan diri. `{@attach myFn}` adalah stiker fungsi seperti itu: kamu tempelkan ke sebuah elemen, dan **saat elemen itu muncul di DOM**, Svelte memanggil fungsimu dengan elemen tersebut sebagai argumen. Fungsi boleh mengembalikan fungsi cleanup yang dijalankan saat elemen hilang atau attachment dijalankan ulang.
+
+Kenapa ini penting: di dunia Svelte 4, pola "lakukan sesuatu langsung ke elemen DOM" memakai **action** lewat direktif `use:myAction`. Di Svelte 5, `{@attach}` adalah pengganti modern action yang lebih fleksibel — ia bisa membaca state reaktif dan otomatis jalan ulang saat state itu berubah (karena ekspresinya berjalan di dalam sebuah `$effect` tersembunyi), bisa ditebar lewat spread, dan bisa dipasang ke komponen, bukan cuma elemen.
+
+## 2. Contoh kode
+
+`{@html}` — menyuntik string HTML mentah:
+
+```svelte
+<script>
+	// Anggap ini datang dari sumber TEPERCAYA (mis. markdown milikmu
+	// yang sudah kamu render & sanitasi sendiri).
+	let artikel = $state('<h2>Judul</h2><p>Paragraf <strong>tebal</strong>.</p>');
+
+	// String dari user — TIDAK boleh langsung di-@html (lihat bagian Pitfalls).
+	let komentarUser = $state('<img src=x onerror="alert(1)">');
+</script>
+
+<!-- escape normal: tag tampil sebagai teks literal, aman -->
+<p>{artikel}</p>
+
+<!-- @html: string dirender sebagai HTML asli (h2/p/strong jadi elemen nyata) -->
+<div class="konten">{@html artikel}</div>
+```
+
+`{@const}` — mendeklarasikan konstanta lokal di dalam sebuah blok (`{#each}`, `{#if}`, `{#snippet}`, dll). Catatan penting: `{@const}` hanya boleh jadi anak **langsung** dari sebuah blok, bukan di top-level markup.
+
+```svelte
+<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh', harga: 12000, qty: 3 }
+	]);
+</script>
+
+<ul>
+	{#each items as item}
+		<!-- hitung subtotal SEKALI, lalu pakai berkali-kali di bawah -->
+		{@const subtotal = item.harga * item.qty}
+		<li>
+			{item.nama} x{item.qty} =
+			Rp {subtotal.toLocaleString('id-ID')}
+			{#if subtotal > 30000}<span>mahal!</span>{/if}
+		</li>
+	{/each}
+</ul>
+```
+
+`{@attach}` — menempelkan fungsi ke elemen. Pola dasarnya: fungsi menerima `node`, lalu boleh mengembalikan fungsi cleanup.
+
+```svelte
+<script>
+	// Attachment dasar: dipanggil saat <div> masuk DOM.
+	// node = elemen DOM-nya. Return = fungsi cleanup (opsional).
+	function logSize(node) {
+		console.log('lebar elemen:', node.offsetWidth);
+		return () => console.log('elemen dilepas, bersih-bersih');
+	}
+
+	let warna = $state('tomato');
+
+	// "Attachment factory": fungsi yang MENGEMBALIKAN attachment.
+	// Karena ekspresi {@attach setBg(warna)} jalan di dalam $effect,
+	// attachment ini otomatis dibuat ulang tiap 'warna' berubah.
+	function setBg(c) {
+		return (node) => {
+			node.style.background = c;
+		};
+	}
+</script>
+
+<div {@attach logSize}>Ukur aku</div>
+
+<button onclick={() => (warna = warna === 'tomato' ? 'skyblue' : 'tomato')}>
+	Ganti warna
+</button>
+<div {@attach setBg(warna)}>Latar reaktif</div>
+```
+
+## 3. Coba sendiri
+
+Kode di bawah menggabungkan ketiga tag yang bisa jalan murni di klien. `{@debug}` mencetak ke console (buka DevTools/F12). Coba ketik di kotak input dan lihat preview `{@html}` berubah; perhatikan juga `{@const}` menghitung jumlah karakter sekali per render.
+
+<Playground code={`<script>
+	let raw = $state('<em>Halo</em> <strong>dunia</strong>');
+	let items = $state(['apel', 'mangga', 'jeruk']);
+</script>
+<h3>Editor HTML mini (sumber tepercaya)</h3>
+<input bind:value={raw} style="width: 100%" />
+<!-- @html merender string sebagai HTML asli -->
+<div style="border: 1px solid #ccc; padding: 8px; margin: 8px 0;">
+	{@html raw}
+</div>
+<ul>
+	{#each items as buah, i}
+		<!-- @const: nilai turunan lokal, dihitung sekali per item -->
+		{@const label = (i + 1) + '. ' + buah.toUpperCase()}
+		<li>{label} ({buah.length} huruf)</li>
+	{/each}
+</ul>
+<!-- @debug: buka console, akan berhenti/cetak saat 'raw' berubah -->
+{@debug raw}
+<p>Buka DevTools (F12) untuk melihat efek @debug.</p>`} />
+
+<Callout type="tip">
+Di playground ini string <code>raw</code> kita kontrol sendiri lewat input, jadi aman untuk dicoba. Di aplikasi nyata, perlakukan input user sebagai tidak tepercaya — lihat bagian Pitfalls.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Daftar keranjang dengan badge & tooltip via attachment">
+Buat komponen keranjang belanja yang:
+
+1. Punya array `items`, tiap item `{ nama, harga, qty }`.
+2. Pakai `{#each}` untuk menampilkan tiap baris, dan `{@const}` untuk menghitung `subtotal = harga * qty` lalu menampilkannya (format `toLocaleString('id-ID')`).
+3. Di bawah daftar, tampilkan total keseluruhan.
+4. Buat sebuah **attachment factory** bernama `flashOnChange(value)` yang, setiap kali `value` (total) berubah, mengubah warna latar elemen total sebentar lalu mengembalikannya — manfaatkan sifat attachment yang dibuat ulang saat state-nya berubah. Pakai `setTimeout` di dalamnya, dan kembalikan cleanup untuk `clearTimeout`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh', harga: 12000, qty: 1 }
+	]);
+
+	// $derived: total dihitung ulang otomatis saat items berubah
+	let total = $derived(
+		items.reduce((sum, it) => sum + it.harga * it.qty, 0)
+	);
+
+	// Attachment factory: menerima 'value', mengembalikan attachment.
+	// Ekspresi {@attach flashOnChange(total)} berjalan di $effect,
+	// jadi attachment ini dibuat ulang tiap 'total' berubah ->
+	// efek "flash" otomatis muncul tiap total berubah.
+	function flashOnChange(value) {
+		return (node) => {
+			node.style.transition = 'background 0.4s';
+			node.style.background = 'gold';
+			const id = setTimeout(() => {
+				node.style.background = 'transparent';
+			}, 400);
+			// cleanup: jalan sebelum attachment dibuat ulang / saat dilepas
+			return () => clearTimeout(id);
+		};
+	}
+</script>
+
+<ul>
+	{#each items as item}
+		{@const subtotal = item.harga * item.qty}
+		<li>
+			{item.nama} x{item.qty} =
+			Rp {subtotal.toLocaleString('id-ID')}
+			<button onclick={() => item.qty++}>+</button>
+		</li>
+	{/each}
+</ul>
+
+<p {@attach flashOnChange(total)}>
+	Total: Rp {total.toLocaleString('id-ID')}
+</p>
+```
+
+Kuncinya: karena `{@attach flashOnChange(total)}` membaca `total`, ekspresi itu jadi reaktif. Setiap `total` berubah, Svelte menjalankan cleanup attachment lama lalu membuat attachment baru — yang langsung memicu "flash". Tidak perlu `$effect` manual untuk mengamati perubahan total.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>JANGAN pernah</strong> memasukkan string dari user (komentar, nama, isi form, data API yang tak kamu kendalikan) langsung ke <code>&#123;@html&#125;</code>. Itu pintu masuk <strong>XSS</strong>: penyerang bisa menyelipkan <code>&lt;img src=x onerror=...&gt;</code> atau handler event untuk menjalankan JavaScript di browser korban. Kalau harus merender HTML dari user, sanitasi dulu dengan library seperti <strong>DOMPurify</strong> di sisi server/klien sebelum menempelkannya.
+</Callout>
+
+<Callout type="warning">
+<code>&#123;@html&#125;</code> hanya menyetel <code>innerHTML</code>; ia <strong>tidak</strong> menjalankan <code>&#123;...&#125;</code> Svelte di dalam string-nya, dan style komponen (scoped CSS) tidak otomatis berlaku ke elemen hasil <code>@html</code>. Kalau perlu menatanya, pakai <code>:global(...)</code> atau target lewat kelas pembungkus.
+</Callout>
+
+<Callout type="warning">
+<code>&#123;@const&#125;</code> hanya boleh menjadi anak <strong>langsung</strong> dari sebuah blok: <code>&#123;#each&#125;</code>, <code>&#123;#if&#125;</code>, <code>&#123;#await&#125;</code>, <code>&#123;#key&#125;</code>, <code>&#123;#snippet&#125;</code>, atau <code>&lt;svelte:boundary&gt;</code>. Menaruhnya di top-level markup (di luar blok mana pun) akan error — di sana cukup deklarasikan nilai biasa di <code>&lt;script&gt;</code>.
+</Callout>
+
+<Callout type="pitfall">
+Hati-hati membuat <strong>attachment factory</strong> yang melakukan kerja berat (mis. inisialisasi library besar) sambil membaca banyak state. Karena attachment dibuat ulang tiap state yang dibaca berubah, kerja berat itu bisa terulang terus dan bikin lambat. Solusinya: baca state reaktif <em>di dalam</em> body attachment (bukan di argumen factory) hanya untuk bagian yang perlu di-update, dan lakukan setup mahal sekali saja.
+</Callout>
+
+<Callout type="tip">
+<code>&#123;@debug&#125;</code> hanya berhenti (breakpoint) bila DevTools terbuka, dan dengan tanpa argumen — <code>&#123;@debug&#125;</code> kosong — ia berhenti pada <em>setiap</em> perubahan state apa pun. Untuk debug nilai spesifik tanpa breakpoint, sering kali <code>$inspect(x)</code> lebih nyaman karena hanya nge-log dan otomatis hilang di build produksi.
+</Callout>
+
+<Callout type="legacy">
+Pola lama untuk berinteraksi dengan elemen DOM di Svelte 4 adalah <strong>action</strong> lewat direktif <code>use:namaAction</code> (dan event kustom lewat <code>createEventDispatcher</code>). Di Svelte 5, <code>&#123;@attach&#125;</code> adalah penggantinya yang lebih kuat: reaktif secara alami, bisa ditebar lewat spread, dan bisa dipasang ke komponen. <code>use:</code> masih didukung, tapi untuk kode baru pilih <code>&#123;@attach&#125;</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'use:tooltip={opts}', modern: '{@attach tooltip(opts)}', note: 'attachment reaktif & bisa di-spread' },
+	{ legacy: 'node.update(opts) pada action', modern: 'attachment dibuat ulang otomatis saat state berubah', note: 'tak perlu hook update manual' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/@html" label="@html — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/@const" label="@const — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/@debug" label="@debug — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/@attach" label="@attach — dokumentasi resmi Svelte" />

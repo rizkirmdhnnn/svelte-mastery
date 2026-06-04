@@ -1,0 +1,371 @@
+---
+title: 'Hooks: handle, handleFetch, handleError, reroute'
+level: 7
+levelTitle: SvelteKit Lanjutan
+order: 2
+description: Menulis kode yang berjalan untuk SETIAP request/navigasi lewat hooks SvelteKit — handle, handleFetch, handleError di server, plus reroute & transport universal, lalu menggabungkannya dengan sequence().
+docs: https://svelte.dev/docs/kit/hooks
+keywords: [hooks, handle, handleFetch, handleError, reroute, transport, sequence, locals]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sampai sekarang kode SvelteKit yang kamu tulis selalu **terikat ke satu route**: `load` di `+page.server.js` jalan untuk halaman itu saja, `actions` jalan untuk form di halaman itu saja. Tapi banyak kebutuhan bersifat **lintas route**: setiap request harus dicek apakah user sudah login, setiap response harus diberi header keamanan, setiap error harus dilaporkan ke Sentry, setiap URL berbahasa lokal harus dipetakan ke route yang sama. Menyalin logika ini ke tiap route itu mimpi buruk. Di sinilah **hooks** masuk: fungsi yang dipanggil SvelteKit untuk **setiap** request atau navigasi, di satu tempat terpusat.
+
+### Analogi: resepsionis & satpam di lobi gedung
+
+Bayangkan kantormu sebuah gedung. Tiap tamu (request) yang masuk **tidak** langsung nyelonong ke ruangan tujuan (route). Mereka lewat **lobi** dulu, dan di lobi ada beberapa petugas:
+
+- **Satpam pintu masuk (`handle`)** — memeriksa **setiap** tamu sebelum diizinkan masuk. Ia bisa menempelkan kartu visitor (`event.locals.user`), menolak tamu tertentu lalu langsung mengusirnya (mengembalikan `Response` sendiri tanpa memanggil `resolve`), atau membiarkan tamu masuk lalu menstempel map yang dibawa keluar (memodifikasi `response`). Inilah hook paling penting dan paling sering dipakai.
+- **Petugas ekspedisi (`handleFetch`)** — saat **gedung itu sendiri** (kode server) perlu menelepon kantor lain via `event.fetch`, petugas ini mencegat panggilan: bisa mengganti nomor tujuan (rewrite URL ke internal), atau menyelipkan surat pengantar (meneruskan cookie/header). Ini hanya soal panggilan keluar dari sisi server.
+- **Bagian humas saat ada insiden (`handleError`)** — kalau terjadi kecelakaan tak terduga di dalam gedung (exception yang tidak kamu tangani), petugas ini yang mencatat detail teknis ke buku internal (log/Sentry) lalu menyiapkan pengumuman sopan untuk publik ("Maaf, ada gangguan", bukan stack trace).
+- **Papan penunjuk arah / penerjemah (`reroute`)** — sebelum satpam pun bertindak, ada papan yang menerjemahkan alamat yang ditulis tamu. Tamu menulis "/de/ueber-uns", papan menerjemahkannya jadi "/about" supaya tamu diarahkan ke ruangan yang benar — **tanpa** mengubah alamat yang tertera di undangan tamu (URL di browser tetap utuh).
+
+Satu lagi yang bukan petugas lobi tapi "protokol pengiriman barang": **`transport`** — aturan cara membungkus barang khusus (class buatanmu, mis. `Vector` atau `Decimal`) supaya bisa dikirim dari server ke browser dan dibongkar lagi utuh di seberang.
+
+### Dua file, dua dunia
+
+Hooks ditaruh di dua file (keduanya di folder `src/`, sejajar dengan `routes/`):
+
+- **`src/hooks.server.js`** — hanya jalan di **server**. Isinya: `handle`, `handleFetch`, `handleError`, `handleValidationError`. Karena server, di sini aman menyentuh cookie session, secret, dan database.
+- **`src/hooks.js`** (universal / "shared") — jalan di **server maupun browser**. Isinya: `reroute`, `transport`, dan versi klien `handleError`. Karena ikut ter-bundle ke browser, **jangan** taruh secret di sini.
+
+Bagi yang dari React/Vue: konsep "kode yang membungkus setiap request" mirip **middleware** di Express/Next.js (`middleware.ts`) atau interceptor di NestJS. `handle` paling dekat ke middleware: ia menerima request, boleh memodifikasi atau menghentikannya (short-circuit), lalu memanggil `resolve(event)` — analog `next()` yang melanjutkan ke handler berikutnya. Bedanya, `resolve` di SvelteKit sekaligus **merender route** dan mengembalikan `Response`, jadi kamu memegang response itu untuk dioprek setelahnya.
+
+## 2. Contoh kode
+
+Mulai dari `handle` — tulang punggung hooks. Tanda tangannya: menerima `{ event, resolve }`, dan **wajib** mengembalikan `Response`.
+
+```js
+// src/hooks.server.js
+import { redirect } from '@sveltejs/kit';
+
+// `handle` dipanggil untuk SETIAP request server (termasuk saat prerender).
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+	// 1) Isi event.locals: data per-request yang dipakai load/actions/+server.
+	//    Di sini kita baca cookie session lalu tempel user-nya.
+	const sessionId = event.cookies.get('session');
+	event.locals.user = sessionId ? await getUser(sessionId) : null;
+
+	// 2) Short-circuit: hentikan request lebih awal dengan Response sendiri.
+	//    Lindungi semua route di bawah /admin. Karena belum memanggil resolve(),
+	//    route TIDAK akan dirender — hemat kerja.
+	if (event.url.pathname.startsWith('/admin') && !event.locals.user) {
+		// redirect() melempar sendiri di SvelteKit 2 — TANPA `throw` di depannya.
+		redirect(303, '/login');
+	}
+
+	// 3) resolve(event) = render route yang diminta -> menghasilkan Response.
+	//    Analog `next()` di middleware, tapi ia mengembalikan responsnya.
+	const response = await resolve(event);
+
+	// 4) Oprek response sebelum dikirim ke klien (mis. header keamanan).
+	response.headers.set('x-frame-options', 'SAMEORIGIN');
+
+	return response; // WAJIB return Response.
+}
+```
+
+`event.locals` adalah objek kosong yang kamu isi sekali di `handle`, lalu **terbaca di mana-mana** dalam request yang sama — di `load` server, di `actions`, di `+server.js`. Bagi pengguna TypeScript, tipenya kamu deklarasikan di `src/app.d.ts`:
+
+```ts
+// src/app.d.ts
+declare global {
+	namespace App {
+		interface Locals {
+			// Apa pun yang kamu set di handle, daftarkan tipenya di sini
+			// supaya event.locals.user ber-tipe di load/actions.
+			user: { id: string; name: string } | null;
+		}
+	}
+}
+
+export {};
+```
+
+`resolve` punya **parameter kedua opsional** untuk mengubah cara route dirender:
+
+```js
+// src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+	const response = await resolve(event, {
+		// Ubah potongan HTML saat dikirim. Berguna untuk i18n lang attribute,
+		// suntik nonce CSP, dsb. (chunk tidak dijamin HTML utuh — split di %placeholder%).
+		transformPageChunk: ({ html }) =>
+			html.replace('%lang%', event.locals.lang ?? 'id'),
+
+		// Header mana dari fetch (di load) yang ikut diserialisasi ke klien.
+		filterSerializedResponseHeaders: (name) => name.startsWith('x-'),
+
+		// Aset apa yang di-preload di <head> (default sudah cukup baik).
+		preload: ({ type, path }) => type === 'js' || type === 'css'
+	});
+	return response;
+}
+```
+
+Sekarang **`handleFetch`** — mencegat `event.fetch` yang dipanggil **dari kode server** (mis. di dalam `load` server). Berguna untuk merewrite URL publik jadi internal (lebih cepat saat SSR) atau menyelipkan header.
+
+```js
+// src/hooks.server.js
+/** @type {import('@sveltejs/kit').HandleFetch} */
+export async function handleFetch({ request, fetch, event }) {
+	// Saat di server, panggil API langsung ke localhost (lewati load balancer publik).
+	if (request.url.startsWith('https://api.contoh.com/')) {
+		// Request immutable — clone sambil ganti URL, argumen kedua mewarisi method/body/headers.
+		request = new Request(
+			request.url.replace('https://api.contoh.com/', 'http://localhost:9999/'),
+			request
+		);
+	}
+
+	// Teruskan cookie ke API di subdomain lain (cookie tidak ikut otomatis lintas-origin).
+	// request.headers.set('cookie', event.request.headers.get('cookie') ?? '');
+
+	return fetch(request); // teruskan ke fetch internal
+}
+```
+
+**`handleError`** hanya dipanggil untuk error **tak terduga** (bug/exception yang tidak kamu lempar sendiri). Error yang sengaja kamu buat lewat `error(404, ...)` dianggap "expected" dan **tidak** memicu hook ini. Nilai yang kamu `return` menjadi objek `$page.error` di halaman `+error.svelte` — jadi **jangan bocorkan detail sensitif** di sini.
+
+```js
+// src/hooks.server.js
+import * as Sentry from '@sentry/sveltekit';
+
+/** @type {import('@sveltejs/kit').HandleServerError} */
+export async function handleError({ error, event, status, message }) {
+	const errorId = crypto.randomUUID();
+
+	// Log detail asli ke layanan internal (aman, tidak dilihat user).
+	Sentry.captureException(error, { extra: { event, errorId, status } });
+
+	// Yang di-RETURN inilah yang sampai ke klien sebagai $page.error.
+	// Pesan dipersingkat & aman; errorId untuk dilacak oleh tim support.
+	return {
+		message: 'Maaf, terjadi kesalahan tak terduga.',
+		errorId
+	};
+}
+```
+
+Pindah ke **`src/hooks.js`** (universal). **`reroute`** memetakan URL yang dilihat user ke path route internal — URL di address bar **tidak berubah**, hanya route mana yang dipakai untuk mencocokkan.
+
+```js
+// src/hooks.js
+
+// User mengetik URL berbahasa lokal; kita arahkan ke satu route /about.
+const translated = {
+	'/de/ueber-uns': '/de/about',
+	'/fr/a-propos': '/fr/about'
+};
+
+/** @type {import('@sveltejs/kit').Reroute} */
+export function reroute({ url }) {
+	// Kembalikan string path baru, atau jangan kembalikan apa-apa (undefined)
+	// untuk membiarkan URL apa adanya.
+	if (url.pathname in translated) {
+		return translated[url.pathname];
+	}
+}
+```
+
+**`transport`** mengajari SvelteKit cara mengirim **class buatanmu** dari server `load` ke browser. Tanpa ini, hanya tipe serializable bawaan (objek/array, `Date`, `Map`, `Set`, dll.) yang boleh dikembalikan server `load`.
+
+```js
+// src/hooks.js
+import { Vector } from '$lib/math'; // class custom-mu
+
+/** @type {import('@sveltejs/kit').Transport} */
+export const transport = {
+	// Kunci "Vector" cocok dengan nama class.
+	Vector: {
+		// encode: jalan di server. Return nilai serializable (mis. array),
+		// atau falsy kalau value BUKAN tipe ini (biarkan SvelteKit lanjut).
+		encode: (value) => value instanceof Vector && [value.x, value.y],
+		// decode: jalan di browser. Rakit ulang jadi instance asli.
+		decode: ([x, y]) => new Vector(x, y)
+	}
+};
+```
+
+Terakhir, **`sequence()`** dari `@sveltejs/kit/hooks` menggabungkan banyak fungsi `handle` jadi satu rantai — supaya tiap urusan (auth, i18n, header) bisa kamu pisah ke fungsi sendiri.
+
+```js
+// src/hooks.server.js
+import { sequence } from '@sveltejs/kit/hooks';
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function authentication({ event, resolve }) {
+	event.locals.user = await getUser(event.cookies.get('session'));
+	return resolve(event); // serahkan ke handle berikutnya di rantai
+}
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function securityHeaders({ event, resolve }) {
+	const response = await resolve(event);
+	response.headers.set('x-frame-options', 'SAMEORIGIN');
+	return response;
+}
+
+// Urutan PENTING: authentication jalan duluan (set locals),
+// lalu securityHeaders membungkus response-nya. Pikirkan seperti tumpukan:
+// auth memproses request "turun", security memproses response "naik".
+export const handle = sequence(authentication, securityHeaders);
+```
+
+## 3. Coba sendiri
+
+Hooks butuh **server SvelteKit sungguhan** (`src/hooks.server.js`, `event.cookies`, `resolve`), jadi tidak bisa dijalankan di live playground browser. Sebagai gantinya, pahami **alur eksekusinya** lewat skema berikut, lalu uji di proyek SvelteKit lokalmu.
+
+```text
+Urutan satu request masuk:
+──────────────────────────
+              ┌─────────────────────────────────────────┐
+  URL  ──────▶│ reroute(url)  (hooks.js)                 │  ubah URL->route, address bar tetap
+              └─────────────────────────────────────────┘
+                                │
+                                ▼
+              ┌─────────────────────────────────────────┐
+              │ handle({ event, resolve }) (hooks.server)│  isi locals, cek auth, dst.
+              │   ├─ short-circuit? -> return Response    │  (route TIDAK dirender)
+              │   └─ const res = await resolve(event) ───┼──┐
+              └─────────────────────────────────────────┘  │
+                                                            ▼
+                          ┌───────────────────────────────────────────┐
+                          │ render route: load -> +page -> dst.        │
+                          │   (load server pakai event.fetch -> lewat  │
+                          │    handleFetch)                            │
+                          └───────────────────────────────────────────┘
+                                                            │
+                 ada error tak terduga? -> handleError ◀────┤
+                                                            ▼
+              ┌─────────────────────────────────────────┐
+              │ kembali ke handle: oprek res lalu return │  set header, dll.
+              └─────────────────────────────────────────┘
+                                │
+                                ▼
+                            Response ke klien
+```
+
+Eksperimen yang disarankan di proyek lokalmu:
+
+```js
+// src/hooks.server.js
+// Tempel timing tiap request untuk melihat handle benar-benar jalan tiap kali.
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+	const start = performance.now();
+
+	const response = await resolve(event);
+
+	const ms = Math.round(performance.now() - start);
+	// Lihat di terminal: tiap navigasi mencetak satu baris.
+	console.log(event.request.method, event.url.pathname, ms + 'ms');
+	response.headers.set('x-response-time', ms + 'ms');
+
+	return response;
+}
+```
+
+Coba juga: tambahkan `if (event.url.pathname === '/ping') return new Response('pong');` di awal `handle`, lalu buka `/ping` — kamu akan melihat respons "pong" murni tanpa route apa pun yang dirender, membuktikan short-circuit bekerja.
+
+## 4. Latihan
+
+<Exercise title="Auth guard + security header dengan sequence()">
+Susun `src/hooks.server.js` yang memproteksi area `/dashboard`. Persyaratan:
+
+1. Buat fungsi `handle` bernama `authGuard`: baca cookie `session`, panggil `getUser()` (anggap sudah ada), simpan hasilnya ke `event.locals.user`.
+2. Di dalam `authGuard`, kalau path diawali `/dashboard` **dan** `event.locals.user` kosong, arahkan ke `/login` memakai `redirect(303, '/login')` (ingat: **tanpa** `throw`).
+3. Buat fungsi `handle` kedua bernama `headers`: panggil `resolve(event)`, lalu set header `x-content-type-options: nosniff` pada response sebelum di-return.
+4. Gabungkan keduanya dengan `sequence()` sehingga `authGuard` berjalan **sebelum** `headers`, lalu `export const handle`.
+
+Pastikan tiap fungsi mengembalikan `Response` dengan benar.
+
+{#snippet solution()}
+
+  ```js
+  // src/hooks.server.js
+  import { redirect } from '@sveltejs/kit';
+  import { sequence } from '@sveltejs/kit/hooks';
+
+  // (1) + (2): autentikasi & proteksi route.
+  /** @type {import('@sveltejs/kit').Handle} */
+  async function authGuard({ event, resolve }) {
+  	// Baca session dari cookie, isi locals untuk dipakai load/actions.
+  	const sessionId = event.cookies.get('session');
+  	event.locals.user = sessionId ? await getUser(sessionId) : null;
+
+  	// Proteksi /dashboard: belum login -> lempar ke /login.
+  	if (event.url.pathname.startsWith('/dashboard') && !event.locals.user) {
+  		// redirect() melempar sendiri di SvelteKit 2 — JANGAN pakai `throw`.
+  		redirect(303, '/login');
+  	}
+
+  	// Lanjut ke handle berikutnya di rantai (headers).
+  	return resolve(event);
+  }
+
+  // (3): header keamanan, dioprek SETELAH route dirender.
+  /** @type {import('@sveltejs/kit').Handle} */
+  async function headers({ event, resolve }) {
+  	const response = await resolve(event);
+  	response.headers.set('x-content-type-options', 'nosniff');
+  	return response;
+  }
+
+  // (4): urutan penting — authGuard dulu, lalu headers membungkus response.
+  export const handle = sequence(authGuard, headers);
+  ```
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>handle</code> <strong>wajib mengembalikan sebuah <code>Response</code></strong>. Lupa <code>return response</code> (atau lupa <code>await resolve(event)</code> lalu me-return <code>undefined</code>) bikin request menggantung / error. Pola amannya selalu: <code>const response = await resolve(event); ...; return response;</code>. Short-circuit pun harus mengembalikan <code>Response</code> (mis. <code>new Response(...)</code>) — kecuali kamu memanggil <code>redirect()</code>/<code>error()</code> yang melempar sendiri.
+</Callout>
+
+<Callout type="pitfall">
+<code>handleError</code> <strong>tidak</strong> dipanggil untuk error yang kamu buat sengaja lewat <code>error(404, 'Not found')</code> — itu dianggap "expected" dan langsung merender <code>+error.svelte</code>. Hook ini hanya untuk exception <strong>tak terduga</strong> (bug). Jadi jangan mengandalkannya untuk logika 404/403 normal; pakai untuk <strong>logging</strong> error sungguhan. Dan apa pun yang kamu <code>return</code> dari sini akan terlihat user via <code>$page.error</code> — jangan kembalikan stack trace atau pesan database mentah.
+</Callout>
+
+<Callout type="warning">
+Jangan menaruh secret (API key, koneksi DB) di <code>src/hooks.js</code> (universal): file ini ikut ter-bundle ke <strong>browser</strong>, jadi rahasianya bocor. Secret hanya boleh di <code>src/hooks.server.js</code>. Sejalan dengan itu, <code>handleFetch</code> hanya mencegat <code>fetch</code> yang dipanggil dari <strong>sisi server</strong> (mis. di <code>load</code> server) — <code>fetch</code> biasa di browser tidak lewat sini.
+</Callout>
+
+<Callout type="warning">
+Sebagian <code>response</code> punya header <strong>immutable</strong> (mis. hasil <code>Response.redirect()</code> dari sebuah endpoint). Memanggil <code>response.headers.set(...)</code> pada response semacam itu melempar <code>TypeError</code>. Kalau kamu perlu memodifikasi header secara umum, bungkus dengan pengecekan atau clone response-nya. Ingat juga: dengan <code>sequence()</code>, urutan argumen menentukan siapa memproses request lebih dulu dan siapa memproses response paling akhir.
+</Callout>
+
+<Callout type="tip">
+Pisahkan tiap tanggung jawab ke fungsi <code>handle</code> sendiri (auth, i18n, logging, header) lalu rangkai dengan <code>sequence()</code>. Selain rapi, ini bikin tiap bagian gampang dites dan diatur urutannya. Bayangkan urutan seperti tumpukan: fungsi paling kiri memproses request "turun" duluan dan response "naik" paling akhir.
+</Callout>
+
+<Callout type="legacy">
+Pola lama yang sudah usang: <code>throw redirect(...)</code> / <code>throw error(...)</code> (gaya SvelteKit 1) — di SvelteKit 2 cukup <code>redirect(...)</code> / <code>error(...)</code> tanpa <code>throw</code>. Juga: di SvelteKit 1 <code>handleError</code> hanya menerima <code>&#123; error, event &#125;</code>; sekarang ada tambahan <code>&#123; status, message &#125;</code>. Dan <code>resolve</code> dulu sempat punya opsi <code>transformPage</code> — sekarang gunakan <code>transformPageChunk</code>.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="SvelteKit 1 (legacy)"
+	modernLabel="SvelteKit 2 (modern)"
+	rows={[
+		{ legacy: 'throw redirect(303, "/login")', modern: 'redirect(303, "/login")', note: 'di dalam handle; redirect/error melempar sendiri' },
+		{ legacy: 'handleError({ error, event })', modern: 'handleError({ error, event, status, message })', note: 'kini ada status & message' },
+		{ legacy: 'resolve(event, { transformPage })', modern: 'resolve(event, { transformPageChunk })', note: 'transform per-chunk HTML' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (handle, handleFetch, handleError, reroute, transport)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks#Shared-hooks-reroute" label="SvelteKit — reroute (URL ke route mapping)" />
+<DocsLink href="https://svelte.dev/docs/kit/@sveltejs-kit-hooks" label="SvelteKit — sequence() (menggabungkan beberapa handle)" />

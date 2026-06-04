@@ -1,0 +1,286 @@
+---
+title: "Directives: bind:, use:, style:, class"
+level: 3
+levelTitle: Template Syntax
+order: 4
+description: Mengenal directive Svelte untuk two-way binding, actions, styling dinamis, dan kelas kondisional dengan sintaks modern Svelte 5.
+docs: https://svelte.dev/docs/svelte/bind
+keywords: [bind, use, action, style, class, two-way binding]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+**Directive** adalah atribut khusus pada elemen yang memberi instruksi ekstra ke Svelte. Bentuknya selalu `nama:argumen`, misalnya `bind:value` atau `class:active`. Bagian sebelum titik dua (`bind`, `use`, `style`, `class`) adalah jenis directive; bagian sesudahnya adalah targetnya.
+
+Anggap saja directive itu seperti **stiker fungsi tambahan** yang kamu tempel di sebuah elemen. Elemen `<input>` biasa cuma bisa menampilkan nilai. Tapi begitu kamu tempel stiker `bind:value`, dia jadi punya "kabel dua arah" yang otomatis menyambungkan isi input dengan variabel kamu. Tempel stiker `use:`, dia dapat perilaku custom (misalnya auto-focus). Tempel `style:` atau `class:`, dia bisa berubah tampilan tergantung state.
+
+Di React dan Vue kamu mengenal konsep serupa, tapi terpecah-pecah: `value` + `onChange` di React, `v-model` / `v-bind` / `v-on` di Vue. Svelte menyatukan semuanya dalam satu pola directive yang konsisten. Empat directive yang akan kita bahas:
+
+- `bind:` — two-way binding. Nilai mengalir dua arah: dari variabel ke DOM, dan dari DOM kembali ke variabel.
+- `use:` — actions. Menjalankan fungsi JavaScript pada elemen DOM saat dia muncul (mounting), berguna untuk integrasi imperatif.
+- `style:` — set satu properti CSS inline secara reaktif.
+- `class:` — toggle kelas CSS berdasarkan kondisi boolean (plus sintaks objek/array baru di Svelte 5).
+
+Yang membuat directive enak dipakai: dia **reaktif by default**. Begitu variabel yang terlibat berubah, DOM ikut update tanpa kamu perlu menulis event handler manual.
+
+<Callout type="tip">
+Analogi "kabel dua arah" untuk <code>bind:</code> penting dipahami: tanpa <code>bind</code>, data hanya mengalir satu arah (state ke DOM). Dengan <code>bind</code>, kamu menambah kabel balik (DOM ke state) sehingga ketika user mengetik, variabel ikut berubah otomatis. Inilah yang di React harus kamu rakit manual lewat <code>value</code> + <code>onChange</code>.
+</Callout>
+
+## 2. Contoh kode
+
+### `bind:` — two-way binding
+
+```svelte
+<script>
+	let name = $state('');
+	let agree = $state(false);
+	let flavor = $state('cokelat');
+	let inputEl = $state(null); // referensi ke elemen DOM
+</script>
+
+<!-- bind:value -> isi <input> tersambung ke variabel name dua arah -->
+<input bind:value={name} placeholder="Nama kamu" />
+<p>Halo, {name}</p>
+
+<!-- bind:checked -> untuk checkbox, ikat ke boolean -->
+<label>
+	<input type="checkbox" bind:checked={agree} />
+	Saya setuju
+</label>
+
+<!-- bind:group -> radio/checkbox yang berbagi satu variabel -->
+<label><input type="radio" bind:group={flavor} value="cokelat" /> Cokelat</label>
+<label><input type="radio" bind:group={flavor} value="vanila" /> Vanila</label>
+<p>Pilihan: {flavor}</p>
+
+<!-- bind:this -> dapatkan referensi langsung ke node DOM -->
+<input bind:this={inputEl} />
+<button onclick={() => inputEl.focus()}>Fokus ke input di atas</button>
+```
+
+### `bind:` ke properti komponen anak
+
+Selain elemen HTML, kamu juga bisa `bind:` ke prop sebuah komponen. Tapi prop tersebut harus dideklarasikan sebagai **bindable** di komponen anak dengan rune `$bindable()`.
+
+```svelte
+<!-- Child.svelte -->
+<script>
+	// value default '' sekaligus menandai prop ini boleh di-bind dari parent
+	let { value = $bindable('') } = $props();
+</script>
+
+<input bind:value placeholder="dari dalam Child" />
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Child from './Child.svelte';
+	let text = $state('halo');
+</script>
+
+<!-- Perubahan di dalam Child akan memantul balik ke variabel text -->
+<Child bind:value={text} />
+<p>Parent melihat: {text}</p>
+```
+
+### `use:` (actions), `style:`, dan `class:`
+
+```svelte
+<script>
+	let active = $state(false);
+	let hue = $state(200);
+
+	// Action: fungsi yang menerima node DOM (dan opsional argumen).
+	// Dipanggil sekali saat elemen mount. Boleh return { update, destroy }.
+	function autofocus(node) {
+		node.focus();
+		return {
+			destroy() {
+				// cleanup kalau elemen dilepas dari DOM
+			}
+		};
+	}
+</script>
+
+<!-- use:autofocus -> jalankan action pada elemen ini saat mount -->
+<input use:autofocus placeholder="auto-focus saat muncul" />
+
+<!-- style:prop={nilai} -> set satu properti CSS, reaktif -->
+<div style:color="white" style:background="hsl({hue}, 70%, 45%)" style:padding="1rem">
+	Geser slider untuk ubah warna
+</div>
+<input type="range" min="0" max="360" bind:value={hue} />
+
+<!-- class:nama={boolean} -> toggle satu kelas -->
+<p class:active={active}>Status</p>
+
+<!-- Sintaks objek (baru di Svelte 5): class={{ ... }} -->
+<!-- key dengan nilai truthy akan aktif -->
+<p class={{ active, disabled: false, 'text-lg': true }}>Pakai objek</p>
+
+<button onclick={() => (active = !active)}>Toggle active</button>
+```
+
+<Callout type="tip">
+Untuk <code>class:nama=&#123;nama&#125;</code> di mana nama kelas sama dengan nama variabel, ada shorthand: cukup tulis <code>class:active</code>. Sama seperti shorthand <code>&#123;value&#125;</code> pada atribut biasa.
+</Callout>
+
+## 3. Coba sendiri
+
+Ubah-ubah nilainya dan perhatikan bagaimana keempat directive bekerja bersama secara reaktif.
+
+<Playground code={`<script>
+  let name = $state('Rizki');
+  let big = $state(false);
+  let hue = $state(280);
+  let color = $state('merah');
+  function autofocus(node) {
+    node.focus();
+  }
+</script>
+<input use:autofocus bind:value={name} placeholder="ketik nama" />
+<p
+  class={{ big }}
+  style:color={'hsl(' + hue + ', 70%, 45%)'}
+>
+  Halo, {name}!
+</p>
+<label>
+  <input type="checkbox" bind:checked={big} />
+  Perbesar teks
+</label>
+<br />
+<input type="range" min="0" max="360" bind:value={hue} />
+<span>hue: {hue}</span>
+<fieldset>
+  <legend>Warna favorit</legend>
+  <label><input type="radio" bind:group={color} value="merah" /> Merah</label>
+  <label><input type="radio" bind:group={color} value="biru" /> Biru</label>
+  <p>Kamu pilih: {color}</p>
+</fieldset>
+<style>
+  .big { font-size: 2rem; font-weight: bold; }
+</style>`} />
+
+<Callout type="tip">
+Perhatikan di playground: <code>style:color</code> dirangkai pakai operator <code>+</code> dan string biasa, bukan template literal. Di file <code>.svelte</code> sungguhan kamu bebas menulis <code>style:color="hsl(&#123;hue&#125;, 70%, 45%)"</code> dengan kurung kurawal.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Two-way binding input"
+	svelte={`<script>
+	let text = $state('');
+</script>
+<input bind:value={text} />
+<p>{text}</p>`}
+	react={`function Field() {
+	const [text, setText] = useState('');
+	return (
+		<>
+			<input
+				value={text}
+				onChange={(e) => setText(e.target.value)}
+			/>
+			<p>{text}</p>
+		</>
+	);
+}`}
+	vue={`<script setup>
+import { ref } from 'vue'
+const text = ref('')
+</script>
+<template>
+	<input v-model="text" />
+	<p>{{ text }}</p>
+</template>`}
+	diff={{ react: [4, 5], vue: [7] }}
+	note="React 'controlled component': state ke DOM lewat value, DOM ke state lewat onChange — kamu rakit kabel baliknya sendiri (eksplisit, fleksibel, tapi verbose). Vue v-model dan Svelte bind:value sama-sama menyatukan dua arah dalam satu atribut (ringkas). Bedanya, di Svelte bind: adalah pola umum yang juga berlaku untuk checked, group, this, dan prop komponen."
+/>
+
+## 5. Latihan
+
+<Exercise title="Form pendaftaran reaktif">
+Buat satu komponen Svelte 5 dengan:
+
+1. `<input>` teks untuk nama, di-bind dua arah ke variabel `username`.
+2. Sebuah checkbox `setuju` (boolean) memakai `bind:checked`.
+3. Tombol "Daftar" yang `disabled` selama `username` kosong **atau** `setuju` masih `false`. Manfaatkan `class:` (objek) untuk memberi kelas `siap` saat tombol aktif.
+4. Tampilkan teks status memakai `style:color` hijau bila siap, abu-abu bila belum.
+
+Gunakan `$derived` untuk menghitung kondisi "siap".
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let username = $state('');
+	let setuju = $state(false);
+
+	// turunan: siap kalau nama terisi DAN sudah centang setuju
+	let siap = $derived(username.trim().length > 0 && setuju);
+</script>
+
+<input bind:value={username} placeholder="Username" />
+
+<label>
+	<input type="checkbox" bind:checked={setuju} />
+	Saya setuju syarat & ketentuan
+</label>
+
+<p style:color={siap ? 'green' : 'gray'}>
+	{siap ? 'Siap mendaftar!' : 'Lengkapi form dulu.'}
+</p>
+
+<button class={{ siap }} disabled={!siap}>Daftar</button>
+
+<style>
+	.siap { font-weight: bold; }
+</style>
+```
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>bind:</code> hanya bisa diarahkan ke sesuatu yang bisa "ditulis balik": sebuah variabel <code>$state</code>, properti objek state, atau prop <code>$bindable()</code>. Kamu <strong>tidak bisa</strong> <code>bind:value</code> ke nilai <code>$derived</code> atau ke konstanta — Svelte akan error karena tidak ada tempat untuk menampung nilai balik dari DOM.
+</Callout>
+
+<Callout type="warning">
+Untuk mem-<code>bind</code> prop komponen, prop itu <strong>wajib</strong> dideklarasikan dengan <code>$bindable()</code> di komponen anak. Kalau tidak, <code>bind:value=&#123;x&#125;</code> dari parent akan gagal. Ini berbeda dari React/Vue: di Svelte binding ke komponen bersifat opt-in demi kejelasan alur data. Pakai seperlunya — kebanyakan kasus cukup prop satu arah + callback.
+</Callout>
+
+<Callout type="pitfall">
+<code>style:warna=&#123;x&#125;</code> hanya menerima <strong>satu</strong> properti CSS per directive. Untuk banyak properti, tulis beberapa <code>style:</code> berturut-turut, atau pakai atribut <code>style</code> biasa. Jangan bingung dengan blok <code>&lt;style&gt;</code> di bawah komponen yang fungsinya berbeda (CSS scoped).
+</Callout>
+
+<Callout type="legacy">
+API lama yang <strong>jangan</strong> dipakai lagi di Svelte 5: event handler <code>on:click</code> (ganti ke <code>onclick</code>), dan reactive statement <code>$:</code> (ganti ke <code>$derived</code> / <code>$effect</code>). Untuk directive yang kita bahas, <code>bind:</code>, <code>use:</code>, <code>style:</code>, <code>class:</code> tetap valid — tetapi <code>class:nama</code> kini punya alternatif modern berupa sintaks objek/array <code>class=&#123;&#123; ... &#125;&#125;</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'on:click={fn}', modern: 'onclick={fn}', note: 'event jadi atribut biasa' },
+	{ legacy: 'export let value', modern: 'let { value = $bindable() } = $props()', note: 'prop bindable harus opt-in' },
+	{ legacy: 'class:a class:b={x}', modern: "class={{ a: true, b: x }}", note: 'sintaks objek baru di Svelte 5; cara lama tetap valid' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/bind" label="bind: — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/use" label="use: (actions) — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/class" label="class: directive & sintaks objek — dokumentasi resmi Svelte" />

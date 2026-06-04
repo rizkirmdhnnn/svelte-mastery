@@ -1,0 +1,194 @@
+---
+title: $inspect & $host
+level: 2
+levelTitle: Reactivity (Runes)
+order: 6
+description: Memakai $inspect untuk men-debug state reaktif (dev-only) dengan .with() dan .trace(), serta $host untuk mengakses elemen host pada custom element.
+docs: https://svelte.dev/docs/svelte/%24inspect
+keywords: [inspect, host, debug, trace, custom-element, runes]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Dua rune di modul ini bukan untuk membangun fitur, tapi untuk **membantumu sebagai developer**: `$inspect` adalah alat debug, dan `$host` adalah jembatan ke dunia Web Components. Keduanya jarang dipakai sehari-hari, tapi sangat menyelamatkan saat dibutuhkan.
+
+### `$inspect` itu seperti CCTV untuk state reaktif
+
+Bayangkan kamu menaruh kamera CCTV pada sebuah pintu. Kamera itu tidak mengubah apa-apa di pintu — ia hanya merekam dan memberi tahu kamu **setiap kali** pintu bergerak. `$inspect` bekerja persis begitu: kamu arahkan ke satu atau beberapa nilai reaktif, dan setiap kali salah satunya berubah, ia otomatis menjalankan `console.log` dengan nilai terbarunya.
+
+Kelebihannya dibanding `console.log` biasa: `console.log(count)` hanya berjalan **sekali** saat baris itu dieksekusi. Untuk pembaca dari React, ini seperti perbedaan antara menulis `console.log` di body komponen versus membungkusnya dalam `useEffect(() => {...}, [count])` — `$inspect` otomatis menjadi yang kedua, melacak dependensi sendiri dan menembak ulang tiap kali nilainya berubah. Di Vue, ia mirip `watch(count, ...)` yang langsung mencetak.
+
+Hal paling penting: **`$inspect` hanya jalan saat development**. Saat kamu build untuk produksi, compiler menghapusnya total dari bundle. Jadi tidak ada risiko `console.log` nyasar nyangkut di produksi — sebuah keuntungan dibanding `console.log` manual yang harus kamu hapus sendiri.
+
+`$inspect` juga melakukan **deep tracking**: kalau kamu inspect sebuah objek atau array, ia akan menembak ulang saat properti di dalamnya berubah, bukan cuma saat referensi-nya diganti.
+
+### `$host` itu "alamat rumah" komponen saat jadi custom element
+
+Biasanya komponen Svelte hidup di dalam aplikasi Svelte lain. Tapi Svelte bisa meng-compile komponen menjadi **custom element** (Web Component) standar — sebuah tag HTML asli seperti `<my-counter>` yang bisa dipakai di project apa pun, bahkan tanpa Svelte.
+
+Saat menjadi custom element, komponen itu "tinggal" di dalam sebuah elemen DOM host (tag `<my-counter>` itu sendiri). `$host()` mengembalikan referensi ke elemen host tersebut. Analogi: kalau komponenmu adalah seorang penyewa, `$host()` adalah alamat rumah yang ia tempati — dengannya kamu bisa, misalnya, men-dispatch `CustomEvent` dari elemen itu agar dunia luar (yang bukan Svelte) bisa mendengarnya lewat `addEventListener` biasa.
+
+`$host` **hanya valid di dalam komponen yang di-compile sebagai custom element**. Di komponen Svelte biasa, ia tidak berlaku.
+
+## 2. Contoh kode
+
+```svelte
+<script>
+	let count = $state(0);
+	let user = $state({ name: 'Sera', age: 20 });
+
+	// CCTV dasar: cetak count tiap kali ia berubah (termasuk nilai awal).
+	// Hanya berjalan di dev; hilang total di build produksi.
+	$inspect(count);
+
+	// Bisa mengawasi banyak nilai sekaligus.
+	$inspect(count, user);
+
+	// Deep tracking: berubah saat user.age berubah, bukan cuma saat
+	// seluruh objek user diganti referensinya.
+	$inspect(user);
+</script>
+
+<button onclick={() => count++}>count: {count}</button>
+<button onclick={() => user.age++}>umur: {user.age}</button>
+```
+
+`$inspect(...).with(callback)` memberimu kontrol penuh atas apa yang terjadi saat nilai berubah, menggantikan `console.log` default:
+
+```svelte
+<script>
+	let count = $state(0);
+
+	// .with menerima callback (type, ...values).
+	// type bernilai "init" pada pemicuan pertama, lalu "update" berikutnya.
+	$inspect(count).with((type, value) => {
+		if (type === 'update') {
+			// contoh: pasang breakpoint debugger hanya saat update
+			console.log('count berubah jadi', value);
+		}
+	});
+
+	// Pola umum: .with(console.trace) untuk melihat
+	// dari MANA perubahan itu dipicu (stack trace).
+	$inspect(count).with(console.trace);
+</script>
+
+<button onclick={() => count++}>{count}</button>
+```
+
+`$host()` dipakai saat komponen di-compile jadi custom element, biasanya untuk men-dispatch event ke dunia luar:
+
+```svelte
+<!-- Counter.svelte -->
+<svelte:options customElement="my-counter" />
+
+<script>
+	let count = $state(0);
+
+	function increment() {
+		count++;
+		// $host() = elemen <my-counter> itu sendiri.
+		// Dari sini kita kirim CustomEvent agar kode non-Svelte
+		// bisa mendengarnya: el.addEventListener('change', ...)
+		$host().dispatchEvent(
+			new CustomEvent('change', { detail: count })
+		);
+	}
+</script>
+
+<button onclick={increment}>klik: {count}</button>
+```
+
+## 3. Coba sendiri
+
+`$inspect` mencetak ke **console browser**, jadi buka DevTools (F12) lalu klik tombol-tombol di bawah. Perhatikan log muncul sendiri tiap nilai berubah, termasuk satu log "init" saat pertama dimuat. Coba juga ubah objek `user` lewat tombolnya dan lihat deep tracking bekerja.
+
+<Playground code={`<script>
+	let count = $state(0);
+	let user = $state({ name: 'Sera', age: 20 });
+	// CCTV: cetak otomatis tiap count berubah (lihat console)
+	$inspect(count);
+	// .with: kontrol penuh; type = 'init' lalu 'update'
+	$inspect(user).with((type, value) => {
+		console.log('[user ' + type + ']', value.name, value.age);
+	});
+</script>
+<h3>count: {count}</h3>
+<p>{user.name}, umur {user.age}</p>
+<button onclick={() => count++}>count++</button>
+<button onclick={() => user.age++}>umur++</button>
+<button onclick={() => (user = { name: 'Dimas', age: 30 })}>ganti user</button>`} />
+
+<Callout type="tip">
+Kalau console terasa berisik, ingat: ini cuma alat bantu dev. Begitu kamu hapus baris <code>$inspect</code> (atau build untuk produksi), semuanya lenyap tanpa jejak.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Lacak asal-usul perubahan dengan trace">
+Buat komponen dengan satu state `score` dan dua tombol: satu menaikkan `score` sebesar 1, satu lagi me-reset ke 0.
+
+Pasang `$inspect` pada `score` menggunakan `.with(...)`. Di dalam callback, cetak pesan berbeda untuk fase `init` versus `update`, dan saat `update`, panggil `console.trace` agar kamu bisa melihat tombol mana yang memicunya di stack trace.
+
+Buka console browser untuk memverifikasi.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let score = $state(0);
+
+	$inspect(score).with((type, value) => {
+		if (type === 'init') {
+			console.log('nilai awal score:', value);
+		} else {
+			// console.trace mencetak nilai + stack trace,
+			// jadi terlihat fungsi/tombol mana pemicunya
+			console.trace('score di-update jadi:', value);
+		}
+	});
+</script>
+
+<p>score: {score}</p>
+<button onclick={() => score++}>+1</button>
+<button onclick={() => (score = 0)}>reset</button>
+```
+
+Karena callback `.with` menerima `type` sebagai argumen pertama, kita bisa membedakan pemicuan pertama (`init`) dari perubahan berikutnya (`update`). `console.trace` di cabang update memberi stack trace, sangat berguna saat sebuah state diubah dari banyak tempat dan kamu bingung siapa pelakunya.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>$inspect</code> melacak dependensi <strong>secara sinkron</strong>. Ia hanya mengawasi nilai yang dibaca langsung saat baris <code>$inspect(...)</code> dievaluasi. Kalau kamu membaca state di dalam <code>setTimeout</code>, <code>await</code>, atau callback async di dalamnya, perubahan itu <em>tidak</em> akan terlacak. Inspect-lah nilainya secara langsung, bukan lewat lapisan async.
+</Callout>
+
+<Callout type="warning">
+<code>$inspect</code> di-hapus total di build produksi. Itu bagus untuk debug, tapi <strong>jangan</strong> taruh logika penting (mengubah state, memanggil API, dsb.) di dalam callback <code>.with</code>. Anggap ia tidak ada saat produksi; ia murni alat observasi.
+</Callout>
+
+<Callout type="warning">
+<code>$host()</code> hanya berlaku di komponen yang di-compile sebagai custom element (lewat <code>&lt;svelte:options customElement="..." /&gt;</code>). Memanggilnya di komponen Svelte biasa akan error. Untuk komunikasi antar-komponen Svelte normal, pakai <strong>prop callback</strong> (mis. <code>onchange</code>) — bukan <code>$host</code>.
+</Callout>
+
+<Callout type="tip">
+<code>$inspect.trace()</code> (tersedia sejak Svelte 5.14) berbeda dari <code>$inspect(...)</code>. Taruh <code>$inspect.trace()</code> sebagai baris pertama di dalam sebuah <code>$effect</code> atau <code>$derived</code>, dan ia akan mencetak di console <em>dependensi reaktif mana</em> yang menyebabkan fungsi itu dijalankan ulang. Sangat membantu saat sebuah effect jalan terlalu sering dan kamu tidak tahu pemicunya. Kamu juga bisa memberi label: <code>$inspect.trace('namaEffect')</code>.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4 tidak ada padanan resmi untuk <code>$inspect</code>; orang memakai <code>$: console.log(count)</code> (reactive statement) sebagai trik debug. Itu API lama — di Svelte 5 reactive statement <code>$:</code> sudah tidak dipakai, dan <code>$inspect</code> adalah penggantinya yang lebih rapi karena otomatis hilang di produksi.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/%24inspect" label="$inspect — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/%24host" label="$host — dokumentasi resmi Svelte" />

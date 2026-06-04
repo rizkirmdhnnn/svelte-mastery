@@ -1,0 +1,291 @@
+---
+title: Styling: Scoped, Global, Custom Properties, Nested
+level: 1
+levelTitle: Dasar Svelte
+order: 5
+description: Memahami cara Svelte menata gaya komponen — scoped otomatis, :global(), CSS custom properties, serta directive class: dan style:.
+docs: https://svelte.dev/docs/svelte/scoped-styles
+keywords: [styling, scoped, global, custom-properties, class-directive, style-directive]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di Svelte, setiap komponen punya blok `<style>` sendiri, dan gaya di dalamnya **scoped otomatis** — artinya hanya berlaku untuk markup di komponen itu, tidak bocor ke komponen lain. Kalau kamu menulis `p { color: red }` di `Card.svelte`, hanya `<p>` di dalam `Card.svelte` yang jadi merah. `<p>` di komponen tetangga aman.
+
+Analoginya seperti **apartemen dengan satu meteran listrik per unit**. Kamu boleh memasang lampu seterang apa pun di unitmu; tetangga tidak ikut terang dan tidak ikut bayar. Bandingkan dengan CSS global di web tradisional yang seperti **satu lampu raksasa di lorong gedung**: nyalakan sekali, semua orang kena efeknya, dan kalau dua orang pasang lampu dengan nama saklar yang sama (`.button`), mereka saling timpa. Scoped styling menghilangkan kelas masalah "siapa yang menimpa siapa" itu sejak awal.
+
+Cara kerjanya: saat compile, Svelte menambahkan sebuah hash class unik (mis. `svelte-abc123`) ke setiap elemen di komponen, lalu menulis ulang selector CSS-mu agar ikut menargetkan hash itu (`p.svelte-abc123`). Jadi scoping ini terjadi di tingkat **build**, bukan runtime — tidak ada overhead JS, tidak ada penamaan kelas manual seperti BEM.
+
+Kalau datang dari **Vue**, ini mirip `<style scoped>` — bedanya di Svelte kamu tidak perlu menulis kata `scoped`; itu perilaku default. Kalau datang dari **React**, kamu biasanya meraih CSS Modules, styled-components, atau Tailwind untuk mendapat isolasi; Svelte memberimu isolasi gratis tanpa library tambahan.
+
+Empat alat utama yang akan kita bahas:
+
+- **`:global(...)`** — pintu darurat untuk sengaja menulis gaya yang bocor ke luar (mis. menata anak yang dirender lewat slot/snippet, atau elemen pihak ketiga).
+- **CSS custom properties** (`--nama`) — "kenop" yang bisa diatur dari luar komponen untuk menembus batas scoping secara terkendali. Ini cara idiomatis bikin komponen yang bisa di-tema.
+- **`class:` directive** — gula sintaks untuk menyalakan/mematikan satu kelas berdasarkan boolean.
+- **`style:` directive** — gula sintaks untuk menyetel satu properti inline-style secara reaktif.
+
+## 2. Contoh kode
+
+Scoped style otomatis dan pintu darurat `:global()`:
+
+```svelte
+<script>
+	let { children } = $props();
+</script>
+
+<!-- Class 'card' di sini TIDAK akan bentrok dengan .card di komponen lain -->
+<div class="card">
+	<p>Halo dari dalam komponen</p>
+	<!-- konten dari luar (anak) dirender lewat children snippet (Svelte 5) -->
+	{@render children?.()}
+</div>
+
+<style>
+	/* scoped: hanya .card dan p di komponen INI yang kena */
+	.card {
+		padding: 1rem;
+		border: 1px solid #ddd;
+	}
+	p {
+		color: rebeccapurple;
+	}
+
+	/* :global() menembus scoping dengan sengaja.
+	   Berguna untuk menata elemen yang datang dari luar (mis. anak),
+	   yang TIDAK mendapat hash class komponen ini. */
+	:global(.markdown-body a) {
+		text-decoration: underline;
+	}
+</style>
+```
+
+CSS custom properties sebagai "kenop tema" + `class:` dan `style:` directive:
+
+```svelte
+<script>
+	let count = $state(0);
+	let danger = $derived(count > 5);
+</script>
+
+<!-- class: menyalakan kelas 'danger' hanya saat boolean true.
+     Bentuk singkat class:danger sama dengan class:danger={danger}. -->
+<button class="counter" class:danger onclick={() => count++}>
+	Klik: {count}
+</button>
+
+<!-- style: menyetel satu properti inline secara reaktif.
+     Di sini kita menulis ke CSS variable --size. -->
+<span style:--size={count + 'px'} style:font-weight={danger ? 'bold' : 'normal'}>
+	Ukuran ikut count
+</span>
+
+<style>
+	.counter {
+		/* baca custom property; sediakan fallback bila tak diset dari luar */
+		background: var(--accent, #2563eb);
+		color: white;
+		padding: 0.5rem 1rem;
+		border: none;
+		border-radius: 6px;
+	}
+	/* kelas yang dinyalakan oleh class: directive */
+	.danger {
+		background: crimson;
+	}
+	span {
+		/* nilai --size diisi lewat style: di markup atas */
+		font-size: calc(12px + var(--size, 0px));
+	}
+</style>
+```
+
+Mengonsumsi komponen lewat custom property dari luar — komponen induk "memutar kenop" anak:
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Button from './Button.svelte';
+</script>
+
+<!-- --accent didefinisikan di sini, dipakai oleh var(--accent) di dalam Button.
+     Custom property MEMANG menembus batas scoping (itu fitur CSS, bukan bug). -->
+<div style="--accent: tomato">
+	<Button />
+</div>
+```
+
+## 3. Coba sendiri
+
+Ubah `count`, perhatikan kelas `danger` menyala otomatis di atas angka 5, dan custom property `--accent` mengubah warna tombol. Coba juga ganti nilai `--accent` di blok style untuk melihat efek "kenop tema".
+
+<Playground code={`<script>
+	let count = $state(0);
+	let danger = $derived(count > 5);
+</script>
+<div class="wrap">
+	<button class="counter" class:danger onclick={() => count++}>
+		Klik: {count}
+	</button>
+	<p style:color={danger ? 'crimson' : 'inherit'}>
+		{danger ? 'Awas, sudah lebih dari 5!' : 'Masih aman.'}
+	</p>
+	<span class="badge" style:--scale={1 + count / 10}>badge ikut membesar</span>
+</div>
+<!----><style>
+	.wrap {
+		--accent: #2563eb;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		align-items: flex-start;
+		font-family: sans-serif;
+	}
+	.counter {
+		background: var(--accent, gray);
+		color: white;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		cursor: pointer;
+	}
+	.counter.danger {
+		background: crimson;
+	}
+	.badge {
+		display: inline-block;
+		background: #eee;
+		padding: 0.25rem 0.6rem;
+		border-radius: 999px;
+		transform: scale(var(--scale, 1));
+		transform-origin: left center;
+	}
+</style>`} />
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Scoped styling"
+	svelte={`<script>
+	let active = $state(false);
+</script>
+<button class="btn" class:active onclick={() => active = !active}>
+	Toggle
+</button>
+<!----><style>
+	/* scoped OTOMATIS: .btn di sini tak bentrok dengan .btn manapun */
+	.btn { padding: 0.5rem 1rem; }
+	.active { background: tomato; }
+</style>`}
+	vue={`<script setup>
+import { ref } from 'vue'
+const active = ref(false)
+</script>
+<template>
+	<button class="btn" :class="{ active }" @click="active = !active">
+		Toggle
+	</button>
+</template>
+<!-- harus tulis kata 'scoped' secara eksplisit --><style scoped>
+	.btn { padding: 0.5rem 1rem; }
+	.active { background: tomato; }
+</style>`}
+	react={`import styles from './Button.module.css'
+export default function Button() {
+	const [active, setActive] = useState(false)
+	// butuh CSS Modules (atau CSS-in-JS) untuk isolasi;
+	// kelas diakses lewat objek 'styles', bukan string mentah
+	return (
+		<button
+			className={active ? styles.btnActive : styles.btn}
+			onClick={() => setActive(a => !a)}
+		>
+			Toggle
+		</button>
+	)
+}`}
+	diff={{ vue: [12], react: [1] }}
+	note="Svelte: scoped by default, tanpa kata kunci & tanpa library. Vue: sama-sama scoped tapi kata 'scoped' wajib ditulis. React: tidak ada scoping bawaan — kamu memilih CSS Modules / CSS-in-JS / Tailwind dan kelas diakses lewat objek. Trade-off: Svelte & Vue mengikat gaya ke file komponen (kurang fleksibel kalau mau berbagi stylesheet besar antar komponen), sedangkan pendekatan React lebih eksplisit soal asal-usul setiap kelas."
+/>
+
+## 5. Latihan
+
+<Exercise title="Komponen badge yang bisa di-tema">
+Buat sebuah komponen `Badge` (cukup satu file `.svelte`) yang:
+
+1. Menampilkan teks lewat snippet/children atau prop `label`.
+2. Punya warna latar default, tetapi bisa di-override dari luar lewat CSS custom property `--badge-bg`.
+3. Punya prop boolean `pill` yang, bila `true`, membuat sudutnya membulat penuh — gunakan `class:` directive.
+
+Tunjukkan juga cara induk memanggilnya sambil mengganti `--badge-bg`.
+
+{#snippet solution()}
+
+```svelte
+<!-- Badge.svelte -->
+<script>
+	let { label = 'Badge', pill = false } = $props();
+</script>
+
+<span class="badge" class:pill>{label}</span>
+
+<style>
+	.badge {
+		/* fallback bila induk tak menyetel --badge-bg */
+		background: var(--badge-bg, #6b7280);
+		color: white;
+		padding: 0.2rem 0.6rem;
+		border-radius: 4px;
+		font-size: 0.85rem;
+	}
+	.pill {
+		border-radius: 999px;
+	}
+</style>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Badge from './Badge.svelte';
+</script>
+
+<!-- override warna lewat custom property; 'pill' lewat prop boolean -->
+<Badge label="Baru" pill --badge-bg="tomato" />
+<Badge label="Draft" />
+```
+
+Catatan: menulis custom property langsung sebagai atribut komponen (`--badge-bg="tomato"`) didukung Svelte 5 — itu shortcut dari membungkus dengan `<div style="--badge-bg: tomato">`.
+
+{/snippet}
+</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Svelte akan <strong>menghapus selector yang tidak terpakai</strong> saat compile. Kalau kamu menulis <code>.foo {`{ ... }`}</code> di <code>&lt;style&gt;</code> tapi tak ada elemen <code>.foo</code> di markup komponen, gayanya dibuang dan kamu dapat warning. Ini fitur (CSS-mu jadi ramping), tapi mengejutkan kalau kelas itu dipasang dinamis ke elemen anak dari luar. Solusinya: bungkus dengan <code>:global(...)</code> agar Svelte tahu selector itu memang ditujukan ke luar.
+</Callout>
+
+<Callout type="warning">
+<code>:global()</code> itu <strong>pintu darurat, bukan jalan utama</strong>. Setiap kali memakainya kamu melepas jaring pengaman isolasi dan berisiko menimpa gaya komponen lain. Pertimbangkan dulu apakah <strong>CSS custom property</strong> bisa menyelesaikan kebutuhanmu — itu cara menembus batas scoping yang terkendali dan idiomatis untuk theming, tanpa membuka gaya secara global.
+</Callout>
+
+<Callout type="tip">
+Bedakan <code>class:</code> dan <code>style:</code>. Pakai <code>class:</code> saat kamu sudah punya aturan CSS bernama dan tinggal menyalakannya berdasarkan boolean (lebih rapi, gaya tetap di blok <code>&lt;style&gt;</code>). Pakai <code>style:</code> untuk nilai yang dihitung dinamis di runtime — terutama untuk menulis ke CSS variable seperti <code>style:--size={`{n + 'px'}`}</code>, yang sulit dicapai dengan kelas statis.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 3/4 kamu sering melihat <code>on:click</code> dan binding kelas via ekspresi panjang. Di Svelte 5 event memakai <code>onclick</code> biasa, dan <code>class:</code> directive tetap ada plus kini atribut <code>class</code> juga menerima objek/array (mis. <code>class={`{{ active, danger }}`}</code>) ala <code>clsx</code>. Jangan campur pola lama <code>$:</code> reactive untuk menghitung kelas — gunakan <code>$derived</code>.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/scoped-styles" label="Scoped styles — dokumentasi resmi Svelte" />

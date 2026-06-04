@@ -1,0 +1,360 @@
+---
+title: 'Studi Kasus Akhir: Aplikasi Lengkap (Blog/Dashboard) End-to-End'
+level: 8
+levelTitle: Expert
+order: 6
+description: Merangkai seluruh fitur SvelteKit jadi satu aplikasi nyata — routing, layout, server load, form actions, auth via hooks/locals, endpoint API, sampai adapter & deploy.
+docs: https://svelte.dev/docs/kit/introduction
+keywords: [studi kasus, sveltekit, arsitektur, hooks, form actions, end-to-end]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Sampai modul ini kamu sudah belajar tiap fitur SvelteKit secara terpisah: routing berbasis folder, `+layout`, `load` di server, form actions, `enhance`, hooks, `locals`, `+server.js`, dan adapter. Masing-masing terasa seperti potongan puzzle. Modul ini soal **menyusun puzzle itu jadi satu gambar utuh**: sebuah aplikasi blog dengan area dashboard yang butuh login. Tujuannya bukan menambah API baru, tapi melihat **bagaimana semuanya saling memanggil** dalam satu request hidup.
+
+### Analogi: satu request adalah perjalanan satu tamu di restoran
+
+Bayangkan setiap HTTP request adalah seorang tamu yang masuk restoran. Urutannya selalu sama, dan tiap fitur SvelteKit adalah satu peran staf:
+
+- **`hooks.server.js` (`handle`)** adalah **satpam di pintu depan**. Setiap tamu — tanpa kecuali — lewat dia dulu. Dia memeriksa "kartu anggota" (cookie session), lalu menempelkan stiker identitas ke tamu itu: "ini member, namanya Budi" atau "ini tamu anonim". Stiker itulah `event.locals`. Satpam tidak memasak apa pun; tugasnya cuma menetapkan **siapa** tamu ini sebelum dia jalan lebih dalam.
+- **`+layout.server.js` / `+page.server.js` (`load`)** adalah **pelayan**. Dia membaca stiker identitas (`locals`) yang sudah ditempel satpam, lalu mengambil data yang pantas: menu publik untuk semua orang, plus data pribadi kalau tamunya member. Data ini dikirim ke "meja" (komponen `+page.svelte`).
+- **Form actions** adalah **dapur**. Saat tamu mengirim pesanan (submit form / `POST`), dapur memproses, menyimpan ke database, lalu mengembalikan hasil atau pesan error. `enhance` membuat pelayan membawa pesanan ke dapur tanpa tamu harus berdiri dan pindah meja (tanpa full page reload).
+- **`+server.js`** adalah **jendela take-away**. Bukan untuk tamu yang duduk dan melihat halaman, tapi untuk pihak luar (mobile app, webhook, `fetch` dari JS) yang cuma mau data mentah (JSON), bukan HTML.
+- **Adapter** adalah **bangunan restorannya**: ruko, food truck, atau stan di mall. Resep & staf sama; cuma "wadah" tempat mereka beroperasi yang berubah saat deploy.
+
+Kunci yang sering bikin orang React/Vue bingung: di SvelteKit, **otentikasi dan pengambilan data terjadi di server, sebelum komponen pertama dirender**. Tidak ada `useEffect(() => fetch(...))` yang jalan setelah halaman muncul, tidak ada flicker "loading user...". Saat HTML sampai ke browser, ia sudah personal. Hooks menetapkan identitas → `load` memakai identitas itu → halaman dirender. Satu alur lurus, dari pintu depan sampai meja.
+
+### Arsitektur aplikasi (peta folder)
+
+```text
+src/
+├── hooks.server.js          # satpam: baca cookie -> isi event.locals.user
+├── app.d.ts                 # tipe App.Locals (TypeScript)
+├── lib/
+│   └── server/
+│       ├── db.js            # akses database (HANYA server)
+│       └── auth.js          # verifikasi password, buat/cek session
+└── routes/
+    ├── +layout.svelte       # shell: nav, slot via {@render children()}
+    ├── +layout.server.js    # load user untuk SELURUH app (dari locals)
+    ├── +page.svelte         # beranda: daftar post (publik)
+    ├── +page.server.js      # load daftar post
+    ├── blog/
+    │   └── [slug]/
+    │       ├── +page.svelte
+    │       └── +page.server.js   # load 1 post by slug; error(404) jika tak ada
+    ├── login/
+    │   ├── +page.svelte
+    │   └── +page.server.js       # form action: cek password, set cookie, redirect
+    ├── dashboard/
+    │   ├── +layout.server.js     # GERBANG: redirect ke /login kalau belum auth
+    │   ├── +page.svelte
+    │   └── +page.server.js       # load post milik user + actions (create/delete)
+    └── api/
+        └── posts/
+            └── +server.js        # GET/POST JSON untuk konsumen non-HTML
+```
+
+Folder `lib/server/` itu spesial: SvelteKit **menolak** kode di sana ter-import ke bundle browser. Jadi query database dan rahasia auth dijamin tidak bocor ke klien — pagar pengaman yang tidak ada di SPA React/Vue biasa, di mana kamu harus disiplin sendiri memisahkan kode server dan klien.
+
+## 2. Contoh kode
+
+Kita bedah tiap lapisan lewat potongan kunci. Urutannya mengikuti perjalanan request: hooks → layout load → page load + actions → +server. Semua Svelte 5 / SvelteKit 2.
+
+```js
+// src/hooks.server.js  — "satpam pintu depan"
+// Jalan untuk SETIAP request sebelum load/action mana pun.
+import { validateSession } from '$lib/server/auth';
+
+export async function handle({ event, resolve }) {
+	// 1) Baca cookie session (nama cookie bebas, di sini 'session_id').
+	const sessionId = event.cookies.get('session_id');
+
+	// 2) Verifikasi ke DB; hasilnya user atau null.
+	//    Tempelkan ke locals -> tersedia di SEMUA load & action di bawah.
+	event.locals.user = sessionId ? await validateSession(sessionId) : null;
+
+	// 3) Lanjutkan pipeline (render halaman / jalankan endpoint).
+	return resolve(event);
+}
+```
+
+```ts
+// src/app.d.ts  — beri tahu TypeScript bentuk locals.user
+// Tanpa ini, event.locals.user bertipe 'any' dan IntelliSense buta.
+declare global {
+	namespace App {
+		interface Locals {
+			user: { id: string; name: string } | null;
+		}
+	}
+}
+export {};
+```
+
+```js
+// src/routes/+layout.server.js  — load user sekali untuk SELURUH app
+// Karena ini di root layout, datanya turun ke setiap halaman lewat $props().
+export async function load({ locals }) {
+	// Jangan kirim seluruh objek user kalau ada field sensitif —
+	// kirim hanya yang aman ditampilkan di klien.
+	return {
+		user: locals.user ? { name: locals.user.name } : null
+	};
+}
+```
+
+```js
+// src/routes/blog/[slug]/+page.server.js  — load 1 post, 404 jika tak ada
+// error() & redirect() di SvelteKit 2 MELEMPAR sendiri -> TANPA 'throw'.
+import { error } from '@sveltejs/kit';
+import { getPostBySlug } from '$lib/server/db';
+
+export async function load({ params }) {
+	const post = await getPostBySlug(params.slug);
+	if (!post) error(404, 'Post tidak ditemukan'); // bukan: throw error(...)
+	return { post };
+}
+```
+
+```js
+// src/routes/login/+page.server.js  — form action: login -> set cookie -> redirect
+import { fail, redirect } from '@sveltejs/kit';
+import { verifyPassword, createSession } from '$lib/server/auth';
+
+export const actions = {
+	default: async ({ request, cookies }) => {
+		const data = await request.formData();
+		const email = data.get('email');
+		const password = data.get('password');
+
+		const user = await verifyPassword(email, password);
+		if (!user) {
+			// fail() mengembalikan status + data agar form bisa menampilkan error,
+			// TANPA membuang nilai input (email tetap terisi).
+			return fail(400, { email, message: 'Email atau password salah' });
+		}
+
+		const sessionId = await createSession(user.id);
+		cookies.set('session_id', sessionId, {
+			path: '/',
+			httpOnly: true, // tak bisa dibaca JS klien -> aman dari XSS pencuri token
+			secure: true,
+			sameSite: 'lax',
+			maxAge: 60 * 60 * 24 * 7 // 7 hari
+		});
+
+		// redirect() juga melempar sendiri -> TANPA 'throw'.
+		redirect(303, '/dashboard'); // 303 = pola Post/Redirect/Get
+	}
+};
+```
+
+```js
+// src/routes/dashboard/+layout.server.js  — GERBANG area privat
+// Satu file ini melindungi /dashboard DAN semua anaknya sekaligus.
+import { redirect } from '@sveltejs/kit';
+
+export async function load({ locals, url }) {
+	if (!locals.user) {
+		// Simpan tujuan asli agar setelah login bisa balik ke sini.
+		redirect(303, `/login?redirectTo=${url.pathname}`);
+	}
+	// Aman: di bawah sini user pasti ada.
+	return { userId: locals.user.id };
+}
+```
+
+```svelte
+<!-- src/routes/dashboard/+page.svelte — form actions + progressive enhancement -->
+<script>
+	import { enhance } from '$app/forms';
+
+	// data = hasil load; form = hasil action (null saat awal).
+	let { data, form } = $props();
+</script>
+
+<h1>Dashboard</h1>
+
+{#if form?.message}
+	<p class="err">{form.message}</p>
+{/if}
+
+<!-- enhance: submit tanpa full reload. Tanpa JS pun form ini TETAP jalan
+     (server-rendered fallback) — itu inti "progressive enhancement". -->
+<form method="POST" action="?/create" use:enhance>
+	<input name="title" placeholder="Judul post" required />
+	<button>Buat Post</button>
+</form>
+
+<ul>
+	{#each data.posts as post (post.id)}
+		<li>
+			{post.title}
+			<form method="POST" action="?/delete" use:enhance>
+				<input type="hidden" name="id" value={post.id} />
+				<button>Hapus</button>
+			</form>
+		</li>
+	{/each}
+</ul>
+```
+
+```js
+// src/routes/api/posts/+server.js — "jendela take-away" JSON
+// GET buat siapa pun; POST butuh user (pakai locals dari hooks).
+import { json, error } from '@sveltejs/kit';
+import { listPosts, createPost } from '$lib/server/db';
+
+export async function GET() {
+	return json(await listPosts()); // helper json() set header & serialisasi
+}
+
+export async function POST({ request, locals }) {
+	if (!locals.user) error(401, 'Harus login'); // tanpa throw
+	const body = await request.json();
+	const post = await createPost({ title: body.title, authorId: locals.user.id });
+	return json(post, { status: 201 });
+}
+```
+
+```js
+// svelte.config.js — lapisan terakhir: pilih "bangunan" deploy
+import adapter from '@sveltejs/adapter-node'; // ganti sesuai target platform
+export default {
+	kit: { adapter: adapter() }
+};
+```
+
+<Callout type="tip">
+Perhatikan satu hal: kode aplikasi (hooks, load, actions, +server) **tidak menyebut platform deploy sama sekali**. Hanya `svelte.config.js` yang tahu kamu pakai Node, Vercel, atau Cloudflare. Ganti adapter, build ulang — kode di atas tidak berubah seujung kuku pun.
+</Callout>
+
+## 3. Coba sendiri
+
+Bagian server (hooks/load/actions/+server) butuh runtime SvelteKit, jadi tidak bisa dijalankan di playground mini ini. Tapi ada satu potongan yang **murni komponen Svelte**: UI optimistik di dashboard. Saat user menghapus item, kita perbarui tampilan **seketika** (optimistic update) tanpa menunggu server — pola yang dipakai bareng `enhance` di aplikasi nyata. Mainkan komponen mandiri ini:
+
+<Playground code={`<script>
+  // Bayangkan ini daftar post di dashboard.
+  let posts = $state([
+    { id: 1, title: 'Belajar SvelteKit' },
+    { id: 2, title: 'Routing berbasis folder' },
+    { id: 3, title: 'Form actions tanpa API route' }
+  ]);
+  let pesan = $state('');
+  // Hapus optimistik: UI berubah dulu, "server" dianggap pasti sukses.
+  // Di app nyata, ini di dalam callback use:enhance; kalau server gagal,
+  // kamu rollback dengan mengembalikan item.
+  function hapus(id) {
+    posts = posts.filter((p) => p.id !== id);
+    pesan = 'Post ' + id + ' dihapus (optimistik)';
+  }
+  function tambah() {
+    const id = Math.max(0, ...posts.map((p) => p.id)) + 1;
+    posts = [...posts, { id, title: 'Post baru #' + id }];
+    pesan = 'Post ' + id + ' ditambah';
+  }
+</script>
+<h3>Dashboard (simulasi)</h3>
+<button onclick={tambah}>+ Tambah Post</button>
+{#if pesan}<p style="color:teal">{pesan}</p>{/if}
+<ul>
+  {#each posts as post (post.id)}
+    <li>
+      {post.title}
+      <button onclick={() => hapus(post.id)}>Hapus</button>
+    </li>
+  {/each}
+</ul>
+{#if posts.length === 0}<p>Belum ada post. Tambah dulu!</p>{/if}`} />
+
+<Callout type="warning">
+Perbedaan penting: di playground ini "server" diasumsikan selalu sukses. Di aplikasi sungguhan dengan <code>use:enhance</code>, kamu menerima hasil dari server dan <strong>wajib menyiapkan rollback</strong> kalau action gagal (mis. munculkan lagi item yang sudah kamu hapus optimistik). Optimistic UI mempercepat persepsi, tapi server tetap sumber kebenaran.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Lacak satu request dari pintu sampai meja">
+Seorang user yang **sudah login** membuka `/dashboard`. Tuliskan **urutan** file/fungsi SvelteKit yang dieksekusi, dari request masuk sampai HTML dikirim. Lalu, jawab: di titik mana `locals.user` diisi, dan di titik mana ia dipakai untuk memutuskan boleh/tidaknya masuk?
+
+Bonus: ubah skenario jadi user **belum login** membuka `/dashboard` — apa yang berubah?
+
+{#snippet solution()}
+
+  ```text
+  KASUS A — user SUDAH login membuka /dashboard:
+
+  1. src/hooks.server.js (handle)
+     - baca cookie 'session_id'
+     - validateSession() -> user valid
+     - event.locals.user = { id, name }      <-- locals DIISI di sini
+
+  2. src/routes/+layout.server.js (load)
+     - baca locals.user -> kembalikan { user: { name } } untuk shell/nav
+
+  3. src/routes/dashboard/+layout.server.js (load)
+     - cek locals.user                         <-- locals DIPAKAI untuk gerbang
+     - user ADA -> tidak redirect, lanjut
+
+  4. src/routes/dashboard/+page.server.js (load)
+     - ambil post milik locals.user.id
+
+  5. Render: +layout.svelte -> dashboard/+page.svelte
+     - HTML jadi, dikirim ke browser (sudah personal, tanpa flicker)
+
+  Ringkas: locals.user DIISI di hooks (langkah 1),
+  DIPAKAI sebagai gerbang di dashboard/+layout.server.js (langkah 3).
+  ```
+
+  ```text
+  KASUS B — user BELUM login membuka /dashboard:
+
+  1. hooks.server.js -> validateSession gagal -> event.locals.user = null
+  2. +layout.server.js (root) -> kembalikan { user: null }
+  3. dashboard/+layout.server.js -> locals.user null ->
+       redirect(303, '/login?redirectTo=/dashboard')   (melempar, TANPA throw)
+     -> page load & render dashboard TIDAK PERNAH jalan.
+       User langsung mendarat di /login.
+  ```
+
+  Inti pelajaran: hooks menetapkan identitas sekali di depan; layout server di
+  area privat memakai identitas itu sebagai satu titik gerbang yang melindungi
+  seluruh subtree rute — tidak perlu mengulang cek auth di tiap halaman anak.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menaruh logika auth/gerbang di <code>+page.svelte</code> (klien). Cek seperti <code>if (!user) goto('/login')</code> di komponen mudah di-bypass dan datanya sudah terlanjur dikirim ke browser. Gerbang yang benar ada di <strong>server</strong>: <code>+layout.server.js</code> dengan <code>redirect()</code>, atau di <code>hooks.server.js</code>. Server memutuskan sebelum sebyte data sensitif pun meninggalkan mesin.
+</Callout>
+
+<Callout type="warning">
+Jangan import dari <code>$lib/server/*</code> ke dalam <code>+page.svelte</code> atau file <code>.svelte</code> mana pun. SvelteKit akan menggagalkan build (by design), karena kode itu hanya boleh hidup di server. Pisahkan: query/secret di <code>lib/server/</code>, dipanggil dari <code>+page.server.js</code>/<code>+server.js</code>, lalu hasilnya saja yang dikirim ke komponen lewat <code>load</code>.
+</Callout>
+
+<Callout type="pitfall">
+Di SvelteKit 2, <code>error()</code> dan <code>redirect()</code> <strong>melempar sendiri</strong>. Menulis <code>throw redirect(...)</code> adalah pola SvelteKit 1 dan kini keliru — di v2 cukup <code>redirect(303, '/login')</code>. Lupa menghapus <code>throw</code> bisa bikin perilaku tak terduga karena nilainya jadi dilempar dua kali secara semantik.
+</Callout>
+
+<Callout type="legacy">
+Pola lama yang akan kamu temui di tutorial usang: <code>throw redirect()</code>/<code>throw error()</code> (SvelteKit 1), <code>export let data</code> di <code>+page.svelte</code> untuk menerima data load (Svelte 4 — sekarang <code>let &#123; data &#125; = $props()</code>), dan <code>on:submit</code> untuk form (sekarang atribut <code>onsubmit</code>, atau cukup <code>use:enhance</code> pada <code>&lt;form method="POST"&gt;</code>). Kalau menemukannya, terjemahkan ke API modern di atas.
+</Callout>
+
+<Callout type="tip">
+Manfaatkan hierarki <code>load</code>: data yang dipakai banyak halaman (user, tema, menu nav) taruh di <code>+layout.server.js</code> sekali; data spesifik halaman di <code>+page.server.js</code>. SvelteKit menggabungkannya untukmu dan menjalankan ulang hanya yang relevan saat navigasi. Ini menghapus "prop drilling" dan duplikasi fetch yang biasa kamu temui saat mengelola data global di React Context atau Vuex/Pinia.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/introduction" label="SvelteKit — Introduction (gambaran utuh framework)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (handle, locals, auth)" />
+<DocsLink href="https://svelte.dev/docs/kit/form-actions" label="SvelteKit — Form actions & progressive enhancement" />
+<DocsLink href="https://svelte.dev/docs/kit/load" label="SvelteKit — Loading data (load, layout vs page)" />

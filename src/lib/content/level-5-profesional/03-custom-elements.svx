@@ -1,0 +1,285 @@
+---
+title: Custom Elements / Web Components & Browser Support
+level: 5
+levelTitle: Profesional
+order: 3
+description: Mengkompilasi komponen Svelte 5 jadi Web Component standar dengan <svelte:options customElement>, $host(), props/events, shadow DOM, beserta batasan & dukungan browser-nya.
+docs: https://svelte.dev/docs/svelte/custom-elements
+keywords: [custom-elements, web-components, svelte:options, $host, shadow-dom]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sejauh ini komponen Svelte hanya hidup di dalam aplikasi Svelte. Untuk merendernya, kamu butuh runtime Svelte dan biasanya butuh bundler. Tapi bagaimana kalau kamu ingin memakai sebuah komponen Svelte di tempat yang **bukan** aplikasi Svelte? Misalnya di halaman WordPress, di aplikasi React orang lain, di proyek Vue legacy, atau bahkan di file HTML polos tanpa framework apa pun. Di sinilah **Custom Elements** (bagian dari standar Web Components) berperan.
+
+Custom Element adalah elemen HTML buatanmu sendiri — dengan nama tag yang kamu tentukan, mis. `<my-counter>` — yang dikenali browser secara native, sama seperti `<div>` atau `<button>`. Standarnya ada di setiap browser modern tanpa library tambahan. Svelte bisa **mengkompilasi** komponennya menjadi class custom element ini, sehingga hasilnya jadi sepotong UI yang bisa dipakai di mana saja: cukup muat satu file JavaScript, lalu tulis `<my-counter></my-counter>` di HTML.
+
+### Analogi: dari "warga negara" jadi "paspor internasional"
+
+Bayangkan komponen Svelte biasa itu seperti **warga sebuah negara**. Di dalam negaranya (aplikasi Svelte) ia bebas bergerak, kenal semua orang (akses store, context, snippet, dll). Tapi begitu keluar negeri (aplikasi non-Svelte), ia tidak diakui — petugas imigrasi (browser/DOM) tidak tahu cara memprosesnya.
+
+Mengkompilasi komponen jadi Custom Element seperti memberinya **paspor internasional**. Sekarang ia bisa masuk ke "negara" mana pun — React, Vue, HTML polos — karena ia bicara dengan bahasa universal yang dimengerti semua negara: DOM standar. Konsekuensinya, sebagian "hak istimewa dalam negeri" hilang: di luar negeri ia tidak bisa lagi sembarangan pakai context Svelte atau berbagi store antar elemen. Itu wajar — paspor membuatmu bisa ke mana saja, tapi kamu tunduk pada aturan internasional, bukan aturan kampung halaman.
+
+Kalau kamu datang dari React, ini mirip mem-bundle komponen jadi Web Component lewat `react-to-webcomponent`, atau dari Vue lewat `defineCustomElement`. Bedanya, di Svelte fiturnya bawaan compiler — tinggal satu baris opsi.
+
+### Mengaktifkan: `<svelte:options customElement="nama">`
+
+Untuk menandai sebuah komponen agar dikompilasi jadi custom element, tambahkan elemen khusus `<svelte:options>` dengan atribut `customElement` berisi **nama tag**. Aturan nama tag custom element dari spesifikasi: harus mengandung tanda hubung (`-`), mis. `my-counter`, bukan `counter`. Tanda hubung inilah yang membedakan tag buatanmu dari tag bawaan HTML, supaya tidak pernah bentrok dengan elemen standar baru di masa depan.
+
+```svelte
+<svelte:options customElement="my-element" />
+```
+
+Agar Svelte benar-benar menghasilkan custom element (bukan komponen biasa), kamu juga perlu mengaktifkan `customElement: true` di konfigurasi compiler (`compilerOptions` pada `svelte.config.js` / `vite`). Setelah dikompilasi dan file-nya dimuat di halaman, browser otomatis meregistrasi tag tersebut, dan setiap kemunculan `<my-element>` akan "dihidupkan" jadi komponen Svelte-mu.
+
+### `$host()` — pegangan ke elemen di DOM
+
+Ketika komponenmu menjadi custom element, ada "cangkang" DOM nyata yang membungkusnya — yaitu elemen `<my-element>` itu sendiri. Rune `$host()` memberimu **referensi ke cangkang itu** dari dalam script. Ini hanya tersedia ketika komponen dikompilasi sebagai custom element.
+
+Untuk apa? Paling sering: **mengirim event keluar**. Karena dunia luar bukan Svelte, kamu tidak bisa mengirim event lewat prop callback gaya Svelte lalu berharap React/HTML menangkapnya. Yang dimengerti semua dunia adalah `CustomEvent` DOM standar. Jadi kamu memanggil `$host().dispatchEvent(new CustomEvent('increment'))`, dan konsumen di luar bisa mendengarkannya dengan `addEventListener('increment', ...)` — cara universal yang sama untuk semua framework.
+
+### Props & events di custom element
+
+**Props masuk** ke custom element lewat dua jalur: sebagai **properti DOM** (`el.name = 'Rizki'` lewat JavaScript) atau sebagai **atribut HTML** (`<my-element name="Rizki">`). Svelte otomatis menyinkronkan keduanya ke `$props()` komponenmu. Ada catatan penting: nilai lewat atribut HTML selalu berupa **string**, jadi kalau kamu butuh angka/boolean/objek, set lewat properti JavaScript, atau pakai opsi `type` untuk konversi (dibahas di bawah).
+
+Kamu bisa menyetel detail tiap prop lewat objek opsi `props`:
+
+- `attribute` — nama atribut HTML yang dipetakan ke prop ini (berguna kalau nama atribut beda dari nama prop).
+- `reflect: true` — saat prop berubah dari dalam, ubahannya **dipantulkan balik** ke atribut DOM (terlihat di inspector, berguna untuk styling lewat `[attr]`).
+- `type` — tipe konversi untuk nilai dari atribut string: `'String'`, `'Number'`, `'Boolean'`, `'Array'`, atau `'Object'` (dua terakhir di-`JSON.parse`).
+
+**Events keluar** lewat `$host().dispatchEvent(...)` seperti dijelaskan tadi. Selain itu, event yang sudah otomatis kamu kirim dari komponen juga di-re-dispatch sebagai DOM event standar dari custom element, sehingga bisa ditangkap dengan `addEventListener` biasa.
+
+### Shadow DOM — kapsul yang mengisolasi
+
+Secara default, custom element Svelte memakai **shadow DOM**: sebuah sub-pohon DOM terisolasi yang menempel pada elemen host. Ibaratnya kapsul tertutup. Manfaat utamanya **isolasi style**: CSS di dalam komponen tidak bocor keluar, dan CSS global halaman tidak bocor masuk. Inilah yang membuat custom element aman ditempel di halaman asing tanpa takut style-nya kacau bertabrakan.
+
+Tapi isolasi itu pisau bermata dua: karena CSS halaman tidak masuk, style global dan `:global()` jadi **tidak berlaku** kecuali shadow DOM dimatikan. Kamu bisa mengatur perilaku ini lewat opsi `shadow`:
+
+- `shadow: 'open'` (default) — shadow DOM bisa diakses dari luar via `el.shadowRoot`.
+- `shadow: 'none'` — matikan shadow DOM. Komponen merender langsung ke light DOM; style global kembali berlaku, tapi style komponenmu juga bisa bocor keluar.
+
+## 2. Contoh kode
+
+```svelte
+<!-- MyCounter.svelte -->
+<!-- Baris ini menandai komponen dikompilasi jadi custom element <my-counter> -->
+<svelte:options customElement="my-counter" />
+
+<script>
+	// Props masuk dari atribut HTML / properti DOM lewat $props seperti biasa.
+	// start datang dari <my-counter start="5"> -> perlu konversi (lihat contoh berikutnya).
+	let { start = 0 } = $props();
+	let count = $state(start);
+
+	function kirim(type) {
+		// $host() = referensi ke elemen <my-counter> di DOM nyata.
+		// dispatchEvent CustomEvent = cara universal mengirim event ke dunia luar.
+		$host().dispatchEvent(new CustomEvent(type, { detail: count }));
+	}
+</script>
+
+<button
+	onclick={() => {
+		count--;
+		kirim('change');
+	}}
+>-</button>
+
+<span>{count}</span>
+
+<button
+	onclick={() => {
+		count++;
+		kirim('change');
+	}}
+>+</button>
+
+<style>
+	/* Aman terisolasi di shadow DOM: tidak bocor keluar, tak terganggu CSS halaman. */
+	span {
+		padding: 0 0.5rem;
+		font-weight: bold;
+	}
+</style>
+```
+
+```svelte
+<!-- ConfiguredCounter.svelte — bentuk objek customElement lengkap -->
+<svelte:options
+	customElement={{
+		tag: 'configured-counter',
+		shadow: 'open',
+		props: {
+			// 'start' dari atribut HTML dikonversi ke Number (string -> angka)
+			start: { type: 'Number' },
+			// 'count' dipantulkan balik ke atribut, terlihat di DOM & bisa di-CSS
+			count: { reflect: true, type: 'Number', attribute: 'data-count' }
+		}
+	}}
+/>
+
+<script>
+	let { start = 0, count = $bindable(start) } = $props();
+</script>
+
+<button onclick={() => count++}>count: {count}</button>
+```
+
+```html
+<!-- Memakainya di HTML polos / framework lain — tidak perlu Svelte di sisi konsumen -->
+<script type="module" src="/build/my-counter.js"></script>
+
+<my-counter start="5"></my-counter>
+
+<script>
+	const el = document.querySelector('my-counter');
+
+	// Event keluar ditangkap dengan addEventListener standar (universal)
+	el.addEventListener('change', (e) => {
+		console.log('nilai baru:', e.detail);
+	});
+
+	// Set prop sebagai PROPERTI DOM (bukan atribut) -> tipe tetap utuh (number/object)
+	el.start = 10;
+</script>
+```
+
+## 3. Coba sendiri
+
+<Callout type="warning">
+Playground di bawah merender komponen sebagai komponen Svelte <strong>biasa</strong>, jadi <code>&lt;svelte:options customElement&gt;</code> dan <code>$host()</code> tidak benar-benar aktif di sini (keduanya hanya hidup saat dikompilasi dengan <code>customElement: true</code> dan dimuat lewat tag custom). Karena itu kita berlatih dengan versi setara non-custom-element dulu — logikanya identik. Pola event-nya kita tunjukkan lewat prop callback biasa supaya bisa kamu lihat jalan; di custom element sungguhan, ganti pemanggilan callback itu dengan <code>$host().dispatchEvent(new CustomEvent(...))</code>.
+</Callout>
+
+<Playground code={`<script>
+	// Versi non-custom-element agar bisa hidup di playground.
+	// Bayangkan komponen ini punya <svelte:options customElement="my-stepper" />.
+	let count = $state(0);
+	// Di custom element asli, baris ini menjadi:
+	//   $host().dispatchEvent(new CustomEvent(type, { detail: count }))
+	function umumkan(type) {
+		console.log('event keluar:', type, '->', count);
+	}
+</script>
+<div class="stepper">
+	<button onclick={() => { count--; umumkan('decrement'); }}>-</button>
+	<strong>{count}</strong>
+	<button onclick={() => { count++; umumkan('increment'); }}>+</button>
+</div>
+<p>Buka console untuk melihat event yang dikirim keluar.</p>
+<style>
+	.stepper { display: flex; gap: 0.5rem; align-items: center; }
+	button { padding: 0.25rem 0.75rem; }
+</style>`} />
+
+## 4. Latihan
+
+<Exercise title="Buat custom element &lt;user-badge&gt; dengan prop dan event">
+Buat komponen `UserBadge.svelte` yang dikompilasi menjadi custom element bernama `<user-badge>`. Ketentuan:
+
+1. Terima prop `name` (string, default `'Anonim'`) dan `level` (number).
+2. Karena `level` akan dikirim lewat atribut HTML (`<user-badge level="3">`), pastikan ia dikonversi jadi angka — gunakan opsi `props` dengan `type: 'Number'`.
+3. Render `name` dan `level`.
+4. Sediakan tombol "Sapa" yang mengirim event DOM bernama `greet` ke dunia luar, dengan `detail` berisi `name`. Gunakan `$host()`.
+
+Tunjukkan juga cara mendengarkan event `greet` dari HTML polos.
+
+{#snippet solution()}
+
+```svelte
+<!-- UserBadge.svelte -->
+<svelte:options
+	customElement={{
+		tag: 'user-badge',
+		props: {
+			// atribut HTML "level" (string) dikonversi jadi Number
+			level: { type: 'Number' }
+		}
+	}}
+/>
+
+<script>
+	let { name = 'Anonim', level = 1 } = $props();
+
+	function sapa() {
+		// $host() -> elemen <user-badge> di DOM; CustomEvent = jembatan ke luar
+		$host().dispatchEvent(
+			new CustomEvent('greet', { detail: { name } })
+		);
+	}
+</script>
+
+<div class="badge">
+	<strong>{name}</strong> <span>Lv.{level}</span>
+	<button onclick={sapa}>Sapa</button>
+</div>
+
+<style>
+	.badge { display: inline-flex; gap: 0.5rem; align-items: center; }
+</style>
+```
+
+```html
+<!-- Pemakaian di HTML polos / framework lain -->
+<script type="module" src="/build/user-badge.js"></script>
+
+<user-badge name="Rizki" level="3"></user-badge>
+
+<script>
+	document
+		.querySelector('user-badge')
+		.addEventListener('greet', (e) => {
+			// e.detail = { name: 'Rizki' }
+			alert('Halo dari ' + e.detail.name);
+		});
+</script>
+```
+
+Kunci jawaban: `type: 'Number'` mengubah `"3"` (string atribut) jadi `3` (angka) sebelum sampai ke `$props()`. Tanpa itu, `level` akan tetap string dan operasi numerik bisa keliru. Event `greet` lewat `$host().dispatchEvent` adalah satu-satunya cara aman mengirim sinyal ke konsumen non-Svelte — mereka menangkapnya dengan `addEventListener` standar.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Atribut/properti yang namanya diawali <code>on</code> diperlakukan sebagai <strong>event listener</strong>, bukan nilai prop. Jadi prop bernama <code>onclick</code>, <code>onchange</code>, atau bahkan <code>online</code> di custom element bisa salah tafsir. Hindari menamai prop dengan awalan <code>on</code> saat komponen ditargetkan jadi custom element.
+</Callout>
+
+<Callout type="warning">
+Nilai yang masuk lewat <strong>atribut HTML selalu string</strong>. <code>&lt;my-el count="3"&gt;</code> mengirim <code>"3"</code>, bukan <code>3</code>. Untuk angka/boolean/array/objek, set lewat <strong>properti DOM</strong> di JavaScript (<code>el.count = 3</code>) yang mempertahankan tipe asli, atau pakai opsi <code>props.&lt;nama&gt;.type</code> (mis. <code>'Number'</code>, <code>'Boolean'</code>, <code>'Object'</code>) agar Svelte mengonversinya untukmu.
+</Callout>
+
+<Callout type="pitfall">
+Shadow DOM (default) <strong>mengisolasi style</strong>: CSS global halaman dan <code>:global()</code> tidak masuk ke dalam komponen. Bagus untuk menghindari tabrakan, tapi menjebak jika kamu mengandalkan style global. Slotted content (anak yang dioper) juga dirender <strong>eager</strong> — selalu dibuat di DOM walau berada di dalam blok <code>&#123;#if&#125;</code> yang false. Ini berbeda dari rendering lazy Svelte biasa, dan bisa bikin kaget.
+</Callout>
+
+<Callout type="warning">
+Custom element <strong>kurang cocok untuk SSR</strong>: shadow DOM bergantung pada JavaScript di browser, jadi tidak ter-render di server. Selain itu <strong>context Svelte tidak bisa dibagi</strong> antar custom element (tiap elemen adalah pulau terisolasi), dan style di-inline sebagai string JavaScript, bukan diekstrak ke file <code>.css</code> terpisah. Untuk aplikasi Svelte penuh, gunakan komponen biasa; custom element ditujukan khusus untuk interoperabilitas dengan dunia non-Svelte.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4, event dari komponen dikirim lewat <code>createEventDispatcher()</code>. Di Svelte 5 itu sudah usang. Untuk custom element, kirim event DOM dengan <code>$host().dispatchEvent(new CustomEvent(...))</code> (universal, ditangkap <code>addEventListener</code>). Untuk komunikasi antar-komponen Svelte biasa, pakai prop callback (mis. <code>onsave</code>). Begitu pula <code>&lt;slot&gt;</code> diganti <code>&#123;@render children()&#125;</code> / snippet.
+</Callout>
+
+<Callout type="tip">
+Dukungan browser: custom element & shadow DOM didukung penuh oleh semua browser evergreen modern (Chrome, Edge, Firefox, Safari). Untuk browser sangat lawas yang tidak mendukungnya, kamu butuh <strong>polyfill</strong> Web Components. Karena outputnya elemen DOM standar, hasil kompilasi Svelte ini bisa dipakai mulus di React, Vue, Angular, atau HTML polos tanpa runtime Svelte di sisi konsumen.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '<svelte:options tag="my-el" />', modern: '<svelte:options customElement="my-el" />', note: 'Atribut tag lama diganti customElement (string atau objek opsi).' },
+	{ legacy: 'createEventDispatcher() lalu dispatch("x")', modern: '$host().dispatchEvent(new CustomEvent("x"))', note: 'Event keluar custom element via DOM standar.' },
+	{ legacy: '<slot />', modern: '{@render children()}', note: 'Snippet menggantikan slot di Svelte 5.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/custom-elements" label="Custom elements — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/$host" label="$host() rune — referensi resmi Svelte" />

@@ -1,0 +1,352 @@
+---
+title: Error Handling, Link Options, Service Workers
+level: 7
+levelTitle: SvelteKit Lanjutan
+order: 3
+description: Membedakan expected vs unexpected errors dengan error()/+error.svelte, mengatur preload & reload lewat link options, dan memakai service worker bawaan SvelteKit via $service-worker.
+docs: https://svelte.dev/docs/kit/errors
+keywords: [errors, error-boundary, link-options, preload, service-worker, pwa]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Modul ini menyatukan tiga hal yang kelihatannya tak berhubungan, tapi sebenarnya sama-sama soal **apa yang terjadi di "tepi" aplikasimu**: ketika sesuatu gagal (errors), ketika user akan berpindah halaman (link options), dan ketika jaringan ikut campur (service workers). Ketiganya adalah lapisan yang menentukan apakah aplikasimu terasa kokoh atau rapuh.
+
+### Bagian A — Expected vs unexpected errors
+
+Ini pembedaan terpenting di seluruh modul, jadi pahami baik-baik. SvelteKit membagi error menjadi dua jenis, dan caramu menanganinya berbeda.
+
+**Analogi: pegawai bank.** Bayangkan kamu teller bank. Ada dua macam "masalah" yang bisa muncul saat melayani nasabah:
+
+1. **Masalah yang sudah kamu antisipasi** — saldo tidak cukup, nomor rekening tidak ditemukan, formulir belum lengkap. Ini bukan "kerusakan"; ini bagian normal dari pekerjaan. Kamu punya respons yang sopan dan jelas: "Mohon maaf, saldo Anda tidak mencukupi." Nasabah paham apa yang salah dan apa yang harus dilakukan. Inilah **expected error**: kamu sengaja melemparkannya dengan fungsi `error()` dari `@sveltejs/kit`, lengkap dengan kode status (mis. 404, 403) dan pesan yang aman ditampilkan ke user.
+
+2. **Masalah yang TIDAK kamu antisipasi** — tiba-tiba listrik mati, komputer hang, atau brankas macet karena bug mekanik. Kamu tidak bisa menjelaskannya ke nasabah secara detail (lagipula menyebut "kabel X korslet di ruang server" malah membingungkan dan bisa membocorkan info internal). Yang pantas hanyalah: "Maaf, ada gangguan teknis, mohon coba lagi." Inilah **unexpected error**: error apa pun yang dilempar BUKAN lewat `error()` — misalnya `TypeError`, `cannot read property of undefined`, koneksi database putus. SvelteKit menganggapnya berbahaya, jadi di production ia **menyembunyikan detail aslinya** (hanya menampilkan pesan generik "Internal Error" + status 500) supaya bug internal dan data sensitif tidak bocor ke pengunjung.
+
+Kenapa pembedaan ini penting? Karena keamanan dan UX. Expected error boleh tampil apa adanya ke user (kamu yang menulis pesannya, jadi pasti aman). Unexpected error TIDAK boleh, karena pesan aslinya sering memuat detail teknis internal. SvelteKit menerapkan kebijakan ini otomatis: pakai `error()` = "aku percaya pesan ini, tampilkan"; lempar `Error` biasa = "ini bug, sensor di production".
+
+Saat error terjadi selama `load` atau saat render, SvelteKit akan mencari komponen `+error.svelte` terdekat di pohon rute dan merendernya menggantikan halaman. Komponen itu bisa membaca `page.status` dan `page.error` untuk menampilkan UI yang sesuai. Ini mirip **error boundary** di React (`componentDidCatch` / `<ErrorBoundary>`) atau `errorCaptured` / `error.vue` di Nuxt — bedanya di SvelteKit ia terikat pada hierarki rute, bukan hanya komponen.
+
+### Bagian B — Link options
+
+Saat user mengarahkan kursor ke sebuah link, ada jeda beberapa ratus milidetik sebelum mereka benar-benar mengklik. SvelteKit bisa memanfaatkan jeda itu untuk **diam-diam mengambil data halaman tujuan lebih awal** (preload), sehingga begitu diklik, halaman langsung muncul — terasa instan.
+
+**Analogi: pelayan restoran yang jeli.** Pelayan yang baik memperhatikan saat kamu mulai melirik menu dessert; ia diam-diam memberi tahu dapur "siapkan, sepertinya meja 5 akan pesan". Begitu kamu benar-benar memesan, hidangannya keluar nyaris seketika. Itulah `data-sveltekit-preload-data`: SvelteKit menjalankan fungsi `load` halaman tujuan begitu kamu *hover* (atau *touchstart*), sebelum klik terjadi.
+
+Link options bukan komponen khusus, melainkan **atribut HTML `data-*`** yang kamu tempel di elemen `<a>` atau elemen induk mana pun (atribut diwariskan ke semua link di dalamnya). Dua yang utama:
+
+- **`data-sveltekit-preload-data`** — kapan men-preload data halaman tujuan: `"hover"` (default praktis: saat hover/touch) atau `"tap"` (hanya saat sudah ditekan; hemat kuota, cocok untuk mobile).
+- **`data-sveltekit-reload`** — paksa link ini melakukan navigasi browser penuh (full page reload), bukan navigasi klien SvelteKit. Berguna saat menuju rute yang ditangani server lain / di luar app SvelteKit-mu.
+
+Karena ini atribut yang diwariskan, pola umum: pasang `data-sveltekit-preload-data="hover"` sekali di `<body>` (lewat `src/app.html`) agar berlaku ke seluruh app, lalu timpa per-link bila perlu (mis. set `"tap"` atau matikan dengan `"false"`).
+
+### Bagian C — Service worker bawaan
+
+**Analogi: resepsionis yang menyimpan arsip.** Service worker itu seperti resepsionis yang duduk di antara aplikasimu (browser) dan kantor pusat (server jaringan). Setiap permintaan file lewat dulu ke resepsionis ini. Kalau dia sudah punya salinan arsipnya di laci (cache), dia bisa langsung memberikannya tanpa menelepon kantor pusat — bahkan saat telepon mati (offline). Inilah inti **service worker**: skrip yang berjalan di background browser, mencegat request jaringan, dan bisa melayaninya dari cache. Ini fondasi aplikasi yang bisa jalan offline (PWA).
+
+SvelteKit punya dukungan service worker bawaan yang sederhana: kalau kamu membuat file `src/service-worker.js` (atau `.ts`), SvelteKit otomatis membundel dan meregistrasikannya. Di dalamnya kamu boleh meng-import modul ajaib `$service-worker` yang menyediakan tiga daftar penting: `build` (file hasil build aplikasimu, mis. chunk JS/CSS), `files` (aset statis dari folder `static`), dan `version` (string unik per build, dipakai untuk menamai cache agar versi lama bisa dibersihkan). Ketiganya membuatmu bisa meng-cache "seluruh isi app" dengan percaya diri, lalu menyajikannya saat offline.
+
+## 2. Contoh kode
+
+Mari lihat ketiga konsep dalam bentuk kode. Mulai dari expected error di `load`:
+
+```js
+// src/routes/produk/[id]/+page.server.js
+import { error } from '@sveltejs/kit';
+
+export async function load({ params }) {
+	const produk = await db.getProduk(params.id);
+
+	// EXPECTED ERROR: kita SENGAJA menandai "tidak ditemukan".
+	// PENTING (SvelteKit 2): JANGAN tulis `throw error(...)`.
+	// error() sudah melempar sendiri. Cukup panggil seperti fungsi biasa.
+	if (!produk) {
+		error(404, 'Produk tidak ditemukan'); // status + pesan aman utk user
+	}
+
+	// Bisa juga objek pesan terstruktur (selama tipenya cocok dgn App.Error):
+	if (produk.privat) {
+		error(403, { message: 'Produk ini privat', code: 'FORBIDDEN' });
+	}
+
+	return { produk };
+}
+```
+
+Komponen `+error.svelte` menangkap error dan menampilkannya. Letaknya menentukan cakupan: `+error.svelte` di folder rute hanya menangkap error rute itu & turunannya; di `src/routes/+error.svelte` jadi fallback global.
+
+```svelte
+<!-- src/routes/+error.svelte  (fallback paling luar) -->
+<script>
+	import { page } from '$app/state'; // SvelteKit 2: $app/state, BUKAN $app/stores
+</script>
+
+<!-- page.status = kode HTTP, page.error = objek error (mis. { message }) -->
+<h1>{page.status}</h1>
+<p>{page.error?.message}</p>
+
+{#if page.status === 404}
+	<a href="/">Kembali ke beranda</a>
+{:else}
+	<!-- Untuk unexpected error (500), page.error.message di PRODUCTION
+	     sudah otomatis diganti jadi pesan generik oleh SvelteKit,
+	     jadi aman ditampilkan apa adanya. -->
+	<p>Terjadi kesalahan. Coba muat ulang halaman.</p>
+{/if}
+```
+
+Untuk menangani **unexpected error** secara terpusat (logging ke Sentry, dll.) dan membentuk pesannya, pakai hook `handleError`:
+
+```js
+// src/hooks.server.js
+export function handleError({ error, event, status, message }) {
+	// Di sini cuma error TAK TERDUGA yang masuk (bukan yang dari error()).
+	// Kirim ke layanan pemantauan dengan detail aslinya:
+	console.error('UNEXPECTED:', error, 'di', event.url.pathname);
+
+	// Nilai balik = objek yang akan jadi `page.error` di +error.svelte.
+	// JANGAN bocorkan detail asli; kembalikan pesan generik yang aman.
+	return {
+		message: 'Maaf, terjadi gangguan. Tim kami sudah diberi tahu.'
+	};
+}
+```
+
+Link options — cukup atribut HTML, bisa di markup Svelte atau di `app.html`:
+
+```svelte
+<!-- Per-link, di komponen Svelte -->
+<nav>
+	<!-- preload data halaman tujuan saat hover (terasa instan saat diklik) -->
+	<a href="/dashboard" data-sveltekit-preload-data="hover">Dashboard</a>
+
+	<!-- hanya preload saat ditekan (hemat kuota, cocok mobile) -->
+	<a href="/berita" data-sveltekit-preload-data="tap">Berita</a>
+
+	<!-- paksa full reload browser (mis. menuju rute yg dilayani server lain) -->
+	<a href="/admin-legacy" data-sveltekit-reload>Admin lama</a>
+
+	<!-- matikan preload utk satu link -->
+	<a href="/besar" data-sveltekit-preload-data="false">Halaman berat</a>
+</nav>
+```
+
+```html
+<!-- src/app.html — set sekali untuk SELURUH app (atribut diwariskan ke
+     semua <a> di dalamnya). Per-link di atas bisa menimpanya. -->
+<body data-sveltekit-preload-data="hover">
+	%sveltekit.body%
+</body>
+```
+
+Service worker bawaan — cache seluruh app saat install, sajikan dari cache saat offline:
+
+```js
+// src/service-worker.js
+/// <reference types="@sveltejs/kit" />
+import { build, files, version } from '$service-worker';
+
+// version unik per build -> nama cache ikut berganti tiap deploy,
+// sehingga cache lama mudah dibersihkan.
+const CACHE = `cache-${version}`;
+
+// Semua aset yang ingin di-precache: hasil build app + file statis.
+const ASSETS = [...build, ...files];
+
+self.addEventListener('install', (event) => {
+	// Saat install: unduh & simpan semua aset ke cache baru.
+	async function preCache() {
+		const cache = await caches.open(CACHE);
+		await cache.addAll(ASSETS);
+	}
+	event.waitUntil(preCache());
+});
+
+self.addEventListener('activate', (event) => {
+	// Saat aktif: hapus cache versi lama agar tidak menumpuk.
+	async function cleanup() {
+		for (const key of await caches.keys()) {
+			if (key !== CACHE) await caches.delete(key);
+		}
+	}
+	event.waitUntil(cleanup());
+});
+
+self.addEventListener('fetch', (event) => {
+	// Hanya tangani GET; biarkan POST/PUT lewat ke jaringan apa adanya.
+	if (event.request.method !== 'GET') return;
+
+	async function respond() {
+		const url = new URL(event.request.url);
+		const cache = await caches.open(CACHE);
+
+		// Aset app/static: ambil dari cache dulu (cache-first) -> cepat & offline-ready.
+		if (ASSETS.includes(url.pathname)) {
+			const cached = await cache.match(url.pathname);
+			if (cached) return cached;
+		}
+
+		// Sisanya: coba jaringan; kalau gagal (offline), jatuh ke cache.
+		try {
+			const res = await fetch(event.request);
+			if (res.ok) cache.put(event.request, res.clone());
+			return res;
+		} catch {
+			const cached = await cache.match(event.request);
+			if (cached) return cached;
+			throw new Error('offline & tidak ada di cache');
+		}
+	}
+
+	event.respondWith(respond());
+});
+```
+
+## 3. Coba sendiri
+
+Ketiga fitur di modul ini butuh server/build SvelteKit sungguhan (rute, hook, registrasi service worker), jadi tidak bisa dijalankan di playground browser. Sebagai gantinya, gunakan tabel keputusan dan langkah uji lokal berikut untuk melatih intuisi, lalu praktikkan di proyek SvelteKit-mu.
+
+```text
+PETA KEPUTUSAN ERROR: pakai yang mana?
+──────────────────────────────────────────────
+Kasus "ini bagian normal alur" (404 not found, 403 forbidden,
+401 unauthorized, 400 input salah)
+   -> error(status, pesan)   // EXPECTED. Pesan aman tampil ke user.
+                             // (panggil tanpa `throw`)
+
+Kasus "ini seharusnya tak terjadi" (db down, bug, undefined)
+   -> biarkan error itu naik / lempar Error biasa  // UNEXPECTED.
+      Di production, SvelteKit menyensor pesannya jadi generik.
+      Tangani logging-nya di handleError (hooks.server.js).
+
+Mau redirect, bukan error? (mis. belum login -> ke /login)
+   -> redirect(303, '/login')  // juga TANPA `throw` di SvelteKit 2.
+
+UI saat error -> +error.svelte (lokal utk cakupan sempit,
+                 root utk fallback global)
+```
+
+```bash
+# Uji error handling di proyek lokal:
+# 1) Buat src/routes/coba/+page.server.js berisi:  error(418, 'Aku teko');
+# 2) Buat src/routes/coba/+error.svelte yg menampilkan page.status & page.error.message
+# 3) Buka /coba -> harus tampil 418 + pesanmu (expected: pesan utuh).
+# 4) Ganti jadi: throw new Error('rahasia internal');  lalu jalankan
+#    `vite build && vite preview` (mode production) dan buka /coba.
+#    -> page.error.message jadi generik "Internal Error", BUKAN teks rahasiamu.
+#    (Di `vite dev`, kamu masih lihat pesan asli — itu sengaja, untuk debugging.)
+```
+
+```bash
+# Uji link preload:
+# 1) Set <body data-sveltekit-preload-data="hover"> di app.html.
+# 2) Buka DevTools > Network, hover sebuah <a> menuju rute ber-load.
+# 3) Amati request data (__data.json) muncul SEBELUM kamu mengklik.
+#    Ubah ke "tap" -> request baru muncul saat link ditekan.
+```
+
+<Callout type="warning">
+Service worker hanya teregistrasi di build <strong>production</strong> (atau saat <code>vite preview</code>), bukan di <code>vite dev</code> secara default — ini sengaja agar tidak mengganggu hot-reload saat development. Untuk mengetes offline: jalankan <code>vite build</code> lalu <code>vite preview</code>, buka app, lalu di DevTools > Network centang "Offline" dan reload. Kalau caching benar, app tetap tampil.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Bedakan dan tangani error dengan benar">
+Sebuah rute `src/routes/akun/[id]/+page.server.js` punya `load` yang: (a) mengambil user dari database; (b) hanya boleh diakses pemiliknya. Tulis `load` yang menangani tiga kondisi berikut dengan **jenis error yang tepat**, plus jelaskan singkat kenapa:
+
+1. User dengan `id` tersebut tidak ada di database.
+2. User ada, tapi yang sedang login (`locals.user`) bukan pemiliknya.
+3. Pemanggilan `db.getUser()` melempar exception tak terduga (mis. koneksi DB putus) — apa yang harus kamu lakukan (atau justru TIDAK lakukan)?
+
+Lalu, tulis kerangka `src/routes/akun/+error.svelte` yang menampilkan pesan berbeda untuk status 404 vs 403.
+
+{#snippet solution()}
+
+  ```js
+  // src/routes/akun/[id]/+page.server.js
+  import { error } from '@sveltejs/kit';
+
+  export async function load({ params, locals }) {
+  	// (3) JANGAN bungkus db.getUser dengan try/catch hanya untuk "merapikan".
+  	//     Kalau DB putus, itu UNEXPECTED -> biarkan naik. SvelteKit akan
+  	//     menyensor pesannya di production & memanggil handleError utk logging.
+  	//     Menangkapnya lalu melempar error(500, e.message) malah BERBAHAYA:
+  	//     kamu bisa membocorkan detail internal ke user.
+  	const user = await db.getUser(params.id);
+
+  	// (1) EXPECTED: tidak ditemukan. 404 + pesan aman. Tanpa `throw`.
+  	if (!user) {
+  		error(404, 'Pengguna tidak ditemukan');
+  	}
+
+  	// (2) EXPECTED: bukan pemilik. 403 forbidden. Tanpa `throw`.
+  	if (user.id !== locals.user?.id) {
+  		error(403, 'Kamu tidak boleh mengakses akun ini');
+  	}
+
+  	return { user };
+  }
+  ```
+
+  ```svelte
+  <!-- src/routes/akun/+error.svelte -->
+  <script>
+  	import { page } from '$app/state';
+  </script>
+
+  {#if page.status === 404}
+  	<h1>404 — Akun tidak ada</h1>
+  	<p>{page.error?.message}</p>
+  	<a href="/">Beranda</a>
+  {:else if page.status === 403}
+  	<h1>403 — Akses ditolak</h1>
+  	<p>{page.error?.message}</p>
+  {:else}
+  	<h1>{page.status} — Terjadi kesalahan</h1>
+  	<p>Coba muat ulang halaman.</p>
+  {/if}
+  ```
+
+  Intinya: 404 & 403 adalah bagian normal alur -> `error()` (expected, pesan boleh utuh). Kegagalan DB bukan -> biarkan naik (unexpected, disensor & dilog). Jangan pernah membungkus error tak terduga jadi `error()` dengan pesan aslinya.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Di SvelteKit 2, <code>error()</code> dan <code>redirect()</code> <strong>melempar sendiri</strong> — jangan tulis <code>throw</code> di depannya. Menulis <code>throw error(404, ...)</code> tidak error secara sintaks, tapi pola yang benar (dan yang dipakai dokumentasi) adalah memanggilnya langsung: <code>error(404, 'pesan')</code>. Ini perubahan dari SvelteKit 1 yang dulu memang menulis <code>throw error(...)</code> / <code>throw redirect(...)</code>. Kalau kamu menangkap error di dalam <code>try/catch</code>, ingat bahwa <code>error()</code>/<code>redirect()</code> akan ikut tertangkap — gunakan <code>isHttpError()</code> / <code>isRedirect()</code> untuk membedakannya dari error sungguhan.
+</Callout>
+
+<Callout type="warning">
+Jangan pernah membungkus error tak terduga menjadi <code>error()</code> dengan pesan aslinya, mis. <code>error(500, e.message)</code>. Karena pesan dari <code>error()</code> dianggap "aman ditampilkan", kamu jadi membocorkan detail internal (path file, query SQL, dll.) ke pengunjung — justru kebalikan dari yang seharusnya. Untuk error tak terduga: biarkan naik, dan tangani logging-nya di <code>handleError</code> (<code>hooks.server.js</code>). Di sanalah tempat detail asli dicatat ke sistem pemantauan, sementara user hanya melihat pesan generik.
+</Callout>
+
+<Callout type="tip">
+<code>data-sveltekit-preload-data</code> bukan sihir gratis: preload menjalankan <code>load</code> halaman tujuan lebih awal, artinya ia bisa memicu request data yang akhirnya tidak terpakai kalau user batal mengklik. Untuk app dengan banyak link "berat", pertimbangkan <code>"tap"</code> alih-alih <code>"hover"</code> (terutama di mobile, di mana "hover" praktis berarti "saat menyentuh" dan kuota lebih mahal). Pasang default di <code>app.html</code>, lalu sesuaikan per-link.
+</Callout>
+
+<Callout type="warning">
+Service worker bisa membuat user "terjebak" di versi lama: kalau strategi cache-mu cache-first untuk segalanya tanpa mekanisme update, mereka mungkin tak pernah melihat deploy baru. Pakai <code>version</code> dari <code>$service-worker</code> untuk menamai cache (seperti contoh) agar cache lama dibersihkan saat <code>activate</code>. Untuk app produksi sungguhan yang butuh strategi offline canggih, banyak tim memilih <code>@vite-pwa/sveltekit</code> (berbasis Workbox) ketimbang menulis sendiri.
+</Callout>
+
+<Callout type="legacy">
+Di komponen <code>+error.svelte</code>, gunakan <code>page</code> dari <code>$app/state</code> (SvelteKit 2). Modul lama memakai store <code>page</code> dari <code>$app/stores</code> yang diakses dengan tanda <code>$</code> (mis. <code>$page.status</code>). Itu masih ada tapi sudah dianggap pendekatan lama; <code>$app/state</code> berbasis runes dan tidak butuh prefiks <code>$</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'throw error(404, msg)', modern: 'error(404, msg)', note: 'SvelteKit 2: error() melempar sendiri, tanpa throw' },
+	{ legacy: 'throw redirect(303, url)', modern: 'redirect(303, url)', note: 'sama: redirect() melempar sendiri' },
+	{ legacy: "import { page } from '$app/stores'  ->  $page.status", modern: "import { page } from '$app/state'  ->  page.status", note: 'state berbasis runes, tanpa prefiks $' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/errors" label="SvelteKit — Errors (expected vs unexpected, error(), handleError)" />
+<DocsLink href="https://svelte.dev/docs/kit/link-options" label="SvelteKit — Link options (preload-data, reload, dsb.)" />
+<DocsLink href="https://svelte.dev/docs/kit/service-workers" label="SvelteKit — Service workers ($service-worker, build/files/version)" />

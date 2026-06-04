@@ -1,0 +1,365 @@
+---
+title: 'Loading Data: load, +page.js vs +page.server.js'
+level: 6
+levelTitle: SvelteKit Dasar
+order: 4
+description: Memahami cara SvelteKit mengambil data halaman lewat fungsi load — perbedaan universal load (+page.js) dan server load (+page.server.js), layout load, invalidation, dan streaming.
+docs: https://svelte.dev/docs/kit/load
+keywords: [load, page.js, page.server.js, layout-load, invalidate, streaming]
+---
+
+<script>
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Sampai sekarang komponen halaman (`+page.svelte`) baru bisa menampilkan data yang kamu ketik sendiri di dalamnya. Tapi aplikasi sungguhan butuh data dari luar: daftar produk dari database, profil user dari API, isi artikel dari CMS. Pertanyaannya: **kapan dan di mana data itu diambil?**
+
+Di SvelteKit jawabannya adalah **fungsi `load`**. `load` adalah fungsi yang kamu ekspor dari file bernama khusus (`+page.js` atau `+page.server.js`), dan SvelteKit menjalankannya **sebelum** komponen halaman dirender. Apa pun yang di-`return` oleh `load` akan tersedia di komponen lewat prop `data`. Jadi alurnya: SvelteKit lihat URL, jalankan `load` yang sesuai, ambil hasilnya, baru render `+page.svelte` dengan data yang sudah siap.
+
+Ini berbeda jauh dari kebiasaan React murni, di mana kamu sering memanggil `fetch` di dalam `useEffect` setelah komponen tampil — yang menyebabkan kedip "loading..." dan masalah waterfall. Di SvelteKit, data sudah ada saat render pertama (termasuk saat SSR), sehingga HTML yang dikirim ke browser sudah berisi datanya.
+
+### Analogi: dua dapur restoran
+
+Bayangkan kamu pemilik restoran. Ada **dua dapur**:
+
+- **Dapur depan (universal load — `+page.js`)** ada di area terbuka, bisa dilihat tamu. Koki di sini boleh memasak di hadapan tamu (di **browser**) maupun di belakang sebelum buka (di **server**). Karena terlihat tamu, kamu **tidak boleh** menyimpan resep rahasia atau kunci brankas di sini — tamu bisa mengintip. Cocok untuk memanggil API publik yang memang boleh dilihat siapa saja.
+
+- **Dapur belakang (server load — `+page.server.js`)** terkunci, hanya staf yang boleh masuk, tamu tidak akan pernah melihat isinya. Di sinilah kamu menaruh **brankas** (kredensial database, API key, query SQL langsung). Hasil masakannya diantar ke meja tamu, tapi tamu tidak pernah tahu cara membuatnya.
+
+Aturan emasnya: kalau resep mengandung rahasia (akses database, secret key) atau modul yang cuma jalan di server, **wajib** pakai dapur belakang (`+page.server.js`). Kalau cuma ambil data publik dan ingin fleksibel (bisa jalan di klien saat navigasi), pakai dapur depan (`+page.js`).
+
+### Universal load vs server load
+
+Ini inti modul. Dua jenis `load`, beda lokasi eksekusi:
+
+**Universal load (`+page.js`)** berjalan di **kedua sisi**: di server saat request pertama (SSR), lalu di **browser** saat navigasi berikutnya di klien. Karena bisa berjalan di browser, kodenya ikut terkirim ke klien — jadi jangan menaruh rahasia di sini. Boleh me-`return` apa saja, termasuk nilai non-serializable seperti komponen atau function. Cocok untuk memanggil API publik via `event.fetch`.
+
+**Server load (`+page.server.js`)** berjalan **selalu di server saja**. Kodenya tidak pernah dikirim ke browser, jadi aman untuk akses database langsung, baca file, pakai secret. Saat navigasi di klien, SvelteKit memanggil server load lewat permintaan HTTP internal di balik layar. Karena hasilnya harus dikirim lewat jaringan, nilai yang di-`return` harus **serializable** (SvelteKit pakai `devalue`, jadi bisa `Date`, `Map`, `Set`, `BigInt` — tapi tidak bisa function atau class instance sembarangan).
+
+### data mengalir ke halaman lewat $props
+
+Komponen halaman menerima hasil `load` lewat prop bernama `data`. Karena ini Svelte 5, kamu mengambilnya dengan `$props()` — sama persis seperti prop biasa. Tidak ada API magis; `data` hanyalah satu prop yang isinya adalah objek yang kamu `return` dari `load`.
+
+### Layout load: data bersama
+
+Sama seperti ada `+page.js`/`+page.server.js` untuk satu halaman, ada `+layout.js`/`+layout.server.js` untuk **layout**. `load` di layout cocok untuk data yang dibutuhkan banyak halaman sekaligus — misalnya data user yang login, dipakai di navbar di semua halaman. Data dari layout load otomatis tergabung dan tersedia di semua halaman anak. Sebuah halaman bahkan bisa membaca data milik layout induknya lewat `await parent()`.
+
+### depends & invalidate
+
+Secara default, SvelteKit cukup pintar: kalau kamu pindah dari `/produk/1` ke `/produk/2`, `load` dijalankan ulang karena URL berubah. Tapi kadang kamu ingin menjalankan ulang `load` **tanpa pindah URL** — misalnya setelah user menambah komentar, kamu mau memuat ulang daftar komentar. Untuk itu ada `invalidate()`. Kamu menandai sebuah `load` dengan `depends('app:komentar')`, lalu memanggil `invalidate('app:komentar')` kapan saja untuk memaksa `load` itu jalan lagi. Ada juga `invalidateAll()` untuk menjalankan ulang semua `load`.
+
+### Streaming: kirim cepat dulu, sisanya menyusul
+
+Kadang sebagian data cepat didapat (judul artikel) tapi sebagian lambat (rekomendasi dari layanan lain). Daripada menunggu semua selesai baru render, **streaming** membiarkanmu mengirim data cepat lebih dulu dan "menjanjikan" data lambat menyusul. Caranya: `return` sebuah **promise yang belum di-`await`** dari server load. Halaman langsung tampil dengan data yang sudah ada, lalu bagian yang lambat terisi begitu promise selesai — di komponen kamu tampilkan dengan blok `{#await}`. Catatan: streaming hanya berlaku di **server load**, bukan universal load.
+
+## 2. Contoh kode
+
+Mari mulai dari pasangan paling dasar: server load yang menyediakan data, dan halaman yang menampilkannya.
+
+```js
+// src/routes/produk/+page.server.js
+// Berjalan SELALU di server. Aman akses database / secret di sini.
+import { db } from '$lib/server/db'; // modul khusus server (folder $lib/server)
+
+// Tanda tangan load menerima satu objek "event".
+// Kita destructure { params } dari situ; ada juga url, fetch, parent, dst.
+export async function load({ params }) {
+	const produk = await db.getAllProducts(); // query langsung ke DB — aman, di server
+
+	// Yang di-return harus SERIALIZABLE (akan dikirim ke browser via jaringan).
+	return { produk };
+}
+```
+
+```svelte
+<!-- src/routes/produk/+page.svelte -->
+<!-- Komponen halaman menerima hasil load lewat prop "data". -->
+<script>
+	// Svelte 5: ambil prop "data" dengan $props(). Bukan API khusus —
+	// "data" adalah satu prop biasa yang isinya hasil return dari load.
+	let { data } = $props();
+</script>
+
+<h1>Daftar Produk</h1>
+<ul>
+	{#each data.produk as p (p.id)}
+		<li>{p.nama} — Rp{p.harga}</li>
+	{/each}
+</ul>
+```
+
+Sekarang versi **universal load** (`+page.js`) untuk mengambil data dari **API publik**. Bedanya: pakai `event.fetch` (bukan akses DB), dan kode ini ikut terkirim ke browser.
+
+```js
+// src/routes/berita/+page.js
+// Universal load: jalan di server (SSR) DAN di browser (navigasi klien).
+// JANGAN taruh secret di sini — kodenya ikut ke klien.
+
+// Pakai "fetch" dari event, BUKAN fetch global. fetch milik SvelteKit
+// ini pintar: bisa pakai cookie/credentials saat SSR, hindari request ganda,
+// dan bisa memanggil endpoint internal aplikasimu dengan path relatif.
+export async function load({ fetch, params }) {
+	const res = await fetch('https://api.contoh.dev/berita');
+
+	if (!res.ok) {
+		// Catatan SvelteKit 2: error() & redirect() THROW sendiri.
+		// JANGAN tulis "throw error(...)" — cukup panggil error(...).
+		// (impor: import { error } from '@sveltejs/kit')
+		return { berita: [] };
+	}
+
+	const berita = await res.json();
+	return { berita }; // tersedia di +page.svelte sebagai data.berita
+}
+```
+
+Layout load untuk data bersama (mis. user yang login), plus halaman anak yang membaca data induk lewat `parent()`:
+
+```js
+// src/routes/+layout.server.js
+// Server load di level layout: jalan untuk SEMUA halaman di bawahnya.
+// Cocok untuk data global seperti user yang sedang login.
+export async function load({ locals }) {
+	// locals diisi oleh hooks.server.js (mis. hasil verifikasi sesi).
+	return { user: locals.user };
+}
+```
+
+```js
+// src/routes/dashboard/+page.server.js
+import { error } from '@sveltejs/kit';
+
+export async function load({ parent }) {
+	// await parent() mengambil data dari layout load di atasnya.
+	// SvelteKit otomatis menggabungkan data layout + page; parent()
+	// berguna kalau load halaman ini BUTUH nilai dari layout.
+	const { user } = await parent();
+
+	// SvelteKit 2: panggil error() tanpa "throw" — ia melempar sendiri.
+	if (!user) error(401, 'Harus login dulu');
+
+	return { ringkasan: 'Halo, ' + user.nama };
+}
+```
+
+Terakhir, `depends` + `invalidate`, dan **streaming**:
+
+```js
+// src/routes/komentar/+page.server.js
+export async function load({ depends }) {
+	// Tandai load ini dengan kunci sendiri agar bisa dipicu ulang
+	// dari mana saja dengan invalidate('app:komentar').
+	depends('app:komentar');
+	const komentar = await getKomentar();
+	return { komentar };
+}
+```
+
+```js
+// src/routes/artikel/[id]/+page.server.js
+// STREAMING: return promise yang BELUM di-await untuk data lambat.
+// Hanya berlaku di server load.
+export async function load({ params }) {
+	return {
+		// data cepat: di-await, halaman menunggu ini sebentar
+		artikel: await getArtikel(params.id),
+		// data lambat: TIDAK di-await -> dikirim sebagai "promise streaming".
+		// Halaman langsung tampil; rekomendasi menyusul lewat {#await}.
+		rekomendasi: getRekomendasi(params.id)
+	};
+}
+```
+
+```svelte
+<!-- src/routes/artikel/[id]/+page.svelte -->
+<script>
+	let { data } = $props();
+</script>
+
+<h1>{data.artikel.judul}</h1>
+
+<!-- data.rekomendasi adalah PROMISE (karena di-stream). -->
+<!-- Tampilkan dengan {#await}: tampil "memuat" dulu, lalu hasilnya. -->
+{#await data.rekomendasi}
+	<p>Memuat rekomendasi…</p>
+{:then list}
+	<ul>
+		{#each list as r (r.id)}<li>{r.judul}</li>{/each}
+	</ul>
+{:catch}
+	<p>Gagal memuat rekomendasi.</p>
+{/await}
+```
+
+<Callout type="tip">
+Cara cepat mengingat pilihan file: butuh akses database, secret, atau modul khusus server? Pakai <code>+page.server.js</code>. Cuma ambil data publik dan ingin <code>load</code> ikut jalan saat navigasi di browser (lebih hemat round-trip ke server)? Pakai <code>+page.js</code>. Kalau ragu, mulai dari <code>+page.server.js</code> — lebih aman karena rahasia tidak akan bocor.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini butuh **server** (file `+page.server.js`, `event.fetch`, akses DB), jadi tidak bisa dijalankan di live playground browser — playground hanya menjalankan satu komponen Svelte mandiri tanpa server. Sebagai gantinya, telusuri sendiri alur datanya lewat contoh terstruktur berikut.
+
+Bayangkan tiga file ini ada di rute `/toko`. Lacak: nilai apa yang sampai ke `data` di komponen?
+
+```js
+// src/routes/toko/+layout.server.js
+export async function load() {
+	return { user: { nama: 'Rina' } };
+}
+```
+
+```js
+// src/routes/toko/+page.server.js
+export async function load({ parent, fetch }) {
+	const { user } = await parent(); // -> { nama: 'Rina' } dari layout
+	const res = await fetch('/api/produk'); // endpoint internal aplikasimu
+	const produk = await res.json();
+	return { sapaan: 'Hai ' + user.nama, produk };
+}
+```
+
+```svelte
+<!-- src/routes/toko/+page.svelte -->
+<script>
+	let { data } = $props();
+	// data otomatis GABUNGAN dari layout load + page load:
+	//   data.user    -> { nama: 'Rina' }     (dari +layout.server.js)
+	//   data.sapaan  -> 'Hai Rina'           (dari +page.server.js)
+	//   data.produk  -> array dari /api/produk
+</script>
+
+<p>{data.sapaan}</p>
+<p>Login sebagai: {data.user.nama}</p>
+```
+
+Coba ubah-ubah di kepalamu: kalau layout me-`return` `{ user: null }`, apa yang terjadi pada `data.user.nama`? (Jawab: error karena `null.nama` — di praktik nyata kamu jaga dengan `if (!user) error(401)`). Lalu: kenapa `data.produk` aman diambil di server tanpa khawatir CORS, sementara `+page.js` yang jalan di browser bisa kena CORS untuk domain luar?
+
+<Callout type="warning">
+Perhatikan bahwa <code>data</code> di komponen adalah <strong>gabungan</strong> hasil <code>load</code> layout DAN halaman. Kalau kunci yang sama dipakai di dua tempat (mis. layout dan page sama-sama <code>return</code> <code>{`{ user }`}</code>), nilai dari level yang lebih dekat (page) yang menang. Beri nama kunci yang jelas agar tidak saling menimpa tanpa sengaja.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Mengambil data halaman"
+	svelte={`// SvelteKit: pisahkan data-fetching dari komponen lewat load.
+// SERVER load (+page.server.js) -> selalu di server, aman akses DB.
+export async function load({ params, fetch }) {
+	const res = await fetch('/api/produk/' + params.id);
+	return { produk: await res.json() };
+}
+// Komponen menerima hasilnya lewat prop "data":
+// let { data } = $props();  ->  data.produk
+// UNIVERSAL load (+page.js) -> jalan di server + browser,
+// untuk data publik tanpa secret. API sama, file beda.`}
+	next={`// Next.js (App Router): data-fetching di SERVER COMPONENT.
+// Komponen itu sendiri async; fetch dipanggil langsung di body.
+export default async function Page({ params }) {
+	const res = await fetch('https://api/produk/' + params.id, {
+		cache: 'no-store' // atau revalidate untuk caching
+	});
+	const produk = await res.json();
+	return <h1>{produk.nama}</h1>;
+}
+// (App Router menggantikan getServerSideProps / getStaticProps
+//  dari Pages Router yang lama.)`}
+	nuxt={`<!-- Nuxt: useAsyncData / useFetch di dalam ` + '<scr' + `ipt setup>. -->
+` + '<scr' + `ipt setup>
+const route = useRoute()
+// useFetch: ambil data, otomatis SSR + dehidrasi ke klien.
+const { data: produk } = await useFetch('/api/produk/' + route.params.id)
+// useAsyncData untuk logika fetch custom (bukan sekadar URL).
+` + '</scr' + `ipt>
+
+<template>
+	<h1>{{ produk.nama }}</h1>
+</template>`}
+	note="Ketiganya memindahkan data-fetching ke 'sebelum render' agar SSR berisi data & tidak ada kedip useEffect. Beda model: Next App Router fetch langsung di Server Component (data & UI menyatu di file yang sama; getServerSideProps adalah cara lama Pages Router). Nuxt pakai composable useFetch/useAsyncData di dalam komponen. SvelteKit memisahkan tegas: load di file terpisah (+page.js / +page.server.js), komponen hanya menerima 'data'. Pemisahan SvelteKit membuat batas server vs universal eksplisit (mana yang boleh kena klien), sedikit lebih banyak file tapi lebih jelas soal kebocoran secret."
+/>
+
+## 5. Latihan
+
+<Exercise title="Pilih file load yang tepat & perbaiki SvelteKit 2">
+Untuk tiap skenario, tentukan **`+page.js` (universal)** atau **`+page.server.js` (server)**, dan beri alasan singkat. Lalu, perbaiki potongan kode di bawah agar sesuai SvelteKit 2.
+
+1. Mengambil daftar artikel dari API publik gratis (tanpa key) untuk halaman blog.
+2. Mengambil profil user dari database PostgreSQL pakai kredensial rahasia.
+3. Memanggil API cuaca yang butuh `SECRET_API_KEY` dari environment.
+
+Perbaiki kode ini:
+
+```js
+// +page.server.js (gaya lama / keliru)
+import { error } from '@sveltejs/kit';
+
+export async function load() {
+	const data = await getData();
+	if (!data) {
+		throw error(404, 'Tidak ditemukan');
+	}
+	return { data };
+}
+```
+
+{#snippet solution()}
+
+  ```text
+  Pilihan file
+  ────────────
+  1. API publik tanpa key  -> +page.js (universal).
+     Tidak ada secret, jadi aman ikut ke klien; bonus: saat navigasi
+     di browser, load jalan di klien tanpa mampir ke server kita.
+
+  2. DB + kredensial rahasia  -> +page.server.js (server).
+     Akses DB & secret WAJIB di server; kodenya tidak boleh ke browser.
+
+  3. API butuh SECRET_API_KEY  -> +page.server.js (server).
+     Ada secret -> harus server. Universal load akan membocorkan key
+     ke browser. (Ambil key via $env/static/private atau $env/dynamic/private.)
+  ```
+
+  ```js
+  // +page.server.js (SvelteKit 2 yang benar)
+  import { error } from '@sveltejs/kit';
+
+  export async function load() {
+  	const data = await getData();
+  	// SvelteKit 2: error() melempar SENDIRI — JANGAN pakai "throw".
+  	if (!data) error(404, 'Tidak ditemukan');
+  	return { data };
+  }
+  ```
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menaruh secret (API key, kredensial DB) di <code>+page.js</code>. Universal load ikut terkirim ke browser, jadi semua yang kamu impor dan pakai di sana bisa dilihat user lewat sumber jaringan/bundle. Apa pun yang rahasia <strong>harus</strong> di <code>+page.server.js</code>, dan baca env-nya lewat <code>$env/static/private</code> atau <code>$env/dynamic/private</code> (yang juga hanya boleh diimpor dari kode server).
+</Callout>
+
+<Callout type="pitfall">
+Pakai <code>fetch</code> yang diberikan dari argumen <code>load</code> (<code>{`{ fetch }`}</code>), <strong>bukan</strong> <code>fetch</code> global. <code>fetch</code> milik SvelteKit meneruskan cookie & header saat SSR, menghindari request ganda saat hydration, dan bisa memanggil endpoint internal dengan path relatif seperti <code>/api/...</code>. Pakai <code>fetch</code> global bisa bikin perilaku beda antara server dan klien serta kehilangan kredensial.
+</Callout>
+
+<Callout type="warning">
+Yang di-<code>return</code> dari <strong>server load</strong> harus serializable (dikirim ke klien lewat jaringan, di-serialize oleh <code>devalue</code>). Boleh <code>Date</code>/<code>Map</code>/<code>Set</code>, tapi <strong>tidak</strong> boleh function, class instance sembarangan, atau objek dengan referensi yang tak bisa di-serialize. Kalau perlu me-<code>return</code> nilai non-serializable (mis. sebuah komponen), gunakan <strong>universal load</strong> (<code>+page.js</code>) — karena hasilnya tidak harus melewati jaringan.
+</Callout>
+
+<Callout type="warning">
+Streaming hanya bekerja di <strong>server load</strong>, dan caranya adalah dengan me-<code>return</code> promise yang <strong>belum</strong> kamu <code>await</code>. Kalau kamu <code>await</code> semuanya, halaman akan menunggu data paling lambat sebelum tampil (tidak ada streaming). Tampilkan promise itu di komponen dengan blok <code>{`{#await}`}</code>. Pastikan juga adapter/platform deploy-mu mendukung streaming response.
+</Callout>
+
+<Callout type="legacy">
+Beberapa kebiasaan lama yang harus dihindari di SvelteKit 2: (1) jangan menulis <code>throw error(...)</code> atau <code>throw redirect(...)</code> — di v2 fungsi-fungsi itu melempar sendiri, cukup <code>error(...)</code>/<code>redirect(...)</code>. (2) Hindari pola React lama mengambil data di <code>onMount</code>/<code>$effect</code> hanya untuk fetch awal — itu menghilangkan manfaat SSR; pakai <code>load</code>. (3) Di tutorial SvelteKit 1 kamu mungkin lihat tanda tangan <code>load</code> berbeda — acuan modul ini adalah SvelteKit 2.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/load" label="SvelteKit — Loading data (load, +page.js vs +page.server.js, streaming, invalidation)" />
+<DocsLink href="https://svelte.dev/docs/kit/state-management" label="SvelteKit — State management (kenapa load lebih baik dari fetch di komponen)" />

@@ -1,0 +1,285 @@
+---
+title: 'Special Elements: <svelte:window/document/body/head/element/boundary/options>'
+level: 4
+levelTitle: Special Elements & Runtime
+order: 1
+description: Mengenal elemen khusus <svelte:...> untuk menempel ke window/document/body/head, merender tag dinamis dengan <svelte:element>, menangkap error & loading dengan <svelte:boundary>, dan mengatur kompilasi lewat <svelte:options>.
+docs: https://svelte.dev/docs/svelte/svelte-window
+keywords: [svelte-window, svelte-element, svelte-boundary, svelte-options, special-elements]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sebagian besar markup yang kamu tulis di Svelte memetakan langsung ke elemen DOM nyata: `&lt;div&gt;`, `&lt;button&gt;`, `&lt;input&gt;`. Tapi ada hal-hal yang **bukan** elemen biasa — mereka adalah objek global (`window`, `document`, `body`, `&lt;head&gt;`), atau perilaku yang ingin kamu pasang tanpa punya satu tag konkret untuk dipegang. Untuk itu Svelte menyediakan keluarga elemen khusus berawalan `svelte:`. Mereka terlihat seperti tag biasa, tapi sebenarnya instruksi ke compiler.
+
+Kalau kamu datang dari React/Vue, naluri pertamamu pasti: "untuk dengar event window, aku `useEffect` lalu `addEventListener`, dan jangan lupa `removeEventListener` di cleanup". Di Vue mungkin `onMounted`/`onUnmounted` plus library `@vueuse/core`. Elemen `svelte:` menghapus seluruh ritual itu — kamu cukup *mendeklarasikan* niatmu di markup, dan Svelte mengurus pasang/lepas listener sesuai daur hidup komponen secara otomatis.
+
+### Analogi: stiker yang nempel ke benda yang bukan milikmu
+
+Bayangkan komponenmu adalah sebuah kamar kos. Tembok, meja, kasur — itu DOM milikmu, bebas kamu cat. Tapi **pintu gerbang kos**, **papan pengumuman di lobi**, dan **atap gedung** itu milik bersama (window, body, head). Kamu tidak boleh "merender" mereka — mereka sudah ada sejak gedung berdiri. Yang bisa kamu lakukan adalah **menempel stiker** di sana: "kalau pintu gerbang diketuk (`onkeydown` di window), kabari aku". Dan elemen `svelte:` adalah stiker itu — saat kamu pindah kos (komponen di-unmount), Svelte otomatis mencopot stikermu, jadi tidak ada sampah yang tertinggal.
+
+### Lima "stiker global" + dua yang spesial
+
+- **`&lt;svelte:window&gt;`** — tempel event/binding ke objek `window`. Berguna untuk keyboard global, scroll position, ukuran viewport.
+- **`&lt;svelte:document&gt;`** — sama, tapi ke `document` (mis. `visibilitychange`, `selectionchange`, `fullscreenchange`).
+- **`&lt;svelte:body&gt;`** — event ke `document.body` (`mouseenter`/`mouseleave` seluruh halaman yang tidak naik ke window).
+- **`&lt;svelte:head&gt;`** — menyisipkan elemen ke dalam `&lt;head&gt;` dokumen: `&lt;title&gt;`, `&lt;meta&gt;`, `&lt;link&gt;`. Ini cara mengatur SEO/judul tab per halaman.
+- **`&lt;svelte:element this=&#123;tag&#125;&gt;`** — render satu elemen yang **nama tag-nya ditentukan saat runtime** (mis. heading yang levelnya `h1`–`h6` tergantung data). Pengganti pola `React.createElement(tag, ...)`.
+
+Lalu dua yang lebih "runtime":
+
+- **`&lt;svelte:boundary&gt;`** — pagar pengaman: menangkap error yang terjadi di anak-anaknya (mirip React Error Boundary), dan juga menampilkan UI loading (`pending`) saat ada `await` di dalamnya.
+- **`&lt;svelte:options&gt;`** — bukan tentang DOM sama sekali; ia memberi instruksi ke **compiler** tentang bagaimana komponen ini dikompilasi (mis. jadikan custom element, atur namespace).
+
+### Kenapa bentuknya markup, bukan rune atau API?
+
+Karena niatnya **deklaratif dan terikat daur hidup**. Listener window harus terpasang saat komponen mount dan tercopot saat unmount — persis seperti elemen biasa. Dengan menulisnya sebagai "elemen", Svelte memperlakukan pasang/lepas-nya seperti elemen biasa muncul/hilang. Tidak ada array dependensi yang bisa salah, tidak ada cleanup yang lupa kamu return. Ini filosofi Svelte: kalau sesuatu mengikuti hidup-mati komponen, ungkapkan sebagai markup.
+
+## 2. Contoh kode
+
+`&lt;svelte:window&gt;` untuk binding scroll dan event keyboard global:
+
+```svelte
+<script>
+	let y = $state(0);
+
+	function handleKeydown(event) {
+		// listener ini otomatis dilepas saat komponen di-unmount
+		if (event.key === 'Escape') console.log('Escape ditekan');
+	}
+</script>
+
+<!-- bind:scrollY dua arah: membaca posisi scroll sekaligus
+     bisa dipakai untuk scroll programatik (set y = 0).
+     onkeydown menempel ke window, bukan ke satu elemen. -->
+<svelte:window bind:scrollY={y} onkeydown={handleKeydown} />
+
+<p style="position: fixed; top: 0;">Scroll: {Math.round(y)}px</p>
+```
+
+`&lt;svelte:document&gt;` dan `&lt;svelte:body&gt;` mengikuti pola yang sama, hanya beda target:
+
+```svelte
+<script>
+	let hidden = $state(false);
+	function onVisibility() {
+		// document.visibilityState berubah saat tab di-background-kan
+		hidden = document.visibilityState === 'hidden';
+	}
+</script>
+
+<!-- event document yang tidak ada di window -->
+<svelte:document onvisibilitychange={onVisibility} />
+<!-- event body: mis. melacak kursor masuk/keluar halaman -->
+<svelte:body onmouseenter={() => console.log('kursor masuk')} />
+
+<p>{hidden ? 'Tab tidak aktif' : 'Tab aktif'}</p>
+```
+
+`&lt;svelte:head&gt;` untuk judul tab & meta (penting untuk SEO per halaman):
+
+```svelte
+<script>
+	let { judul } = $props();
+</script>
+
+<!-- isi blok ini disisipkan ke <head> dokumen, bukan ke body komponen -->
+<svelte:head>
+	<title>{judul} — Toko Saya</title>
+	<meta name="description" content="Halaman {judul}" />
+</svelte:head>
+```
+
+`&lt;svelte:element&gt;` untuk tag dinamis — contoh klasik: komponen heading yang levelnya datang dari prop:
+
+```svelte
+<script>
+	// level 1..6 -> tag 'h1'..'h6', ditentukan saat runtime
+	let { level = 2, children } = $props();
+	let tag = $derived('h' + level);
+</script>
+
+<!-- this={tag} memilih tag konkret saat render.
+     {@render children()} mengisi konten di dalamnya. -->
+<svelte:element this={tag}>
+	{@render children()}
+</svelte:element>
+```
+
+`&lt;svelte:boundary&gt;` untuk menangkap error dan menampilkan UI fallback. Snippet `failed` menerima `error` dan fungsi `reset`:
+
+```svelte
+<script>
+	import RisikoError from './RisikoError.svelte';
+</script>
+
+<svelte:boundary>
+	<!-- kalau komponen ini melempar error saat render,
+	     boundary menangkapnya dan menampilkan snippet failed -->
+	<RisikoError />
+
+	{#snippet failed(error, reset)}
+		<p>Aduh, ada masalah: {error.message}</p>
+		<!-- reset() mencoba me-render ulang isi boundary -->
+		<button onclick={reset}>Coba lagi</button>
+	{/snippet}
+</svelte:boundary>
+```
+
+`&lt;svelte:boundary&gt;` juga punya snippet `pending` untuk loading saat ada `await` di dalam boundary, serta atribut `onerror` untuk melaporkan error ke luar (mis. logging):
+
+```svelte
+<script>
+	function laporkan(error, reset) {
+		// kirim ke layanan monitoring, lalu biarkan UI fallback yang menangani retry
+		console.error('boundary error:', error);
+	}
+</script>
+
+<svelte:boundary onerror={laporkan}>
+	<!-- pending tampil selama ekspresi await belum selesai -->
+	<p>{await ambilData()}</p>
+
+	{#snippet pending()}
+		<p>Memuat…</p>
+	{/snippet}
+
+	{#snippet failed(error, reset)}
+		<button onclick={reset}>Ulangi</button>
+	{/snippet}
+</svelte:boundary>
+```
+
+`&lt;svelte:options&gt;` memberi instruksi kompilasi ke seluruh komponen — paling sering untuk mengubah komponen jadi custom element:
+
+```svelte
+<!-- komponen ini akan dikompilasi jadi <my-counter> (Web Component) -->
+<svelte:options customElement="my-counter" />
+
+<script>
+	let count = $state(0);
+</script>
+
+<button onclick={() => count++}>{count}</button>
+```
+
+## 3. Coba sendiri
+
+Dua peraga sekaligus di bawah ini. Yang atas: `&lt;svelte:window&gt;` membaca posisi scroll dan mendengar tombol panah untuk menggeser kotak. Yang bawah: `&lt;svelte:element&gt;` mengganti tag heading secara runtime. Perhatikan kamu tidak menulis satu pun `addEventListener` atau `removeEventListener`.
+
+<Playground code={`<script>
+	let y = $state(0);
+	let x = $state(0);
+	let tag = $state('h1');
+	function onkeydown(e) {
+		if (e.key === 'ArrowRight') x += 10;
+		if (e.key === 'ArrowLeft') x -= 10;
+	}
+	const tags = ['h1', 'h2', 'h3', 'p', 'small'];
+</script>
+<svelte:window bind:scrollY={y} {onkeydown} />
+<div style="position: fixed; top: 8px; right: 8px; background: #222; color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 13px;">
+	scrollY: {Math.round(y)}
+</div>
+<p>Klik kotak ini dulu agar fokus, lalu tekan panah kiri/kanan.</p>
+<div
+	tabindex="0"
+	style="width: 60px; height: 60px; background: tomato; border-radius: 8px; transform: translateX({x}px); transition: transform 0.1s;"
+>
+</div>
+<hr />
+<p>Pilih tag untuk svelte:element:</p>
+{#each tags as t}
+	<button onclick={() => tag = t}>{t}</button>
+{/each}
+<svelte:element this={tag}>Aku dirender sebagai &lt;{tag}&gt;</svelte:element>
+<div style="height: 1200px;"></div>
+<p>Scroll sampai sini untuk melihat scrollY berubah.</p>`} />
+
+## 4. Latihan
+
+<Exercise title="Heading dinamis + tutup modal dengan tombol Escape">
+Buat satu komponen `App.svelte` yang menggabungkan dua elemen khusus:
+
+1. Sebuah tombol "Buka modal". Saat diklik, tampilkan sebuah "modal" sederhana (cukup sebuah `&lt;div&gt;` dengan teks dan tombol tutup).
+2. Pakai `&lt;svelte:window&gt;` agar menekan tombol **Escape** menutup modal — **hanya** saat modal sedang terbuka.
+3. Di dalam modal, render sebuah heading memakai `&lt;svelte:element&gt;` yang tag-nya berasal dari sebuah variabel `level` (mis. `level = 2` menghasilkan `&lt;h2&gt;`).
+
+Petunjuk: simpan state `open` dengan `$state`, dan di handler keydown cek `if (open && event.key === 'Escape')`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let open = $state(false);
+	let level = $state(2);
+	let tag = $derived('h' + level);
+
+	function handleKeydown(event) {
+		// hanya tutup kalau modal memang terbuka
+		if (open && event.key === 'Escape') {
+			open = false;
+		}
+	}
+</script>
+
+<!-- listener window otomatis dipasang/dilepas; tak perlu cleanup manual -->
+<svelte:window onkeydown={handleKeydown} />
+
+<button onclick={() => (open = true)}>Buka modal</button>
+
+{#if open}
+	<div role="dialog" style="border: 1px solid #888; padding: 1rem; margin-top: 1rem;">
+		<!-- tag heading ditentukan runtime via svelte:element -->
+		<svelte:element this={tag}>Judul Modal (level {level})</svelte:element>
+		<p>Tekan Escape atau klik tombol untuk menutup.</p>
+		<button onclick={() => (open = false)}>Tutup</button>
+	</div>
+{/if}
+```
+
+Inti jawabannya: `&lt;svelte:window onkeydown=&#123;...&#125;&gt;` menggantikan seluruh pola `addEventListener('keydown', ...)` + cleanup, dan pengecekan `if (open && ...)` memastikan Escape hanya menutup saat relevan. `&lt;svelte:element this=&#123;tag&#125;&gt;` memilih tag heading dari variabel tanpa rantai `&#123;#if&#125;` yang panjang untuk tiap level.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Elemen `svelte:` harus berada di <strong>top-level</strong> komponen — tidak boleh dibungkus di dalam blok `#if`, blok `#each`, atau elemen lain. Kalau kamu butuh listener window yang kondisional, jangan bungkus tag-nya; pasang selalu `&lt;svelte:window onkeydown=&#123;handler&#125; /&gt;` lalu beri logika kondisi <em>di dalam</em> handler (mis. `if (open) ...`). Membungkusnya akan memicu error compile.
+</Callout>
+
+<Callout type="pitfall">
+`&lt;svelte:element this=&#123;tag&#125;&gt;` hanya menerima nama tag DOM yang valid (string). Memberi konten anak ke <strong>void element</strong> seperti `br`, `hr`, atau `input` akan memicu runtime error di mode dev, karena elemen tersebut secara spesifikasi HTML tidak boleh punya anak. Untuk SVG, Svelte mencoba menebak namespace; kalau gagal, tambahkan `xmlns` secara eksplisit.
+</Callout>
+
+<Callout type="warning">
+Di `&lt;svelte:window bind:scrollY=&#123;y&#125; /&gt;`, hanya `scrollX` dan `scrollY` yang dua arah (writable) — mengubah `y` akan men-scroll halaman. Properti lain seperti `innerWidth`, `innerHeight`, `outerWidth`, `online`, dan `devicePixelRatio` bersifat <strong>readonly</strong>: kamu boleh membacanya tapi menulisnya tidak berefek.
+</Callout>
+
+<Callout type="tip">
+Pada `&lt;svelte:boundary onerror=&#123;fn&#125;&gt;`, fungsi `reset` tidak boleh dipanggil sinkron <em>selagi</em> error masih ditangani — Svelte akan melempar runtime error. Kalau kamu memperbaiki penyebab error di dalam `onerror`, tunggu boundary menyelesaikan siklusnya dulu: `await tick()` sebelum memanggil `reset()`. Untuk kasus retry biasa, lebih aman pakai fungsi `reset` yang diberikan ke snippet `failed` (dipanggil dari klik tombol pengguna).
+</Callout>
+
+<Callout type="legacy">
+Di Svelte versi lama, `&lt;svelte:component this=&#123;Comp&#125; /&gt;` dibutuhkan untuk merender komponen dinamis. Di Svelte 5 ini sudah <strong>tidak diperlukan</strong>: komponen kini nilai biasa, jadi cukup tulis `&lt;Comp /&gt;` di mana `Comp` adalah variabel (mis. hasil `$derived`). Jangan bingungkan dengan `&lt;svelte:element&gt;` yang tetap relevan untuk <em>tag DOM</em> dinamis, bukan komponen.
+</Callout>
+
+<LegacyVsModern
+	rows={[
+		{ legacy: '<svelte:component this={Cmp} />', modern: '<Cmp />', note: 'Svelte 5: komponen adalah nilai biasa, render langsung lewat variabel.' },
+		{ legacy: '<div on:keydown={fn}> / on:event', modern: 'onkeydown={fn} / onevent', note: 'Atribut event biasa juga berlaku di svelte:window/document/body.' },
+		{ legacy: 'try/catch + onMount manual', modern: '<svelte:boundary>{#snippet failed}', note: 'Error boundary deklaratif, plus snippet pending untuk loading.' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-window" label="Special elements (svelte:window/document/body/head/element/boundary/options) — dokumentasi resmi Svelte" />

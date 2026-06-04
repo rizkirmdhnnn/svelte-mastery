@@ -1,0 +1,269 @@
+---
+title: Best Practices & TypeScript di Svelte
+level: 5
+levelTitle: Profesional
+order: 1
+description: Memakai TypeScript penuh di Svelte 5 — mengetik $props lewat interface, generics komponen, typing $state/$derived, tipe Component, plus best practice struktur proyek.
+docs: https://svelte.dev/docs/svelte/typescript
+keywords: [typescript, $props, generics, Component, $state, best-practices]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+TypeScript di Svelte 5 terasa jauh lebih "alami" dibanding di Svelte 4. Alasannya satu: runes adalah JavaScript biasa, bukan sihir compiler yang aneh. `let { name } = $props()` itu cuma destructuring, `let count = $state(0)` itu cuma variabel. Karena bentuknya JS biasa, kamu cukup memberi anotasi tipe seperti yang sudah kamu lakukan di React (`useState<number>`) atau Vue (`defineProps<Props>`). Tidak ada DSL khusus yang harus dipelajari — pengetahuan TypeScript-mu langsung terpakai.
+
+### Analogi: TypeScript sebagai "kontrak pengiriman"
+
+Bayangkan komponen sebagai sebuah toko yang menerima paket dari pemasok (parent). Tanpa TypeScript, kurir boleh menaruh paket apa saja di depan pintu — kamu baru tahu isinya salah setelah membuka dan barangnya rusak (error saat runtime, di tangan user). Dengan TypeScript, kamu menempel **kontrak pengiriman** di pintu: "saya hanya menerima paket berlabel `title` (string, wajib) dan `count` (number, opsional)". Kurir yang membawa paket salah langsung ditolak di gerbang — yaitu saat kamu mengetik di editor, jauh sebelum kode sampai ke user. Interface `Props` adalah kontrak itu.
+
+### Mengaktifkan TypeScript: `lang="ts"`
+
+Langkah pertama selalu sama: tambahkan atribut `lang="ts"` pada tag `<script>`. Setelah itu seluruh isi blok script diperlakukan sebagai TypeScript, dan kamu boleh menulis interface, generic, anotasi tipe, `as`-cast, dan sebagainya.
+
+Kalau proyekmu di-scaffold lewat `npx sv create` dan kamu memilih TypeScript, semua konfigurasi (preprocessor `vitePreprocess`, `tsconfig.json`, `svelte-check`) sudah terpasang. Yang perlu kamu lakukan hanyalah menulis `lang="ts"`.
+
+### Mengetik `$props` — interface adalah jalur utama
+
+Karena props masuk lewat destructuring `$props()`, kamu mengetiknya dengan menempelkan tipe pada hasil destructuring: `let { ... }: Props = $props()`. Konvensi komunitas adalah mendefinisikan sebuah `interface Props` di atasnya. Ini mirip `defineProps<Props>()` di Vue, tapi posisinya lebih dekat ke React: kamu menulis bentuk objek props lalu memasangnya sebagai tipe argumen.
+
+Yang penting dipahami: tipe ini bukan sekadar dokumentasi. Saat parent menulis `<Card title={123} />`, TypeScript akan menolaknya di editor karena `title` seharusnya `string`. Begitu pula prop wajib yang lupa dikirim akan langsung ditandai merah.
+
+### Mengetik `$state` dan `$derived`
+
+`$state` dan `$derived` adalah variabel biasa, jadi pengetikannya juga biasa:
+
+- `let count = $state(0)` — tipe ter-infer otomatis jadi `number`. Sering kali kamu tidak perlu menulis tipe sama sekali.
+- `let count: number = $state(0)` — anotasi eksplisit, berguna saat nilai awalnya kurang spesifik.
+- `let user: User | null = $state(null)` — wajib eksplisit kalau nilai awalnya tidak menggambarkan tipe akhir (di sini `null` saja tidak cukup).
+
+Untuk `$derived`, tipenya hampir selalu di-infer dari ekspresinya, jadi jarang perlu ditulis. `let double = $derived(count * 2)` sudah otomatis `number`.
+
+### Generics komponen — komponen yang "fleksibel tapi tetap aman"
+
+Kadang sebuah komponen ingin bekerja untuk **tipe data apa pun**, sambil tetap menjaga hubungan tipe antar prop-nya. Contoh klasik: komponen `<List>` yang menerima `items: T[]` dan callback `select(item: T)`. Kita tidak mau memaku `T` jadi tipe tertentu, tapi kita mau memastikan item yang masuk ke `select` punya tipe yang **sama** dengan elemen di `items`.
+
+Di Svelte 5, ini dilakukan dengan atribut `generics` pada tag script: `<script lang="ts" generics="Item extends { text: string }">`. Sintaks di dalam string itu persis seperti deklarasi generic TypeScript. Ini sepadan dengan `<Component, Props>` generic di React atau `defineProps` generic di Vue `<script setup generic="T">`.
+
+### Tipe `Component` dan `ComponentProps`
+
+Saat kamu mengoper sebuah komponen Svelte sebagai nilai (mis. dynamic component, atau prop yang isinya komponen lain), tipenya adalah `Component` dari paket `svelte`. `Component<{ prop: string }>` artinya "komponen apa pun yang menerima setidaknya prop `prop: string`". Dan kalau kamu butuh mengambil bentuk props dari sebuah komponen yang sudah ada, gunakan `ComponentProps<typeof MyComponent>`. Dua tipe inilah pengganti modern dari `SvelteComponent`/`ComponentType` gaya Svelte 4.
+
+## 2. Contoh kode
+
+```svelte
+<!-- Card.svelte — mengetik $props dengan interface -->
+<script lang="ts">
+	import type { Snippet } from 'svelte';
+
+	// Kontrak props. Tiap field jadi aturan yang dicek TypeScript.
+	interface Props {
+		title: string;          // wajib
+		subtitle?: string;      // opsional (tanda ?)
+		count?: number;
+		onselect?: (id: number) => void; // event lewat prop callback (BUKAN dispatcher)
+		children?: Snippet;     // konten anak diketik sebagai Snippet
+	}
+
+	// Tempel tipe pada hasil destructuring. Default value tetap boleh.
+	let { title, subtitle = '-', count = 0, onselect, children }: Props = $props();
+</script>
+
+<article>
+	<h3>{title}</h3>
+	<p>{subtitle} ({count})</p>
+	{@render children?.()}
+	<button onclick={() => onselect?.(count)}>Pilih</button>
+</article>
+```
+
+```svelte
+<!-- Counter.svelte — typing $state & $derived -->
+<script lang="ts">
+	// Infer otomatis: count -> number, jadi anotasi opsional.
+	let count = $state(0);
+
+	// Kalau nilai awal TIDAK menggambarkan tipe akhir, anotasi WAJIB.
+	// null saja tak cukup memberi tahu TS bahwa nanti diisi User.
+	let user: { name: string } | null = $state(null);
+
+	// $derived hampir selalu ter-infer dari ekspresinya (di sini number).
+	let double = $derived(count * 2);
+</script>
+
+<button onclick={() => count++}>{count} (x2 = {double})</button>
+<button onclick={() => (user = { name: 'Rizki' })}>Login</button>
+{#if user}<p>Halo {user.name}</p>{/if}
+```
+
+```svelte
+<!-- List.svelte — generics komponen -->
+<!-- generics di tag script: Item bebas, asal punya field text -->
+<script lang="ts" generics="Item extends { text: string }">
+	interface Props {
+		items: Item[];
+		// select dijamin menerima tipe yang SAMA dengan elemen items
+		select: (item: Item) => void;
+	}
+
+	let { items, select }: Props = $props();
+</script>
+
+{#each items as item}
+	<button onclick={() => select(item)}>{item.text}</button>
+{/each}
+```
+
+```svelte
+<!-- Host.svelte — tipe Component & ComponentProps -->
+<script lang="ts">
+	import type { Component, ComponentProps } from 'svelte';
+	import Card from './Card.svelte';
+
+	interface Props {
+		// hanya menerima komponen yang minimal punya prop label: string
+		Widget: Component<{ label: string }>;
+		// ambil bentuk props Card secara otomatis, tanpa menulis ulang
+		cardProps: ComponentProps<typeof Card>;
+	}
+
+	let { Widget, cardProps }: Props = $props();
+</script>
+
+<Widget label="halo" />
+<Card {...cardProps} />
+```
+
+## 3. Coba sendiri
+
+Playground ini satu komponen `.svelte` mandiri yang memakai `lang="ts"`: kita pasang interface `Todo`, mengetik `$state`, dan biarkan `$derived` di-infer. Coba ubah salah satu tipe (mis. ganti `done: boolean` jadi `done: number`) lalu lihat bagaimana logikanya tetap jalan — di editor sungguhan, perubahan tipe yang tidak konsisten akan langsung ditandai merah oleh `svelte-check`.
+
+<Playground code={`<script lang="ts">
+	interface Todo {
+		id: number;
+		text: string;
+		done: boolean;
+	}
+	// $state diketik lewat anotasi pada variabel (array of Todo)
+	let todos: Todo[] = $state([
+		{ id: 1, text: 'Belajar TypeScript', done: true },
+		{ id: 2, text: 'Belajar generics', done: false }
+	]);
+	// $derived ter-infer otomatis jadi number
+	let sisa = $derived(todos.filter((t) => !t.done).length);
+	let teks = $state('');
+	function tambah() {
+		if (teks.trim() === '') return;
+		todos.push({ id: Date.now(), text: teks, done: false });
+		teks = '';
+	}
+</script>
+<input bind:value={teks} placeholder="Tugas baru" />
+<button onclick={tambah}>Tambah</button>
+<p>Belum selesai: {sisa}</p>
+<ul>
+	{#each todos as todo}
+		<li>
+			<label>
+				<input type="checkbox" bind:checked={todo.done} />
+				{todo.text}
+			</label>
+		</li>
+	{/each}
+</ul>`} />
+
+<Callout type="tip">
+Perhatikan: untuk array yang berisi objek bertipe khusus, anotasi seperti <code>let todos: Todo[] = $state([...])</code> membuat seluruh operasi (<code>.push</code>, <code>.filter</code>) ikut diketik. Tanpa anotasi, TS masih bisa infer, tapi menulis tipe eksplisit membuat error lebih cepat tertangkap dan auto-complete lebih akurat.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Buat komponen Select generik yang type-safe">
+Buat komponen `Select.svelte` yang generik terhadap tipe opsi. Ia menerima dua prop: `options` berupa array `Option[]`, dan `onpick` berupa callback `(value: Option) => void`. Tipe `Option` harus generik (bebas) asalkan punya field `id: number` dan `label: string`. Render satu tombol per opsi yang memanggil `onpick(option)` saat diklik. Pastikan `onpick` menerima tipe yang sama persis dengan elemen `options` (bukan `any`).
+
+{#snippet solution()}
+
+```svelte
+<!-- Select.svelte -->
+<!-- generics: Option bebas, asal punya id (number) & label (string) -->
+<script lang="ts" generics="Option extends { id: number; label: string }">
+	interface Props {
+		options: Option[];
+		// karena Option generik, onpick dijamin menerima tipe elemen options
+		onpick: (value: Option) => void;
+	}
+
+	let { options, onpick }: Props = $props();
+</script>
+
+{#each options as option (option.id)}
+	<button onclick={() => onpick(option)}>{option.label}</button>
+{/each}
+```
+
+```svelte
+<!-- Pemakaian — TS meng-infer Option dari array yang dikirim -->
+<script lang="ts">
+	import Select from './Select.svelte';
+
+	// Option ter-infer sebagai { id: number; label: string; harga: number }
+	const produk = [
+		{ id: 1, label: 'Kopi', harga: 18000 },
+		{ id: 2, label: 'Teh', harga: 12000 }
+	];
+</script>
+
+<Select
+	options={produk}
+	onpick={(p) => {
+		// p diketik penuh: p.harga tersedia & type-safe, bukan any
+		console.log(p.label, p.harga);
+	}}
+/>
+```
+
+Kuncinya ada di `generics="Option extends ..."`. Tanpa generic, kamu harus memaku tipe (misalnya `Product[]`) sehingga komponen tak bisa dipakai ulang, atau jatuh ke `any` yang mematikan keamanan tipe. Dengan generic, `onpick` otomatis tahu bahwa `p` punya field `harga` walau `Select` sendiri tak pernah menyebut `harga`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>let count: number = $state()</code> <strong>tanpa nilai awal</strong> akan error: tipenya jadi <code>number | undefined</code>, tidak cocok dengan <code>number</code>. Beri nilai awal (<code>$state(0)</code>), atau kalau nilai dijamin terisi sebelum dipakai (mis. di constructor class), pakai cast: <code>count = $state() as number</code>.
+</Callout>
+
+<Callout type="warning">
+Atribut <code>generics</code> harus ada di tag <code>&lt;script&gt;</code> yang sama dengan <code>lang="ts"</code>, dan isinya adalah <em>string</em> berisi deklarasi generic (mis. <code>generics="T extends Row"</code>). Salah tempat atau lupa <code>lang="ts"</code> membuat generic-nya diabaikan diam-diam — tipe jatuh ke <code>unknown</code>/<code>any</code> tanpa peringatan jelas.
+</Callout>
+
+<Callout type="tip">
+Jalankan <code>svelte-check</code> (atau <code>npm run check</code>) di CI. Editor hanya mengecek file yang sedang terbuka; <code>svelte-check</code> memindai seluruh proyek, termasuk markup di <code>.svelte</code> yang sering luput dari <code>tsc</code> biasa. Anggap ini sebagai <code>tsc --noEmit</code> versi Svelte.
+</Callout>
+
+<Callout type="tip">
+Struktur proyek: taruh logika & tipe yang bisa dipakai ulang di <code>src/lib</code> (akses lewat alias <code>$lib</code>), bukan tercecer di <code>routes</code>. Pisahkan <em>business logic</em> ke modul <code>.ts</code> / <code>.svelte.ts</code> (file <code>.svelte.ts</code> boleh memakai runes), sehingga komponen <code>.svelte</code> tetap tipis dan mudah dites. Definisikan tipe domain (mis. <code>User</code>, <code>Product</code>) sekali di satu tempat dan impor ulang, jangan menulis ulang interface yang sama di banyak komponen.
+</Callout>
+
+<Callout type="legacy">
+Pola Svelte 4 sudah tidak dipakai di kode runes. <code>export let x: number</code> diganti <code>let &#123; x &#125;: Props = $props()</code>. Tipe komponen <code>SvelteComponent</code> / <code>ComponentType</code> diganti <code>Component</code> dan <code>ComponentProps</code> dari <code>svelte</code>. <code>createEventDispatcher</code> (beserta tipe event-nya) diganti prop callback biasa yang diketik langsung di <code>interface Props</code> (mis. <code>onsave?: (data: Data) =&gt; void</code>).
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'export let title: string', modern: 'let { title }: Props = $props()', note: 'Tipe props lewat interface + destructuring.' },
+	{ legacy: '$: double = count * 2', modern: 'let double = $derived(count * 2)', note: 'Tipe ter-infer otomatis dari ekspresi.' },
+	{ legacy: 'import type { SvelteComponent }', modern: 'import type { Component } from "svelte"', note: 'Tipe komponen sebagai nilai.' },
+	{ legacy: 'ComponentProps<MyComp> (instance)', modern: 'ComponentProps<typeof MyComp>', note: 'Svelte 5 memakai typeof komponen.' },
+	{ legacy: 'createEventDispatcher<{ save: Data }>()', modern: 'interface Props { onsave?: (d: Data) => void }', note: 'Event jadi prop callback yang diketik.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/typescript" label="TypeScript di Svelte — dokumentasi resmi" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte#Component" label="Tipe Component & ComponentProps — referensi svelte" />
