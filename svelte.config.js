@@ -1,4 +1,4 @@
-import adapter from '@sveltejs/adapter-static';
+import adapter from '@sveltejs/adapter-auto';
 import { mdsvex } from 'mdsvex';
 import mdsvexConfig from './mdsvex.config.js';
 
@@ -7,7 +7,7 @@ const config = {
 	extensions: ['.svelte', '.svx'],
 	preprocess: [mdsvex(mdsvexConfig)],
 	kit: {
-		adapter: adapter({ fallback: '404.html' }),
+		adapter: adapter(),
 		prerender: { entries: ['*'] }
 	}
 };
