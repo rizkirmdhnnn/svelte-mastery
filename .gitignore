@@ -12,3 +12,6 @@ vite.config.ts.timestamp-*
 smoke-light.png
 .playwright-mcp/
 /build/
+
+# verification screenshots (root)
+/*.png
