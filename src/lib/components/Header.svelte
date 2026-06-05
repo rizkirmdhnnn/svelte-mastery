@@ -62,8 +62,9 @@
 		font-size: 1.2rem;
 	}
 	.name {
-		font-size: 0.98rem;
-		font-weight: 500;
+		font-family: var(--font-display);
+		font-weight: 600;
+		font-size: 1.05rem;
 	}
 	.name strong {
 		color: var(--brand);
@@ -85,11 +86,16 @@
 		gap: 0.4rem;
 		padding: 0.4rem 0.65rem;
 		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius);
 		background: var(--bg-subtle);
 		color: var(--text);
 		font-size: 0.82rem;
 		font-weight: 600;
+		transition: background 0.15s var(--ease), transform 0.15s var(--ease);
+	}
+	.toggle:hover {
+		background: var(--bg-inset);
+		transform: translateY(-1px);
 	}
 	.theme {
 		font-size: 0.95rem;
