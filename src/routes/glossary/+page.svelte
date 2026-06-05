@@ -163,9 +163,17 @@
 	}
 	.entry {
 		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		padding: 0.9rem 1.1rem;
+		border-radius: var(--radius-lg);
+		padding: 1rem 1.2rem;
 		background: var(--bg-elevated);
+		box-shadow: var(--shadow-sm);
+		transition:
+			transform 0.15s var(--ease),
+			box-shadow 0.15s var(--ease);
+	}
+	.entry:hover {
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-md);
 	}
 	dt {
 		font-weight: 700;

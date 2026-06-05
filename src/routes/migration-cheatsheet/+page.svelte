@@ -105,7 +105,9 @@
 	}
 	/* Horizontal scroll fallback so a wide row never stretches the page. */
 	.table-scroll {
-		overflow-x: auto;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		overflow: auto;
 		-webkit-overflow-scrolling: touch;
 		margin: 1rem 0 2rem;
 	}
