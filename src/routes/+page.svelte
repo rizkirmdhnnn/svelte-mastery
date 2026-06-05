@@ -81,11 +81,12 @@
 </section>
 
 <section class="compare-note">
-	<h2>Mode Perbandingan</h2>
+	<h2>Datang dari framework lain?</h2>
 	<p>
-		Sudah jago React/Vue? Biarkan <strong>Mode Perbandingan</strong> aktif (di header) untuk melihat
-		blok <em>"💡 Kalau di framework lain…"</em> di tiap modul. Mau fokus Svelte saja? Matikan sekali
-		klik, dan semua callout perbandingan tersembunyi.
+		Sudah jago React/Vue? Tiap modul otomatis menyandingkan konsep Svelte dengan padanannya di
+		<strong>React, Vue, Next.js, Nuxt, dan Nest.js</strong> lewat blok
+		<em>"💡 Kalau di framework lain…"</em> — jadi kamu bisa langsung memetakan apa yang sudah kamu
+		kuasai ke Svelte 5.
 	</p>
 </section>
 

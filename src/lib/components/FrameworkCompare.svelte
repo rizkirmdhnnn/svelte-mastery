@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { settings } from '$lib/stores/settings.svelte';
 	import { highlight } from '$lib/highlight';
 
 	type FwKey = 'svelte' | 'react' | 'vue' | 'next' | 'nuxt' | 'nest';
@@ -58,7 +57,7 @@
 	});
 </script>
 
-{#if settings.comparisonMode && tabs.length > 0}
+{#if tabs.length > 0}
 	<aside class="fc">
 		<header class="fc-head">
 			<span class="badge">💡 Kalau di framework lain…</span>

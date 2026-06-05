@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { theme } from '$lib/stores/theme.svelte';
-	import { settings } from '$lib/stores/settings.svelte';
 	import Search from './Search.svelte';
 
 	let { onMenuToggle }: { onMenuToggle?: () => void } = $props();
@@ -19,17 +18,6 @@
 	</div>
 
 	<div class="actions">
-		<button
-			class="toggle compare"
-			class:on={settings.comparisonMode}
-			onclick={() => settings.toggleComparison()}
-			title="Tampilkan/sembunyikan semua callout perbandingan framework"
-			aria-pressed={settings.comparisonMode}
-		>
-			<span class="dot" aria-hidden="true"></span>
-			<span class="lbl">Mode Perbandingan</span>
-		</button>
-
 		<button
 			class="toggle theme"
 			onclick={() => theme.toggle()}
@@ -103,20 +91,6 @@
 		font-size: 0.82rem;
 		font-weight: 600;
 	}
-	.compare .dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--text-faint);
-		transition: background 0.15s var(--ease);
-	}
-	.compare.on {
-		border-color: var(--brand);
-		color: var(--brand);
-	}
-	.compare.on .dot {
-		background: var(--brand);
-	}
 	.theme {
 		font-size: 0.95rem;
 		padding: 0.4rem 0.55rem;
@@ -124,9 +98,6 @@
 	@media (max-width: 900px) {
 		.menu {
 			display: inline-flex;
-		}
-		.compare .lbl {
-			display: none;
 		}
 		.name {
 			display: none;
