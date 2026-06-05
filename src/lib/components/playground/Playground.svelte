@@ -3,6 +3,7 @@
 	import Editor from './Editor.svelte';
 	import Preview from './Preview.svelte';
 	import { makeIframeDoc } from './make-srcdoc';
+	import { theme } from '$lib/stores/theme.svelte';
 
 	let { code = '', height = 340 }: { code?: string; height?: number } = $props();
 
@@ -15,6 +16,9 @@
 	let reqId = 0;
 	let revokePrev: (() => void) | null = null;
 	let debounce: ReturnType<typeof setTimeout> | undefined;
+	// Last successful compile, kept so we can re-skin the preview on theme
+	// change without recompiling. Plain (non-reactive) by design.
+	let lastCompiled: { code: string; version: string } | null = null;
 
 	function compile(source: string) {
 		if (!worker) return;
@@ -23,21 +27,33 @@
 		worker.postMessage({ id, source });
 	}
 
+	function renderPreview(code: string, version: string) {
+		revokePrev?.();
+		const { srcdoc: doc, revoke } = makeIframeDoc(code, version, theme.current);
+		revokePrev = revoke;
+		srcdoc = doc;
+	}
+
 	function onWorkerMessage(e: MessageEvent) {
 		const d = e.data;
 		if (d.id !== reqId) return; // ignore stale results
 		if (d.ok) {
 			compileError = null;
-			revokePrev?.();
-			const { srcdoc: doc, revoke } = makeIframeDoc(d.code, d.version);
-			revokePrev = revoke;
-			srcdoc = doc;
+			lastCompiled = { code: d.code, version: d.version };
+			renderPreview(d.code, d.version);
 			status = 'idle';
 		} else {
 			compileError = d.error;
 			status = 'error';
 		}
 	}
+
+	// Re-skin the preview when the app theme flips. `lastCompiled` is a plain
+	// variable, so this effect only re-runs on theme change, not on recompile.
+	$effect(() => {
+		theme.current;
+		if (lastCompiled) renderPreview(lastCompiled.code, lastCompiled.version);
+	});
 
 	onMount(() => {
 		worker = new Worker(new URL('./compiler.worker.ts', import.meta.url), { type: 'module' });

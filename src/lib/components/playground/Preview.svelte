@@ -64,7 +64,10 @@
 		flex: 1;
 		width: 100%;
 		border: none;
-		background: white;
+		/* The iframe document paints its own themed background (see
+		   make-srcdoc); match the app surface to avoid a flash on (re)load. */
+		background: var(--bg);
+		color-scheme: light dark;
 	}
 	.overlay.error {
 		position: absolute;

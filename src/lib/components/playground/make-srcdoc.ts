@@ -9,7 +9,20 @@
 
 export type IframeDoc = { srcdoc: string; revoke: () => void };
 
-export function makeIframeDoc(compiledCode: string, version: string): IframeDoc {
+export type PreviewTheme = 'light' | 'dark';
+
+// Color pairs mirror the app's --bg/--text tokens so the live preview reads as
+// part of the same surface in each theme (see src/app.css).
+const THEMES: Record<PreviewTheme, { bg: string; fg: string; muted: string; errFg: string; errBg: string; errBorder: string }> = {
+	light: { bg: '#ffffff', fg: '#1a1d21', muted: '#8b94a3', errFg: '#c0362c', errBg: '#fdecea', errBorder: '#f5c2c0' },
+	dark: { bg: '#0d1117', fg: '#e6edf3', muted: '#6e7781', errFg: '#f85149', errBg: '#2a1615', errBorder: '#5c2b28' }
+};
+
+export function makeIframeDoc(
+	compiledCode: string,
+	version: string,
+	theme: PreviewTheme = 'light'
+): IframeDoc {
 	const url = URL.createObjectURL(new Blob([compiledCode], { type: 'text/javascript' }));
 
 	const importmap = JSON.stringify({
@@ -19,15 +32,17 @@ export function makeIframeDoc(compiledCode: string, version: string): IframeDoc 
 		}
 	});
 
+	const c = THEMES[theme];
+
 	const srcdoc = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 1rem; line-height: 1.5; }
-  #app:empty::after { content: '⏳ memuat runtime Svelte…'; color: #888; font-size: .9rem; }
-  .__pg_error { color: #c0362c; background: #fdecea; border: 1px solid #f5c2c0; padding: .6rem .8rem; border-radius: 8px; font-family: ui-monospace, monospace; font-size: .8rem; white-space: pre-wrap; }
+  :root { color-scheme: ${theme}; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 1rem; line-height: 1.5; background: ${c.bg}; color: ${c.fg}; }
+  #app:empty::after { content: '⏳ memuat runtime Svelte…'; color: ${c.muted}; font-size: .9rem; }
+  .__pg_error { color: ${c.errFg}; background: ${c.errBg}; border: 1px solid ${c.errBorder}; padding: .6rem .8rem; border-radius: 8px; font-family: ui-monospace, monospace; font-size: .8rem; white-space: pre-wrap; }
 </style>
 <script type="importmap">${importmap}<\/script>
 <script>
