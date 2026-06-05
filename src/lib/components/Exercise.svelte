@@ -30,7 +30,7 @@
 	.exercise {
 		margin: 1.5em 0;
 		border: 1px dashed var(--border-strong);
-		border-radius: var(--radius);
+		border-radius: var(--radius-lg);
 		padding: 1rem 1.15rem;
 		background: var(--bg-subtle);
 	}
@@ -43,6 +43,8 @@
 	.ex-head h4 {
 		margin: 0;
 		font-size: 1.05rem;
+		font-family: var(--font-display);
+		letter-spacing: -0.01em;
 	}
 	.prompt :global(p:first-child) {
 		margin-top: 0;
@@ -56,9 +58,16 @@
 		color: var(--text);
 		font-weight: 600;
 		font-size: 0.88rem;
+		cursor: pointer;
+		transition:
+			background 0.15s var(--ease),
+			border-color 0.15s var(--ease),
+			transform 0.15s var(--ease);
 	}
 	.reveal:hover {
 		background: var(--bg-inset);
+		border-color: var(--brand);
+		transform: translateY(-1px);
 	}
 	.solution {
 		margin-top: 0.75rem;

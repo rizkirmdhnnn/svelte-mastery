@@ -30,9 +30,10 @@
 		margin: 1.3em 0;
 		border: 1px solid color-mix(in srgb, var(--c) 35%, var(--border));
 		border-left: 4px solid var(--c);
-		border-radius: var(--radius);
+		border-radius: var(--radius-lg);
 		background: color-mix(in srgb, var(--c) 7%, var(--bg-elevated));
 		padding: 0.85rem 1.05rem;
+		box-shadow: var(--shadow-sm);
 	}
 	.info {
 		--c: var(--info);
@@ -56,6 +57,10 @@
 		color: var(--c);
 		margin-bottom: 0.35rem;
 		font-size: 0.95rem;
+	}
+	.head strong {
+		font-family: var(--font-display);
+		letter-spacing: -0.01em;
 	}
 	.legacy .head {
 		color: var(--text-muted);

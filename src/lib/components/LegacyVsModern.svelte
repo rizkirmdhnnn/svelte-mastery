@@ -34,6 +34,8 @@
 	.lvm-wrap {
 		overflow-x: auto;
 		margin: 1.3em 0;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
 	}
 	.lvm {
 		width: 100%;
