@@ -30,10 +30,15 @@
 				langSvelte.svelte(),
 				themeComp.of(theme.current === 'dark' ? oneDarkMod.oneDark : []),
 				EditorView.theme({
-					'&': { height: '100%', fontSize: '13px', backgroundColor: 'transparent' },
+					'&': {
+						height: '100%',
+						fontSize: '13px',
+						backgroundColor: 'transparent',
+						color: 'var(--text)'
+					},
 					'.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.6' },
 					'.cm-gutters': {
-						backgroundColor: 'transparent',
+						backgroundColor: 'var(--bg-subtle)',
 						borderRight: '1px solid var(--border)',
 						color: 'var(--text-faint)'
 					},

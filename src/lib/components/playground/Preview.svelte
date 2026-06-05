@@ -86,7 +86,7 @@
 	}
 	.console {
 		border-top: 1px solid var(--border);
-		background: var(--bg-subtle);
+		background: var(--bg-elevated);
 		font-size: 0.78rem;
 	}
 	.console-toggle {
