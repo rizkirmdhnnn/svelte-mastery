@@ -2,7 +2,7 @@
 // Used by sitemap.xml, robots.txt, and Open Graph / canonical tags.
 //
 // 👉 CHANGE `SITE_URL` to your real domain after deploying (no trailing slash).
-export const SITE_URL = 'https://svelte-sveltekit-mastery.pages.dev';
+export const SITE_URL = 'https://svelte-mastery.rizpedia.com';
 
 export const SITE_NAME = 'Svelte & SvelteKit Mastery';
 
