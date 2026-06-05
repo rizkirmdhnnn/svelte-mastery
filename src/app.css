@@ -1,5 +1,6 @@
 /* ============================================================
    Svelte & SvelteKit Mastery — Design tokens & base styles
+   "Hangat Svelte" redesign
    ============================================================ */
 
 :root {
@@ -8,7 +9,7 @@
 	--brand-2: #ff7a45;
 	--brand-ink: #ffffff;
 
-	/* Framework accents (for FrameworkCompare tabs) */
+	/* Framework accents (FrameworkCompare tabs) */
 	--fw-react: #61dafb;
 	--fw-vue: #42b883;
 	--fw-next: #000000;
@@ -16,8 +17,9 @@
 	--fw-nest: #e0234e;
 
 	/* Typography */
-	--font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
-		sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+	--font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+	--font-sans: 'Hanken Grotesk Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+		Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
 	--font-mono: 'SFMono-Regular', ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, Consolas,
 		'Liberation Mono', monospace;
 
@@ -29,41 +31,42 @@
 	--sidebar-w: 300px;
 	--header-h: 60px;
 
-	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08);
-	--shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.06);
-	--shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.14);
+	/* Warm-tinted elevation */
+	--shadow-sm: 0 1px 2px rgba(80, 50, 20, 0.05), 0 1px 3px rgba(80, 50, 20, 0.07);
+	--shadow-md: 0 4px 14px rgba(120, 80, 40, 0.08), 0 2px 6px rgba(120, 80, 40, 0.06);
+	--shadow-lg: 0 14px 40px rgba(120, 80, 40, 0.14);
 
 	--ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ---------- Light theme (default) ---------- */
+/* ---------- Light theme (Hangat Svelte) ---------- */
 :root,
 [data-theme='light'] {
-	--bg: #ffffff;
-	--bg-subtle: #f7f8fa;
+	--bg: #faf7f3;
+	--bg-subtle: #f4efe8;
 	--bg-elevated: #ffffff;
-	--bg-code: #f6f8fa;
-	--bg-inset: #eef0f3;
+	--bg-code: #fffdfb;
+	--bg-inset: #efe7dc;
 
-	--text: #1a1d21;
-	--text-muted: #5b6573;
-	--text-faint: #8b94a3;
+	--text: #2a2520;
+	--text-muted: #6f675b;
+	--text-faint: #a99e8f;
 
-	--border: #e4e7ec;
-	--border-strong: #d0d5dd;
+	--border: #ece4d9;
+	--border-strong: #ddd2c2;
 
 	--link: #d9360c;
-	--accent-soft: rgba(255, 62, 0, 0.08);
+	--accent-soft: #ffe9e0;
 
-	--ok: #18794e;
-	--warn: #b35900;
+	--ok: #1f8a4c;
+	--warn: #b3690b;
 	--danger: #c0362c;
-	--info: #1769aa;
+	--info: #1f6fb0;
 
 	color-scheme: light;
 }
 
-/* ---------- Dark theme ---------- */
+/* ---------- Dark theme (cool slate — palette unchanged) ---------- */
 [data-theme='dark'] {
 	--bg: #0d1117;
 	--bg-subtle: #11161d;
@@ -106,7 +109,7 @@ body {
 	font-family: var(--font-sans);
 	background: var(--bg);
 	color: var(--text);
-	line-height: 1.6;
+	line-height: 1.65;
 	-webkit-font-smoothing: antialiased;
 	text-rendering: optimizeLegibility;
 	transition: background 0.2s var(--ease), color 0.2s var(--ease);
@@ -124,8 +127,10 @@ h1,
 h2,
 h3,
 h4 {
-	line-height: 1.25;
-	font-weight: 700;
+	font-family: var(--font-display);
+	line-height: 1.2;
+	font-weight: 600;
+	letter-spacing: -0.02em;
 	scroll-margin-top: calc(var(--header-h) + 1rem);
 }
 
@@ -153,20 +158,21 @@ button {
 	max-width: 760px;
 	margin: 0 auto;
 	font-size: 1.02rem;
+	line-height: 1.7;
 }
 .prose h1 {
-	font-size: 2.1rem;
+	font-size: 2.3rem;
 	margin: 0 0 0.4em;
-	letter-spacing: -0.02em;
+	letter-spacing: -0.025em;
 }
 .prose h2 {
-	font-size: 1.5rem;
+	font-size: 1.55rem;
 	margin: 2.2em 0 0.7em;
 	padding-bottom: 0.3em;
 	border-bottom: 1px solid var(--border);
 }
 .prose h3 {
-	font-size: 1.2rem;
+	font-size: 1.22rem;
 	margin: 1.8em 0 0.5em;
 }
 .prose p {
@@ -193,12 +199,11 @@ button {
 	color: var(--text-muted);
 }
 .prose :not(pre) > code {
-	background: var(--bg-inset);
+	background: var(--accent-soft);
+	color: var(--link);
 	padding: 0.15em 0.4em;
 	border-radius: 5px;
 	border: 1px solid var(--border);
-	/* Let long tokens (e.g. $env/dynamic/private) break instead of
-	   stretching the page on narrow screens; short code stays intact. */
 	overflow-wrap: break-word;
 	word-break: break-word;
 }
@@ -233,6 +238,7 @@ button {
 	padding: 1rem 1.1rem;
 	border-radius: var(--radius);
 	border: 1px solid var(--border);
+	background: var(--bg-code) !important;
 	overflow-x: auto;
 	font-size: 0.86rem;
 	line-height: 1.6;
@@ -262,13 +268,12 @@ button {
 .copy-btn:focus-visible {
 	opacity: 1;
 }
-/* Touch devices can't hover — keep the copy button visible there. */
 @media (hover: none) {
 	.copy-btn {
 		opacity: 1;
 	}
 }
-/* Switch Shiki to its dark palette when the app is dark. */
+/* Dark palette: keep Shiki's own dark bg + colors. */
 [data-theme='dark'] .shiki,
 [data-theme='dark'] .shiki span {
 	color: var(--shiki-dark) !important;
@@ -285,23 +290,26 @@ button {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.45em;
-	padding: 0.5em 0.9em;
+	padding: 0.55em 0.95em;
 	border: 1px solid var(--border-strong);
 	border-radius: var(--radius-sm);
 	background: var(--bg-elevated);
 	color: var(--text);
 	font-size: 0.9rem;
-	font-weight: 500;
-	transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+	font-weight: 600;
+	transition: background 0.15s var(--ease), border-color 0.15s var(--ease),
+		transform 0.15s var(--ease);
 }
 .btn:hover {
 	background: var(--bg-subtle);
 	text-decoration: none;
+	transform: translateY(-1px);
 }
 .btn-primary {
 	background: var(--brand);
 	border-color: var(--brand);
 	color: var(--brand-ink);
+	box-shadow: 0 4px 12px rgba(255, 62, 0, 0.22);
 }
 .btn-primary:hover {
 	background: var(--brand-2);
@@ -317,4 +325,18 @@ button {
 	clip: rect(0, 0, 0, 0);
 	white-space: nowrap;
 	border: 0;
+}
+
+/* ============================================================
+   Reduced motion — disable non-essential animation globally
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
 }
