@@ -3,10 +3,13 @@
 	import '@fontsource-variable/fraunces';
 	import '@fontsource-variable/hanken-grotesk';
 	import { page } from '$app/state';
+	import { SITE_URL, SITE_NAME, canonical } from '$lib/site';
 	import Header from '$lib/components/Header.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 
 	let { children } = $props();
+
+	const canonicalUrl = $derived(canonical(page.url.pathname));
 
 	let drawerOpen = $state(false);
 
@@ -16,6 +19,19 @@
 		drawerOpen = false;
 	});
 </script>
+
+<svelte:head>
+	<link rel="canonical" href={canonicalUrl} />
+	<meta property="og:site_name" content={SITE_NAME} />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={canonicalUrl} />
+	<meta property="og:image" content="{SITE_URL}/og.png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:image" content="{SITE_URL}/og.png" />
+	<meta name="theme-color" content="#ff3e00" />
+</svelte:head>
 
 <div class="app">
 	<Header onMenuToggle={() => (drawerOpen = !drawerOpen)} />

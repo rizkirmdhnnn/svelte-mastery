@@ -15,6 +15,8 @@
 <svelte:head>
 	<title>{data.meta.title} — Svelte & SvelteKit Mastery</title>
 	<meta name="description" content={data.meta.description} />
+	<meta property="og:title" content="{data.meta.title} — Svelte & SvelteKit Mastery" />
+	<meta property="og:description" content={data.meta.description} />
 </svelte:head>
 
 <div class="lesson">

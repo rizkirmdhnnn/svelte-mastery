@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { levels, modules } from '$lib/content';
 	import { progress } from '$lib/stores/progress.svelte';
+	import { SITE_DESCRIPTION } from '$lib/site';
 	import HeroDemo from '$lib/components/HeroDemo.svelte';
 
 	const firstSlug = $derived(modules[0]?.slug ?? '');
@@ -32,6 +33,9 @@
 
 <svelte:head>
 	<title>Svelte &amp; SvelteKit Mastery — Belajar dari Pemula hingga Expert</title>
+	<meta name="description" content={SITE_DESCRIPTION} />
+	<meta property="og:title" content="Svelte & SvelteKit Mastery — dari Pemula hingga Expert" />
+	<meta property="og:description" content={SITE_DESCRIPTION} />
 </svelte:head>
 
 <section class="hero">

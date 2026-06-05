@@ -8,7 +8,8 @@ const config = {
 	preprocess: [mdsvex(mdsvexConfig)],
 	kit: {
 		adapter: adapter(),
-		prerender: { entries: ['*'] }
+		// '*' crawls linked pages; the endpoints below aren't linked, so list them.
+		prerender: { entries: ['*', '/sitemap.xml', '/robots.txt'] }
 	}
 };
 
