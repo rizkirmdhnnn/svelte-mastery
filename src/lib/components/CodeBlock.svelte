@@ -60,6 +60,12 @@
 	.codeblock:hover .copy {
 		opacity: 1;
 	}
+	/* Touch devices can't hover — keep the copy button visible there. */
+	@media (hover: none) {
+		.copy {
+			opacity: 1;
+		}
+	}
 	.raw {
 		margin: 0;
 		padding: 1rem 1.1rem;

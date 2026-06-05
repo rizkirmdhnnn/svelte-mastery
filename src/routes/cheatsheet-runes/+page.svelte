@@ -141,23 +141,25 @@
 		<section>
 			<h2>{g.title}</h2>
 			<p>{g.intro}</p>
-			<table class="runes">
-				<thead>
-					<tr><th>Rune</th><th>Tanda tangan</th><th>Kegunaan</th></tr>
-				</thead>
-				<tbody>
-					{#each g.runes as r (r.rune)}
-						<tr>
-							<td><code class="rn">{r.rune}</code></td>
-							<td><code>{r.sig}</code></td>
-							<td>
-								{r.use}
-								{#if r.gotcha}<div class="gotcha">⚠️ {r.gotcha}</div>{/if}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+			<div class="table-scroll">
+				<table class="runes">
+					<thead>
+						<tr><th>Rune</th><th>Tanda tangan</th><th>Kegunaan</th></tr>
+					</thead>
+					<tbody>
+						{#each g.runes as r (r.rune)}
+							<tr>
+								<td><code class="rn">{r.rune}</code></td>
+								<td><code>{r.sig}</code></td>
+								<td>
+									{r.use}
+									{#if r.gotcha}<div class="gotcha">⚠️ {r.gotcha}</div>{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</section>
 	{/each}
 
@@ -177,10 +179,17 @@
 		color: var(--text-muted);
 		font-size: 1.05rem;
 	}
+	/* Horizontal scroll fallback so a wide row never stretches the page. */
+	.table-scroll {
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		margin: 1rem 0 2rem;
+	}
 	.runes {
 		width: 100%;
 		border-collapse: collapse;
 		font-size: 0.9rem;
+		min-width: 0;
 	}
 	.runes th,
 	.runes td {
@@ -192,13 +201,24 @@
 	.runes th {
 		background: var(--bg-subtle);
 	}
+	.runes tbody tr {
+		transition: background 0.12s var(--ease);
+	}
+	/* Subtle row feedback for scanning — pointer devices only (table view). */
+	@media (hover: hover) and (min-width: 601px) {
+		.runes tbody tr:hover {
+			background: var(--bg-subtle);
+		}
+	}
 	.rn {
 		color: var(--brand);
 		font-weight: 700;
 	}
 	td code {
 		font-size: 0.82rem;
-		white-space: nowrap;
+		/* Wrap long signatures on narrow screens instead of forcing overflow. */
+		overflow-wrap: break-word;
+		word-break: break-word;
 	}
 	.gotcha {
 		margin-top: 0.3rem;
@@ -210,5 +230,47 @@
 		margin-top: 2rem;
 		font-size: 0.85rem;
 		color: var(--text-muted);
+	}
+
+	/* On phones, stack each rune as a card instead of a cramped 3-column row. */
+	@media (max-width: 600px) {
+		.table-scroll {
+			overflow-x: visible;
+		}
+		.runes,
+		.runes tbody,
+		.runes tr,
+		.runes td {
+			display: block;
+		}
+		.runes thead {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip: rect(0, 0, 0, 0);
+			white-space: nowrap;
+		}
+		/* Card styling matches the glossary .entry pattern for consistency. */
+		.runes tr {
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			padding: 0.9rem 1.05rem;
+			margin-bottom: 0.7rem;
+			background: var(--bg-elevated);
+		}
+		.runes td {
+			border: none;
+			padding: 0;
+		}
+		.runes td:first-child {
+			margin-bottom: 0.4rem;
+		}
+		.runes td:nth-child(2) {
+			margin-bottom: 0.5rem;
+		}
+		.rn {
+			font-size: 0.95rem;
+		}
 	}
 </style>

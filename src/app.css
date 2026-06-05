@@ -197,7 +197,10 @@ button {
 	padding: 0.15em 0.4em;
 	border-radius: 5px;
 	border: 1px solid var(--border);
-	white-space: nowrap;
+	/* Let long tokens (e.g. $env/dynamic/private) break instead of
+	   stretching the page on narrow screens; short code stays intact. */
+	overflow-wrap: break-word;
+	word-break: break-word;
 }
 .prose table {
 	width: 100%;
@@ -258,6 +261,12 @@ button {
 .shiki.has-copy:hover .copy-btn,
 .copy-btn:focus-visible {
 	opacity: 1;
+}
+/* Touch devices can't hover — keep the copy button visible there. */
+@media (hover: none) {
+	.copy-btn {
+		opacity: 1;
+	}
 }
 /* Switch Shiki to its dark palette when the app is dark. */
 [data-theme='dark'] .shiki,

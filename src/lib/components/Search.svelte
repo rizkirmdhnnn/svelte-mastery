@@ -59,10 +59,14 @@
 		onblur={() => setTimeout(() => (open = false), 150)}
 		onkeydown={onKey}
 		type="search"
-		placeholder="Cari modul…  (⌘K)"
+		placeholder="Cari modul…"
 		aria-label="Cari modul"
 		autocomplete="off"
 	/>
+
+	{#if !query}
+		<kbd class="kbd-hint" aria-hidden="true">⌘K</kbd>
+	{/if}
 
 	{#if open && results.length > 0}
 		<ul class="results" role="listbox">
@@ -116,6 +120,26 @@
 		color: var(--text);
 		font-size: 0.88rem;
 		outline: none;
+	}
+	/* Keyboard-shortcut badge: only meaningful where there's a physical
+	   keyboard, so it's hidden on touch devices (no ⌘/Ctrl to press). */
+	.kbd-hint {
+		display: none;
+		flex: none;
+		padding: 0.05rem 0.32rem;
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		line-height: 1.4;
+		color: var(--text-faint);
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-strong);
+		border-radius: 4px;
+		white-space: nowrap;
+	}
+	@media (hover: hover) and (pointer: fine) {
+		.kbd-hint {
+			display: inline-block;
+		}
 	}
 	.results {
 		position: absolute;

@@ -98,6 +98,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.2rem;
+		min-width: 0;
 		padding: 0.85rem 1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
@@ -119,6 +120,8 @@
 	}
 	.t {
 		font-weight: 600;
+		overflow-wrap: break-word;
+		word-break: break-word;
 	}
 	@media (max-width: 640px) {
 		.pager {

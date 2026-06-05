@@ -61,24 +61,28 @@
 	</p>
 
 	<h2>React → Svelte 5</h2>
-	<table class="map">
-		<thead><tr><th>React</th><th>Svelte 5</th></tr></thead>
-		<tbody>
-			{#each reactMap as r (r.a)}
-				<tr><td><code>{r.a}</code></td><td><code class="sv">{r.b}</code></td></tr>
-			{/each}
-		</tbody>
-	</table>
+	<div class="table-scroll">
+		<table class="map">
+			<thead><tr><th>React</th><th>Svelte 5</th></tr></thead>
+			<tbody>
+				{#each reactMap as r (r.a)}
+					<tr><td><code>{r.a}</code></td><td><code class="sv">{r.b}</code></td></tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
 
 	<h2>Vue 3 → Svelte 5</h2>
-	<table class="map">
-		<thead><tr><th>Vue 3</th><th>Svelte 5</th></tr></thead>
-		<tbody>
-			{#each vueMap as r (r.a)}
-				<tr><td><code>{r.a}</code></td><td><code class="sv">{r.b}</code></td></tr>
-			{/each}
-		</tbody>
-	</table>
+	<div class="table-scroll">
+		<table class="map">
+			<thead><tr><th>Vue 3</th><th>Svelte 5</th></tr></thead>
+			<tbody>
+				{#each vueMap as r (r.a)}
+					<tr><td><code>{r.a}</code></td><td><code class="sv">{r.b}</code></td></tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
 
 	<h2>Svelte 4 (legacy) → Svelte 5 (modern)</h2>
 	<LegacyVsModern rows={s4to5} />
@@ -99,11 +103,16 @@
 		color: var(--text-muted);
 		font-size: 1.05rem;
 	}
+	/* Horizontal scroll fallback so a wide row never stretches the page. */
+	.table-scroll {
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		margin: 1rem 0 2rem;
+	}
 	.map {
 		width: 100%;
 		border-collapse: collapse;
 		font-size: 0.9rem;
-		margin: 1rem 0 2rem;
 	}
 	.map th,
 	.map td {
@@ -117,6 +126,8 @@
 	}
 	.map code {
 		font-size: 0.82rem;
+		overflow-wrap: break-word;
+		word-break: break-word;
 	}
 	.sv {
 		color: var(--brand);
