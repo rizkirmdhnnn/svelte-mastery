@@ -1,6 +1,7 @@
 import { createHighlighter } from 'shiki';
+import rehypeSlug from 'rehype-slug';
 
-const THEMES = { light: 'github-light', dark: 'github-dark' };
+const THEMES = { light: 'vitesse-light', dark: 'github-dark' };
 const LANGS = [
 	'svelte',
 	'javascript',
@@ -51,6 +52,7 @@ const config = {
 	// Don't curl quotes/dashes — it corrupts code inside component prop template
 	// literals (e.g. Playground `code`), breaking the in-browser compiler.
 	smartypants: false,
+	rehypePlugins: [rehypeSlug],
 	highlight: { highlighter }
 	// No global `layout`: prose-wrapping + frontmatter H1 are handled by the
 	// module route (`belajar/[...slug]/+page.svelte`). Avoids mdsvex trying to

@@ -102,7 +102,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.5rem 0.6rem;
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius);
 		cursor: pointer;
 		list-style: none;
 		user-select: none;
@@ -119,7 +119,7 @@
 		color: var(--brand-ink);
 		background: var(--brand);
 		padding: 0.1rem 0.35rem;
-		border-radius: 4px;
+		border-radius: 5px;
 	}
 	.lv-title {
 		flex: 1;
@@ -144,10 +144,13 @@
 		align-items: flex-start;
 		gap: 0.45rem;
 		padding: 0.35rem 0.5rem;
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius);
 		color: var(--text-muted);
 		text-decoration: none;
 		line-height: 1.35;
+		transition:
+			background 0.15s var(--ease),
+			color 0.15s var(--ease);
 	}
 	.mod:hover {
 		background: var(--bg-subtle);
@@ -157,6 +160,7 @@
 		background: var(--accent-soft);
 		color: var(--brand);
 		font-weight: 600;
+		box-shadow: inset 0 0 0 1px var(--border);
 	}
 	.check {
 		font-size: 0.78rem;

@@ -2,6 +2,7 @@
 	import { neighbors } from '$lib/content';
 	import { progress } from '$lib/stores/progress.svelte';
 	import { addCopyButtons } from '$lib/actions/copy';
+	import Toc from '$lib/components/Toc.svelte';
 	import type { Component } from 'svelte';
 
 	let { data } = $props();
@@ -16,7 +17,8 @@
 	<meta name="description" content={data.meta.description} />
 </svelte:head>
 
-<article class="prose module" use:addCopyButtons>
+<div class="lesson">
+	<article class="prose module" use:addCopyButtons>
 	<nav class="crumb">
 		<a href="/">Beranda</a>
 		<span aria-hidden="true">/</span>
@@ -51,9 +53,36 @@
 			</a>
 		{/if}
 	</nav>
-</article>
+	</article>
+
+	<aside class="toc-rail">
+		{#key data.slug}
+			<Toc key={data.slug} />
+		{/key}
+	</aside>
+</div>
 
 <style>
+	.lesson {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 220px;
+		gap: 2.5rem;
+		align-items: start;
+	}
+	.lesson .module {
+		margin: 0;
+	}
+	.toc-rail {
+		padding-top: 1.5rem;
+	}
+	@media (max-width: 1100px) {
+		.lesson {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.toc-rail {
+			display: none;
+		}
+	}
 	.module {
 		padding: 1.5rem 0 4rem;
 	}
@@ -105,10 +134,13 @@
 		text-decoration: none;
 		color: var(--text);
 		background: var(--bg-elevated);
-		transition: border-color 0.15s var(--ease);
+		transition: border-color 0.15s var(--ease), transform 0.15s var(--ease),
+			box-shadow 0.15s var(--ease);
 	}
 	.pg:hover {
 		border-color: var(--brand);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-sm);
 		text-decoration: none;
 	}
 	.pg.next {

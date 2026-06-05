@@ -1,5 +1,7 @@
 <script lang="ts">
 	import '../app.css';
+	import '@fontsource-variable/fraunces';
+	import '@fontsource-variable/hanken-grotesk';
 	import { page } from '$app/state';
 	import Header from '$lib/components/Header.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';

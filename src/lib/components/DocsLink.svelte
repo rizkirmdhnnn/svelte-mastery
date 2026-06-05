@@ -22,14 +22,23 @@
 		font-weight: 600;
 		font-size: 0.92rem;
 		text-decoration: none;
-		transition: border-color 0.15s var(--ease);
+		transition:
+			border-color 0.15s var(--ease),
+			background 0.15s var(--ease),
+			transform 0.15s var(--ease);
 	}
 	.docs-link:hover {
 		border-color: var(--brand);
+		background: var(--bg-subtle);
+		transform: translateY(-1px);
 		text-decoration: none;
 	}
 	.ext {
 		opacity: 0.7;
 		font-size: 0.85em;
+		transition: transform 0.15s var(--ease);
+	}
+	.docs-link:hover .ext {
+		transform: translate(1px, -1px);
 	}
 </style>

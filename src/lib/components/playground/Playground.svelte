@@ -106,8 +106,8 @@
 <style>
 	.pg {
 		margin: 1.4em 0;
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
 		overflow: hidden;
 		background: var(--bg-elevated);
 		box-shadow: var(--shadow-sm);

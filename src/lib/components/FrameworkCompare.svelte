@@ -96,9 +96,10 @@
 	.fc {
 		margin: 1.5em 0;
 		border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
-		border-radius: var(--radius);
+		border-radius: var(--radius-lg);
 		overflow: hidden;
 		background: var(--bg-elevated);
+		box-shadow: var(--shadow-sm);
 	}
 	.fc-head {
 		display: flex;
@@ -110,6 +111,7 @@
 		border-bottom: 1px solid var(--border);
 	}
 	.badge {
+		font-family: var(--font-display);
 		font-weight: 700;
 		font-size: 0.9rem;
 		color: var(--brand);
@@ -134,6 +136,10 @@
 		color: var(--text-muted);
 		font-size: 0.85rem;
 		font-weight: 600;
+		cursor: pointer;
+		transition:
+			color 0.15s var(--ease),
+			background 0.15s var(--ease);
 	}
 	.tab:hover {
 		color: var(--text);
