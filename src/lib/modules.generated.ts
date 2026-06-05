@@ -18,7 +18,8 @@ export const generatedModules: ModuleMeta[] = [
 			"runtime",
 			"reactivity",
 			"svelte 5"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-1-dasar/02-setup-tooling",
@@ -35,7 +36,8 @@ export const generatedModules: ModuleMeta[] = [
 			"npm run dev",
 			"struktur proyek",
 			"tooling"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-1-dasar/03-anatomi-komponen",
@@ -52,7 +54,8 @@ export const generatedModules: ModuleMeta[] = [
 			"svelte.js",
 			"rune",
 			"struktur"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-1-dasar/04-markup-dasar",
@@ -69,7 +72,8 @@ export const generatedModules: ModuleMeta[] = [
 			"shorthand",
 			"spread props",
 			"boolean attributes"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-1-dasar/05-styling",
@@ -86,7 +90,8 @@ export const generatedModules: ModuleMeta[] = [
 			"custom-properties",
 			"class-directive",
 			"style-directive"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-2-reactivity/01-apa-itu-runes",
@@ -102,7 +107,8 @@ export const generatedModules: ModuleMeta[] = [
 			"compiler",
 			"$state",
 			"svelte5"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-2-reactivity/02-state",
@@ -119,7 +125,8 @@ export const generatedModules: ModuleMeta[] = [
 			"deep-state",
 			"snapshot",
 			"runes"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-2-reactivity/03-derived",
@@ -136,7 +143,8 @@ export const generatedModules: ModuleMeta[] = [
 			"reactivity",
 			"runes",
 			"svelte5"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-2-reactivity/04-effect",
@@ -153,7 +161,8 @@ export const generatedModules: ModuleMeta[] = [
 			"$effect.pre",
 			"$effect.root",
 			"$derived"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-2-reactivity/05-props-bindable",
@@ -170,7 +179,8 @@ export const generatedModules: ModuleMeta[] = [
 			"two-way binding",
 			"typescript",
 			"rest props"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-2-reactivity/06-inspect-host",
@@ -187,7 +197,8 @@ export const generatedModules: ModuleMeta[] = [
 			"trace",
 			"custom-element",
 			"runes"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-3-template/01-control-flow",
@@ -204,7 +215,8 @@ export const generatedModules: ModuleMeta[] = [
 			"await",
 			"control-flow",
 			"template"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-3-template/02-snippets",
@@ -221,7 +233,8 @@ export const generatedModules: ModuleMeta[] = [
 			"slot",
 			"render props",
 			"scoped slot"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-3-template/03-tags",
@@ -238,7 +251,8 @@ export const generatedModules: ModuleMeta[] = [
 			"attach",
 			"attachment",
 			"xss"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-3-template/04-directives",
@@ -255,7 +269,8 @@ export const generatedModules: ModuleMeta[] = [
 			"style",
 			"class",
 			"two-way binding"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-3-template/05-transitions",
@@ -274,7 +289,8 @@ export const generatedModules: ModuleMeta[] = [
 			"fade",
 			"fly",
 			"custom-transition"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-3-template/06-async-await",
@@ -291,7 +307,8 @@ export const generatedModules: ModuleMeta[] = [
 			"effect-pending",
 			"boundary",
 			"suspense"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-4-special-runtime/01-special-elements",
@@ -307,7 +324,8 @@ export const generatedModules: ModuleMeta[] = [
 			"svelte-boundary",
 			"svelte-options",
 			"special-elements"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-4-special-runtime/02-stores-vs-runes",
@@ -326,7 +344,8 @@ export const generatedModules: ModuleMeta[] = [
 			"auto-subscribe",
 			"runes",
 			"state global"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-4-special-runtime/03-context-lifecycle",
@@ -344,7 +363,8 @@ export const generatedModules: ModuleMeta[] = [
 			"onDestroy",
 			"mount",
 			"tick"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-5-profesional/01-best-practices-ts",
@@ -361,7 +381,8 @@ export const generatedModules: ModuleMeta[] = [
 			"Component",
 			"$state",
 			"best-practices"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-5-profesional/02-testing",
@@ -378,7 +399,8 @@ export const generatedModules: ModuleMeta[] = [
 			"playwright",
 			"flushSync",
 			"effect-root"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-5-profesional/03-custom-elements",
@@ -394,7 +416,8 @@ export const generatedModules: ModuleMeta[] = [
 			"svelte:options",
 			"$host",
 			"shadow-dom"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-5-profesional/04-reference-modules",
@@ -413,7 +436,8 @@ export const generatedModules: ModuleMeta[] = [
 			"action",
 			"reactivity",
 			"store"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-5-profesional/05-migration",
@@ -430,7 +454,8 @@ export const generatedModules: ModuleMeta[] = [
 			"props",
 			"snippet",
 			"callback-prop"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-6-sveltekit-dasar/01-apa-itu-sveltekit",
@@ -447,7 +472,8 @@ export const generatedModules: ModuleMeta[] = [
 			"ssr",
 			"vite",
 			"project-structure"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-6-sveltekit-dasar/02-web-standards",
@@ -464,7 +490,8 @@ export const generatedModules: ModuleMeta[] = [
 			"fetch",
 			"FormData",
 			"URL"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-6-sveltekit-dasar/03-routing",
@@ -482,7 +509,8 @@ export const generatedModules: ModuleMeta[] = [
 			"+error",
 			"params",
 			"file-based"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-6-sveltekit-dasar/04-loading-data",
@@ -499,7 +527,8 @@ export const generatedModules: ModuleMeta[] = [
 			"layout-load",
 			"invalidate",
 			"streaming"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-6-sveltekit-dasar/05-form-actions",
@@ -516,7 +545,8 @@ export const generatedModules: ModuleMeta[] = [
 			"fail",
 			"ActionData",
 			"sveltekit"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-6-sveltekit-dasar/06-page-options",
@@ -533,7 +563,8 @@ export const generatedModules: ModuleMeta[] = [
 			"prerender",
 			"ssg",
 			"trailingslash"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-6-sveltekit-dasar/07-state-remote",
@@ -550,7 +581,8 @@ export const generatedModules: ModuleMeta[] = [
 			"context",
 			"query",
 			"command"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-7-sveltekit-lanjutan/01-advanced-routing",
@@ -567,7 +599,8 @@ export const generatedModules: ModuleMeta[] = [
 			"matchers",
 			"route groups",
 			"layout breaking"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-7-sveltekit-lanjutan/02-hooks",
@@ -586,7 +619,8 @@ export const generatedModules: ModuleMeta[] = [
 			"transport",
 			"sequence",
 			"locals"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-7-sveltekit-lanjutan/03-errors-links-sw",
@@ -603,7 +637,8 @@ export const generatedModules: ModuleMeta[] = [
 			"preload",
 			"service-worker",
 			"pwa"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-7-sveltekit-lanjutan/04-server-only-advanced",
@@ -620,7 +655,8 @@ export const generatedModules: ModuleMeta[] = [
 			"observability",
 			"packaging",
 			"svelte-package"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-8-expert/01-building-adapters",
@@ -638,7 +674,8 @@ export const generatedModules: ModuleMeta[] = [
 			"ssg",
 			"spa",
 			"deployment"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-8-expert/02-env-vars",
@@ -657,7 +694,8 @@ export const generatedModules: ModuleMeta[] = [
 			"private",
 			"PUBLIC_",
 			"secret"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-8-expert/03-app-modules",
@@ -675,7 +713,8 @@ export const generatedModules: ModuleMeta[] = [
 			"goto",
 			"invalidate",
 			"app-paths"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-8-expert/04-api-routes",
@@ -693,7 +732,8 @@ export const generatedModules: ModuleMeta[] = [
 			"REST",
 			"api-routes",
 			"nestjs"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-8-expert/05-auth-perf-seo",
@@ -712,7 +752,8 @@ export const generatedModules: ModuleMeta[] = [
 			"enhanced-img",
 			"seo",
 			"a11y"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	},
 	{
 		"slug": "level-8-expert/06-studi-kasus",
@@ -729,6 +770,7 @@ export const generatedModules: ModuleMeta[] = [
 			"hooks",
 			"form actions",
 			"end-to-end"
-		]
+		],
+		"updated": "2026-06-05T01:13:34+07:00"
 	}
 ];

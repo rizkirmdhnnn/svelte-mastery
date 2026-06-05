@@ -5,6 +5,7 @@
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const contentDir = join(root, 'src/lib/content');
@@ -46,13 +47,34 @@ function parseFrontmatter(text) {
 	return meta;
 }
 
+// Last-modified date = last git commit that touched the file (ISO). Frontmatter
+// `updated:` overrides it. Returns undefined if git is unavailable or the file
+// isn't committed yet — never throws.
+function gitUpdated(file) {
+	try {
+		const out = execSync(`git log -1 --format=%cI -- "${file}"`, {
+			cwd: root,
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'ignore']
+		}).trim();
+		return out || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 const files = walk(contentDir);
 const modules = [];
 for (const file of files) {
 	const meta = parseFrontmatter(readFileSync(file, 'utf8'));
 	if (!meta || typeof meta.level !== 'number') continue;
 	const slug = relative(contentDir, file).replace(/\\/g, '/').replace(/\.svx$/, '');
-	modules.push({ slug, ...meta });
+	const entry = { slug, ...meta };
+	if (!entry.updated) {
+		const g = gitUpdated(file);
+		if (g) entry.updated = g;
+	}
+	modules.push(entry);
 }
 
 modules.sort((a, b) => a.level - b.level || a.order - b.order || a.slug.localeCompare(b.slug));

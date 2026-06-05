@@ -10,6 +10,16 @@
 	const nav = $derived(neighbors(data.slug));
 	const Module = $derived(data.Component as Component);
 	const done = $derived(progress.isDone(data.slug));
+
+	const updated = $derived(
+		data.meta.updated
+			? new Intl.DateTimeFormat('id-ID', {
+					day: 'numeric',
+					month: 'short',
+					year: 'numeric'
+				}).format(new Date(data.meta.updated))
+			: null
+	);
 </script>
 
 <svelte:head>
@@ -29,6 +39,11 @@
 
 	<h1>{data.meta.title}</h1>
 	<p class="lead">{data.meta.description}</p>
+	{#if updated}
+		<p class="updated" title="Materi modul ini terakhir diperbarui">
+			🕒 Terakhir diperbarui {updated}
+		</p>
+	{/if}
 
 	<Module />
 
@@ -102,6 +117,11 @@
 		font-size: 1.1rem;
 		color: var(--text-muted);
 		margin-top: -0.2em;
+	}
+	.updated {
+		font-size: 0.82rem;
+		color: var(--text-faint);
+		margin: 0.4rem 0 0;
 	}
 	.done-row {
 		margin: 2.5rem 0 1.5rem;

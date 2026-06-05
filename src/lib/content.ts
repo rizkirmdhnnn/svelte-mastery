@@ -10,6 +10,7 @@ export type ModuleMeta = {
 	description: string;
 	docs?: string; // official docs URL
 	keywords?: string[];
+	updated?: string; // ISO date of last update (git commit or frontmatter override)
 };
 
 // Metadata comes from a generated manifest (scripts/gen-manifest.mjs), NOT from
