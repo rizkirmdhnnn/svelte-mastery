@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { levels, modules } from '$lib/content';
 	import { progress } from '$lib/stores/progress.svelte';
+	import HeroDemo from '$lib/components/HeroDemo.svelte';
 
 	const firstSlug = $derived(modules[0]?.slug ?? '');
 	const totalPercent = $derived(progress.percent(modules.map((m) => m.slug)));
@@ -34,21 +35,26 @@
 </svelte:head>
 
 <section class="hero">
-	<span class="kicker">🔥 Svelte 5 · SvelteKit v2</span>
-	<h1>Kuasai <span class="grad">Svelte &amp; SvelteKit</span><br />dari pemula hingga expert</h1>
-	<p class="sub">
-		Kurikulum interaktif berbahasa Indonesia, mengacu 100% ke dokumentasi resmi terbaru.
-		Belajar konsep, langsung praktik di playground, dan lihat padanannya di framework lain.
-	</p>
-	<div class="cta">
-		{#if firstSlug}
-			<a class="btn btn-primary big" href="/belajar/{firstSlug}">Mulai Belajar →</a>
+	<div class="hero-copy">
+		<span class="kicker">🔥 Svelte 5 · SvelteKit v2</span>
+		<h1>Kuasai <span class="grad">Svelte &amp; SvelteKit</span><br />dari pemula hingga expert</h1>
+		<p class="sub">
+			Kurikulum interaktif berbahasa Indonesia, mengacu 100% ke dokumentasi resmi terbaru.
+			Belajar konsep, langsung praktik di playground, dan lihat padanannya di framework lain.
+		</p>
+		<div class="cta">
+			{#if firstSlug}
+				<a class="btn btn-primary big" href="/belajar/{firstSlug}">Mulai Belajar →</a>
+			{/if}
+			<a class="btn big" href="/cheatsheet-runes">Cheat Sheet Runes</a>
+		</div>
+		{#if totalPercent > 0}
+			<p class="resume">Progress kamu: <strong>{totalPercent}%</strong> selesai.</p>
 		{/if}
-		<a class="btn big" href="/cheatsheet-runes">Cheat Sheet Runes</a>
 	</div>
-	{#if totalPercent > 0}
-		<p class="resume">Progress kamu: <strong>{totalPercent}%</strong> selesai.</p>
-	{/if}
+	<div class="hero-demo-col">
+		<HeroDemo />
+	</div>
 </section>
 
 <section class="features">
@@ -92,24 +98,27 @@
 
 <style>
 	.hero {
-		text-align: center;
-		padding: 4rem 1rem 3rem;
-		max-width: 780px;
+		display: grid;
+		grid-template-columns: 1.1fr 0.9fr;
+		gap: 2.5rem;
+		align-items: center;
+		max-width: 1060px;
 		margin: 0 auto;
+		padding: 4rem 1rem 3rem;
 	}
 	.kicker {
 		display: inline-block;
 		font-size: 0.82rem;
 		font-weight: 700;
-		color: var(--brand);
+		color: var(--link);
 		background: var(--accent-soft);
 		padding: 0.3rem 0.8rem;
 		border-radius: 99px;
 		margin-bottom: 1.2rem;
 	}
 	.hero h1 {
-		font-size: clamp(2rem, 5vw, 3.1rem);
-		line-height: 1.1;
+		font-size: clamp(2rem, 4.5vw, 3rem);
+		line-height: 1.08;
 		letter-spacing: -0.03em;
 		margin: 0 0 1rem;
 	}
@@ -120,15 +129,14 @@
 		-webkit-text-fill-color: transparent;
 	}
 	.sub {
-		font-size: 1.1rem;
+		font-size: 1.08rem;
 		color: var(--text-muted);
-		margin: 0 auto 1.8rem;
-		max-width: 620px;
+		margin: 0 0 1.8rem;
+		max-width: 540px;
 	}
 	.cta {
 		display: flex;
 		gap: 0.7rem;
-		justify-content: center;
 		flex-wrap: wrap;
 	}
 	.big {
@@ -139,6 +147,16 @@
 		margin-top: 1.2rem;
 		font-size: 0.9rem;
 		color: var(--text-muted);
+	}
+	@media (max-width: 860px) {
+		.hero {
+			grid-template-columns: 1fr;
+			gap: 1.8rem;
+			padding: 2.5rem 1rem;
+		}
+		.cta {
+			justify-content: flex-start;
+		}
 	}
 	.features {
 		display: grid;
@@ -152,6 +170,12 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--bg-elevated);
+		box-shadow: var(--shadow-sm);
+		transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+	}
+	.feature:hover {
+		transform: translateY(-3px);
+		box-shadow: var(--shadow-md);
 	}
 	.f-ic {
 		font-size: 1.6rem;
@@ -193,7 +217,8 @@
 	}
 	.level-card:hover {
 		border-color: var(--brand);
-		transform: translateY(-2px);
+		transform: translateY(-3px);
+		box-shadow: var(--shadow-md);
 		text-decoration: none;
 	}
 	.lc-head {
@@ -204,7 +229,11 @@
 	}
 	.lc-num {
 		font-weight: 700;
-		color: var(--brand);
+		color: var(--brand-ink);
+		background: var(--brand);
+		padding: 0.12rem 0.45rem;
+		border-radius: 5px;
+		font-size: 0.72rem;
 	}
 	.lc-count {
 		color: var(--text-faint);
