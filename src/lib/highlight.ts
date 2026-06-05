@@ -14,7 +14,7 @@ function getHighlighter(): Promise<HighlighterCore> {
 			import('shiki/engine/javascript')
 		]);
 		return createHighlighterCore({
-			themes: [import('shiki/themes/github-light.mjs'), import('shiki/themes/github-dark.mjs')],
+			themes: [import('shiki/themes/vitesse-light.mjs'), import('shiki/themes/github-dark.mjs')],
 			langs: [
 				import('shiki/langs/svelte.mjs'),
 				import('shiki/langs/tsx.mjs'),
@@ -38,7 +38,7 @@ export async function highlight(code: string, lang: string, diff: number[] = [])
 	const safe = hl.getLoadedLanguages().includes(lang) ? lang : 'text';
 	return hl.codeToHtml(code, {
 		lang: safe,
-		themes: { light: 'github-light', dark: 'github-dark' },
+		themes: { light: 'vitesse-light', dark: 'github-dark' },
 		defaultColor: 'light',
 		transformers: diff.length
 			? [
