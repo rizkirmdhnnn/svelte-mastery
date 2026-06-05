@@ -101,8 +101,8 @@
 		flex: 1;
 		max-width: 360px;
 		padding: 0.35rem 0.6rem;
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
 		background: var(--bg-subtle);
 	}
 	.search.open {
@@ -151,7 +151,7 @@
 		padding: 0.3rem;
 		list-style: none;
 		background: var(--bg-elevated);
-		border: 1px solid var(--border-strong);
+		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		box-shadow: var(--shadow-lg);
 		max-height: 60vh;
