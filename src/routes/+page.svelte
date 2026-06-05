@@ -68,7 +68,10 @@
 </section>
 
 <section class="levels">
-	<h2>Peta Belajar</h2>
+	<div class="levels-head">
+		<h2>Peta Belajar</h2>
+		<a class="roadmap-link" href="/roadmap">🗺️ Lihat roadmap lengkap →</a>
+	</div>
 	<div class="level-grid">
 		{#each levels as lvl (lvl.level)}
 			{@const slugs = lvl.modules.map((m) => m.slug)}
@@ -199,6 +202,26 @@
 	.compare-note h2 {
 		font-size: 1.5rem;
 		margin-bottom: 1.2rem;
+	}
+	.levels-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		flex-wrap: wrap;
+		margin-bottom: 1.2rem;
+	}
+	.levels-head h2 {
+		margin-bottom: 0;
+	}
+	.roadmap-link {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--brand);
+		white-space: nowrap;
+	}
+	.roadmap-link:hover {
+		text-decoration: underline;
 	}
 	.level-grid {
 		display: grid;

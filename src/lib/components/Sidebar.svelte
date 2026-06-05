@@ -58,6 +58,7 @@
 	{/each}
 
 	<div class="extras">
+		<a href="/roadmap">🗺️ Roadmap belajar</a>
 		<a href="/cheatsheet-runes">📋 Cheat sheet runes</a>
 		<a href="/migration-cheatsheet">🔄 Migration cheat sheet</a>
 		<a href="/glossary">📖 Glossary</a>

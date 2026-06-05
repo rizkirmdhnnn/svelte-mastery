@@ -18,6 +18,9 @@
 	</div>
 
 	<div class="actions">
+		<a class="nav-link" href="/roadmap" title="Peta belajar (roadmap)">
+			<span aria-hidden="true">🗺️</span><span class="nav-label">Roadmap</span>
+		</a>
 		<button
 			class="toggle theme"
 			onclick={() => theme.toggle()}
@@ -80,6 +83,26 @@
 		align-items: center;
 		gap: 0.5rem;
 	}
+	.nav-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.4rem 0.7rem;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--bg-subtle);
+		color: var(--text);
+		font-size: 0.82rem;
+		font-weight: 600;
+		text-decoration: none;
+		transition: background 0.15s var(--ease), transform 0.15s var(--ease), color 0.15s var(--ease);
+	}
+	.nav-link:hover {
+		background: var(--bg-inset);
+		color: var(--brand);
+		transform: translateY(-1px);
+		text-decoration: none;
+	}
 	.toggle {
 		display: inline-flex;
 		align-items: center;
@@ -106,6 +129,9 @@
 			display: inline-flex;
 		}
 		.name {
+			display: none;
+		}
+		.nav-label {
 			display: none;
 		}
 	}
