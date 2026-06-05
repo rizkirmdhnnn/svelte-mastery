@@ -73,7 +73,9 @@
 		margin: 0;
 	}
 	.toc-rail {
-		padding-top: 1.5rem;
+		position: sticky;
+		top: calc(var(--header-h) + 1.5rem);
+		align-self: start;
 	}
 	@media (max-width: 1100px) {
 		.lesson {

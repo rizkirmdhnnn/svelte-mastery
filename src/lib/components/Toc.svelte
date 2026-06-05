@@ -61,8 +61,6 @@
 
 <style>
 	.toc {
-		position: sticky;
-		top: calc(var(--header-h) + 1.5rem);
 		font-size: 0.85rem;
 		max-height: calc(100vh - var(--header-h) - 3rem);
 		overflow-y: auto;
