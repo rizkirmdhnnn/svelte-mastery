@@ -1,0 +1,203 @@
+---
+title: Glossary
+product: kit
+section: appendix
+sectionTitle: Appendix
+sectionOrder: 6
+order: 7
+status: stable
+description: Kamus istilah rendering SvelteKit — CSR, SSR, SSG, prerender, hydration, SPA, edge, routing — definisi singkat plus kapan tiap istilah relevan untukmu.
+docs: https://svelte.dev/docs/kit/glossary
+keywords: [glossary, ssr, csr, ssg, hydration, edge]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Setiap framework punya "bahasa daerah"-nya sendiri. Saat membaca docs SvelteKit kamu akan ketemu singkatan yang berseliweran: SSR, CSR, SSG, prerender, hydration, SPA, edge. Masalahnya, istilah-istilah ini sering dipakai seakan-akan semua orang sudah tahu artinya — padahal banyak yang maknanya tumpang-tindih dan gampang ketukar. Modul ini adalah **kamus** kecilnya: definisi singkat tiap istilah, plus yang lebih penting — *kapan istilah itu relevan buatmu* sebagai orang yang lagi membangun aplikasi.
+
+Kamu yang datang dari React/Vue sebenarnya sudah memegang sebagian besar konsep ini, cuma dengan label berbeda. "SSR" di Next.js, Nuxt, dan SvelteKit merujuk ke ide yang sama. "Hydration" sama persis di mana-mana. Jadi anggap modul ini sebagai *peta penerjemah*: menghubungkan kosakata yang sudah kamu punya ke kosakata SvelteKit, sambil mempertajam definisi yang selama ini mungkin masih kabur.
+
+### Analogi: di mana HTML-nya "dimasak"?
+
+Hampir semua istilah di sini sebenarnya menjawab satu pertanyaan inti: **di mana dan kapan HTML halamanmu dibuat?** Bayangkan HTML itu makanan, dan ada tiga dapur yang mungkin memasaknya:
+
+- **Dapur server, saat ada pesanan (SSR).** Pelanggan memesan (request masuk), dapur server memasak fresh saat itu juga, lalu mengantar HTML matang ke browser. Selalu pakai data terbaru, tapi server kerja tiap ada pesanan.
+- **Dapur pabrik, jauh-jauh hari (SSG / prerender).** Semua porsi dimasak sekaligus saat *build*, dikemas, ditaruh di rak. Begitu ada yang minta, tinggal ambil — tak ada yang memasak ulang. Super cepat & murah, tapi isinya "beku" sampai build berikutnya.
+- **Dapur di rumah pelanggan (CSR).** Server cuma mengirim paket bahan mentah plus resep (JavaScript), lalu browser pelanggan yang merakit hidangannya sendiri. Server nyaris tak ikut campur soal isi.
+
+Sebagian besar istilah lain (hydration, hybrid, SPA, MPA, edge, ISR) cuma variasi atau gabungan dari ketiga "dapur" ini. Sekali kamu pegang gambaran ini, semua singkatan jadi jauh lebih masuk akal.
+
+### Kamus lengkap
+
+Tabel berikut definisi ringkas semua istilah. Penjelasan lebih dalam untuk yang abstrak ada di bawahnya.
+
+| Istilah | Kepanjangan | Arti singkat | Kapan relevan |
+| --- | --- | --- | --- |
+| **CSR** | Client-Side Rendering | Isi halaman dibuat di browser pakai JavaScript. | Saat memutuskan apakah browser ikut merender (`csr` page option, SPA). |
+| **SSR** | Server-Side Rendering | Isi halaman dibuat di server tiap request. | Mode default SvelteKit; relevan untuk SEO & data segar per-request. |
+| **SSG** | Static Site Generation | Situs yang **setiap** halamannya di-prerender jadi file statis. | Saat seluruh situsmu konten statis (docs, blog, marketing). |
+| **Prerendering** | — | Menghitung isi halaman saat **build**, lalu menyimpan HTML-nya. | Per-halaman lewat `export const prerender = true`. |
+| **Hydration** | — | Server kirim HTML jadi, lalu JS di browser "menghidupkannya": pasang event listener & state. | Selalu terjadi pada mode default; relevan saat debugging "tombol tak bereaksi". |
+| **Hybrid app** | — | Default SvelteKit: HTML awal dari server (SSR), navigasi berikutnya di klien (CSR). | Memahami kenapa load pertama beda dari klik link berikutnya. |
+| **SPA** | Single-Page App | Semua request memuat satu file HTML, lalu klien yang render sisanya per-URL. | Saat butuh app-like tanpa server render (`ssr = false`, `adapter-static`). |
+| **MPA** | Multi-Page App | App tradisional: tiap halaman dirender di server (sering bahasa non-JS). | Pembanding historis; menjelaskan asal-usul SSR. |
+| **Edge** | — | Render di CDN dekat lokasi user, bukan di satu server pusat. | Saat butuh latensi rendah global (adapter edge: Cloudflare/Vercel Edge). |
+| **Routing** | — | SvelteKit mencegat navigasi & mengganti isi halaman tanpa request server penuh. | Memahami kenapa pindah halaman terasa instan setelah load pertama. |
+| **ISR** | Incremental Static Regeneration | Halaman statis dibuat/diperbarui saat ada visitor, tanpa redeploy. | Konten statis tapi sesekali berubah; lewat adapter (mis. Vercel). |
+| **PWA** | Progressive Web App | App berbasis web API tapi terasa seperti app native (offline, installable). | Saat butuh pengalaman app (service worker, manifest). |
+
+### Yang abstrak, dijelaskan lebih dalam
+
+**SSR vs CSR — bukan pilihan "salah satu".** Banyak yang mengira harus memilih SSR *atau* CSR. Di SvelteKit default-nya justru **keduanya, bergiliran**. Load pertama: server merender HTML (SSR) supaya halaman langsung tampil & terbaca mesin pencari. Setelah itu, saat kamu klik link internal, SvelteKit tidak minta halaman baru ke server — JavaScript di browser yang menggambar halaman berikutnya (CSR). Gabungan inilah yang disebut **hybrid app**. Jadi "SSR vs CSR" lebih tepat dibaca sebagai "tahap mana yang sedang kita bicarakan".
+
+**Hydration — kenapa ada, dan kenapa kadang bikin bingung.** Setelah server mengirim HTML matang, halaman itu sebenarnya cuma "gambar mati": teksnya ada, tapi tombolnya belum tahu harus berbuat apa saat diklik. *Hydration* adalah proses saat JavaScript Svelte berjalan di browser, menempel ke HTML yang sudah ada, lalu memasang event listener dan menyalakan reactivity. Analoginya: server mengirim patung lilin yang mirip aslinya, hydration adalah momen patung itu "bernyawa". Implikasi praktis: ada jeda singkat antara *HTML terlihat* dan *halaman benar-benar interaktif*. Kalau pengguna mengeluh "tombol diklik kok diam", sering itu karena hydration belum selesai (atau gagal karena error JS). Konsep ini identik dengan hydration di React/Next.js dan Vue/Nuxt.
+
+**Prerender vs SSR — beda di *kapan*, bukan *di mana*.** Keduanya sama-sama membuat HTML di luar browser. Bedanya waktu: SSR memasak **per request** (selalu segar, server kerja terus), prerender memasak **sekali saat build** (beku, tapi penyajian secepat ambil file). SSG cuma istilah untuk "situs yang *semua* halamannya di-prerender". Aturan praktis memilih: kalau isi halaman **sama untuk semua orang dan jarang berubah** → prerender; kalau **beda per request/per user atau sering berubah** → SSR.
+
+**SPA — "kembali ke akar" CSR.** Kalau kamu mematikan SSR sepenuhnya (`ssr = false`, biasanya dengan `adapter-static`), server cuma mengirim satu shell HTML kosong dan seluruh isi digambar browser per-URL. Inilah SPA klasik — persis perilaku Create React App / Vue CLI lama. Cepat berpindah halaman, tapi load pertama lebih lambat dan kurang ramah SEO karena bot awalnya melihat halaman kosong.
+
+**Edge — soal *jarak fisik*.** Server biasa berdiri di satu lokasi (misal Virginia, AS). Pengguna di Jakarta harus "bolak-balik" jauh tiap request. Render *edge* memindahkan eksekusi ke node CDN yang tersebar di banyak kota — termasuk dekat Jakarta — sehingga jarak tempuh data jauh lebih pendek dan halaman terasa lebih responsif. Trade-off-nya: lingkungan edge lebih terbatas (bukan Node.js penuh), jadi tak semua library jalan di sana.
+
+**Routing — kenapa pindah halaman terasa instan.** Di MPA tradisional, tiap klik link memuat ulang seluruh halaman dari server (layar berkedip putih sejenak). SvelteKit *mencegat* klik link internal, mengambil hanya data yang perlu, lalu menukar isi halaman di tempat tanpa reload penuh. Itu sebabnya navigasi setelah load pertama terasa instan, seperti aplikasi desktop.
+
+## 2. Contoh kode
+
+Istilah-istilah di atas bukan cuma teori — di SvelteKit kamu memilihnya lewat **page options**, yaitu `export const` di file `+page.js`/`+layout.js`. Berikut tiap "dapur" diterjemahkan ke kode.
+
+```js
+// src/routes/about/+page.js
+// PRERENDER / SSG: HTML dibuat SEKALI saat `vite build`, lalu disajikan
+// sebagai file statis. Cocok untuk halaman yang sama bagi semua orang
+// & jarang berubah (about, docs, artikel).
+export const prerender = true;
+
+// Opsional: matikan CSR juga -> HTML murni tanpa hydration & tanpa JS Svelte
+// di browser. Hanya kalau halaman benar-benar tak butuh interaksi apa pun.
+export const csr = false;
+```
+
+```js
+// src/routes/dashboard/+page.js
+// SPA / CSR-only: matikan SSR. Server cuma kirim shell kosong, browser
+// yang merakit seluruh halaman (perilaku SPA klasik). Privat + interaktif
+// + tak butuh SEO -> cocok di sini.
+export const ssr = false;
+```
+
+```js
+// src/routes/produk/[id]/+page.server.js
+// SSR (default): tidak perlu menulis page option apa pun — SSR sudah aktif.
+// Tiap request di-render fresh di server dengan data terbaru. Bagus untuk
+// halaman dinamis yang juga butuh SEO (harga/stok berubah, harus terindeks).
+export async function load({ params, setHeaders }) {
+	// Trik "mirip ISR": biar statis-tapi-segar, set cache header dan serahkan
+	// ke CDN. SvelteKit tak punya kata kunci `revalidate` seperti Next.js.
+	setHeaders({ 'cache-control': 's-maxage=60, stale-while-revalidate=300' });
+	const produk = await ambilProduk(params.id);
+	return { produk };
+}
+```
+
+## 3. Coba sendiri
+
+Istilah-istilah rendering ini menggambarkan perilaku **server & proses build**, jadi tidak bisa ditunjukkan di playground browser — butuh build dan server SvelteKit sungguhan. Sebagai gantinya, latih intuisimu memetakan setiap istilah ke keputusan nyata lewat peta keputusan beranotasi berikut, lalu uji sendiri di proyek SvelteKit lokal.
+
+```text
+PETA KEPUTUSAN: istilah mana untuk situasi apa
+──────────────────────────────────────────────
+
+Konten SAMA untuk semua + JARANG berubah  (landing, docs, blog)
+   -> PRERENDER (SSG):  export const prerender = true;
+   -> kalau nol interaksi, tambah:  export const csr = false;
+
+Konten BEDA per request / per user + butuh SEO  (detail produk)
+   -> SSR (default): tak usah tulis apa-apa; biarkan SvelteKit render di server
+
+Privat di balik login + interaktif berat + TAK butuh SEO  (dashboard)
+   -> SPA / CSR-only:  export const ssr = false;
+
+Statis TAPI sesekali berubah tanpa mau redeploy  (berita)
+   -> ISR via adapter (mis. Vercel) atau cache header (s-maxage + SWR)
+
+Pengguna tersebar global, latensi jadi masalah
+   -> EDGE: pakai adapter edge (Cloudflare / Vercel Edge)
+```
+
+```js
+// Eksperimen kilat untuk MELIHAT prerender vs non-prerender:
+// 1) Buat src/routes/statis/+page.svelte (isi teks apa saja).
+// 2) Tambah src/routes/statis/+page.js  ->  export const prerender = true;
+// 3) Jalankan `vite build`, lalu cek folder output build.
+//    Halaman 'statis' menjadi file HTML nyata (statis.html / statis/index.html);
+//    rute TANPA prerender tidak menghasilkan file HTML statis seperti itu.
+// Inilah wujud konkret dari istilah "SSG" — HTML yang sudah jadi di disk.
+```
+
+## 4. Latihan
+
+<Exercise title="Cocokkan istilah dengan keputusan render">
+Sebuah aplikasi punya empat halaman. Untuk masing-masing, sebutkan **istilah rendering** yang paling tepat (SSR / SSG-prerender / SPA-CSR-only) **dan** alasannya, lalu tulis baris `export const ...` beserta lokasi filenya.
+
+1. `/` — landing marketing, sama untuk semua, diperbarui sebulan sekali.
+2. `/blog/[slug]` — artikel; isinya tetap setelah terbit & harus terindeks Google.
+3. `/app` — papan kerja interaktif di balik login, tidak boleh terindeks.
+4. `/kontak` — halaman alamat statis, tanpa tombol/interaksi sama sekali.
+
+{#snippet solution()}
+
+  ```js
+  // 1) /  -> SSG (prerender). Konten identik untuk semua & sangat jarang ganti.
+  //    Paling cepat & murah; cukup rebuild saat kontennya diperbarui.
+  // src/routes/+page.js
+  export const prerender = true;
+
+  // 2) /blog/[slug]  -> SSG (prerender) juga. Setelah terbit isinya tetap dan
+  //    butuh SEO; HTML statis sudah berisi teks penuh, ideal untuk bot.
+  //    (Kalau artikel sering diedit, alternatifnya SSR + cache header.)
+  // src/routes/blog/[slug]/+page.js
+  export const prerender = true;
+
+  // 3) /app  -> SPA / CSR-only (matikan SSR). Privat, interaktif berat,
+  //    tak butuh SEO -> tak perlu render di server.
+  // src/routes/app/+page.js
+  export const ssr = false;
+
+  // 4) /kontak  -> SSG + matikan CSR. Statis total, nol interaksi, jadi
+  //    tak usah kirim JS Svelte ke browser sama sekali.
+  // src/routes/kontak/+page.js
+  export const prerender = true;
+  export const csr = false;
+  ```
+
+  Inti: identik-untuk-semua + jarang berubah -> prerender (SSG); dinamis + butuh SEO -> SSR; privat + interaktif + tanpa SEO -> ssr=false (SPA); statis tanpa interaksi -> tambah csr=false.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menyamakan <strong>SSR</strong> dengan <strong>prerender</strong>. Keduanya membuat HTML di luar browser, tapi <em>waktunya</em> beda: SSR memasak <strong>per request</strong> (selalu segar), prerender memasak <strong>sekali saat build</strong> (beku sampai build berikutnya). Akibat praktis: jangan prerender halaman yang membaca <code>cookies</code>, sesi login, atau data per-user — saat build belum ada "user", jadi HTML beku itu bisa salah atau membocorkan data satu orang ke semua pengunjung.
+</Callout>
+
+<Callout type="warning">
+<strong>CSR</strong> dan <strong>hydration</strong> sering dikira hal yang sama, padahal beda. CSR = browser <em>menggambar</em> isi halaman dari nol pakai JS. Hydration = browser <em>menghidupkan</em> HTML yang sudah dikirim server (memasang event listener & state) — HTML-nya sudah ada, tinggal "dinyalakan". Pada mode default SvelteKit (hybrid), load pertama memakai hydration, bukan CSR penuh. Salah paham ini sering jadi sumber kebingungan saat debugging "kenapa halaman tampil tapi tombol belum bereaksi" (jawabannya: hydration belum selesai).
+</Callout>
+
+<Callout type="tip">
+<strong>SPA</strong> bukan tombol global di SvelteKit, melainkan hasil dari mematikan SSR. Untuk SPA penuh (tanpa server sama sekali), gabungkan <code>export const ssr = false</code> dengan <code>@sveltejs/adapter-static</code> dan sebuah <em>fallback page</em>. Beda dengan Create React App yang SPA secara default, di SvelteKit kamu memilih SPA secara sadar — sisanya hybrid (SSR + CSR) yang lebih ramah SEO.
+</Callout>
+
+<Callout type="legacy">
+Istilah <strong>SSG</strong> kadang dipakai seakan-akan fitur terpisah. Di SvelteKit, SSG bukan mode khusus — itu cuma sebutan untuk "situs yang <em>setiap</em> halamannya di-prerender". Mekanismenya tetap page option <code>prerender</code> per-route yang sama. Begitu juga <strong>ISR</strong>: SvelteKit tak punya kata kunci <code>revalidate</code> ala Next.js; ISR dicapai lewat adapter (mis. <code>config.isr</code> di Vercel) atau cache header HTTP. Kalau menemukan tutorial yang menyebut "mode SSG" sebagai setelan tersendiri, anggap itu penyederhanaan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/glossary" label="SvelteKit — Glossary (CSR, SSR, SSG, prerendering, hydration, SPA, edge, routing)" />
+<DocsLink href="https://svelte.dev/docs/kit/page-options" label="SvelteKit — Page options (cara memilih ssr/csr/prerender per-route)" />

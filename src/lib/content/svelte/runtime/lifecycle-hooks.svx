@@ -1,0 +1,297 @@
+---
+title: Lifecycle hooks
+product: svelte
+section: runtime
+sectionTitle: Runtime
+sectionOrder: 6
+order: 3
+status: stable
+description: Mengelola momen lahir dan matinya komponen dengan onMount (plus cleanup), onDestroy, dan tick — serta kenapa beforeUpdate/afterUpdate ditinggalkan demi $effect.
+docs: https://svelte.dev/docs/svelte/lifecycle-hooks
+keywords: [onMount, onDestroy, tick, lifecycle, effect, cleanup]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Setiap komponen punya umur. Ia **lahir** (di-mount ke DOM), **hidup** sebentar sambil bereaksi terhadap perubahan, lalu **mati** (di-unmount, dicabut dari DOM). Lifecycle hooks adalah cara menyelipkan kode di dua momen penting itu: tepat setelah lahir, dan tepat sebelum mati.
+
+Analogi yang enak: bayangkan kamu **menyewa kamar kos**. Saat masuk (mount) kamu memasang beberapa hal — colok kulkas, sambung Wi-Fi, pasang lampu. Saat keluar (unmount) kamu **wajib** mencabut semua itu kembali, kalau tidak kamu tetap ditagih listrik dan kamar berantakan untuk penghuni berikutnya. Lifecycle hooks adalah daftar "yang dipasang saat masuk" dan "yang dicabut saat keluar". Lupa mencabut = *memory leak*: interval yang masih jalan, listener yang masih nempel, koneksi WebSocket yang menggantung.
+
+### onMount: jalan sekali setelah masuk DOM
+
+`onMount(fn)` menjalankan `fn` **satu kali**, tepat setelah komponen pertama kali dirender ke DOM. Ini tempat untuk hal-hal yang butuh DOM nyata atau hanya boleh terjadi di browser:
+
+- mengambil data dari API saat halaman pertama tampil,
+- memasang `addEventListener` ke `window`/`document`,
+- menginisialisasi library pihak ketiga yang butuh elemen nyata (chart, map, editor),
+- mengakses elemen lewat `bind:this` (saat `onMount` jalan, elemennya dijamin sudah ada).
+
+Kenapa "sekali setelah masuk DOM", bukan "saat script jalan"? Karena saat blok `<script>` dieksekusi, DOM-nya **belum ada** — Svelte baru mau membuatnya. Kalau kamu menyentuh `document.querySelector` atau elemen `bind:this` di top-level script, hasilnya `null`. `onMount` menunggu sampai DOM betul-betul terpasang, baru memanggilmu.
+
+Satu detail penting yang sering dilewat: **kalau `fn` mengembalikan sebuah fungsi, fungsi itu otomatis dipakai sebagai cleanup** saat komponen di-unmount. Jadi "pasang" dan "cabut" ditulis berdekatan dalam satu blok — sulit lupa.
+
+<Callout type="warning">
+Mekanisme cleanup ini <strong>hanya berlaku kalau fungsi yang kamu oper ke <code>onMount</code> bersifat synchronous</strong>. Kalau kamu menulis <code>onMount(async () =&gt; &#123; ... &#125;)</code>, fungsi <code>async</code> selalu mengembalikan <code>Promise</code>, bukan fungsi cleanup — jadi <code>return () =&gt; &#123;...&#125;</code> di dalamnya <em>tidak</em> akan dianggap cleanup. Kalau perlu await data lalu tetap mau cleanup, deklarasikan fungsi <code>async</code> terpisah dan panggil di dalam callback synchronous: <code>onMount(() =&gt; &#123; muat(); return () =&gt; bersihkan(); &#125;)</code>.
+</Callout>
+
+### onDestroy: jalan tepat sebelum mati
+
+`onDestroy(fn)` menjalankan `fn` tepat sebelum komponen dibongkar. Ini tempat membersihkan apa pun yang tidak ditangani lewat return `onMount`: `clearInterval`, melepas subscription, memutus koneksi.
+
+Bedanya yang krusial dengan `onMount`: **`onDestroy` adalah satu-satunya lifecycle hook yang juga jalan saat SSR (server-side rendering)**. Saat server me-render komponen jadi string HTML, ia tidak "memasang ke DOM", jadi `onMount` dilewati — tapi `onDestroy` tetap dipanggil saat server selesai dengan komponen itu. Maka untuk cleanup yang harus berlaku di mana pun (browser maupun server), `onDestroy` lebih aman daripada mengandalkan return `onMount`.
+
+### tick: menunggu DOM selesai diperbarui
+
+`tick()` bukan benar-benar lifecycle, tapi serumpun dan sering dipakai bareng. Ia mengembalikan sebuah `Promise` yang resolve **setelah Svelte selesai menerapkan perubahan state yang tertunda ke DOM**.
+
+Kenapa ini perlu? Karena Svelte **mem-batch** update DOM demi performa. Saat kamu menulis `n = 5`, DOM tidak langsung berubah di baris berikutnya — Svelte menjadwalkannya untuk diterapkan sekaligus sedikit kemudian. Jadi kalau di baris setelah `n = 5` kamu langsung membaca DOM (misalnya tinggi elemen, posisi scroll, atau memanggil `.focus()` pada elemen yang baru muncul), kamu masih melihat DOM versi *lama*. `await tick()` adalah cara berkata "tunggu dulu sampai DOM benar-benar mencerminkan state terbaru", baru lanjut.
+
+### Kenapa beforeUpdate/afterUpdate ditinggalkan
+
+Di Svelte 4 ada `beforeUpdate` dan `afterUpdate`: hooks yang jalan sebelum/sesudah **setiap** update komponen. Di Svelte 5 (runes mode) keduanya **deprecated** — hanya di-shim agar kode lama tidak langsung pecah, tapi tidak tersedia di komponen runes baru.
+
+Masalahnya: keduanya jalan untuk *setiap* perubahan apa pun di komponen, tidak peduli apakah perubahan itu relevan dengan kode-mu. Akibatnya kamu sering harus menulis pengecekan manual ("apakah yang berubah benar-benar yang aku pedulikan?") supaya efek sampingmu tidak ikut jalan saat state lain yang tak berhubungan berubah. Ini sumber bug dan kerumitan.
+
+Svelte 5 menggantinya dengan `$effect` dan `$effect.pre`, yang **hanya jalan ulang saat dependency yang benar-benar kamu baca berubah** — granular, bukan "setiap update apa pun". Filosofinya: unit perubahan terkecil itu sebenarnya bukan komponen, melainkan *effect*.
+
+- `beforeUpdate` → **`$effect.pre`** (jalan sebelum DOM diperbarui)
+- `afterUpdate` → **`$effect`** (jalan setelah DOM diperbarui)
+
+<Callout type="tip">
+Aturan praktis memilih alat di Svelte 5: <strong>butuh sesuatu jalan ulang saat state berubah?</strong> pakai <code>$effect</code> / <code>$effect.pre</code>. <strong>Butuh sekali saja saat mount (tanpa dependency), khusus browser?</strong> <code>onMount</code> lebih jelas niatnya. <strong>Butuh cleanup universal (termasuk SSR)?</strong> <code>onDestroy</code>. <strong>Butuh menunggu DOM ter-update?</strong> <code>tick()</code> (atau <code>$effect</code>, yang memang jalan setelah DOM diperbarui).
+</Callout>
+
+## 2. Contoh kode
+
+`onMount` dengan cleanup lewat nilai kembaliannya — pola "pasang saat masuk, cabut saat keluar":
+
+```svelte
+<script>
+	import { onMount, onDestroy } from 'svelte';
+
+	let lebar = $state(0);
+
+	onMount(() => {
+		// Jalan SEKALI setelah komponen masuk DOM — aman akses window.
+		const update = () => (lebar = window.innerWidth);
+		update(); // isi nilai awal
+
+		window.addEventListener('resize', update);
+
+		// Fungsi yang dikembalikan = cleanup, dipanggil otomatis saat unmount.
+		// "Pasang" dan "cabut" listener berdekatan -> sulit lupa.
+		return () => window.removeEventListener('resize', update);
+	});
+
+	// onDestroy juga jalan saat SSR; cocok untuk cleanup yang harus universal.
+	onDestroy(() => {
+		console.log('komponen dibongkar');
+	});
+</script>
+
+<p>Lebar window: {lebar}px</p>
+```
+
+`tick()` — membaca/menyentuh DOM setelah ia benar-benar ter-update:
+
+```svelte
+<script>
+	import { tick } from 'svelte';
+
+	let teks = $state('');
+	let area; // diisi lewat bind:this
+
+	async function tambahDanFokus() {
+		teks += 'baris baru\n';
+		// DOM <textarea> belum tentu sudah memuat teks baru di baris ini
+		// karena Svelte mem-batch update.
+		await tick(); // tunggu DOM selesai diperbarui
+
+		// Sekarang aman: nilai sudah ada, kita scroll ke paling bawah.
+		area.scrollTop = area.scrollHeight;
+		area.focus();
+	}
+</script>
+
+<textarea bind:this={area} bind:value={teks}></textarea>
+<button onclick={tambahDanFokus}>Tambah baris lalu fokus</button>
+```
+
+Migrasi dari hook lama ke runes — yang dulu `afterUpdate`, sekarang `$effect`:
+
+```svelte
+<script>
+	// ❌ Svelte 4 (deprecated): jalan tiap update, tak peduli apa yang berubah
+	// import { afterUpdate } from 'svelte';
+	// afterUpdate(() => { gulirKeBawah(); });
+
+	// ✅ Svelte 5: hanya jalan ulang saat `pesan` yang dibaca berubah
+	let pesan = $state([]);
+	let kotak;
+
+	$effect(() => {
+		pesan.length; // baca dependency -> effect ini bergantung padanya
+		if (kotak) kotak.scrollTop = kotak.scrollHeight;
+	});
+</script>
+
+<div bind:this={kotak}>
+	{#each pesan as p}<p>{p}</p>{/each}
+</div>
+```
+
+## 3. Coba sendiri
+
+Playground ini menunjukkan lifecycle yang paling kelihatan: `onMount` memulai sebuah jam (interval), dan **cleanup-nya** menghentikan interval saat komponen dibongkar. Toggle "Tampilkan jam" untuk meng-unmount komponen anak — buka konsol DevTools dan perhatikan pesan cleanup muncul tepat saat ia hilang. Coba juga ubah `1000` jadi `250` dan rasakan jamnya jadi lebih cepat.
+
+<Playground code={`<script>
+  import { onMount } from 'svelte';
+
+  let detik = $state(0);
+
+  onMount(() => {
+    // dijalankan SEKALI setelah komponen masuk DOM
+    const id = setInterval(() => {
+      detik += 1;
+    }, 1000);
+
+    // fungsi yang dikembalikan = cleanup saat unmount
+    return () => {
+      clearInterval(id);
+      console.log('interval dibersihkan');
+    };
+  });
+</script>
+
+<h3>Sudah berjalan: {detik} detik</h3>
+<p>onMount memulai interval; cleanup-nya menghentikannya saat di-unmount.</p>`} />
+
+<Callout type="tip">
+Buka konsol browser (DevTools). Di proyek nyata, lupa membersihkan interval/listener adalah penyebab umum <em>memory leak</em> dan bug "kenapa kode lama masih jalan padahal komponennya sudah hilang". Menulis cleanup lewat nilai kembalian <code>onMount</code> membuat pasangan pasang/cabut tetap berdekatan sehingga sulit terlupa.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Lifecycle: setup saat mount + cleanup saat unmount"
+	svelte={`<script>
+  import { onMount, onDestroy } from 'svelte';
+
+  let detik = $state(0);
+
+  onMount(() => {
+    const id = setInterval(() => detik++, 1000);
+    return () => clearInterval(id); // cleanup
+  });
+
+  onDestroy(() => {
+    // juga jalan di SSR
+    console.log('bye');
+  });
+</script>
+
+<p>{detik}</p>`}
+	react={`function Jam() {
+  const [detik, setDetik] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(
+      () => setDetik((s) => s + 1),
+      1000
+    );
+    return () => clearInterval(id); // cleanup
+  }, []); // [] = sekali saat mount
+
+  return <p>{detik}</p>;
+}`}
+	vue={`<script setup>
+import { ref, onMounted, onUnmounted } from 'vue';
+
+const detik = ref(0);
+let id;
+
+onMounted(() => {
+  id = setInterval(() => detik.value++, 1000);
+});
+
+onUnmounted(() => clearInterval(id)); // cleanup
+</script>
+
+<template><p>{{ detik }}</p></template>`}
+	diff={{ react: [4], vue: [10] }}
+	note="React: useEffect dengan dependency array kosong [] = jalan sekali saat mount; fungsi yang di-return jadi cleanup saat unmount — satu API menangani mount, update, dan cleanup sekaligus. Vue: onMounted/onUnmounted dipisah jadi dua hook eksplisit. Svelte: onMount untuk mount (return = cleanup, mirip useEffect), onDestroy untuk cleanup universal yang juga jalan di SSR. Plus-minus: model React menyatukan semuanya di satu hook tapi menuntut paham dependency array & double-invoke StrictMode; Svelte/Vue lebih eksplisit memisah momen. Catatan penting Svelte 5: banyak kebutuhan 'jalan ulang saat data berubah' kini cukup pakai $effect, bukan lifecycle hook — onMount disisakan untuk setup browser sekali jalan, onDestroy untuk teardown, tick untuk sinkron dengan DOM."
+/>
+
+## 5. Latihan
+
+<Exercise title="Stopwatch yang bersih saat unmount">
+Buat satu komponen `Stopwatch.svelte` yang menampilkan waktu berjalan dalam detik. Gunakan `onMount` untuk memulai sebuah `setInterval` yang menambah hitungan tiap 1 detik, dan **kembalikan fungsi cleanup** dari `onMount` yang memanggil `clearInterval` saat komponen di-unmount. Sebagai bonus, tambahkan tombol "Reset" yang mengembalikan hitungan ke 0 tanpa mengganggu interval, dan pakai `onDestroy` untuk `console.log('stopwatch berhenti')` sebagai penanda teardown universal.
+
+{#snippet solution()}
+
+```svelte
+<!-- Stopwatch.svelte -->
+<script>
+	import { onMount, onDestroy } from 'svelte';
+
+	let detik = $state(0);
+
+	onMount(() => {
+		// pasang interval SEKALI saat masuk DOM
+		const id = setInterval(() => {
+			detik += 1;
+		}, 1000);
+
+		// cabut saat unmount -> tidak ada interval menggantung
+		return () => clearInterval(id);
+	});
+
+	// teardown yang juga berlaku di SSR
+	onDestroy(() => console.log('stopwatch berhenti'));
+</script>
+
+<h3>{detik} detik</h3>
+<button onclick={() => (detik = 0)}>Reset</button>
+```
+
+Kunci jawabannya: `setInterval` dipasang di dalam `onMount` (bukan di top-level script, supaya tidak ganda saat hydrate), lalu `clearInterval` dikembalikan sebagai cleanup. Tombol Reset cukup men-set `detik = 0` — ia tidak menyentuh interval, jadi jam tetap jalan. `onDestroy` memberi penanda teardown yang berlaku di mana pun, termasuk SSR.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>onMount</code> <strong>tidak jalan saat SSR</strong> — ia khusus browser. Jangan menaruh logika yang krusial untuk render <em>awal</em> di sana (HTML dari server tidak akan memuatnya). Justru itulah gunanya: di dalam <code>onMount</code> aman mengakses <code>window</code>, <code>document</code>, dan elemen <code>bind:this</code>. Untuk cleanup yang harus berlaku di server maupun browser, pakai <code>onDestroy</code>.
+</Callout>
+
+<Callout type="pitfall">
+Hati-hati <code>onMount(async () =&gt; &#123; ... return () =&gt; ... &#125;)</code>. Fungsi <code>async</code> selalu mengembalikan <code>Promise</code>, jadi nilai <code>return</code> di dalamnya <strong>tidak</strong> dianggap cleanup oleh Svelte. Kalau perlu <code>await</code> data sekaligus cleanup, pisahkan: callback <code>onMount</code> tetap synchronous, panggil fungsi async di dalamnya, dan kembalikan fungsi cleanup secara langsung.
+</Callout>
+
+<Callout type="warning">
+DOM tidak langsung ter-update tepat setelah kamu menulis ke <code>$state</code> — Svelte mem-batch. Kalau kamu membaca ukuran/posisi elemen atau memanggil <code>.focus()</code> pada elemen yang baru saja muncul, <code>await tick()</code> dulu supaya DOM sudah mencerminkan state terbaru. Tanpa itu kamu membaca DOM versi lama.
+</Callout>
+
+<Callout type="legacy">
+<code>beforeUpdate</code> dan <code>afterUpdate</code> dari Svelte 4 <strong>deprecated</strong> di runes mode — keduanya jalan untuk setiap update tanpa pandang bulu sehingga menuntut pengecekan manual. Gantinya pakai <code>$effect.pre</code> (sebelum DOM diperbarui) atau <code>$effect</code> (sesudah), yang hanya jalan ulang saat dependency yang benar-benar dibaca berubah.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'afterUpdate(() => { ... })', modern: '$effect(() => { ... })', note: 'Jalan setelah DOM diperbarui, tapi granular per-dependency.' },
+	{ legacy: 'beforeUpdate(() => { ... })', modern: '$effect.pre(() => { ... })', note: 'Jalan sebelum DOM diperbarui.' },
+	{ legacy: 'onMount untuk re-run saat data berubah', modern: '$effect', note: 'onMount hanya sekali; reaktivitas berkelanjutan pakai $effect.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/lifecycle-hooks" label="Lifecycle hooks (onMount, onDestroy, tick) — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/$effect" label="$effect & $effect.pre — pengganti modern beforeUpdate/afterUpdate" />

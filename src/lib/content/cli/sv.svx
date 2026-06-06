@@ -1,0 +1,395 @@
+---
+title: sv
+product: cli
+section: api
+sectionTitle: API
+sectionOrder: 4
+order: 1
+status: reference
+description: Referensi API programatik @sveltejs/cli (paket sv) untuk membuat add-on sendiri — defineAddon, defineAddonOptions, workspace, SvApi, dan transforms dari @sveltejs/sv-utils.
+docs: https://svelte.dev/docs/cli/sv
+keywords: [sv, defineAddon, defineAddonOptions, sv-utils, transforms, workspace]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Selama ini kamu memakai `npx sv add tailwindcss` atau `npx sv add drizzle` sebagai *konsumen*. Modul ini membalik posisi: kamu jadi *produsen*. Paket `sv` mengekspos **API programatik** supaya kamu bisa menulis add-on sendiri — sebuah skrip yang, saat dijalankan, **menambah dependency, membuat file, dan mengedit konfigurasi proyek orang lain secara otomatis**.
+
+Kalau kamu datang dari React/Vue, mental model-nya gampang:
+
+- Sebuah add-on `sv` itu kira-kira seperti **Vue CLI plugin generator**, **Nuxt module**, atau **Angular schematic** — sepotong kode yang men-*scaffold* dan memodifikasi sebuah proyek yang sudah ada.
+- Bagian yang mengedit file pakai AST itu persis ide **codemod** (`jscodeshift` di dunia React): alih-alih find-and-replace string yang rapuh, kamu memanipulasi *struktur* kode.
+
+### Dua paket, satu batas yang tegas
+
+Hal terpenting yang harus kamu pahami sebelum menulis satu baris pun: CLI ini sengaja dipecah jadi **dua paket** dengan tanggung jawab yang tidak tumpang tindih.
+
+| Paket | Tanggung jawab | Analogi |
+| --- | --- | --- |
+| `sv` | **Di mana & kapan** — tahu lokasi file, mendeteksi apakah ini proyek SvelteKit, melacak dependency, melakukan I/O file, dan mengatur urutan eksekusi add-on. | Mandor proyek: hafal denah gedung, tahu siapa kerja kapan. |
+| `@sveltejs/sv-utils` | **Apa** — parser, language tooling, dan `transforms` ber-tipe untuk mengubah *isi* file. Murni: tidak menyentuh file system, tidak tahu-menahu soal workspace. | Perkakas tukang: pahat dan gergaji yang membentuk material. Tidak peduli ini gedung apa. |
+
+Kenapa dipisah? Karena `transforms` jadi **bisa diuji tanpa proyek nyata** (tinggal kasih string, dapat string) dan **bisa dipakai ulang** lintas add-on. `sv` yang kotor (menyentuh disk), `sv-utils` yang bersih (fungsi murni). Begitu kamu pegang batas ini, sisa API-nya jatuh ke tempatnya sendiri.
+
+### Lifecycle sebuah add-on
+
+Bayangkan add-on seperti **wizard instalasi** klasik. Empat fungsi opsional/wajib di `defineAddon` memetakan langkah-langkah wizard itu:
+
+1. `options` — **layar pertanyaan** wizard ("pilih database?", "pakai Docker?"). Kamu deklarasikan, `sv` yang merender prompt-nya.
+2. `setup` — **layar cek kompatibilitas** ("butuh SvelteKit", "harus jalan setelah eslint"). Dipanggil *sebelum* pertanyaan diajukan.
+3. `run` — **proses instalasi sebenarnya**: tambah dependency, tulis file, edit config.
+4. `nextSteps` — **layar "Selesai!"**: pesan apa yang harus user lakukan berikutnya.
+
+<Callout type="tip">
+Kabar baik buat yang pernah cape menulis prompt manual: kamu **tidak** memanggil fungsi prompt satu per satu (seperti `text()`, `select()` ala Clack/Inquirer) di dalam add-on. Kamu cukup *mendeklarasikan* opsi via `defineAddonOptions`, lalu `sv` yang otomatis menampilkan prompt yang sesuai tipenya (`boolean` jadi confirm, `select` jadi dropdown, dst). Lebih deklaratif, dan jawaban juga bisa diisi lewat argumen CLI tanpa interaksi.
+</Callout>
+
+## 2. Referensi API
+
+### 2.1 Entry point & import
+
+Semua add-on diawali dua import ini. `defineAddon`/`defineAddonOptions` datang dari paket `sv`; semua urusan edit-isi-file datang dari `@sveltejs/sv-utils`.
+
+```js
+import { transforms, pnpm, color } from '@sveltejs/sv-utils';
+import { defineAddon, defineAddonOptions } from 'sv';
+```
+
+| Export | Dari | Guna |
+| --- | --- | --- |
+| `defineAddon(config)` | `sv` | Mendefinisikan add-on (titik masuk). |
+| `defineAddonOptions()` | `sv` | Builder untuk pertanyaan/opsi add-on. |
+| `create(path, opts)` | `sv` | Membuat proyek Svelte baru secara programatik. |
+| `add(opts)` | `sv` | Menjalankan add-on terhadap proyek yang sudah ada. |
+| `officialAddons` | `sv` | Map add-on resmi (prettier, eslint, ...). |
+| `createSetupTest`, `setupGlobal` | `sv/testing` | Utilitas testing add-on. |
+| `transforms`, `parse` | `@sveltejs/sv-utils` | Edit/parse file via AST. |
+| `pnpm` | `@sveltejs/sv-utils` | Helper "allow builds" pnpm. |
+| `color` | `@sveltejs/sv-utils` | Pewarnaan teks untuk `nextSteps`. |
+
+### 2.2 `defineAddon(config)`
+
+Field-field objek `config`:
+
+| Field | Tipe | Wajib | Keterangan |
+| --- | --- | --- | --- |
+| `id` | `string` | ya | Identitas unik add-on. |
+| `alias` | `string` | tidak | Nama pendek alternatif (mis. `tailwind` untuk `tailwindcss`). |
+| `shortDescription` | `string` | tidak | Satu baris penjelasan, muncul di prompt. |
+| `homepage` | `string` | tidak | Link ke docs/repo. |
+| `hidden` | `boolean` | tidak | Sembunyikan dari prompt interaktif (tetap bisa dipanggil via CLI). |
+| `options` | `OptionDefinition` | ya | Hasil `defineAddonOptions()....build()`. |
+| `setup` | `(ctx) => void \| Promise<void>` | tidak | Cek lingkungan & deklarasi dependensi antar-add-on. |
+| `run` | `(ctx) => void \| Promise<void>` | ya | Kerja sebenarnya: tambah/edit file & dependency. |
+| `nextSteps` | `(ctx) => string[]` | tidak | Baris pesan setelah add-on selesai. |
+
+### 2.3 Konteks `setup`
+
+`setup` menerima seluruh properti **Workspace** (lihat 2.5) **plus** tiga fungsi koordinasi antar-add-on:
+
+| Properti | Tanda tangan | Guna |
+| --- | --- | --- |
+| `dependsOn` | `(name) => void` | Wajibkan add-on resmi lain ikut terpasang lebih dulu. |
+| `unsupported` | `(reason: string) => void` | Tandai add-on tak didukung di lingkungan ini. |
+| `runsAfter` | `(name) => void` | Paksa add-on ini jalan *setelah* add-on tertentu. |
+
+```js
+setup: ({ isKit, dependsOn, unsupported }) => {
+	// Batalkan kalau bukan proyek SvelteKit
+	if (!isKit) unsupported('Requires SvelteKit');
+	// Pastikan vitest terpasang dulu (sv akan menariknya otomatis)
+	dependsOn('vitest');
+}
+```
+
+### 2.4 Konteks `run`
+
+`run` juga menerima seluruh properti **Workspace**, ditambah tiga hal khusus eksekusi:
+
+| Properti | Tipe | Guna |
+| --- | --- | --- |
+| `options` | `OptionValues` | Jawaban user (hasil dari `defineAddonOptions`). |
+| `sv` | `SvApi` | API untuk menambah dependency & menulis/mengedit file. |
+| `cancel` | `(reason: string) => void` | Batalkan add-on kapan saja dengan alasan. |
+
+### 2.5 `Workspace` (dipakai di `setup`, `run`, dan `nextSteps`)
+
+Objek ini adalah "peta proyek" — `sv` sudah mengisinya untukmu, jadi kamu tidak perlu menebak path.
+
+| Properti | Tipe | Keterangan |
+| --- | --- | --- |
+| `cwd` | `string` | Direktori kerja proyek. |
+| `language` | `'ts' \| 'js'` | Proyek pakai TypeScript atau JavaScript. |
+| `isKit` | `boolean` | `true` kalau ini proyek SvelteKit. |
+| `packageManager` | `'npm' \| 'pnpm' \| 'yarn' \| 'bun'` | PM yang dipakai user. |
+| `dependencyVersion` | `(pkg) => string \| undefined` | Versi dependency yang tertulis di package.json (tanpa `^`/`~`); `undefined` kalau tidak ada. |
+| `directory` | objek | `{ src, lib, kitRoutes }` — path folder utama (otomatis mengikuti `kit.files`). |
+| `file` | objek | Nama file config yang terdeteksi + helper path (lihat di bawah). |
+
+Objek `file` (penting karena nama config bisa `.js` atau `.ts`):
+
+| Properti | Nilai/Tanda tangan |
+| --- | --- |
+| `file.viteConfig` | `'vite.config.js' \| 'vite.config.ts'` |
+| `file.svelteConfig` | `'svelte.config.js' \| 'svelte.config.ts'` |
+| `file.typeConfig` | `'jsconfig.json' \| 'tsconfig.json' \| undefined` |
+| `file.stylesheet` | path stylesheet utama (mis. `src/app.css`) |
+| `file.package` | `'package.json'` |
+| `file.gitignore` | `'.gitignore'` |
+| `file.getRelative` | `({ from?, to }) => string` — path relatif antar dua file |
+| `file.findUp` | `(filename) => string` — cari file dengan menelusuri folder ke atas |
+
+### 2.6 `SvApi` (objek `sv` di dalam `run`)
+
+Inilah satu-satunya cara add-on menyentuh disk. Semuanya idempotent-friendly bila kamu pakai `transforms`.
+
+| Metode | Tanda tangan | Guna |
+| --- | --- | --- |
+| `sv.dependency` | `(pkg, version) => void` | Tambah ke `dependencies`. |
+| `sv.devDependency` | `(pkg, version) => void` | Tambah ke `devDependencies`. |
+| `sv.file` | `(path, edit: (content) => string \| false) => void` | Buat/edit file. `edit` mengembalikan konten baru, atau `false` untuk batal (konten asli dibiarkan). |
+| `sv.execute` | `(args: string[], stdio: 'inherit' \| 'pipe') => Promise<void>` | Jalankan perintah. **`args` adalah array**, bukan satu string shell. |
+| `sv.pnpmBuildDependency` | `(pkg) => void` | _Deprecated_ — pakai `pnpm.allowBuilds` dari `@sveltejs/sv-utils`. |
+
+### 2.7 `defineAddonOptions()` — mendeklarasikan prompt
+
+Builder yang dirantai `.add(key, question).add(...)` lalu ditutup `.build()`. Setiap `question` punya field dasar dan field per-tipe.
+
+Field dasar (semua tipe):
+
+| Field | Tipe | Keterangan |
+| --- | --- | --- |
+| `question` | `string` | Teks prompt yang ditampilkan. |
+| `group` | `string` (opsional) | Kelompokkan beberapa pertanyaan. |
+| `condition` | `(opts) => boolean` (opsional) | Kalau eksplisit `false`, pertanyaan dilewati dan nilainya jadi `undefined` (tidak jatuh ke `default`). |
+
+Field per-tipe:
+
+| `type` | Field tambahan | Nilai hasil |
+| --- | --- | --- |
+| `'boolean'` | `default: boolean` | `boolean` |
+| `'string'` | `default: string`, `validate?`, `placeholder?` | `string` |
+| `'number'` | `default: number`, `validate?`, `placeholder?` | `number` |
+| `'select'` | `default`, `options: { value, label?, hint? }[]` | nilai terpilih |
+| `'multiselect'` | `default: []`, `options: {...}[]`, `required: boolean` | array nilai |
+
+```js
+const options = defineAddonOptions()
+	.add('database', {
+		question: 'Which database?',
+		type: 'select',
+		default: 'postgresql',
+		options: [{ value: 'postgresql' }, { value: 'mysql' }, { value: 'sqlite' }]
+	})
+	.add('docker', {
+		question: 'Add a docker-compose file?',
+		type: 'boolean',
+		default: false,
+		// hanya tanya kalau database BUKAN sqlite — seperti cabang wizard
+		condition: (opts) => opts.database !== 'sqlite'
+	})
+	.build();
+```
+
+### 2.8 `transforms` (dari `@sveltejs/sv-utils`)
+
+Tiap transform adalah fungsi yang menerima callback dan **mengembalikan fungsi `(content) => string`** yang pas dipasang ke `sv.file()`. Pilihan parser sudah "terkunci" di tipe transform-nya — kamu tak mungkin keliru mem-parse vite config sebagai Svelte.
+
+| Transform | Callback menerima | Untuk file |
+| --- | --- | --- |
+| `transforms.script` | `({ ast, comments, content, js })` | `.js` / `.ts` |
+| `transforms.svelte` | `({ ast, content, svelte, js })` | komponen `.svelte` |
+| `transforms.svelteScript({ language })` | `({ ast, content, svelte, js })` | `.svelte` dengan `<script>` dijamin ada (`ast.instance` non-null) |
+| `transforms.css` | `({ ast, content, css })` | `.css` |
+| `transforms.json` | `({ data, content, json })` | JSON (mutasi `data` langsung) |
+| `transforms.yaml` / `transforms.toml` | `({ data, content })` | YAML / TOML |
+| `transforms.text` | `({ content, text })` | teks polos (`.env`, `.gitignore`) — tanpa parser |
+
+Catatan penting: **kembalikan `false`** dari callback mana pun untuk membatalkan — konten asli dikembalikan utuh. Ini kunci agar add-on aman dijalankan dua kali (idempotent).
+
+Language tooling yang disuntikkan ke callback (`js.*`, `css.*`, `svelte.*`, `json.*`, ...):
+
+- `js.*` — `imports`, `exports`, `object`, `array`, `variables`, `functions`, helper vite & SvelteKit
+- `svelte.*` — `ensureScript`, `addFragment`, `addSlot`
+- `css.*` — `addAtRule`, rules, declarations
+- `json.*` — `arrayUpsert`, `packageScriptsUpsert`
+- `text.*` — upsert baris untuk file flat (`.env`, `.gitignore`)
+
+### 2.9 `create`, `add`, `parse`, `pnpm`
+
+```js
+import { create, add, officialAddons } from 'sv';
+
+// Membuat proyek baru tanpa wizard interaktif
+create('./my-app', { name: 'my-app', template: 'minimal', types: 'typescript' });
+
+// Menjalankan add-on resmi terhadap proyek yang sudah ada
+await add({
+	cwd: './my-app',
+	addons: { prettier: officialAddons.prettier },
+	options: { prettier: {} },
+	packageManager: 'npm'
+});
+```
+
+`parse` adalah API low-level (di bawah `transforms`) bila kamu butuh kontrol penuh: `parse.script`, `parse.svelte`, `parse.css`, `parse.json`, `parse.yaml`, `parse.toml`, `parse.html` — masing-masing mengembalikan `{ ast, generateCode }` (atau `{ data, generateCode }` untuk format data).
+
+## 3. Coba sendiri
+
+Add-on berjalan di Node terhadap file system, jadi tidak bisa dijalankan di playground browser. Tapi mari baca **satu add-on utuh** beranotasi — bayangkan ini file `src/index.js` dari proyek yang dibuat lewat `npx sv create --template addon`. Add-on ini menyapa user di halaman utama dan menambah satu util kecil.
+
+```js
+// src/index.js — sebuah add-on "hello" lengkap
+import { transforms } from '@sveltejs/sv-utils';
+import { defineAddon, defineAddonOptions } from 'sv';
+
+export default defineAddon({
+	id: 'hello',
+	shortDescription: 'menyapa pengunjung di halaman utama',
+	homepage: 'https://github.com/me/sv-hello',
+
+	// 1) PERTANYAAN — sv yang merender prompt-nya
+	options: defineAddonOptions()
+		.add('who', {
+			question: 'Kepada siapa add-on menyapa?',
+			type: 'string',
+			default: 'World'
+		})
+		.build(),
+
+	// 2) CEK LINGKUNGAN — dipanggil sebelum run
+	setup: ({ isKit, unsupported }) => {
+		// Add-on ini mengedit src/routes, jadi wajib SvelteKit
+		if (!isKit) unsupported('Requires SvelteKit');
+	},
+
+	// 3) EKSEKUSI — di sini semua perubahan terjadi
+	run: ({ sv, options, language, directory }) => {
+		// Pilih ekstensi util sesuai bahasa proyek (ts/js terdeteksi otomatis)
+		const ext = language === 'ts' ? 'ts' : 'js';
+
+		// (a) buat file baru — callback string-in, string-out
+		sv.file('src/lib/hello.' + ext, () => {
+			return 'export const hello = (name) => "Hello " + name + "!";';
+		});
+
+		// (b) edit komponen Svelte via transform AST (bukan find-replace rapuh)
+		//     directory.kitRoutes otomatis menunjuk folder routes proyek
+		sv.file(
+			directory.kitRoutes + '/+page.svelte',
+			transforms.svelte(({ ast, svelte }) => {
+				svelte.addFragment(ast, '<p>Hello ' + options.who + '!</p>');
+			})
+		);
+	},
+
+	// 4) "SELESAI!" — pesan penutup
+	nextSteps: ({ options }) => [
+		'Add-on hello terpasang. Buka halaman utama untuk melihat sapaan ke ' + options.who + '.'
+	]
+});
+```
+
+Cara mencoba add-on lokal tanpa publish ke npm — pakai protokol `file:`:
+
+```bash
+# di dalam proyek SvelteKit untuk diuji
+npx sv add file:../sv-hello
+```
+
+<Callout type="tip">
+Perhatikan baris `sv.file('src/lib/hello.ts', () => '...')` di (a) versus transform di (b). Keduanya lewat `sv.file`, bedanya: (a) memberi <em>callback string biasa</em> karena kita menulis file dari nol, (b) memberi hasil <code>transforms.svelte(...)</code> karena kita menyisip ke struktur file yang sudah ada. `sv.file` menerima keduanya — yang penting argumen kedua adalah fungsi <code>(content) =&gt; string | false</code>.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Tulis add-on yang menambah library animasi">
+Buat add-on `id: 'motion'` yang:
+
+1. Menanyakan `lib` lewat `select` — pilihan `'svelte-motion'` atau `'gsap'`, default `'svelte-motion'`.
+2. Menanyakan `examples` (`boolean`, default `false`) — **hanya** kalau `lib` adalah `'gsap'` (pakai `condition`).
+3. Di `run`: menambahkan library terpilih sebagai `devDependency` versi `'^1.0.0'`, lalu membuat file `src/lib/motion-notes.md` berisi nama library yang dipilih.
+
+Tuliskan `defineAddon`-nya lengkap dengan import.
+
+{#snippet solution()}
+
+```js
+import { defineAddon, defineAddonOptions } from 'sv';
+
+export default defineAddon({
+	id: 'motion',
+	shortDescription: 'menambah library animasi',
+
+	options: defineAddonOptions()
+		.add('lib', {
+			question: 'Library animasi mana?',
+			type: 'select',
+			default: 'svelte-motion',
+			options: [{ value: 'svelte-motion' }, { value: 'gsap' }]
+		})
+		.add('examples', {
+			question: 'Sertakan contoh GSAP?',
+			type: 'boolean',
+			default: false,
+			// hanya tanya kalau memilih gsap
+			condition: (opts) => opts.lib === 'gsap'
+		})
+		.build(),
+
+	run: ({ sv, options }) => {
+		// 1) tambah dependency sesuai pilihan
+		sv.devDependency(options.lib, '^1.0.0');
+
+		// 2) tulis catatan kecil; examples bisa undefined kalau lib != gsap
+		sv.file('src/lib/motion-notes.md', () => {
+			return '# Motion\n\nLibrary: ' + options.lib + '\n';
+		});
+	}
+});
+```
+
+Catatan: karena `condition` mengembalikan `false` saat `lib !== 'gsap'`, nilai `options.examples` akan `undefined` (bukan `false` default). Selalu jaga (guard) opsi bersyarat sebelum dipakai.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+API add-on komunitas dan `@sveltejs/sv-utils` masih ditandai <strong>experimental</strong> oleh tim Svelte — bisa berubah. Untuk publish, set `sv` sebagai <code>peerDependencies</code> (mis. <code>"sv": "^0.13.0"</code>), <strong>jangan</strong> punya <code>dependencies</code> sama sekali (di-bundle dengan tsdown), dan tambahkan keyword <code>"sv-add"</code> agar add-on bisa ditemukan. Paket scoped seperti <code>@my-org/sv</code> bisa dipasang user cukup dengan <code>npx sv add @my-org</code>.
+</Callout>
+
+<Callout type="pitfall">
+<code>sv.execute</code> menerima <strong>array argumen</strong>, bukan satu string shell: tulis <code>sv.execute(['prettier', '--write', '.'], 'inherit')</code>, bukan <code>sv.execute('prettier --write .')</code>. Selain itu, untuk sekadar memasang paket, lebih baik <code>sv.devDependency('paket', '^1.0.0')</code> daripada menjalankan <code>npm install</code> via <code>execute</code> — <code>sv</code> akan menggabungkan semua dependency dan menginstalnya sekali di akhir, dengan package manager yang benar.
+</Callout>
+
+<Callout type="pitfall">
+Opsi dengan <code>condition</code> yang mengembalikan <code>false</code> bernilai <code>undefined</code>, <strong>bukan</strong> nilai <code>default</code>-nya. Jadi <code>if (options.docker)</code> aman, tapi jangan berasumsi <code>options.docker === false</code>. Selalu guard opsi bersyarat sebelum memakainya di <code>run</code>.
+</Callout>
+
+<Callout type="tip">
+Untuk file config yang mungkin sudah disentuh user, pakai <code>transforms</code> dan <strong>kembalikan <code>false</code></strong> bila konfigurasi sudah ada. Ini membuat add-on <em>idempotent</em> — aman dijalankan dua kali tanpa menduplikasi import atau menimpa pilihan user. Edit string mentah (find-replace) gampang menggandakan baris saat dijalankan ulang; transform AST jauh lebih tahan banting.
+</Callout>
+
+Beberapa API lama sudah deprecated. Padanan modernnya:
+
+<LegacyVsModern legacyLabel="Deprecated" modernLabel="Pakai sekarang" rows={[
+	{ legacy: 'sv.pnpmBuildDependency(pkg)', modern: "pnpm.allowBuilds(pkg) dari '@sveltejs/sv-utils'", note: 'dipasang via sv.file(file.findUp("pnpm-workspace.yaml"), ...)' },
+	{ legacy: 'workspace.file.prettierrc', modern: "string '.prettierrc'", note: 'getter file.* untuk config dihapus bertahap' },
+	{ legacy: 'workspace.file.eslintConfig', modern: "string 'eslint.config.js'", note: 'gunakan literal string langsung' },
+	{ legacy: 'find-replace string config', modern: 'transforms.script / .json / .svelte', note: 'AST-aware, idempotent' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/sv" label="sv — referensi CLI & API programatik (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/cli/community" label="Create your own — panduan menulis add-on komunitas" />

@@ -1,0 +1,305 @@
+---
+title: Observability
+product: kit
+section: advanced
+sectionTitle: Advanced
+sectionOrder: 4
+order: 9
+status: stable
+description: Pantau performa request SvelteKit dengan tracing OpenTelemetry — instrumentation.server.js, span otomatis untuk load/actions, dan span manual untuk kode yang dicurigai lambat.
+docs: https://svelte.dev/docs/kit/observability
+keywords: [observability, tracing, opentelemetry, instrumentation, span]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Aplikasimu sudah jalan di produksi. Lalu datang keluhan klasik: "halaman dashboard lambat banget." Kamu buka kode `+page.server.ts`-nya dan menatap 60 baris `load` yang memanggil database, beberapa API eksternal, dan sedikit kalkulasi. **Yang mana** yang lambat? Tanpa alat, kamu cuma bisa menebak — taruh `console.time` di sana-sini, deploy, tunggu, ulangi. Observability menghapus tebak-tebakan itu.
+
+### Analogi: struk belanja, bukan cuma total
+
+Bayangkan kamu belanja dan kasir cuma bilang "totalnya Rp 500.000." Kamu tahu mahal, tapi tidak tahu **kenapa**. Sekarang bayangkan kamu dapat **struk terperinci**: beras Rp 60.000, daging Rp 180.000, keju impor Rp 200.000, sisanya recehan. Sekarang jelas — biang keroknya keju impor.
+
+Itulah yang dilakukan **tracing**. Satu request HTTP yang totalnya "800ms" dipecah jadi rincian berbingkai waktu: `handle` 5ms, `load` 780ms, dan di dalam `load` itu, query DB 50ms tapi fetch ke API rekomendasi 720ms. Ketemu tersangkanya: API rekomendasi.
+
+### Tiga pilar, satu fokus
+
+Di dunia observability orang sering menyebut "tiga pilar": **logs** (catatan kejadian per baris), **metrics** (angka agregat seperti "request/detik" atau "p95 latency"), dan **traces** (jejak satu request menembus seluruh sistem). SvelteKit menyumbang ke pilar ketiga — **tracing** — lewat **OpenTelemetry (OTel)**, standar industri yang sama yang dipakai ekosistem Node, Next.js, dan hampir semua tool APM modern (Jaeger, Grafana Tempo, Datadog, Honeycomb, dst.).
+
+Kenapa standar ini penting? Karena artinya SvelteKit **tidak mengunci kamu** ke satu vendor. App-mu mengeluarkan span dalam format OTel; mau dikirim ke mana itu urusan exporter. Ganti dari Jaeger lokal ke Datadog produksi cukup ganti konfigurasi exporter, bukan menulis ulang instrumentasi.
+
+### Kosakata inti: trace, span, dan pohonnya
+
+Dua istilah yang harus kamu pegang:
+
+- **Span** = satu satuan kerja yang berbingkai waktu. Punya nama (`load`, `handle`, `query-products`), waktu mulai, durasi, dan **attributes** (pasangan key-value seperti `userId: 42` atau `http.method: GET`). Span adalah satu baris di "struk belanja" tadi.
+- **Trace** = kumpulan span untuk **satu request**, tersusun jadi **pohon**. Span induk (mis. `handle`) membungkus span anak (mis. `load`), yang membungkus span cucu (`query-products`). Strukturnya inilah yang menunjukkan siapa-memanggil-siapa dan berapa lama tiap level.
+
+Mekanisme yang membuat pohon ini terbentuk otomatis disebut **context propagation**: ketika kamu membuat span baru "di dalam" span yang sedang aktif, OTel diam-diam menautkannya sebagai anak. Kamu tidak perlu mengoper ID parent secara manual. (React punya analogi mental yang mirip: konteks aktif diwariskan ke bawah pohon, mirip seperti context provider — bedanya di sini yang diwariskan adalah "span induk yang sedang berjalan.")
+
+### Bagaimana SvelteKit ikut bermain
+
+SvelteKit (sejak **versi 2.31**, dan masih bertanda **eksperimental**) bisa **mengeluarkan span otomatis** untuk fase-fase internalnya begitu kamu menyalakannya. Yang dikeluarkan otomatis:
+
+- **`handle` hook** — termasuk tiap fungsi `handle` di dalam `sequence(...)`, jadi kamu bisa lihat middleware mana yang makan waktu.
+- **Server `load`** dan **universal `load`** (yang terakhir hanya saat dijalankan di server).
+- **Form actions**.
+- **Remote functions**.
+
+Jadi tanpa menulis satu baris instrumentasi pun, kamu langsung dapat pohon: `handle` → `load` → (action) untuk tiap request. Setelah itu, kalau butuh lebih dalam, kamu **menambah span sendiri** di sekitar kode yang dicurigai (query DB, panggilan API), dan menempel **attribute** (mis. `userId`) supaya bisa difilter di tool tracing.
+
+Satu hal yang membedakan dari sekadar `console.time`: SvelteKit memberi pengait ke **request event** lewat `event.tracing`, sehingga span yang kamu buat **otomatis menyatu** ke trace request yang sedang berjalan, bukan jadi catatan terpisah yang harus kamu jahit sendiri.
+
+## 2. Contoh kode
+
+Ada tiga potongan yang membuat semuanya hidup: **menyalakan** lewat config, **menyiapkan** lewat file instrumentasi, lalu **memakai** lewat span manual & attribute.
+
+```js
+// svelte.config.js — nyalakan tracing (eksperimental, sejak Kit 2.31)
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	kit: {
+		experimental: {
+			// tracing: SvelteKit mengeluarkan span untuk handle/load/actions/remote
+			tracing: { server: true },
+			// instrumentation: izinkan file instrumentation.server.js berjalan
+			// SEBELUM kode app di-import (perlu dukungan adapter)
+			instrumentation: { server: true }
+		}
+	}
+};
+
+export default config;
+```
+
+```js
+// src/instrumentation.server.js
+// File ini berjalan PALING AWAL — sebelum modul app mana pun di-import —
+// jadi auto-instrumentation sempat "memasang kait" ke library (http, pg, dll).
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+import { createAddHookMessageChannel } from 'import-in-the-middle';
+import { register } from 'node:module';
+
+// Daftarkan hook ESM agar import-in-the-middle bisa membungkus modul.
+const { registerOptions } = createAddHookMessageChannel();
+register('import-in-the-middle/hook.mjs', import.meta.url, registerOptions);
+
+const sdk = new NodeSDK({
+	serviceName: 'toko-saya', // nama app-mu di tool tracing
+	// Exporter = ke mana span dikirim. OTLP/proto = endpoint OTel standar
+	// (default ke localhost:4318 — cocok untuk Jaeger/collector lokal).
+	traceExporter: new OTLPTraceExporter(),
+	// Auto-instrument library populer (HTTP, fetch, pg, mysql, redis, ...)
+	instrumentations: [getNodeAutoInstrumentations()]
+});
+
+sdk.start();
+```
+
+Setelah dua file di atas ada, span otomatis sudah mengalir. Sekarang **memantau `load`/`actions`** dengan span manual dan attribute:
+
+```ts
+// src/routes/dashboard/+page.server.ts
+import { trace } from '@opentelemetry/api';
+import { getRequestEvent } from '$app/server';
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async ({ fetch }) => {
+	// SvelteKit SUDAH membuat span "load" untuk fungsi ini secara otomatis.
+	// Kita tinggal menambah attribute & sub-span di dalamnya.
+
+	// 1) Tempel attribute ke span request (root = handle teratas).
+	//    Berguna untuk memfilter trace: "tampilkan semua request user 42".
+	const event = getRequestEvent();
+	event.tracing.root.setAttribute('userId', '42');
+
+	// 2) Buat sub-span manual untuk kerja yang dicurigai lambat.
+	//    startActiveSpan menautkannya otomatis sebagai anak span "load".
+	const tracer = trace.getTracer('toko-saya');
+
+	const stats = await tracer.startActiveSpan('fetch-stats', async (span) => {
+		try {
+			const res = await fetch('/api/stats'); // pakai event.fetch (Kit 2)
+			span.setAttribute('http.status', res.status);
+			return await res.json();
+		} finally {
+			span.end(); // WAJIB: span yang tak ditutup tidak akan terkirim
+		}
+	});
+
+	return { stats };
+};
+```
+
+```ts
+// src/routes/checkout/+page.server.ts — instrumentasi form action
+import { trace } from '@opentelemetry/api';
+import type { Actions } from './$types';
+
+export const actions: Actions = {
+	// Action "default" ini sudah dapat span otomatis dari SvelteKit.
+	// Kita bungkus langkah berat (charge ke payment gateway) jadi sub-span.
+	default: async ({ request }) => {
+		const data = await request.formData();
+		const tracer = trace.getTracer('toko-saya');
+
+		return tracer.startActiveSpan('charge-payment', async (span) => {
+			try {
+				span.setAttribute('amount', Number(data.get('amount')));
+				// ... panggil payment gateway di sini ...
+				return { success: true };
+			} finally {
+				span.end();
+			}
+		});
+	}
+};
+```
+
+Perhatikan perbedaan dua API tadi: `event.tracing.root` / `event.tracing.current` dipakai untuk **menempel attribute ke span yang SUDAH dibuat SvelteKit**, sedangkan `tracer.startActiveSpan(...)` dipakai untuk **membuat span baru milikmu sendiri**.
+
+<Callout type="tip">
+<code>event.tracing.root</code> menunjuk span <code>handle</code> teratas (berlaku untuk seluruh request), sementara <code>event.tracing.current</code> menunjuk span yang sedang aktif di titik itu (bisa <code>handle</code>, <code>load</code>, sebuah form action, atau remote function). Tempel attribute <em>request-wide</em> (mis. <code>userId</code>) ke <code>root</code>; tempel attribute lokal ke <code>current</code>.
+</Callout>
+
+## 3. Coba sendiri
+
+Tracing butuh server + sebuah "collector" untuk menerima dan menampilkan span, jadi tidak bisa dijalankan di playground browser. Tapi kamu bisa mencobanya **lokal dalam 5 menit** dengan Jaeger lewat Docker. Berikut langkah lengkap beranotasi.
+
+```bash
+# 1) Jalankan Jaeger (UI + collector OTLP) sebagai container.
+#    - 16686 = UI web Jaeger (buka di browser)
+#    - 4318  = endpoint OTLP/HTTP tempat app-mu mengirim span
+docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one
+
+# 2) Di project SvelteKit-mu, pasang dependency OTel.
+npm i @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node \
+      @opentelemetry/exporter-trace-otlp-proto import-in-the-middle
+
+# 3) Pastikan svelte.config.js sudah menyalakan tracing + instrumentation,
+#    dan src/instrumentation.server.js sudah ada (lihat Bagian 2).
+
+# 4) Jalankan app, lalu buka beberapa halaman supaya request mengalir.
+npm run dev
+
+# 5) Buka Jaeger UI dan lihat pohon span-nya.
+#    http://localhost:16686  →  pilih service "toko-saya"  →  Find Traces
+```
+
+Yang akan kamu lihat di Jaeger, untuk satu request ke `/dashboard`, kira-kira pohon seperti ini (digambar sebagai teks):
+
+```text
+handle                                    ────────────────────  812ms
+└─ load /dashboard                        ──────────────────    790ms
+   ├─ fetch-stats  (span manual kita)     ───────────          720ms   ← tersangka!
+   │  └─ HTTP GET /api/stats (auto)       ──────────           715ms
+   └─ pg.query SELECT ... (auto)          ─                     48ms
+```
+
+Tiga sumber span bercampur jadi satu pohon: **`handle` & `load`** dari SvelteKit (otomatis), **`fetch-stats`** dari `startActiveSpan` kita (manual), dan **`HTTP GET` / `pg.query`** dari `getNodeAutoInstrumentations` (otomatis dari library). Klik span `fetch-stats`, dan attribute `http.status` serta `userId` yang kita tempel tadi muncul di panel detail — itulah yang membuat trace bisa difilter dan dipahami.
+
+<Callout type="tip">
+Kalau panel detail kosong atau service tak muncul, biasanya penyebabnya: span belum sempat dikirim (exporter mem-buffer; tutup server agar di-flush), atau endpoint OTLP salah. Default <code>OTLPTraceExporter()</code> menembak <code>http://localhost:4318/v1/traces</code> — samakan dengan port yang kamu publish dari container Jaeger.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Temukan langkah lambat di sebuah load">
+
+Kamu punya `load` untuk halaman profil yang melakukan tiga hal berurutan: ambil user dari DB, ambil daftar order user dari API internal, lalu hitung statistik. Halaman terasa lambat dan kamu ingin tahu langkah mana penyebabnya.
+
+Tulis `+page.server.ts` yang:
+
+1. Menempel attribute `userId` ke span **root** request.
+2. Membungkus masing-masing dari tiga langkah dalam **sub-span manual** terpisah (`load-user`, `load-orders`, `compute-stats`) sehingga di Jaeger ketiganya tampil sebagai baris berbeda di bawah span `load`.
+3. Selalu menutup tiap span dengan benar walau terjadi error.
+
+Asumsikan ada helper `getUser(id)`, panggilan `fetch('/api/orders')`, dan fungsi `computeStats(orders)`.
+
+{#snippet solution()}
+
+```ts
+// src/routes/profile/[id]/+page.server.ts
+import { trace } from '@opentelemetry/api';
+import { getRequestEvent } from '$app/server';
+import { getUser } from '$lib/server/users';
+import { computeStats } from '$lib/stats';
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async ({ params, fetch }) => {
+	const tracer = trace.getTracer('toko-saya');
+
+	// (1) Attribute request-wide → tempel ke span ROOT (handle teratas).
+	const event = getRequestEvent();
+	event.tracing.root.setAttribute('userId', params.id);
+
+	// (2a) Sub-span untuk ambil user dari DB.
+	const user = await tracer.startActiveSpan('load-user', async (span) => {
+		try {
+			return await getUser(params.id);
+		} finally {
+			span.end(); // (3) tutup di finally → aman walau getUser throw
+		}
+	});
+
+	// (2b) Sub-span untuk ambil order dari API internal.
+	const orders = await tracer.startActiveSpan('load-orders', async (span) => {
+		try {
+			const res = await fetch('/api/orders?user=' + params.id);
+			span.setAttribute('http.status', res.status);
+			return await res.json();
+		} finally {
+			span.end();
+		}
+	});
+
+	// (2c) Sub-span untuk kalkulasi (murni CPU, tetap berguna diukur).
+	const stats = tracer.startActiveSpan('compute-stats', (span) => {
+		try {
+			return computeStats(orders);
+		} finally {
+			span.end();
+		}
+	});
+
+	return { user, orders, stats };
+};
+```
+
+Di Jaeger, span `load` (otomatis dari SvelteKit) kini punya tiga anak: `load-user`, `load-orders`, `compute-stats`. Bandingkan lebar batang waktunya — yang terpanjang itulah yang harus kamu optimalkan. Attribute `userId` di span root membuatmu bisa memfilter "tampilkan trace lambat hanya untuk user tertentu".
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+<strong>Masih eksperimental — pasang sabuk pengaman.</strong> Tracing tersedia sejak SvelteKit <strong>2.31</strong> dan masih ditandai <em>experimental</em>: API (<code>kit.experimental.tracing</code>, <code>event.tracing</code>) bisa berubah antar-versi minor dan mungkin ada bug. Aman dipakai, tapi pin versi SvelteKit-mu dan baca changelog saat upgrade.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Overhead-nya tidak gratis.</strong> Docs menyebut tracing — dan terutama <em>instrumentation</em> (auto-instrument library) — bisa punya overhead yang tidak sepele. Untuk app dengan traffic tinggi, pertimbangkan menyalakannya hanya di <code>development</code>/<code>preview</code>, atau pakai sampling di sisi collector, alih-alih merekam 100% request produksi.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Span yang tidak di-<code>end()</code> tidak akan terkirim — dan membocorkan memori.</strong> Tiap <code>startActiveSpan</code> WAJIB dipasangkan <code>span.end()</code>, dan taruh di blok <code>finally</code> supaya tetap tertutup saat kode di dalamnya <code>throw</code>. Span menggantung membuat pohon trace timpang dan menahan referensi di memori.
+</Callout>
+
+<Callout type="warning">
+<strong>Instrumentasi tergantung adapter & berjalan paling awal.</strong> File <code>instrumentation.server.js</code> hanya jalan sebelum kode app jika adapter-mu mendukungnya (mis. <code>adapter-node</code>). Pada adapter serverless/edge tertentu, hook ESM seperti <code>import-in-the-middle</code> mungkin tak berfungsi penuh — cek dokumentasi adapter sebelum berharap auto-instrumentation library aktif.
+</Callout>
+
+<Callout type="tip">
+<strong><code>@opentelemetry/api</code> itu peer dependency opsional.</strong> Kamu jarang perlu meng-install-nya sendiri; biasanya sudah dibawa oleh paket pengumpul trace (<code>@opentelemetry/sdk-node</code> dan kawan-kawan). Yang kamu import di kode app (<code>import &#123; trace &#125; from '@opentelemetry/api'</code>) menumpang pada paket yang sama, jadi tidak ada dua salinan API yang bentrok.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/observability" label="SvelteKit — Observability (tracing OpenTelemetry)" />

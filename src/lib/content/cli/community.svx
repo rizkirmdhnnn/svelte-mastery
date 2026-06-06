@@ -1,0 +1,265 @@
+---
+title: Create your own add-on
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 13
+status: stable
+description: Membuat community add-on sv sendiri — struktur proyek, API defineAddon (setup/run/options), uji lokal, publish ke npm, dan menjalankan add-on pihak ketiga.
+docs: https://svelte.dev/docs/cli/community
+keywords: [community add-on, defineAddon, sv add, publish npm, sv-add, tsdown]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Di modul `sv add` kamu jadi **pengguna** add-on: satu perintah, dan Tailwind atau Drizzle terpasang rapi sampai ke isi `vite.config.ts`. Sekarang kita balik posisi — kamu jadi **pembuatnya**. Pertanyaan intinya: bagaimana caranya membungkus "resep setup" milikmu sendiri (misalnya integrasi UI library internal kantormu, atau konfigurasi observability yang selalu kamu pasang) jadi paket yang bisa dipanggil orang lain lewat `npx sv add @kantor-mu`?
+
+Kalau kamu pernah menulis plugin Vite, atau sebuah `npx`-able CLI di ekosistem React, idenya familiar. Bedanya, sebuah add-on `sv` bukan sekadar "jalankan skrip". Ia adalah **deskripsi deklaratif tentang perubahan apa yang harus terjadi pada sebuah proyek** — dependensi apa yang ditambahkan, file apa yang dibuat, dan config mana yang disunting — yang dieksekusi `sv` dengan mesin patch berbasis AST yang sama, sehingga idempoten dan tetap menghormati kode kustom penggunamu.
+
+### Analogi: kamu menulis "kartu resep", bukan memasak langsung
+
+Bayangkan dapur (proyek pengguna) dengan banyak juru masak amatir. Cara buruk: kamu masuk ke setiap dapur dan memasak sendiri (skrip yang menempel teks ke file secara buta). Sekali dapurnya beda sedikit, masakanmu gosong.
+
+Cara add-on `sv`: kamu menulis **kartu resep** yang sangat presisi — "tambahkan bahan X ke daftar belanja, buat file saus baru di laci ini, lalu sisipkan satu langkah ke resep utama yang sudah ada di posisi yang tepat". Yang benar-benar memasak adalah `sv` (kepala dapur berpengalaman). Karena dia yang mengeksekusi dan dia paham struktur tiap dapur, hasilnya konsisten di mana pun resepmu dijalankan. Tugasmu cuma menulis resep yang jelas; bukan mengurus tiap perbedaan dapur.
+
+Itulah kenapa API-nya bernama `defineAddon` — kamu *mendefinisikan* niat, bukan menulis prosedur imperatif yang rapuh.
+
+### Anatomi sebuah add-on
+
+Sebuah add-on minimal adalah objek konfigurasi dengan beberapa "slot" yang punya tugas berbeda. Memahami pembagian peran ini lebih penting daripada hafal nama propertinya:
+
+- **`id`** — nama unik add-on (string).
+- **`shortDescription`** — deskripsi singkat yang muncul di daftar `sv add`.
+- **`options`** — pertanyaan yang akan ditanyakan ke pengguna (mirip prompt interaktif `sv create`). Dibangun lewat `defineAddonOptions()`.
+- **`setup`** — fase **pemeriksaan & deklarasi**. Di sini kamu cek kompatibilitas (apakah ini proyek Kit? apakah add-on lain wajib ada lebih dulu?). Belum mengubah file apa pun.
+- **`run`** — fase **eksekusi**. Di sinilah file dibuat dan config disunting. Ini "isi" resep.
+- **`nextSteps`** — pesan yang ditampilkan setelah selesai ("jalankan `npm run dev`", "set `DATABASE_URL`", dst).
+
+Pemisahan `setup` dan `run` itu sengaja: `sv` menjalankan semua `setup` dari semua add-on yang dipilih lebih dulu (untuk validasi & urutan dependensi), baru kemudian menjalankan `run`. Jadi `setup` harus **murni & cepat** (hanya mendeklarasikan), sementara `run` yang benar-benar "mengotori tangan".
+
+### Aturan main paket (yang sering bikin kaget)
+
+Ada beberapa batasan keras yang dipaksakan ekosistem `sv`, dan lebih baik kamu tahu di awal daripada saat publish gagal:
+
+1. **Paket harus scoped.** Namanya wajib berbentuk `@scope/...` — paket unscoped tidak didukung. Konvensi paling mulus: namai `@scope/sv` supaya bisa dipanggil cukup dengan `npx sv add @scope`.
+2. **Tidak boleh punya `dependencies`.** Kamu harus mem-*bundle* semua kode (kecuali `sv` sendiri) ke dalam satu file `.mjs`. Alasannya: add-on dijalankan via `npx` di mesin orang lain; menyeret pohon dependensi besar akan lambat dan rapuh. Karena itu kamu bundle dengan **tsdown** menjadi ESM tunggal.
+3. **`sv` ada di `peerDependencies`**, bukan `dependencies`. Ini cara kamu menyatakan versi `sv` minimum yang kompatibel, supaya pengguna dengan versi major berbeda mendapat peringatan.
+4. **Wajib keyword `"sv-add"`** di `package.json`. Inilah penanda agar paketmu bisa "ditemukan" sebagai add-on `sv`.
+
+<Callout type="tip">
+Tidak ada registry sentral atau proses "pendaftaran" formal untuk community add-on. Yang membuat sebuah paket menjadi add-on `sv` hanyalah dua hal: ia di-publish ke npm dengan keyword <code>"sv-add"</code>, dan ia mengekspor objek hasil <code>defineAddon</code>. "Mendaftarkan" = cukup <code>npm publish</code>. Penemuannya terjadi lewat pencarian npm berdasarkan keyword itu, bukan lewat daftar yang dikurasi tim Svelte.
+</Callout>
+
+## 2. Contoh kode
+
+Mulai dari scaffolding. `sv create` punya template khusus untuk add-on, jadi kamu tidak perlu menyiapkan tsdown/`package.json` dari nol:
+
+```bash
+# Buat proyek add-on baru. [path] = folder tujuan (mis. nama add-on-mu).
+npx sv create --template addon my-addon
+
+cd my-addon
+npm install
+```
+
+Inti dari sebuah add-on ada di file entry-nya (mis. `src/index.js`). Ini contoh add-on lengkap yang menambahkan sebuah file util kecil dan menanyakan satu opsi:
+
+```js
+import { defineAddon, defineAddonOptions } from 'sv';
+
+// (1) Definisikan opsi yang akan ditanyakan ke pengguna saat add-on dipasang.
+//     Builder pattern: .add(nama, konfigurasi) bisa dirantai, ditutup .build().
+const options = defineAddonOptions()
+	.add('greeting', {
+		question: 'Teks sapaan default?', // prompt yang muncul di terminal
+		type: 'string',                   // string | boolean | number | select | multiselect
+		default: 'Halo'
+	})
+	.build();
+
+// (2) defineAddon = "kartu resep" kita.
+export default defineAddon({
+	id: 'hello-util',
+	shortDescription: 'Menambahkan util sapaan kecil',
+	options,
+
+	// (3) FASE SETUP: hanya validasi & deklarasi. Belum menyentuh file.
+	setup: ({ isKit, dependsOn, unsupported }) => {
+		// Misal add-on ini hanya masuk akal di proyek SvelteKit:
+		if (!isKit) {
+			// Hentikan dengan pesan ramah, bukan crash.
+			unsupported('Add-on ini butuh proyek SvelteKit.');
+		}
+		// Kalau butuh add-on lain lebih dulu, deklarasikan di sini:
+		// dependsOn('tailwindcss');
+	},
+
+	// (4) FASE RUN: di sinilah perubahan nyata terjadi.
+	run: ({ sv, options, language }) => {
+		// Tentukan ekstensi file mengikuti bahasa proyek pengguna (ts/js).
+		const ext = language === 'ts' ? 'ts' : 'js';
+
+		// sv.file(path, callback) = baca file (atau awali kosong kalau belum ada),
+		// kembalikan konten baru. Idempoten: aman dijalankan ulang.
+		sv.file('src/lib/greet.' + ext, (content) => {
+			if (content) return content; // sudah ada -> jangan timpa
+			return 'export const greeting = "' + options.greeting + '";\n';
+		});
+	},
+
+	// (5) Pesan penutup setelah add-on selesai dipasang.
+	nextSteps: ({ options }) => [
+		'Import { greeting } dari "$lib/greet" untuk memakai sapaan "' + options.greeting + '".'
+	]
+});
+```
+
+Untuk menyunting file config yang sudah ada (bukan sekadar membuat file baru), pakai helper AST dari `@sveltejs/sv-utils` supaya tetap idempoten dan rapi:
+
+```js
+import { transforms } from '@sveltejs/sv-utils';
+
+run: ({ sv }) => {
+	// Contoh: menyisipkan sesuatu ke sebuah file .svelte lewat transform AST,
+	// bukan menempel string mentah. Inilah yang membuat patch-nya aman
+	// dijalankan dua kali tanpa menduplikasi.
+	sv.file('src/routes/+layout.svelte', (content) => {
+		return transforms.svelte(content, (ast) => {
+			// ...manipulasi pohon AST di sini (tambah import, dll)...
+		});
+	});
+}
+```
+
+Terakhir, `package.json` yang membuat paketmu sah sebagai add-on (perhatikan empat aturan keras tadi):
+
+```json
+{
+	"name": "@my-org/sv",
+	"type": "module",
+	"exports": {
+		".": { "default": "./dist/index.mjs" }
+	},
+	"dependencies": {},
+	"peerDependencies": { "sv": "^0.13.0" },
+	"keywords": ["sv-add"],
+	"scripts": {
+		"build": "tsdown",
+		"prepublishOnly": "npm run build"
+	}
+}
+```
+
+## 3. Coba sendiri
+
+Karena membuat & menjalankan add-on terjadi di terminal dan menyentuh file system (bukan sesuatu yang bisa hidup di playground browser), bagian ini berupa **alur kerja nyata** yang beranotasi. Inti yang ingin kamu rasakan: kamu bisa menguji add-on di proyek beneran **tanpa publish ke npm sama sekali**, lewat protokol `file:`.
+
+```bash
+# --- Di folder add-on (my-addon) ---
+# Build dulu jadi dist/index.mjs (script "demo-add" di template biasanya
+# otomatis build lebih dulu, tapi build manual juga aman).
+npm run build
+
+# --- Pindah ke proyek uji (boleh hasil "sv create" polos) ---
+cd ../test-project
+
+# Pasang add-on dari PATH LOKAL, bukan dari npm.
+# sv membaca dist/index.mjs add-on-mu, menanyakan options, lalu menjalankan run().
+npx sv add file:../my-addon
+
+# Periksa hasilnya dengan git diff -> harusnya muncul file baru / config tersunting.
+git diff
+```
+
+Pola pikir saat mengembangkan: edit `run()` -> `npm run build` -> jalankan ulang `npx sv add file:../my-addon` di proyek uji yang sudah di-commit bersih -> baca `git diff`. Karena patch-nya idempoten, mengulang langkah ini aman dan diff-nya selalu bisa kamu baca dari kondisi bersih.
+
+Setelah yakin benar, barulah dipublish. Setelah ter-publish, pengguna memanggilnya persis seperti add-on resmi — hanya menyebut nama paketnya. Perhatikan bagaimana nama paket memengaruhi cara pemanggilan:
+
+```bash
+# Paket bernama @my-org/sv  -> cukup sebut scope-nya:
+npx sv add @my-org
+
+# Paket bernama @my-org/core -> sebut nama lengkapnya:
+npx sv add @my-org/core
+
+# Bisa kunci versi tertentu:
+npx sv add @my-org@1.2.3
+
+# Bisa digabung dengan add-on resmi dalam satu perintah:
+npx sv add eslint @my-org
+```
+
+## 4. Latihan
+
+<Exercise title="Lengkapi add-on & rute publish-nya">
+Kamu sedang membuat add-on internal `@acme/sv` yang menambahkan file logger. Jawab/lengkapi:
+
+1. Di hook mana (`setup` atau `run`) kamu menaruh pengecekan "add-on ini hanya untuk proyek SvelteKit", dan API apa yang dipakai untuk menolak dengan sopan?
+2. Kenapa `dependencies` di `package.json` harus kosong, dan dengan apa kamu menggantinya agar kode pihak ketiga tetap ikut terkirim?
+3. Tulis perintah untuk (a) menguji add-on dari folder lokal `../acme-addon`, dan (b) memanggilnya setelah ter-publish ke npm.
+
+{#snippet solution()}
+
+```js
+// 1. Di hook setup (fase validasi, sebelum file disentuh).
+//    Pakai parameter isKit untuk cek, dan unsupported(pesan) untuk menolak.
+setup: ({ isKit, unsupported }) => {
+	if (!isKit) unsupported('Add-on @acme hanya untuk proyek SvelteKit.');
+}
+
+// 2. Karena add-on dijalankan via npx di mesin orang lain; menyeret pohon
+//    dependensi akan lambat & rapuh. Gantinya: BUNDLE semua kode (kecuali sv)
+//    jadi satu file .mjs memakai tsdown. Jadi dependencies: {} kosong,
+//    dan "sv" cukup ada di peerDependencies.
+```
+
+```bash
+# 3a. Uji dari path lokal (tanpa publish):
+npx sv add file:../acme-addon
+
+# 3b. Setelah dipublish sebagai @acme/sv, cukup sebut scope-nya:
+npx sv add @acme
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+**`run` harus idempoten — jangan asumsikan file kosong.** Pengguna mungkin menjalankan `sv add` dua kali, atau add-on lain sudah menyentuh file yang sama. Selalu baca `content` di dalam `sv.file()` dan cek dulu: kalau perubahanmu sudah ada, kembalikan apa adanya. Untuk menyunting config terstruktur, pakai `transforms.svelte()` / helper AST dari <code>@sveltejs/sv-utils</code>, jangan menempel string mentah (append buta) yang akan menggandakan diri saat dijalankan ulang.
+</Callout>
+
+<Callout type="warning">
+**Empat aturan paket itu keras, bukan saran.** Paket wajib scoped (`@org/...`), `dependencies` wajib kosong (bundle dengan tsdown jadi `.mjs`), `sv` ada di `peerDependencies` (bukan `dependencies`), dan keyword `"sv-add"` wajib ada. Lupa salah satu — misalnya menaruh dependensi nyata di `dependencies` — bisa membuat add-on gagal jalan di mesin pengguna meskipun mulus di mesinmu.
+</Callout>
+
+<Callout type="tip">
+**Manfaatkan `peerDependencies.sv` sebagai pagar kompatibilitas.** Set versi minimum yang sudah kamu uji (mis. `"sv": "^0.13.0"`). Saat API `sv` berubah di versi major berikutnya, pengguna mendapat peringatan kompatibilitas alih-alih error misterius di tengah jalan. Naikkan rentang ini secara sadar setiap kali kamu menguji ulang terhadap versi `sv` baru.
+</Callout>
+
+<Callout type="warning">
+**Beri tahu pengguna bahwa community add-on tidak ditinjau tim Svelte.** Saat menjalankan add-on pihak ketiga, dokumentasi resmi menegaskan "use at your discretion" — kode add-on dieksekusi di mesin dan proyek pengguna. Sebagai pembuat, jadilah transparan (kode sumber publik, subjektif jelas di `nextSteps`); sebagai pemakai, perlakukan `npx sv add @org-asing` seperti meng-install paket npm asing mana pun: cek reputasi dan isinya lebih dulu.
+</Callout>
+
+Ringkasan pergeseran pola pikir dari "skrip setup biasa" ke "add-on `sv` yang benar":
+
+<LegacyVsModern legacyLabel="Skrip setup ad-hoc" modernLabel="Community add-on sv" rows={[
+	{ legacy: 'skrip yang append teks ke config (buta)', modern: 'sv.file() + transforms.svelte() (AST, idempoten)', note: 'aman dijalankan ulang' },
+	{ legacy: 'paket dengan banyak dependencies', modern: 'bundle tsdown jadi satu .mjs, dependencies: {}', note: 'cepat via npx, sv di peerDependencies' },
+	{ legacy: 'README "salin-tempel langkah ini"', modern: 'npx sv add @org-mu', note: 'satu perintah, plus nextSteps otomatis' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/community" label="Community add-ons — membuat add-on sendiri (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-add" label="sv add — cara add-on dipanggil & flag terkait" />

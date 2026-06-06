@@ -1,0 +1,281 @@
+---
+title: mdsvex
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 5
+status: stable
+description: Add-on sv yang memasang mdsvex, preprocessor untuk menulis Markdown plus komponen Svelte (.svx), lengkap dengan konfigurasi dan layout.
+docs: https://svelte.dev/docs/cli/mdsvex
+keywords: [mdsvex, svx, markdown, layout, frontmatter, sv add]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Markdown itu nyaman buat menulis *prosa* — heading, paragraf, list, link, blockquote — tanpa repot menulis `<h1>`, `<p>`, `<ul>` satu per satu. Tapi Markdown polos itu **mati**: tidak ada tombol yang bisa diklik, tidak ada grafik interaktif, tidak ada komponen reusable. Sebaliknya, file `.svelte` hidup dan interaktif, tapi menulis paragraf panjang di dalamnya menyiksa (semua harus dibungkus tag HTML).
+
+**mdsvex** menjembatani keduanya. Kalau di dunia React kamu kenal **MDX** (Markdown + JSX), maka mdsvex adalah padanannya untuk Svelte: **Markdown + komponen Svelte dalam satu file**, berekstensi `.svx`. Kamu menulis konten dengan kenyamanan Markdown, lalu menyelipkan komponen Svelte hidup di tengah-tengahnya saat butuh interaktivitas.
+
+<Callout type="tip">
+Situs yang sedang kamu baca ini dibangun dengan mdsvex. Setiap modul (<code>.svx</code>) adalah Markdown untuk prosanya, tapi komponen seperti <code>&lt;Callout&gt;</code>, <code>&lt;Exercise&gt;</code>, dan playground interaktif adalah komponen Svelte asli yang ditanam di dalam Markdown itu. Itulah mdsvex bekerja.
+</Callout>
+
+### Mengapa ini bukan sekadar "Markdown ke HTML"
+
+Ini bagian "mengapa"-nya yang penting. Generator Markdown biasa (seperti `marked`) menghasilkan **string HTML mati**. mdsvex berbeda: ia adalah **preprocessor Svelte**. Sebuah file `.svx` tidak diubah jadi HTML — ia diubah jadi **komponen Svelte sungguhan**, sama persis seperti file `.svelte`. Artinya file `.svx` bisa kamu `import`, kamu route, kamu kasih props, dan ia ikut di-compile oleh Svelte compiler.
+
+Analogikan dengan **jalur dua tahap di pabrik**. Tahap pertama (mdsvex) menerjemahkan teks Markdown jadi markup Svelte: `# Judul` jadi `<h1>Judul</h1>`, dan tag komponen seperti `<Chart />` dibiarkan apa adanya karena ia memang sudah markup Svelte. Tahap kedua (Svelte compiler) mengambil hasil itu dan meng-compile-nya jadi JavaScript yang efisien. Karena outputnya komponen Svelte penuh, semua fitur Svelte 5 — runes `$state`, reactivity, event handler `onclick` — ikut hidup di dalam `.svx`-mu.
+
+### Tiga bahan di dalam satu file `.svx`
+
+Sebuah `.svx` bisa berisi tiga lapisan yang menumpuk rapi:
+
+1. **Frontmatter** (opsional) — blok YAML di paling atas, diapit `---`. Ini metadata: judul, tanggal, tag. mdsvex membuat nilai-nilai ini otomatis bisa dipakai di dalam dokumen (mis. `{title}`) **dan** mengekspornya sebagai objek `metadata` saat file di-`import` dari tempat lain.
+2. **Script** (opsional) — blok `<script>` biasa untuk meng-`import` komponen Svelte yang mau kamu pakai.
+3. **Markdown + komponen** — badan tulisan. Markdown untuk prosa, tag komponen Svelte (mis. `<Counter />`) untuk yang interaktif.
+
+### Kenapa pakai `sv add`, bukan pasang manual
+
+Secara teknis mdsvex hanyalah satu package npm plus konfigurasi di `svelte.config.js`. Tapi konfigurasinya punya beberapa titik mudah keliru: ekstensi file harus didaftarkan di **dua tempat**, dan `preprocess` harus jadi array bila kamu juga pakai `vitePreprocess`. Add-on resmi `sv add mdsvex` menabrak semua jebakan itu untukmu — ia menginstal package, menambahkan `.svx` ke daftar ekstensi, dan menyusun `preprocess` dengan benar. Sama filosofinya dengan `sv add tailwindcss` yang kamu temui di modul lain: satu perintah, setup yang sudah teruji.
+
+## 2. Contoh kode
+
+Memasang mdsvex cukup satu perintah:
+
+```bash
+# Memasang package mdsvex + mengonfigurasi svelte.config.js otomatis
+npx sv add mdsvex
+```
+
+Yang dihasilkan add-on di `svelte.config.js` kira-kira seperti ini (perhatikan dua hal yang sering bikin error kalau dipasang manual):
+
+```js
+import adapter from '@sveltejs/adapter-auto';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { mdsvex } from 'mdsvex';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	// (1) Svelte compiler hanya memproses file yang ekstensinya terdaftar di sini.
+	//     Tanpa '.svx', file .svx-mu akan diperlakukan sebagai aset biasa, bukan komponen.
+	extensions: ['.svelte', '.svx'],
+
+	// (2) Saat memakai lebih dari satu preprocessor, 'preprocess' jadi ARRAY.
+	//     Urutan dieksekusi kiri-ke-kanan; mdsvex menangani file .svx.
+	preprocess: [vitePreprocess(), mdsvex()],
+
+	kit: { adapter: adapter() }
+};
+
+export default config;
+```
+
+Sebuah file `.svx` lengkap — tiga lapisan (frontmatter, script, body) dalam satu tempat:
+
+```svelte
+---
+title: Belajar mdsvex
+date: 2026-06-07
+tags: [svelte, markdown]
+---
+
+<script>
+  // Import komponen Svelte biasa. Path relatif terhadap file .svx ini.
+  import Counter from '$lib/components/Counter.svelte';
+</script>
+
+# {title}
+
+Ditulis pada {date}. Ini paragraf **Markdown biasa** — _italic_, `inline code`,
+dan [link](https://svelte.dev) semua jalan tanpa nulis tag HTML.
+
+Tapi di tengah prosa, aku bisa menanam komponen Svelte yang hidup:
+
+<Counter start={10} />
+
+- Markdown list
+- tetap jalan
+- seperti biasa
+```
+
+Nilai frontmatter (`title`, `date`) langsung bisa dipakai sebagai variabel di body lewat `{title}` dan `{date}` — mdsvex yang menyuntikkannya. Komponen `<Counter />` di tengah tulisan bukan teks; ia komponen Svelte beneran yang ikut interaktif.
+
+Karena `.svx` adalah komponen Svelte, kamu bisa meng-`import`-nya dari tempat lain — termasuk mengambil `metadata`-nya (isi frontmatter) tanpa me-render isinya:
+
+```js
+// Mis. di sebuah +page.js untuk membangun daftar artikel blog
+import Post, { metadata } from '$lib/posts/belajar-mdsvex.svx';
+
+console.log(metadata);
+// -> { title: 'Belajar mdsvex', date: '2026-06-07', tags: ['svelte', 'markdown'] }
+//    'Post' adalah komponen-nya, siap di-render: <Post />
+```
+
+## 3. Coba sendiri
+
+mdsvex bekerja saat *build* (ia preprocessor, bukan sesuatu yang jalan di browser), jadi tidak bisa dicoba di playground live. Tapi konsep paling berguna — **layout** — bisa kamu pahami dari contoh statis di bawah, lalu langsung praktik di proyekmu.
+
+### Masalah yang dipecahkan layout
+
+Kalau kamu punya 20 artikel `.svx`, kamu pasti tidak mau menyalin-tempel kerangka `<article>`, judul, tanggal, dan styling di tiap file. **Layout** adalah komponen pembungkus: mdsvex otomatis membungkus *isi* tiap dokumen `.svx` ke dalamnya. Anggap layout sebagai **bingkai foto** — fotonya (konten Markdown) ganti-ganti, bingkainya (header, styling) tetap.
+
+Layout adalah komponen Svelte biasa yang menerima **semua field frontmatter sebagai props**, dan **konten dokumen sebagai children**:
+
+```svelte
+<!-- src/lib/layouts/post.svelte — layout untuk dokumen .svx -->
+<script>
+  // Frontmatter masuk sebagai props individual: title, date, dst.
+  // 'children' adalah konten Markdown yang sudah di-render mdsvex.
+  let { title, date, children } = $props();
+</script>
+
+<article class="prose">
+  <header>
+    <h1>{title}</h1>
+    {#if date}<time>{date}</time>{/if}
+  </header>
+
+  <!-- Svelte 5: render konten dokumen lewat snippet children -->
+  {@render children()}
+</article>
+```
+
+Daftarkan layout itu di config. Bisa satu layout untuk semua, atau objek bernama:
+
+```js
+import { mdsvex } from 'mdsvex';
+
+const config = {
+	extensions: ['.svelte', '.svx'],
+	preprocess: [
+		vitePreprocess(),
+		mdsvex({
+			// Bentuk objek: kunci '_' adalah layout DEFAULT (fallback).
+			// Kunci lain (mis. 'blog') dipilih lewat field `layout:` di frontmatter,
+			// atau cocok otomatis dengan nama folder.
+			layout: {
+				_: './src/lib/layouts/post.svelte',
+				blog: './src/lib/layouts/blog.svelte'
+			}
+		})
+	]
+};
+```
+
+Lalu di file `.svx`, kamu cukup menulis konten — layout otomatis membungkusnya. Kamu bisa memilih layout bernama, atau mematikannya:
+
+```svelte
+---
+title: Postingan dengan layout 'blog'
+layout: blog          # pakai layout bernama 'blog'
+# layout: false       # ATAU matikan layout untuk file ini saja
+---
+
+# Isi tulisan langsung dibungkus layout, tanpa import apa pun.
+```
+
+<Callout type="tip">
+Kalau bentuk <code>layout</code> berupa string tunggal (mis. <code>layout: './src/lib/layouts/post.svelte'</code>), semua dokumen <code>.svx</code> memakai layout itu. Pakai bentuk objek hanya kalau kamu butuh beberapa jenis bingkai (mis. layout artikel vs layout dokumentasi).
+</Callout>
+
+### Sekilas opsi konfigurasi lain
+
+`mdsvex()` menerima beberapa opsi yang sering berguna:
+
+```js
+mdsvex({
+	extensions: ['.svx'],           // ekstensi yang ditangani mdsvex (default ['.svx'])
+	layout: './src/lib/layout.svelte',
+	smartypants: true,              // ubah -- jadi —, "..." jadi tanda kutip tipografi (default true)
+	remarkPlugins: [],              // plugin remark: olah Markdown (mis. GFM tables, footnotes)
+	rehypePlugins: [],              // plugin rehype: olah HTML hasil (mis. slug heading, autolink)
+	highlight: { /* ... */ }        // konfigurasi syntax highlighting (PrismJS bawaan)
+});
+```
+
+Mau memproses file `.md` juga, bukan cuma `.svx`? Tambahkan ke **dua tempat**: `extensions` di config Svelte **dan** `extensions` di `mdsvex()` (lihat pitfall di bawah).
+
+## 4. Latihan
+
+<Exercise title="Setup blog mini dengan layout">
+Kamu mau bikin folder blog mini. Targetnya: setiap artikel adalah satu file Markdown, dan semua artikel terbungkus satu layout yang seragam.
+
+Tulis (a) potongan `svelte.config.js` yang mendaftarkan satu layout default untuk semua dokumen `.svx`, dan (b) komponen layout-nya (Svelte 5, bukan `<slot>`) yang menampilkan frontmatter `title` sebagai `<h1>` lalu `date` di bawahnya.
+
+{#snippet solution()}
+
+```js
+// (a) svelte.config.js
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { mdsvex } from 'mdsvex';
+
+const config = {
+	extensions: ['.svelte', '.svx'],
+	preprocess: [
+		vitePreprocess(),
+		// string tunggal -> layout dipakai SEMUA dokumen .svx
+		mdsvex({ layout: './src/lib/layouts/post.svelte' })
+	]
+};
+
+export default config;
+```
+
+```svelte
+<!-- (b) src/lib/layouts/post.svelte -->
+<script>
+  // Frontmatter -> props; konten dokumen -> snippet children
+  let { title, date, children } = $props();
+</script>
+
+<article>
+  <h1>{title}</h1>
+  {#if date}<time>{date}</time>{/if}
+  {@render children()}
+</article>
+```
+
+Catatan: pakai `{@render children()}` (Svelte 5), bukan `<slot />` (Svelte 4). Frontmatter di tiap artikel cukup `title` dan `date`, dan kamu tidak perlu meng-`import` layout di file `.svx` — mdsvex membungkusnya otomatis.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Ekstensi harus didaftarkan di DUA tempat.</strong> Ini error nomor satu pengguna baru. Kalau kamu mau memakai ekstensi selain <code>.svx</code> (mis. <code>.md</code>), kamu wajib menambahkannya ke <strong>daftar <code>extensions</code> di config Svelte</strong> (supaya compiler mau memproses file itu sebagai komponen) <strong>dan</strong> ke <strong><code>extensions</code> di dalam <code>mdsvex(&#123; extensions: [...] &#125;)</code></strong> (supaya mdsvex tahu file itu Markdown). Lupa salah satu = file tidak ter-render atau error build.
+</Callout>
+
+<Callout type="warning">
+<strong>Kurung kurawal dan tanda lebih-kecil di dalam prosa Markdown itu "ajaib".</strong> Karena <code>.svx</code> di-compile jadi komponen Svelte, mdsvex memperlakukan <code>&#123; ... &#125;</code> sebagai ekspresi Svelte dan <code>&lt; ... &gt;</code> sebagai tag. Jadi menulis kurung kurawal mentah di tengah paragraf — mis. saat menjelaskan <code>useState(&#123; count: 0 &#125;)</code> — bisa memicu error compile. Solusinya: selalu bungkus cuplikan yang mengandung <code>&#123;</code> atau <code>&lt;</code> ke dalam inline code atau code block; di situ keduanya aman. Ini kembaran dari kenapa di MDX kamu juga mesti hati-hati dengan kurung kurawal.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Jangan indentasi tag komponen 4 spasi.</strong> Di Markdown, baris yang diindentasi empat spasi dianggap <em>code block</em>. Jadi kalau kamu menulis <code>&lt;Counter /&gt;</code> dengan indentasi empat spasi, ia malah tampil sebagai teks kode, bukan komponen hidup. Tempel komponen rata kiri, dan beri <strong>baris kosong</strong> sebelum/sesudahnya supaya parser memisahkannya dari paragraf di sekitarnya.
+</Callout>
+
+<Callout type="legacy">
+Tutorial mdsvex lama menampilkan layout yang me-render konten lewat <code>&lt;slot /&gt;</code> dan mengekspor frontmatter dari modul script gaya Svelte 4 (<code>context="module"</code>). Itu sintaks <strong>Svelte 4</strong>. Di Svelte 5, konten dokumen tersedia sebagai snippet <code>children</code> lewat <code>$props()</code>, dan kamu me-render-nya dengan <code>&#123;@render children()&#125;</code>. Atribut module script pun berubah dari <code>context="module"</code> menjadi cukup <code>module</code>.
+</Callout>
+
+Ringkas perubahan layout dari era lama ke Svelte 5:
+
+<LegacyVsModern legacyLabel="Svelte 4 (lama)" modernLabel="Svelte 5 (sekarang)" rows={[
+	{ legacy: 'export let title (di layout)', modern: 'let { title, children } = $props()', note: 'frontmatter masuk sebagai props' },
+	{ legacy: 'slot element', modern: '{@render children()}', note: 'render isi dokumen .svx' },
+	{ legacy: 'script context="module"', modern: 'script module', note: 'atribut pada tag script (Svelte 5)' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/mdsvex" label="mdsvex — add-on sv (docs resmi)" />
+
+<DocsLink href="https://mdsvex.pngwn.io" label="mdsvex — dokumentasi lengkap & opsi konfigurasi" />

@@ -1,0 +1,298 @@
+---
+title: Imperative component API (legacy)
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 12
+status: legacy
+description: Cara lama Svelte 4 mengontrol komponen sebagai class (new Component, $set, $on, $destroy) dan padanan modern Svelte 5 (mount, unmount, hydrate).
+docs: https://svelte.dev/docs/svelte/legacy-component-api
+keywords: [new Component, $set, $on, $destroy, mount, unmount]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sebagian besar waktu, sebuah komponen Svelte dipakai oleh komponen Svelte lain — kamu menulisnya di dalam markup, deklaratif. Tapi ada satu titik di mana dunia Svelte harus bertemu dunia JavaScript biasa: **titik masuk aplikasi** (entry point), penanaman widget ke halaman non-Svelte, modal/toast yang dipanggil dari fungsi, atau test. Di titik itu kamu butuh cara **imperatif** untuk memasang dan membongkar komponen dari kode JS murni.
+
+Nah, *bagaimana* cara melakukannya berubah drastis antara Svelte 4 dan Svelte 5. Modul ini fokus pada **API lama Svelte 4** — supaya kamu paham saat membaca kode/tutorial lama atau memigrasikan proyek — lalu menunjukkan padanan modernnya.
+
+<Callout type="legacy">
+Semua sintaks <code>new Component()</code>, <code>$set</code>, <code>$on</code>, dan <code>$destroy</code> di halaman ini adalah <strong>API Svelte 4 yang sudah dihapus di Svelte 5</strong>. Di Svelte 5, komponen bukan class lagi, jadi kode ini akan error. Pelajari ini untuk membaca kode lama; untuk kode baru pakai <code>mount</code>/<code>unmount</code> yang dibahas di bagian 2.
+</Callout>
+
+### Analogi: komponen sebagai "mesin" vs sebagai "resep"
+
+Di **Svelte 4**, sebuah komponen itu seperti **mesin yang kamu rakit dengan `new`**. Kamu memesan satu unit (`new Component(...)`), mesin itu punya tombol-tombol di badannya: tombol "ganti input" (`$set`), colokan "pasang sensor" (`$on`), dan tombol merah "matikan & bongkar" (`$destroy`). Komponen adalah sebuah **objek hidup** dengan method — sangat OOP, mirip class di React class-component zaman dulu.
+
+Di **Svelte 5**, komponen lebih seperti **resep/cetakan**, bukan mesin. Kamu tidak lagi `new`-kan resep. Kamu menyerahkannya ke seorang "juru masak" — fungsi `mount()` — yang akan memasangnya ke DOM dan menyerahkan kembali ke kamu *hanya hal-hal yang sengaja diekspor* komponen. Tidak ada lagi tombol `$set`/`$on`/`$destroy` di badan komponen, karena komponen bukan objek-mesin lagi. Mau ganti input? Ubah objek `$state` yang kamu oper. Mau bongkar? Panggil fungsi `unmount()`.
+
+Pergeseran ini penting karena menjelaskan **kenapa** API-nya berubah, bukan cuma namanya: di Svelte 5, reaktivitas digerakkan oleh runes (`$state`, `$props`, dst.), bukan oleh method instance. Jadi method seperti `$set` jadi tidak punya tempat — perubahan reaktif sekarang mengalir lewat data, bukan lewat memanggil method pada komponen.
+
+### API lama Svelte 4 secara ringkas
+
+- **`new Component(options)`** — merakit dan memasang komponen ke `target`. Mengembalikan sebuah **instance** (objek).
+- **`instance.$set(props)`** — mengubah props dari luar. `app.$set({ x: 1 })` setara dengan menulis `x = 1` di dalam komponen. Update bersifat **asinkron**.
+- **`instance.$on(event, callback)`** — memasang listener untuk *component event* (event yang dipancarkan lewat `createEventDispatcher`). Mengembalikan fungsi untuk melepas listener.
+- **`instance.$destroy()`** — membongkar komponen dari DOM dan memicu semua handler `onDestroy`.
+- **property accessors** — hanya aktif bila dikompilasi dengan opsi `accessors: true`; memungkinkan baca/tulis prop langsung lewat `instance.prop` (update sinkron).
+
+### Opsi konstruktor `new Component(options)` (Svelte 4)
+
+| Opsi | Default | Arti |
+| --- | --- | --- |
+| `target` | (wajib) | `HTMLElement`/`ShadowRoot` tempat komponen dirender. |
+| `props` | `{}` | Objek nilai awal untuk props komponen. |
+| `context` | `new Map()` | `Map` context tingkat-root, terbaca oleh `getContext` di pohon. |
+| `hydrate` | `false` | Pakai/"hidupkan" DOM hasil SSR alih-alih membuang & merender ulang. |
+| `intro` | `false` | Mainkan transition saat render pertama (bukan hanya saat update). |
+| `anchor` | `null` | Anak dari `target`; komponen disisipkan tepat sebelum elemen ini. |
+
+## 2. Contoh kode
+
+Pertama, **cara lama Svelte 4** (untuk dikenali, bukan ditiru di proyek baru):
+
+```js
+// main.js — SVELTE 4 (LEGACY). Tidak berlaku di Svelte 5.
+import App from './App.svelte';
+
+// Komponen adalah CLASS: dirakit dengan `new`.
+const app = new App({
+	target: document.getElementById('app'), // wajib
+	props: { pesan: 'Halo' },               // nilai awal props
+	intro: true                             // mainkan transition saat mount
+});
+
+// Ganti prop dari luar — setara `pesan = 'Halo lagi'` di dalam komponen.
+// Bersifat asinkron (DOM belum tentu langsung berubah di baris berikutnya).
+app.$set({ pesan: 'Halo lagi' });
+
+// Dengarkan component event (yang dipancarkan createEventDispatcher di Svelte 4).
+const lepas = app.$on('selesai', (e) => console.log('selesai:', e.detail));
+lepas(); // panggil nilai kembalian untuk melepas listener
+
+// Bongkar dari DOM + jalankan semua onDestroy.
+app.$destroy();
+```
+
+Sekarang, **cara modern Svelte 5** yang setara — perhatikan komponen tidak lagi di-`new`:
+
+```js
+// main.js — SVELTE 5 (MODERN). Inilah yang dipakai di proyek baru.
+import { mount, unmount } from 'svelte';
+import App from './App.svelte';
+
+// Props yang ingin diubah reaktif setelah mount HARUS objek $state.
+// (file .svelte.js / .svelte.ts agar rune $state aktif di luar komponen)
+const props = $state({ pesan: 'Halo' });
+
+// mount() menggantikan `new App(...)`. Mengembalikan EXPORTS komponen
+// (apa pun yang di-`export` komponen), BUKAN objek-mesin dengan $set/$on.
+const app = mount(App, {
+	target: document.getElementById('app'),
+	props,
+	intro: true
+});
+
+// Pengganti $set: ubah properti objek $state yang tadi dioper.
+// Karena props reaktif, komponen ikut update otomatis.
+props.pesan = 'Halo lagi';
+
+// Pengganti $destroy: panggil unmount() dengan instance-nya.
+unmount(app);
+```
+
+Dan inilah perubahan di **dalam** komponennya — `createEventDispatcher` (yang dulu dipakai bersama `$on`) diganti **callback prop**:
+
+```svelte
+<!-- Anak.svelte — SVELTE 5 -->
+<script>
+	// Dulu (Svelte 4): const dispatch = createEventDispatcher(); dispatch('selesai', data)
+	// dan induk mendengarkannya lewat app.$on('selesai', ...).
+	// Sekarang: cukup terima sebuah callback sebagai prop biasa.
+	let { onselesai } = $props();
+</script>
+
+<!-- Memanggil callback prop = "memancarkan event" gaya Svelte 5. -->
+<button onclick={() => onselesai({ ok: true })}>Selesai</button>
+```
+
+<Callout type="warning">
+<code>mount()</code> <strong>tidak</strong> membuat efek (<code>$effect</code>) langsung jalan secara sinkron. Bila kamu butuh efek sudah berjalan tepat setelah mount (misalnya di test), panggil <code>flushSync()</code> dari <code>'svelte'</code> setelahnya. Ini beda perilaku dari <code>new Component()</code> gaya lama yang menjalankan segalanya secara sinkron.
+</Callout>
+
+### Jembatan kompatibilitas: `svelte/legacy`
+
+Kadang kamu punya **library** yang dipakai orang lain dengan gaya `new Component()`, tapi internalnya sudah mau pindah ke Svelte 5. Untuk masa transisi, Svelte menyediakan helper di `svelte/legacy`:
+
+```js
+import { createClassComponent } from 'svelte/legacy';
+import App from './App.svelte';
+
+// Membungkus komponen Svelte 5 agar PUNYA API class gaya Svelte 4
+// ($set/$on/$destroy) — supaya pemakai lama tidak langsung patah.
+const app = createClassComponent({
+	component: App,
+	target: document.getElementById('app'),
+	props: { pesan: 'Halo' }
+});
+
+app.$set({ pesan: 'Halo lagi' });
+app.$destroy();
+```
+
+<Callout type="legacy">
+<code>createClassComponent</code> (dan <code>asClassComponent</code>) di <code>svelte/legacy</code> hanyalah <strong>jembatan sementara</strong> untuk migrasi bertahap. Untuk kode baru, pakai <code>mount</code>/<code>unmount</code> langsung. Ada juga opsi compiler <code>compatibility.componentApi: 4</code> bila kamu ingin seluruh komponen di proyek tetap mendukung API class lama selama migrasi.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini bekerja di **titik masuk aplikasi / JS murni** (di luar satu komponen mandiri), jadi tidak cocok untuk live playground. Sebagai gantinya, ini contoh statis beranotasi yang membandingkan langsung kedua dunia untuk satu skenario yang sama: **menanam widget rating ke dalam halaman biasa, mengganti nilainya, lalu membongkarnya**.
+
+```js
+// === SVELTE 4 (LEGACY) ===
+import Rating from './Rating.svelte';
+
+const target = document.querySelector('#rating-slot');
+
+// 1) Rakit instance (komponen = class).
+const widget = new Rating({
+	target,
+	props: { nilai: 3 }
+});
+
+// 2) Ganti props dari luar lewat $set (asinkron).
+document.querySelector('#reset').addEventListener('click', () => {
+	widget.$set({ nilai: 0 });
+});
+
+// 3) Dengarkan event yang dipancarkan komponen (createEventDispatcher).
+widget.$on('ubah', (e) => {
+	console.log('rating baru:', e.detail.nilai);
+});
+
+// 4) Saat halaman tidak butuh widget lagi: bongkar.
+widget.$destroy();
+```
+
+```js
+// === SVELTE 5 (MODERN) — skenario yang sama ===
+import { mount, unmount } from 'svelte';
+import Rating from './Rating.svelte';
+
+const target = document.querySelector('#rating-slot');
+
+// props reaktif: objek $state (di file .svelte.js).
+const props = $state({ nilai: 3 });
+
+// 1) mount() menggantikan `new` — kembaliannya adalah exports komponen.
+const widget = mount(Rating, {
+	target,
+	props,
+	// 3) "event" sekarang adalah callback prop biasa, bukan $on.
+	//    (props.onubah dibaca komponen lewat $props)
+});
+
+// 2) Ganti nilai = ubah properti objek $state (komponen ikut update).
+document.querySelector('#reset').addEventListener('click', () => {
+	props.nilai = 0;
+});
+
+// 4) Bongkar lewat unmount(); opsi { outro: true } untuk memainkan
+//    transition keluar sebelum benar-benar dilepas.
+unmount(widget, { outro: true });
+```
+
+Perhatikan tiga pergeseran inti: (a) `new X(...)` → `mount(X, ...)`; (b) `$set({...})` → mutasi objek `$state`; (c) `$on('e', cb)` / `$destroy()` → callback prop + `unmount()`. Niatnya sama, tapi di Svelte 5 semuanya mengalir lewat **data dan fungsi**, bukan method pada objek komponen.
+
+## 4. Latihan
+
+<Exercise title="Migrasikan entry point Svelte 4 ke Svelte 5">
+Diberikan kode entry point gaya Svelte 4 di bawah. Tulis ulang ke API modern Svelte 5: ganti `new` dengan `mount`, `$set` dengan mutasi `$state`, `$on` dengan callback prop, dan `$destroy` dengan `unmount`. Asumsikan komponen `Counter.svelte` menerima prop `start` dan, di Svelte 5, sebuah callback prop `onreset`.
+
+```js
+// SEBELUM — Svelte 4
+import Counter from './Counter.svelte';
+
+const app = new Counter({
+	target: document.getElementById('app'),
+	props: { start: 10 }
+});
+
+app.$on('reset', () => console.log('di-reset!'));
+app.$set({ start: 0 });
+app.$destroy();
+```
+
+{#snippet solution()}
+
+```js
+// SESUDAH — Svelte 5
+import { mount, unmount } from 'svelte';
+import Counter from './Counter.svelte';
+
+// props reaktif sebagai objek $state (file .svelte.js / .svelte.ts)
+const props = $state({
+	start: 10,
+	// $on('reset', ...) menjadi callback prop biasa
+	onreset: () => console.log('di-reset!')
+});
+
+const app = mount(Counter, {
+	target: document.getElementById('app'),
+	props
+});
+
+// $set({ start: 0 }) menjadi mutasi properti objek $state
+props.start = 0;
+
+// $destroy() menjadi unmount(instance)
+unmount(app);
+```
+
+Inti migrasinya: di Svelte 5 komponen bukan class, jadi tidak ada method instance. `$set` digantikan dengan **mengubah objek `$state`** yang dioper sebagai props (karena reaktif, komponen ikut update). `$on` digantikan **callback prop** — di `Counter.svelte`, `onreset` dibaca lewat `let { onreset } = $props()` dan dipanggil seperti fungsi biasa. `$destroy` digantikan `unmount(app)`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Di Svelte 5, <code>const app = new Component(...)</code> akan <strong>error</strong> — komponen bukan lagi class yang bisa di-<code>new</code>. Pesan errornya kadang membingungkan ("Component is not a constructor"). Kalau melihat ini saat memigrasi, ganti seluruh pemanggilan <code>new</code> menjadi <code>mount()</code> dari <code>'svelte'</code>.
+</Callout>
+
+<Callout type="warning">
+Nilai kembalian <code>mount()</code> <strong>bukan</strong> objek-mesin dengan <code>$set</code>/<code>$on</code>/<code>$destroy</code> — ia hanya berisi apa pun yang di-<code>export</code> komponen (fungsi/konstanta yang sengaja diekspos). Jadi jangan harap bisa memanggil <code>app.$set(...)</code> pada hasil <code>mount</code>; ubah objek <code>$state</code> yang kamu oper sebagai props.
+</Callout>
+
+<Callout type="legacy">
+<code>createEventDispatcher</code> yang dulu berpasangan dengan <code>$on</code> sudah <strong>deprecated</strong>. Pola event Svelte 5 adalah <strong>callback prop</strong>: induk mengoper fungsi (mis. <code>onselesai</code>), anak memanggilnya. Lebih sederhana, lebih mudah di-type dengan TypeScript, dan tidak butuh API <code>$on</code> sama sekali.
+</Callout>
+
+<Callout type="tip">
+Untuk SSR + hydration, padanan <code>new Component({`{ target, hydrate: true }`})</code> di Svelte 5 adalah fungsi terpisah <code>hydrate(Component, {`{ target, props }`})</code> dari <code>'svelte'</code> — bukan opsi boolean lagi. Gunakan <code>mount</code> untuk render bersih dari nol, dan <code>hydrate</code> untuk "menghidupkan" markup hasil server.
+</Callout>
+
+<Callout type="tip">
+Kalau kamu sedang memelihara <strong>library</strong> yang masih mengekspos API class lama ke konsumen, jembatani dengan <code>createClassComponent</code> / <code>asClassComponent</code> dari <code>svelte/legacy</code> selama masa transisi, lalu arahkan konsumen pindah ke <code>mount</code> di rilis mayor berikutnya.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'new Component({ target, props })', modern: "mount(Component, { target, props })", note: 'Komponen bukan class lagi di Svelte 5.' },
+	{ legacy: 'new Component({ target, hydrate: true })', modern: "hydrate(Component, { target, props })", note: 'Hydration jadi fungsi terpisah, bukan opsi boolean.' },
+	{ legacy: 'app.$set({ x: 1 })', modern: 'ubah properti objek $state yang dioper sebagai props', note: 'Tak ada $set; reaktivitas lewat $state.' },
+	{ legacy: "app.$on('event', cb)", modern: 'callback prop (mis. onevent={cb})', note: 'createEventDispatcher diganti callback prop.' },
+	{ legacy: 'app.$destroy()', modern: 'unmount(app)', note: 'Method $destroy dihapus.' },
+	{ legacy: 'accessors: true (compiler option)', modern: 'export prop/fungsi dari komponen', note: 'Akses dari luar lewat exports, bukan accessor instance.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-component-api" label="Imperative component API (legacy) — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/imperative-component-api" label="mount / unmount / hydrate (Svelte 5) — Svelte" />

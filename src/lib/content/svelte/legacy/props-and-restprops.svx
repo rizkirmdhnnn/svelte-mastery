@@ -1,0 +1,230 @@
+---
+title: $$props and $$restProps
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 5
+status: legacy
+description: Dua variabel ajaib Svelte 4 untuk membaca semua props sekaligus — dan padanan modernnya pakai rest destructuring dari $props().
+docs: https://svelte.dev/docs/svelte/legacy-$$props-and-$$restProps
+keywords: [legacy, props, restProps, forwarding, spread, $props]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Di Svelte 4, cara normal menerima prop adalah mendeklarasikannya satu per satu dengan `export let variant`. Tapi ada kasus di mana kamu ingin menyentuh prop yang **tidak** kamu deklarasikan — misalnya kamu membuat komponen `<Button>` pembungkus, dan parent menulis `<Button type="submit" aria-label="Kirim" data-id="42" />`. Kamu tidak pernah menulis `export let type`, `export let ariaLabel`, dan seterusnya — lalu bagaimana kamu mengaksesnya? Untuk itulah Svelte 4 menyediakan dua variabel ajaib: `$$props` dan `$$restProps`.
+
+Bedanya tipis tapi penting:
+
+- **`$$props`** = SEMUA prop yang masuk, baik yang kamu deklarasikan dengan `export let` maupun yang tidak.
+- **`$$restProps`** = HANYA prop yang TIDAK kamu deklarasikan — yaitu "sisa"-nya, setelah prop yang sudah kamu `export let` dikeluarkan.
+
+### Analogi: resepsionis yang meneruskan surat
+
+Bayangkan komponenmu adalah seorang **resepsionis kantor**. Setiap hari datang setumpuk surat (props dari parent). Sebagian surat ditujukan langsung untukmu — itu yang kamu "klaim" dengan `export let variant`, `export let size`. Kamu buka dan pakai sendiri. Sisa surat lainnya bukan urusanmu; tugasmu cuma **meneruskannya** ke departemen yang sebenarnya (elemen `<button>` di dalam).
+
+Dalam analogi ini:
+
+- `$$props` = **seluruh isi tas surat**, termasuk yang sudah kamu ambil.
+- `$$restProps` = **tumpukan yang tinggal diteruskan** — surat yang belum kamu klaim.
+
+Inilah kenapa keduanya ada. Kalau kamu meneruskan `$$props` ke `<button>`, kamu akan ikut meneruskan `variant` dan `size` — padahal itu sudah kamu pakai sendiri dan `<button>` tidak mengerti atribut bernama `variant`. Yang biasanya kamu mau adalah meneruskan `$$restProps`: hanya yang tersisa.
+
+### Untuk apa ini di praktik: komponen "pembungkus transparan"
+
+Pola paling umum adalah membuat komponen yang menambah sedikit bumbu (kelas CSS, varian, default) lalu **meneruskan sisanya apa adanya** ke elemen DOM asli. Tujuannya: komponen `<Button>`-mu tetap bisa menerima `onclick`, `disabled`, `type`, `aria-*`, `data-*` — tanpa kamu harus mendeklarasikan satu per satu. Pengguna React mengenal pola ini sebagai `const { variant, ...rest } = props` lalu `<button {...rest}>`. Pengguna Vue mengenalnya sebagai **fallthrough attributes** alias `$attrs` dan `v-bind="$attrs"`. `$$restProps` Svelte 4 itu praktis kembarannya `$attrs` Vue.
+
+### Mengapa ini sekarang "legacy"
+
+`$$props` dan `$$restProps` adalah API **Svelte 4**. Di Svelte 5 (runes) keduanya **tidak tersedia** — memakainya di komponen runes akan error. Penggantinya bukan variabel ajaib baru, melainkan JavaScript biasa: **rest destructuring** dari `$props()`.
+
+```js
+// Svelte 4 (lama)            // Svelte 5 (runes)
+$$props          ===>         let semua = $props();        // seluruh objek props
+$$restProps      ===>         let { variant, ...rest } = $props();  // 'rest' = sisanya
+```
+
+Ini sejalan dengan filosofi runes: mengubah "sihir tersembunyi" jadi JavaScript yang eksplisit dan bisa dibaca. `$$restProps` dulu adalah variabel yang muncul entah dari mana; `...rest` adalah sintaks bahasa yang sudah kamu kenal dari React, dan IDE-mu pun mengerti tipenya. Bonus: di Svelte 3/4, memakai `$$props`/`$$restProps` membawa **penalti performa kecil** (compiler harus melacak semua props secara dinamis), jadi dokumentasi resmi menyarankan memakainya hanya bila perlu. Dengan rest destructuring, "ongkos" itu jadi eksplisit dan compiler bisa mengoptimalkan lebih baik.
+
+## 2. Contoh kode
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — Button.svelte -->
+<script>
+	// Hanya 'variant' yang kita klaim untuk dipakai sendiri.
+	export let variant = 'primary';
+</script>
+
+<!-- {...$$restProps}: teruskan SEMUA prop lain (type, onclick, disabled,
+     aria-*, data-*, dll) yang TIDAK kita deklarasikan, ke <button> asli. -->
+<!-- $$props.class: ambil prop 'class' dari tas penuh. Catatan: 'class'
+     tidak di-export, jadi ia ADA di $$restProps juga — tapi kita mau
+     menggabungnya dengan kelas kita sendiri, makanya dibaca eksplisit. -->
+<button {...$$restProps} class="btn variant-{variant} {$$props.class ?? ''}">
+	<slot />
+</button>
+```
+
+```svelte
+<!-- ✅ GAYA BARU (Svelte 5 runes) — Button.svelte -->
+<script>
+	// Klaim 'variant' dan 'class' secara eksplisit; sisanya tampung di 'rest'.
+	// Catatan: 'class' itu reserved word di JS, jadi rename jadi 'className'
+	// lewat sintaks destructuring 'class: className'.
+	let { variant = 'primary', class: className = '', children, ...rest } = $props();
+</script>
+
+<!-- {...rest} menggantikan {...$$restProps}; isinya identik secara konsep. -->
+<button {...rest} class="btn variant-{variant} {className}">
+	<!-- {@render children()} menggantikan <slot /> -->
+	{@render children()}
+</button>
+```
+
+```svelte
+<!-- Pemakaian di parent — sama persis untuk versi lama maupun baru -->
+<script>
+	import Button from './Button.svelte';
+</script>
+
+<!-- 'variant' & 'class' ditangani komponen; sisanya (type, onclick,
+     aria-label, disabled) "jatuh tembus" ke <button> di dalam. -->
+<Button variant="danger" class="lebar" type="submit"
+		aria-label="Hapus akun" onclick={() => alert('hapus!')} disabled={false}>
+	Hapus
+</Button>
+```
+
+Perhatikan: di versi lama, `class` ikut terbaca lewat `$$props.class`. Ada jebakan halus di sini — kalau kamu pakai `{...$$restProps}` LALU menulis `class="..."` setelahnya, atribut `class` terakhir menang, jadi urutannya penting. Di versi runes hal ini jadi lebih jelas karena `class` sudah kamu keluarkan dari `rest` secara eksplisit, sehingga tidak ada dua sumber `class` yang saling menimpa diam-diam.
+
+## 3. Coba sendiri
+
+Modul ini soal cara komponen membaca props, jadi paling pas dipahami lewat membaca kode pembungkus utuh, bukan playground satu-file. Di bawah ini komponen `<Field>` modern yang "meneruskan" semua atribut input asli — pelajari anotasinya baris per baris.
+
+```svelte
+<!-- Field.svelte (Svelte 5 runes) — input dengan label, sisanya diteruskan -->
+<script>
+	// Yang KITA pakai sendiri: 'label' dan 'id'.
+	// Yang ingin DITERUSKAN ke <input>: type, value, placeholder, oninput,
+	// required, maxlength, ... — semuanya masuk ke '...rest' tanpa perlu
+	// dideklarasikan satu-satu. Inilah pengganti $$restProps.
+	let { label, id, ...rest } = $props();
+</script>
+
+<div class="field">
+	<label for={id}>{label}</label>
+	<!-- {...rest} meneruskan semua atribut sisa ke input asli -->
+	<input {id} {...rest} />
+</div>
+```
+
+```svelte
+<!-- Pemakaian: atribut 'type', 'placeholder', 'required' jatuh tembus ke <input> -->
+<script>
+	import Field from './Field.svelte';
+	let email = $state('');
+</script>
+
+<Field
+	label="Email"
+	id="email"
+	type="email"
+	placeholder="kamu@contoh.com"
+	required
+	bind:value={email}
+/>
+
+<p>Nilai sekarang: {email}</p>
+```
+
+Kalau kamu menulis komponen ini gaya Svelte 4, isi `<script>`-nya cukup `export let label; export let id;` dan markup-nya `<input {id} {...$$restProps} />`. Hasil akhirnya identik — bedanya hanya `...rest` (eksplisit, JS standar) vs `$$restProps` (variabel ajaib). Untuk akses seluruh tas props sekaligus (padanan `$$props`), kamu bisa tulis `let allProps = $props();` lalu baca `allProps.label`, dst — tapi ini jarang diperlukan; biasanya destructuring lebih jelas.
+
+## 4. Latihan
+
+<Exercise title="Migrasikan komponen pembungkus dari $$restProps ke runes">
+
+Di bawah ini komponen `<Link>` gaya **Svelte 4** yang menambahkan kelas styling lalu meneruskan sisa atribut (`href`, `target`, `rel`, `onclick`, dll) ke elemen `<a>`. Tulis ulang sepenuhnya ke **Svelte 5 (runes)**. Yang harus kamu ubah:
+
+- `export let external` → `$props()` dengan default
+- `$$restProps` → rest destructuring `...rest`
+- `$$props.class` → keluarkan `class` lewat `class: className`
+- `<slot />` → `{@render children()}`
+
+```svelte
+<!-- ❌ Link.svelte (Svelte 4) -->
+<script>
+	export let external = false;
+</script>
+
+<a
+	{...$$restProps}
+	class="link {$$props.class ?? ''}"
+	target={external ? '_blank' : undefined}
+	rel={external ? 'noopener noreferrer' : undefined}
+>
+	<slot />
+</a>
+```
+
+{#snippet solution()}
+
+```svelte
+<!-- ✅ Link.svelte (Svelte 5 runes) -->
+<script>
+	// 'external' & 'class' kita klaim; 'children' untuk isi; '...rest'
+	// menampung href/onclick/dll yang tadinya $$restProps.
+	let { external = false, class: className = '', children, ...rest } = $props();
+</script>
+
+<a
+	{...rest}
+	class="link {className}"
+	target={external ? '_blank' : undefined}
+	rel={external ? 'noopener noreferrer' : undefined}
+>
+	{@render children()}
+</a>
+```
+
+Catatan: urutan penting. `{...rest}` ditaruh duluan, lalu `class`, `target`, `rel` ditulis sesudahnya supaya nilai yang kita hitung sendiri menang atas apa pun yang mungkin nyelip di `rest`. Kalau kamu ingin `href` wajib ada dan bertipe jelas, kamu juga boleh mengeluarkannya: `let { href, external = false, ...rest } = $props()` lalu `<a {href} {...rest} ...>`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>$$props</code> dan <code>$$restProps</code> adalah API <strong>Svelte 4</strong>. Di komponen <strong>runes (Svelte 5)</strong> keduanya <em>tidak ada</em> — menyebutnya akan error. Padanan modernnya bukan variabel khusus, melainkan rest destructuring biasa: <code>let &#123; variant, ...rest &#125; = $props()</code> menggantikan <code>$$restProps</code>, dan <code>let semua = $props()</code> menggantikan <code>$$props</code>. Compiler Svelte 5 masih bisa <em>menjalankan</em> komponen lama yang memakainya demi kompatibilitas, tapi jangan menulis kode baru dengan pola ini.
+</Callout>
+
+<Callout type="pitfall">
+Jangan meneruskan <code>&#123;...$$props&#125;</code> (atau seluruh <code>$props()</code>) ke elemen DOM. <code>$$props</code> berisi <em>juga</em> prop yang sudah kamu klaim (mis. <code>variant</code>, <code>size</code>) — kalau diteruskan ke <code>&lt;button&gt;</code>, kamu menempelkan atribut tak dikenal seperti <code>variant="..."</code> ke DOM, dan bisa menimpa nilai yang sudah kamu hitung. Untuk forwarding, hampir selalu yang kamu mau adalah <code>$$restProps</code> (lama) atau <code>...rest</code> (runes) — yakni "sisa" setelah prop yang kamu pakai dikeluarkan.
+</Callout>
+
+<Callout type="warning">
+Hati-hati urutan saat menggabung <code>class</code>. Menulis <code>&lt;button &#123;...$$restProps&#125; class="btn"&gt;</code> berarti: kalau parent mengoper <code>class</code>, ia ikut masuk lewat spread <em>lalu</em> ditimpa oleh <code>class="btn"</code> — kelas dari parent hilang. Karena itu pola lama membaca <code>$$props.class</code> manual dan menggabungnya. Di runes, keluarkan <code>class</code> secara eksplisit (<code>class: className</code>, sebab <code>class</code> reserved word) supaya tidak ada dua sumber yang saling menimpa diam-diam.
+</Callout>
+
+<Callout type="tip">
+Di Svelte 3/4, memakai <code>$$props</code>/<code>$$restProps</code> menimbulkan <strong>penalti performa kecil</strong> karena compiler harus melacak semua props secara dinamis — dokumentasi resmi menyarankan memakainya hanya bila perlu. Rest destructuring runes tidak menyembunyikan ongkos ini: yang kamu masukkan ke <code>...rest</code> terlihat jelas, dan IDE bisa memberi tipe yang benar. Saat migrasi, ini momen bagus untuk mengecek apakah kamu benar-benar butuh forwarding penuh, atau cukup beberapa prop saja.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '$$restProps', modern: 'let { a, b, ...rest } = $props()', note: 'Sisa props setelah yang dideklarasikan dikeluarkan = rest destructuring.' },
+	{ legacy: '<button {...$$restProps} />', modern: '<button {...rest} />', note: 'Forwarding atribut sisa ke elemen DOM, konsep identik.' },
+	{ legacy: '$$props', modern: 'let allProps = $props()', note: 'Seluruh objek props (jarang dibutuhkan utuh).' },
+	{ legacy: '$$props.class', modern: 'let { class: className } = $props()', note: "class itu reserved word; rename saat destructuring." },
+	{ legacy: '$$props.someProp', modern: 'let { someProp } = $props()', note: 'Akses prop tunggal → cukup destructure namanya.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-$$props-and-$$restProps" label="$$props and $$restProps — dokumentasi resmi (legacy)" />
+<DocsLink href="https://svelte.dev/docs/svelte/$props" label="$props() rune — padanan modern Svelte 5" />

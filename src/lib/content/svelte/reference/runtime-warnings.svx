@@ -1,0 +1,353 @@
+---
+title: Runtime warnings
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 18
+status: reference
+description: Daftar lengkap peringatan runtime Svelte 5 (hydration mismatch, ownership, equality proxy, dll) — arti, penyebab, dan cara memperbaikinya.
+docs: https://svelte.dev/docs/svelte/runtime-warnings
+keywords: [runtime warnings, hydration, ownership, state proxy, $inspect]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Ada tiga "saluran" pesan yang dikeluarkan Svelte, dan penting kamu bisa membedakannya supaya tidak panik salah tempat:
+
+| Saluran | Kapan muncul | Kategori |
+| --- | --- | --- |
+| **Compiler warnings** | saat `compile()` / build | masalah statis: a11y, CSS tak terpakai, sintaks meragukan |
+| **Runtime errors** | saat kode jalan | sesuatu yang **menggagalkan** eksekusi (throw) |
+| **Runtime warnings** | saat kode jalan | sesuatu yang **mencurigakan tapi tidak fatal** — hanya `console.warn` |
+
+Modul ini soal yang terakhir. **Runtime warning** adalah pesan yang Svelte tulis ke `console.warn` saat aplikasimu berjalan, ketika ia mendeteksi pola yang *kemungkinan besar* bug — tapi tidak cukup pasti (atau tidak cukup berbahaya) untuk menghentikan aplikasi. Aplikasi tetap jalan; Svelte cuma menepuk pundakmu sambil bilang "eh, yang ini biasanya nggak disengaja, lho".
+
+### Analogi: lampu indikator di dashboard mobil
+
+Bayangkan tiga jenis sinyal di mobil. **Compiler warning** itu seperti pemeriksaan saat servis di bengkel — mobil belum jalan, montir menemukan baut kendur. **Runtime error** itu seperti mesin mati total di tengah jalan — kamu tidak bisa lanjut. **Runtime warning** adalah **lampu kuning di dashboard**: mesin masih hidup, mobil masih melaju, tapi ada sesuatu yang sebaiknya kamu cek. Mengabaikan lampu kuning tidak langsung bikin celaka, tapi ia hampir selalu menandakan ada yang tidak beres di balik kap.
+
+### Dua hal yang wajib kamu tahu duluan
+
+1. **Hampir semua runtime warning hanya muncul di mode development (DEV).** Build production mu bersih dari pengecekan ini demi performa — Svelte tidak mau membebani bundle pengguna akhir dengan kode pendeteksi bug. Maka jangan pernah mengandalkan warning ini sebagai "validasi" di produksi; ia alat bantu *kamu* saat ngoding, bukan pengaman runtime untuk *user*.
+
+2. **Sebagian warning unik Svelte 5 karena `$state` itu sebuah Proxy.** Saat kamu menulis `let user = $state({ name: 'Sasa' })`, `user` bukan objek polos — ia objek yang dibungkus `Proxy` agar Svelte bisa mengintai pembacaan & penulisan field-nya. Pembungkusan inilah sumber beberapa warning paling membingungkan (`state_proxy_equality_mismatch`, `console_log_state`, `ownership_invalid_mutation`). Kalau kamu datang dari React, ini mirip kebingungan "kenapa `state` saya tampak aneh di console" — bedanya Svelte memberi tahu kamu secara eksplisit.
+
+Svelte mengelompokkan warning runtime jadi dua: **client warnings** (muncul di browser, terkait DOM/hydration/reactivity) dan **shared warnings** (bisa muncul di server maupun client). Bagian Contoh kode & Coba sendiri akan membedah yang paling sering kamu temui; tabel di bagian Ringkasan API memuat semuanya.
+
+## 2. Contoh kode
+
+Empat warning di bawah ini menyumbang ~80% kasus nyata. Kita lihat **cara memicunya** lalu **cara membenarkannya**.
+
+```svelte
+<!-- ❌ ownership_invalid_mutation -->
+<!-- Child.svelte: anak mengubah prop yang BUKAN miliknya -->
+<script>
+	// 'user' diterima dari parent. Tanpa bind:, prop ini "milik" parent,
+	// jadi anak tidak boleh memutasinya langsung.
+	let { user } = $props();
+</script>
+
+<!-- Saat tombol diklik, Svelte warn:
+     "Mutating unbound props is strongly discouraged.
+      Consider using bind:user={...} instead" -->
+<button onclick={() => (user.name = 'Budi')}>Ganti nama</button>
+```
+
+```svelte
+<!-- ✅ Perbaikan ownership_invalid_mutation: pilih SALAH SATU -->
+
+<!-- Opsi A — callback prop (aliran data satu arah, paling disarankan) -->
+<!-- Child.svelte -->
+<script>
+	let { user, onrename } = $props();
+</script>
+<button onclick={() => onrename('Budi')}>Ganti nama</button>
+
+<!-- Opsi B — $bindable, kalau dua-arah memang disengaja -->
+<!-- Child.svelte -->
+<script>
+	let { user = $bindable() } = $props();
+</script>
+<button onclick={() => (user.name = 'Budi')}>Ganti nama</button>
+<!-- lalu parent WAJIB menulis <Child bind:user={...} /> -->
+```
+
+```svelte
+<!-- ❌ state_proxy_equality_mismatch -->
+<script>
+	let items = $state([]);
+
+	function tambahLalCek(item) {
+		items.push(item);
+		// 'item' yang kamu oper adalah objek POLOS,
+		// tapi setelah masuk array $state, ia DIBUNGKUS jadi Proxy.
+		// Jadi item (polos) !== items[0] (proxy) → identitasnya beda.
+		console.log(items.includes(item)); // false! + warning
+	}
+</script>
+```
+
+```svelte
+<!-- ✅ state_proxy_equality_mismatch: bandingkan via field stabil, bukan identitas objek -->
+<script>
+	let items = $state([]);
+
+	function tambahLaluCek(item) {
+		items.push(item);
+		// Bandingkan dengan kunci yang stabil (mis. id), bukan referensi objek.
+		console.log(items.some((it) => it.id === item.id)); // true ✅
+	}
+</script>
+```
+
+```svelte
+<!-- ❌ console_log_state -->
+<script>
+	let user = $state({ name: 'Sasa', tags: ['a', 'b'] });
+	// Mencetak Proxy mentah: di console terlihat seperti Proxy(Object)
+	// dan isinya bisa "berubah" saat kamu expand belakangan.
+	console.log(user); // warning: console_log_state
+</script>
+```
+
+```svelte
+<!-- ✅ console_log_state: ambil snapshot polos, atau pakai $inspect -->
+<script>
+	let user = $state({ name: 'Sasa', tags: ['a', 'b'] });
+
+	// Sekali cetak: snapshot() mengubah proxy → objek polos (deep clone).
+	console.log($state.snapshot(user));
+
+	// Pelacakan berkelanjutan: $inspect otomatis log tiap kali user berubah.
+	$inspect(user);
+</script>
+```
+
+## 3. Coba sendiri
+
+Karena warning ini bergantung pada lingkungan (DOM, server, hydration) dan beberapa hanya bisa direproduksi di proyek SvelteKit asli, bagian ini memakai **contoh statis beranotasi**, bukan playground. Salin pola ini ke proyekmu dan buka DevTools untuk melihat warning-nya.
+
+### Hydration mismatch — penyebab paling umum
+
+`hydration_mismatch` muncul saat HTML yang dibuat server **tidak sama** dengan yang dibuat client saat pertama kali "dihidupkan" (hydrate). Svelte membandingkan keduanya; bila beda, ia membuang DOM server dan me-render ulang dari nol — mahal dan sering bikin tampilan "lompat".
+
+```svelte
+<!-- ❌ Sumber #1: nilai non-deterministik (beda tiap render) -->
+<script>
+	// Date.now() di server berbeda dengan di client → mismatch.
+	const sekarang = Date.now();
+</script>
+<p>{sekarang}</p>
+
+<!-- ✅ Perbaikan: hitung di onMount/$effect (client-only), bukan saat render awal -->
+<script>
+	let sekarang = $state(null);
+	$effect(() => {
+		sekarang = Date.now(); // hanya jalan di client, setelah hydrate
+	});
+</script>
+<p>{sekarang ?? 'memuat...'}</p>
+```
+
+```svelte
+<!-- ❌ Sumber #2: HTML tidak valid → browser "memperbaiki" DOM,
+     sehingga struktur client beda dengan string server. -->
+<p>
+	<!-- <div> TIDAK BOLEH di dalam <p>; browser menutup <p> paksa,
+	     struktur jadi tak terduga → hydration_mismatch -->
+	<div>Teks</div>
+</p>
+
+<!-- ✅ Perbaikan: pakai elemen yang valid secara nesting -->
+<div>
+	<div>Teks</div>
+</div>
+```
+
+<Callout type="tip">
+Saudara dekat <code>hydration_mismatch</code>: <code>hydration_attribute_changed</code> (atribut mis. <code>src</code> beda server vs client) dan <code>hydration_html_changed</code> (isi <code>&#123;@html ...&#125;</code> beda). Untuk keduanya, Svelte memakai nilai <strong>server</strong> dan mengabaikan nilai client. Kalau perubahan itu memang disengaja (mis. URL gambar yang tergantung <code>window</code>), set nilainya di dalam <code>$effect</code> setelah mount, bukan saat render awal.
+</Callout>
+
+### Ringkasan alur mendiagnosis warning
+
+```js
+// Resep umum saat melihat runtime warning di console:
+// 1. Baca KODE warning-nya (mis. "ownership_invalid_mutation") — itu kunci pencarian.
+// 2. Klik stack trace → temukan komponen & baris pemicunya.
+// 3. Cocokkan ke tabel di bawah: penyebab umum → perbaikan.
+// 4. Ingat: warning ini DEV-only. Kalau "hilang" di production,
+//    itu bukan berarti bug-nya hilang — pengecekannya saja yang dimatikan.
+```
+
+## 4. Ringkasan API
+
+### Client warnings — Hydration
+
+| Kode | Arti singkat | Penyebab umum | Cara perbaiki |
+| --- | --- | --- | --- |
+| `hydration_mismatch` | UI awal client tidak cocok dengan render server | nilai non-deterministik (`Date.now()`, `Math.random()`), HTML tidak valid, render kondisional yang beda server/client | samakan output server & client; pindahkan logika client-only ke `$effect`/`onMount`; perbaiki nesting HTML |
+| `hydration_attribute_changed` | atribut berubah antara render server & client; nilai client diabaikan | atribut dinamis (`src`, `href`) bergantung `window`/waktu | set nilai via `$effect` setelah mount, atau samakan nilainya |
+| `hydration_html_changed` | isi `{@html ...}` berbeda server vs client; nilai client diabaikan | HTML mentah dihitung berbeda di dua sisi | hasilkan HTML yang identik, atau update via `$effect` pasca-mount |
+| `hydratable_missing_but_expected` | dicari hydratable dengan key tertentu saat hydrate, tapi tidak ada | komponen hydratable ter-render di client tapi tidak di server | pastikan komponen ter-render sama di server & client |
+
+### Client warnings — Ownership & props
+
+| Kode | Arti singkat | Penyebab umum | Cara perbaiki |
+| --- | --- | --- | --- |
+| `ownership_invalid_mutation` | memutasi prop yang tidak di-`bind` | anak mengubah objek/prop milik parent tanpa relasi binding | pakai callback prop, atau tandai `$bindable` + `bind:` di parent |
+| `ownership_invalid_binding` | parent mengoper `bind:`, tapi pemilik tidak mendeklarasikannya sebagai binding | binding "menembus" beberapa lapis komponen tanpa `bind:` di tiap lapis | pasang `bind:` di setiap level hierarki, bukan hanya daun |
+| `binding_property_non_reactive` | `bind:` ke properti yang tidak reaktif | mengikat ke nilai yang bukan `$state`/bukan reaktif | jadikan sumbernya `$state` (atau prop `$bindable`) |
+| `event_handler_invalid` | handler event seharusnya berupa fungsi | prop handler menerima nilai non-fungsi (mis. hasil panggilan `onclick={fn()}`) | oper fungsi, bukan hasil pemanggilannya: `onclick={() => fn()}` |
+
+### Client warnings — State & reactivity
+
+| Kode | Arti singkat | Penyebab umum | Cara perbaiki |
+| --- | --- | --- | --- |
+| `state_proxy_equality_mismatch` | proxy `$state` dan nilai polos punya identitas berbeda; `===`/`!==` bisa menyesatkan | membandingkan objek polos dengan elemen yang sudah jadi proxy di dalam `$state` | bandingkan lewat kunci stabil (mis. `id`), atau pastikan kedua sisi sama-sama proxy / sama-sama polos |
+| `console_log_state` | `console.*` berisi proxy `$state` | mencetak `$state` mentah → tampil sebagai `Proxy`, isinya bisa menyesatkan | pakai `$state.snapshot(x)` (sekali) atau `$inspect(x)` (berkelanjutan) |
+| `assignment_value_stale` | assignment (mis. `??=`) bernilai sisi-kanan, bukan nilai field setelah assign | `obj.x ??= []` lalu langsung `.push()` di ekspresi yang sama | pisah jadi dua statement agar proxy state terbentuk dulu |
+| `state_proxy_unmount` | mencoba `unmount` sebuah state proxy, bukan komponen | membungkus hasil `mount()` dengan `$state(...)` | jangan bungkus dengan `$state`; pakai `$state.raw()` bila perlu reaktif |
+| `derived_inert` | membaca `$derived` milik effect yang sudah dihancurkan → nilai basi | `$derived` dibuat di dalam `$effect`, lalu diakses setelah effect mati | buat `$derived` di luar effect, atau gunakan `$effect.root` |
+| `await_reactivity_loss` | reaktivitas hilang saat membaca state setelah `await` | state dibaca di fungsi async setelah `await` dalam derived async | tangkap nilai state sebagai parameter sebelum `await` |
+| `await_waterfall` | derived async tidak langsung dibaca setelah resolve → waterfall tak perlu | beberapa `$derived` ber-`await` saling berurutan | buat promise dulu (tanpa await), baru await di derivation terpisah |
+| `legacy_recursive_reactive_block` | blok `$:` hasil migrasi membaca sekaligus menulis nilai reaktif yang sama | dependensi melingkar di blok reaktif lama | pisahkan pembacaan dan penulisan nilai tersebut |
+
+### Client warnings — DOM, transition & lifecycle
+
+| Kode | Arti singkat | Penyebab umum | Cara perbaiki |
+| --- | --- | --- | --- |
+| `select_multiple_invalid_value` | `value` pada `<select multiple>` bukan array | mengikat nilai non-array ke select multiple | pastikan `value` berupa array (atau `null`/`undefined`) |
+| `transition_slide_display` | transisi `slide` tidak bekerja benar untuk `display` tertentu | `slide` dipakai pada elemen `display: inline`/`table`/`contents` | ubah `display` ke `block`/`flex`/`grid` |
+| `invalid_raw_snippet_render` | fungsi `render` di `createRawSnippet` harus mengembalikan HTML satu elemen | mengembalikan banyak elemen / HTML tak valid | bungkus dalam satu elemen root |
+| `svelte_boundary_reset_noop` | fungsi `reset` `<svelte:boundary>` hanya efektif sekali | menyimpan referensi `reset` lalu memanggilnya berulang | panggil `reset` sekali per error; jangan simpan di luar boundary |
+| `lifecycle_double_unmount` | meng-`unmount` komponen yang tidak/sudah tidak ter-mount | memanggil `unmount()` dua kali atau pada komponen yang belum mount | lacak status mount; `unmount` hanya sekali |
+
+### Shared warnings (server & client)
+
+| Kode | Arti singkat | Penyebab umum | Cara perbaiki |
+| --- | --- | --- | --- |
+| `dynamic_void_element_content` | `<svelte:element this="...">` void tidak boleh punya konten | mengoper children ke elemen void (`input`, `br`, `hr`) | hapus konten anak dari elemen void |
+| `state_snapshot_uncloneable` | nilai tidak bisa di-clone `$state.snapshot`; nilai asli dikembalikan | snapshot berisi objek tak-clonable (elemen DOM, built-in tertentu) | tangani properti tak-clonable secara manual / pakai referensi raw |
+
+## 5. Latihan
+
+<Exercise title="Diagnosis & perbaiki tiga warning runtime">
+
+Komponen `<Profil>` di bawah memicu **tiga** runtime warning sekaligus. Sebutkan kode masing-masing warning, lalu tulis ulang komponennya supaya bersih. Petunjuk: perhatikan (1) cara `console.log`, (2) anak yang memutasi prop, (3) perbandingan identitas objek.
+
+```svelte
+<!-- ❌ Profil.svelte (memicu 3 warning) -->
+<script>
+	import Avatar from './Avatar.svelte';
+
+	let user = $state({ id: 1, name: 'Sasa', favorit: { id: 9 } });
+	let daftarFavorit = $state([{ id: 9 }, { id: 10 }]);
+
+	// (1) ???
+	console.log(user);
+
+	// (3) ???
+	function cekFavorit(item) {
+		return daftarFavorit.includes(item);
+	}
+</script>
+
+<!-- (2) Avatar mengubah user.name secara langsung di dalam dirinya -->
+<Avatar {user} />
+```
+
+```svelte
+<!-- Avatar.svelte (versi bermasalah) -->
+<script>
+	let { user } = $props();
+</script>
+<button onclick={() => (user.name = user.name.toUpperCase())}>Kapital</button>
+```
+
+{#snippet solution()}
+
+**Tiga warning yang dipicu:**
+
+1. `console_log_state` — `console.log(user)` mencetak proxy `$state` mentah.
+2. `ownership_invalid_mutation` — `Avatar` memutasi `user.name` padahal `user` milik `Profil` dan tidak di-`bind`.
+3. `state_proxy_equality_mismatch` — `daftarFavorit.includes(item)` membandingkan objek polos dengan elemen yang sudah jadi proxy di dalam `$state`.
+
+**Perbaikan:**
+
+```svelte
+<!-- ✅ Profil.svelte -->
+<script>
+	import Avatar from './Avatar.svelte';
+
+	let user = $state({ id: 1, name: 'Sasa', favorit: { id: 9 } });
+	let daftarFavorit = $state([{ id: 9 }, { id: 10 }]);
+
+	// (1) snapshot → objek polos yang aman dibaca di console
+	console.log($state.snapshot(user));
+	// (alternatif untuk pelacakan terus-menerus: $inspect(user))
+
+	// (3) bandingkan lewat kunci stabil, bukan identitas objek
+	function cekFavorit(item) {
+		return daftarFavorit.some((f) => f.id === item.id);
+	}
+</script>
+
+<!-- (2) oper callback; Avatar tidak lagi memutasi prop langsung -->
+<Avatar {user} onrename={(nama) => (user.name = nama)} />
+```
+
+```svelte
+<!-- ✅ Avatar.svelte -->
+<script>
+	// terima callback prop, panggil saat perlu mengubah nama
+	let { user, onrename } = $props();
+</script>
+<button onclick={() => onrename(user.name.toUpperCase())}>Kapital</button>
+```
+
+Kunci pelajarannya: dua dari tiga warning ini lahir karena `$state` adalah **Proxy**. Begitu kamu paham bahwa "objek yang masuk `$state` akan dibungkus", baik `console_log_state` maupun `state_proxy_equality_mismatch` jadi masuk akal — dan `ownership_invalid_mutation` mengajarimu menjaga arah aliran data tetap satu arah, persis prinsip "props read-only" yang sudah kamu kenal dari React.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Runtime warning <strong>hampir semuanya DEV-only</strong>. Saat warning "menghilang" di build production, jangan menyimpulkan bug-nya sudah beres — yang hilang hanyalah <em>pengecekannya</em>. Selesaikan akar masalahnya selagi di dev; jangan pernah mengandalkan warning ini sebagai validasi untuk pengguna akhir.
+</Callout>
+
+<Callout type="warning">
+<code>ownership_invalid_mutation</code> sering disalahpahami sebagai "dilarang total mengubah objek". Yang dilarang adalah anak memutasi prop yang <strong>bukan miliknya</strong>. Kamu boleh memutasi <code>$state</code> yang <em>dibuat</em> di komponen itu sendiri. Tiga jalan keluar yang sah: (a) callback prop (paling disarankan, aliran satu arah), (b) <code>$bindable</code> + <code>bind:</code> di parent untuk dua-arah yang disengaja, atau (c) buat salinan lokal dengan <code>$state.snapshot()</code> bila kamu cuma butuh nilainya.
+</Callout>
+
+<Callout type="pitfall">
+<code>state_proxy_equality_mismatch</code> muncul karena objek yang masuk ke <code>$state</code> <strong>dibungkus jadi Proxy</strong>, sehingga identitasnya (<code>===</code>) berubah. Akibatnya <code>array.includes(objAsli)</code> atau <code>array.indexOf(objAsli)</code> bisa mengembalikan <code>false</code> walau "isinya" ada. Jangan bandingkan dengan referensi objek; bandingkan lewat <strong>field stabil</strong> seperti <code>id</code> menggunakan <code>some()</code>/<code>find()</code>.
+</Callout>
+
+<Callout type="tip">
+Untuk meng-inspeksi <code>$state</code>, hentikan kebiasaan <code>console.log(state)</code> langsung. Pakai <code>$state.snapshot(x)</code> untuk satu kali cetak (mengubah proxy jadi objek polos), atau <code>$inspect(x)</code> untuk log otomatis tiap kali nilai berubah — keduanya menghilangkan <code>console_log_state</code> sekaligus memberi output yang jujur.
+</Callout>
+
+<Callout type="legacy">
+<code>legacy_recursive_reactive_block</code> khusus muncul pada kode hasil migrasi dari Svelte 4: sebuah blok <code>$:</code> yang sekaligus <em>membaca</em> dan <em>menulis</em> nilai reaktif yang sama, sehingga berisiko update rekursif. Ini sinyal untuk segera berpindah ke runes — pisahkan nilai turunan ke <code>$derived</code> dan efek samping ke <code>$effect</code>, lalu hilangkan blok <code>$:</code> tersebut.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'console.log($state)', modern: 'console.log($state.snapshot(x)) / $inspect(x)', note: 'Hindari console_log_state; cetak objek polos.' },
+	{ legacy: 'arr.includes(objAsli)', modern: 'arr.some((it) => it.id === obj.id)', note: 'Hindari state_proxy_equality_mismatch; banding via id.' },
+	{ legacy: 'anak memutasi prop langsung', modern: 'callback prop / $bindable + bind:', note: 'Hindari ownership_invalid_mutation.' },
+	{ legacy: 'blok $: baca+tulis nilai sama', modern: '$derived (nilai) + $effect (efek)', note: 'Hindari legacy_recursive_reactive_block.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/runtime-warnings" label="Svelte — Runtime warnings (daftar resmi)" />
+<DocsLink href="https://svelte.dev/docs/svelte/runtime-errors" label="Svelte — Runtime errors (yang fatal/throw)" />
+<DocsLink href="https://svelte.dev/docs/svelte/compiler-warnings" label="Svelte — Compiler warnings (saat build)" />

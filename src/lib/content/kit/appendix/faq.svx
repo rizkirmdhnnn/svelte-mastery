@@ -1,0 +1,281 @@
+---
+title: Frequently asked questions
+product: kit
+section: appendix
+sectionTitle: Appendix
+sectionOrder: 6
+order: 1
+status: stable
+description: Kumpulan pertanyaan yang paling sering muncul saat membangun aplikasi SvelteKit — library yang butuh browser, HMR, alias path, environment variables, database, dan deployment.
+docs: https://svelte.dev/docs/kit/faq
+keywords: [faq, sveltekit, env, alias, hmr, deployment]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+FAQ bukan "materi baru" — ia adalah peta dari pertanyaan-pertanyaan yang **hampir pasti kamu tabrak** begitu mulai membangun aplikasi SvelteKit sungguhan. Sebagian besar bukan soal "fitur apa yang belum kupelajari", tapi soal "kenapa hal yang biasa kulakukan di React/Vue kok malah error di sini?". Modul ini mengumpulkan jawaban-jawaban itu, lalu menjelaskan **kenapa** jawabannya begitu — bukan sekadar resep tempel.
+
+### Analogi: satu garis pemisah yang menjelaskan 80% pertanyaan
+
+Bayangkan aplikasi SvelteKit punya **dua "ruangan"** yang dipisahkan satu tembok: ruangan **server** (Node/edge yang merender HTML) dan ruangan **browser** (tempat HTML jadi hidup setelah hydration). Tembok ini transparan — kamu menulis kode di file yang sama — tapi tidak semua benda boleh menyeberang.
+
+- `window`, `document`, `localStorage` hanya ada di ruangan browser. Memanggilnya saat kode jalan di server bikin error `document is not defined`.
+- Rahasia (API key, koneksi DB) harus tetap di ruangan server. Kalau bocor ke browser, siapa pun bisa membacanya lewat *view source*.
+
+Kalau kamu hafal di mana letak tembok ini, mayoritas pertanyaan di FAQ langsung terjawab sendiri: "boleh tidak aku panggil `document` di sini?", "kenapa `DATABASE_URL`-ku undefined?", "kenapa key-ku terlihat di bundle?". Semua adalah pertanyaan **"benda ini ada di ruangan yang mana?"**. Pembaca dari React akan kenal pola ini dari batas Server Component vs Client Component di Next.js; di Vue/Nuxt ini batas `server/` vs kode universal. Idenya sama, hanya namanya beda.
+
+### Tabel ringkas: pertanyaan tersering dan jawabannya
+
+Anggap tabel ini sebagai indeks. Tiap baris dibahas lebih dalam di bagian berikutnya.
+
+| Pertanyaan | Jawaban singkat |
+| --- | --- |
+| Pakai library yang butuh `window`/`document`? | Bungkus di `if (browser)` atau `onMount`, atau pakai dynamic `import()` agar hanya jalan di klien. |
+| HMR tidak jalan / komponen reload penuh terus? | HMR sudah otomatis lewat Vite + `@sveltejs/vite-plugin-svelte`; biasanya masalahnya error sintaks atau state yang sengaja di-reset. |
+| Cara setup path alias? | `kit.alias` di `svelte.config.js`. `$lib` (menunjuk `src/lib`) sudah bawaan. |
+| Environment variables? | 4 modul: `$env/static/*` dan `$env/dynamic/*`. Prefix `PUBLIC_` = boleh ke browser; tanpa prefix = khusus server. |
+| Deploy ke Vercel/Netlify/Node/Cloudflare? | Ganti **adapter** di `svelte.config.js`. Kode aplikasi tidak berubah. |
+| Pakai backend/API server lain? | Pakai `fetch` dari argumen `load` (`event.fetch`), atau proxy lewat `server.proxy` Vite saat dev. |
+| Pakai database? | Taruh query di kode server (`+page.server.js`, `$lib/server`), bikin singleton koneksi. |
+| Yarn 2/3 (PnP) gagal build? | Set `nodeLinker: node-modules` di `.yarnrc.yml`. |
+| Pakai middleware? | Dev: plugin Vite (`configureServer`). Prod: handler di depan `adapter-node`. |
+| View Transitions API? | Panggil `document.startViewTransition` di dalam `onNavigate`. |
+| Ambil data dari `package.json`? | `import pkg from './package.json' with { type: 'json' }`. |
+| Error saat meng-import sebuah package? | Cek pemaketannya di publint.dev; sering karena `exports`/ESM yang salah. |
+
+## 2. Contoh kode
+
+Tiga "ruangan" pertanyaan yang paling sering: **environment variables**, **alias**, dan **library yang cuma jalan di browser**. Ini contoh konkret tiap-tiapnya.
+
+### Environment variables — empat varian, satu aturan prefix
+
+```js
+// src/routes/+page.server.js  ->  jalan di SERVER saja, jadi aman untuk rahasia.
+
+// STATIC + PRIVATE: nilainya dibaca saat BUILD lalu di-inline ke bundle server.
+// Tidak boleh ada prefix PUBLIC_, dan tidak bisa di-import dari kode klien.
+import { DATABASE_URL } from '$env/static/private';
+
+// DYNAMIC + PRIVATE: dibaca saat RUNTIME (proses server hidup), bukan saat build.
+// Pas untuk nilai yang beda tiap deploy/host tanpa harus build ulang.
+import { env } from '$env/dynamic/private';
+
+export function load() {
+	connect(DATABASE_URL);          // string, di-inline saat build
+	const token = env.SECRET_TOKEN; // dibaca dari process.env saat request
+	// ...
+}
+```
+
+```svelte
+<!-- src/routes/+page.svelte  ->  ikut terkirim ke BROWSER.
+     Hanya variabel berprefix PUBLIC_ yang boleh di-import di sini. -->
+<script>
+	// STATIC + PUBLIC: dibaca saat build, aman dipajang di klien.
+	import { PUBLIC_API_BASE } from '$env/static/public';
+
+	// DYNAMIC + PUBLIC: versi runtime-nya (boleh klien + server).
+	import { env } from '$env/dynamic/public';
+</script>
+
+<p>API: {PUBLIC_API_BASE}</p>
+<p>Versi: {env.PUBLIC_APP_VERSION}</p>
+```
+
+Aturannya cuma satu yang perlu dihafal: **prefix `PUBLIC_` menentukan boleh-tidaknya menyeberang tembok ke browser.** Sisanya pilihan `static` (cepat, dibaca saat build, di-tree-shake) vs `dynamic` (fleksibel, dibaca saat runtime). Prefix ini bisa diubah lewat `kit.env.publicPrefix` / `privatePrefix` di config kalau perlu.
+
+### Alias path — biar import tidak penuh `../../../`
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	kit: {
+		adapter: adapter(),
+		alias: {
+			// '$lib' SUDAH ada bawaan (menunjuk src/lib) — tak perlu didaftarkan.
+			// Tambahan kustom:
+			'@components': 'src/lib/components',  // satu folder
+			'@utils/*': 'src/lib/utils/*'         // pola wildcard
+		}
+	}
+};
+
+export default config;
+```
+
+```js
+// Sekarang di mana pun:
+import Button from '@components/Button.svelte';
+import { format } from '@utils/date';
+// SvelteKit otomatis menambahkan alias ini ke Vite DAN ke konfigurasi TypeScript
+// (lewat .svelte-kit/tsconfig.json), jadi editor & type-check ikut mengerti.
+```
+
+### Library yang butuh `window` / `document`
+
+```svelte
+<script>
+	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
+
+	let chart;
+
+	onMount(async () => {
+		// onMount HANYA jalan di browser setelah komponen ter-mount,
+		// jadi document/window dijamin ada di sini.
+		// Dynamic import menunda load library sampai di klien
+		// -> library yang menyentuh window saat di-import tidak meledak di server.
+		const { Chart } = await import('chart.js/auto');
+		chart = new Chart(/* ... */);
+	});
+
+	// Kalau cuma butuh cek cepat di luar onMount:
+	const lebar = browser ? window.innerWidth : 0; // aman: di server -> 0
+</script>
+```
+
+## 3. Coba sendiri
+
+Modul ini butuh server (env, load, adapter) dan tidak bisa dijalankan di live playground browser. Sebagai gantinya, ini beberapa pola jawaban-FAQ yang sering kepakai, beranotasi.
+
+### Memakai backend / API server lain
+
+```js
+// src/routes/produk/+page.js
+// Pakai `fetch` dari argumen load (event.fetch), BUKAN fetch global.
+// Kenapa? event.fetch ikut meneruskan cookie/credential saat SSR,
+// bisa memanggil route internal tanpa URL absolut, dan hasilnya
+// otomatis "diserap" ke HTML supaya browser tidak fetch ulang saat hydration.
+export async function load({ fetch }) {
+	const res = await fetch('https://api.contoh.com/produk');
+	return { produk: await res.json() };
+}
+```
+
+```js
+// vite.config.js  ->  proxy saat DEV untuk menghindari CORS / sembunyikan host backend.
+export default {
+	server: {
+		proxy: {
+			'/api': 'http://localhost:8080' // /api/* diteruskan ke backend lokal
+		}
+	}
+};
+```
+
+### Database: kode-nya harus tetap di sisi server
+
+```js
+// src/lib/server/db.js
+// Map ke nama folder "server": apa pun di src/lib/server TIDAK BOLEH
+// di-import oleh kode klien — SvelteKit akan menggagalkan build kalau nekat.
+// Bikin SATU koneksi (singleton) yang dipakai ulang antar request.
+import { DATABASE_URL } from '$env/static/private';
+import { createPool } from 'some-db-driver';
+
+export const db = createPool(DATABASE_URL);
+```
+
+```js
+// src/routes/users/+page.server.js  ->  aman pakai db di sini.
+import { db } from '$lib/server/db';
+
+export async function load() {
+	const users = await db.query('SELECT id, name FROM users');
+	return { users };
+}
+```
+
+### View Transitions saat navigasi
+
+```js
+// src/routes/+layout.svelte (di dalam <script>)
+import { onNavigate } from '$app/navigation';
+
+onNavigate((navigation) => {
+	// Lewati di browser yang belum dukung API-nya.
+	if (!document.startViewTransition) return;
+
+	return new Promise((resolve) => {
+		document.startViewTransition(async () => {
+			resolve();                 // izinkan transition mulai meng-capture
+			await navigation.complete; // tunggu navigasi SvelteKit selesai
+		});
+	});
+});
+```
+
+<Callout type="tip">
+Soal HMR: kamu hampir tidak perlu mengonfigurasi apa-apa. SvelteKit memakai Vite + <code>@sveltejs/vite-plugin-svelte</code> yang sudah membawa Hot Module Replacement. Saat <code>npm run dev</code>, simpan file komponen dan perubahan langsung tertukar tanpa reload penuh, sambil berusaha mempertahankan state. Kalau HMR "tidak jalan", penyebab tersering bukan konfigurasi: ada error kompilasi yang memaksa full reload, atau kamu memang me-reset state lewat module reload. Cek terminal/console dulu sebelum mengutak-atik config.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Diagnosa: ada di ruangan yang mana?">
+Untuk tiap kasus, tentukan apa yang salah dan perbaikannya. Pakai prinsip "benda ini ada di ruangan server atau browser?".
+
+1. Sebuah `+page.svelte` meng-import library peta yang langsung membaca `window.devicePixelRatio` saat di-import. Saat dijalankan, muncul error `window is not defined` di terminal (server), padahal di browser baik-baik saja sebelum SSR.
+2. Developer menaruh `STRIPE_SECRET_KEY` di `.env` lalu meng-import-nya lewat `$env/static/public` agar "gampang dipakai di mana saja". Build gagal / nilainya `undefined`.
+3. Sebuah `load` di `+page.js` memanggil `fetch('/api/data')` memakai `fetch` global (bukan dari argumen). Saat SSR, request gagal karena URL relatif.
+
+{#snippet solution()}
+
+```text
+Jawaban acuan
+─────────────
+
+1. Library menyentuh window saat DI-IMPORT, jadi crash di ruangan server.
+   Fix: tunda load-nya ke browser. Pakai dynamic import di dalam onMount:
+       onMount(async () => { const L = await import('library-peta'); ... });
+   atau bungkus dengan `if (browser)`. Jangan import statis di top-level.
+
+2. Salah ruangan + salah prefix. SECRET_KEY adalah RAHASIA -> tidak boleh
+   menyeberang ke browser. $env/static/public hanya menerima variabel
+   berprefix PUBLIC_, dan kalaupun bisa, mengekspos secret = bocor ke
+   view-source. Fix: namai TANPA prefix PUBLIC_ dan import via
+   $env/static/private (atau $env/dynamic/private), hanya dari kode server
+   (+page.server.js / $lib/server).
+
+3. fetch global tidak tahu origin saat SSR, jadi URL relatif '/api/data'
+   tak punya host. Fix: pakai fetch dari argumen load:
+       export async function load({ fetch }) {
+         const res = await fetch('/api/data'); // event.fetch: paham origin
+         return { data: await res.json() };
+       }
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Rahasia bocor lewat prefix yang salah.</strong> Apa pun yang berprefix <code>PUBLIC_</code> dan di-import lewat <code>$env/static/public</code> / <code>$env/dynamic/public</code> <em>memang dirancang</em> untuk ikut ke bundle browser — artinya terbaca siapa saja lewat <em>view source</em>. Jangan pernah memberi prefix <code>PUBLIC_</code> pada API key, secret, atau connection string. Kalau ragu: rahasia selalu tanpa prefix + di-import via <code>/private</code> + hanya dari kode server.
+</Callout>
+
+<Callout type="warning">
+<strong>"Works on my machine" karena lupa SSR.</strong> Kode yang menyentuh <code>window</code>, <code>document</code>, atau <code>localStorage</code> di top-level <code>&lt;script&gt;</code> akan jalan mulus saat navigasi klien, tapi meledak (<code>document is not defined</code>) saat halaman dirender pertama kali di server. Selalu pindahkan akses browser-API ke dalam <code>onMount</code> atau jaga dengan <code>if (browser)</code> dari <code>$app/environment</code>.
+</Callout>
+
+<Callout type="tip">
+<strong>Error saat meng-import sebuah package?</strong> Sebelum menyalahkan SvelteKit, tempel nama package ke <a href="https://publint.dev/" target="_blank" rel="noreferrer">publint.dev</a>. Banyak error import berasal dari pemaketan library yang tidak rapi (field <code>exports</code> salah, mencampur ESM/CJS, atau mendistribusikan <code>.svelte</code> yang sudah dikompilasi). Komponen Svelte idealnya didistribusikan sebagai file <code>.svelte</code> mentah berbasis ESM.
+</Callout>
+
+<Callout type="legacy">
+Di Vite/React lama kamu mungkin terbiasa <code>import.meta.env.VITE_FOO</code> atau <code>process.env.FOO</code>. Di SvelteKit, <strong>jalur resmi</strong> adalah modul <code>$env/*</code> karena ia mengerti batas server/klien dan menolak kebocoran rahasia saat build. <code>process.env</code> tetap ada di sisi server, tapi tidak aman dijadikan kebiasaan untuk nilai yang mungkin terbawa ke klien — pakai <code>$env/*</code> sebagai default.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/faq" label="SvelteKit — Frequently asked questions (daftar lengkap)" />
+<DocsLink href="https://svelte.dev/docs/kit/$env-static-private" label="SvelteKit — $env modules (static/dynamic, private/public)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration" label="SvelteKit — Configuration (kit.alias, kit.env, adapter)" />

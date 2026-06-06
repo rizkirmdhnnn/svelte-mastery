@@ -1,0 +1,368 @@
+---
+title: "bind:"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 13
+status: stable
+description: Two-way binding di Svelte 5 — menyambungkan DOM dan state dua arah lewat bind:value, checked, group, files, this, prop $bindable, binding dimensi, dan function bindings.
+docs: https://svelte.dev/docs/svelte/bind
+keywords: [bind, two-way binding, bindable, group, clientWidth]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Biasanya data di Svelte mengalir **satu arah**: dari variabel `$state` ke DOM. Kamu menulis `value={name}`, dan setiap kali `name` berubah, isi input ikut diperbarui. Tapi arah sebaliknya — ketika user mengetik di input, apakah `name` ikut berubah? Tidak. Atribut biasa hanya mendorong data ke layar; dia tidak punya "kabel balik".
+
+`bind:` adalah directive yang **memasang kabel balik itu**. Begitu kamu tulis `bind:value={name}`, dua hal terjadi sekaligus:
+
+1. Nilai `name` dikirim ke DOM (sama seperti `value={name}`).
+2. Ketika user mengubah input, Svelte menulis nilai baru kembali ke `name` untukmu.
+
+Analogi yang paling pas: bayangkan `value={name}` itu seperti **siaran TV** — stasiun (state) mengirim gambar ke layar (DOM), tapi layar tidak bisa membalas. Sedangkan `bind:value={name}` itu seperti **panggilan telepon**: kedua sisi bisa bicara dan mendengar. Kalau salah satu sisi mengubah sesuatu, sisi lain langsung tahu.
+
+**Kenapa ini ada?** Karena pola "tampilkan nilai + tangkap perubahan + simpan balik" muncul di hampir semua form. Kalau ditulis manual setiap kali, kamu akan mengulang event handler yang sama berkali-kali. `bind:` adalah jalan pintas resmi untuk pola tersebut. Di balik layar Svelte tetap memasang event listener (`input`, `change`, dll.) — `bind:` hanya menulisnya untukmu dengan cara yang tepat sesuai jenis elemen.
+
+Buat yang datang dari React/Vue, peta mentalnya begini:
+
+- **React**: tidak ada two-way binding bawaan. Kamu rakit sendiri lewat `value={x}` + `onChange={e => setX(e.target.value)}`. Eksplisit, tapi verbose.
+- **Vue**: `v-model="x"` — ini padanan terdekat `bind:value`. Vue juga memilih event yang tepat per jenis input.
+- **Svelte**: `bind:` adalah **satu pola seragam** yang berlaku untuk banyak target — bukan cuma `value`, tapi juga `checked`, `group`, `files`, ukuran elemen, bahkan referensi DOM dan prop komponen. Sekali paham polanya, semuanya konsisten.
+
+Satu aturan penting yang menentukan segalanya: **target `bind:` harus bisa ditulisi**. Artinya harus berupa variabel `$state`, properti dari objek state, atau prop yang ditandai `$bindable()`. Kamu tidak bisa `bind:` ke `$derived` atau ke konstanta — karena tidak ada wadah untuk menampung nilai yang dipantulkan balik dari DOM.
+
+<Callout type="tip">
+Cara cepat memutuskan: kalau kamu hanya perlu <strong>menampilkan</strong> nilai, pakai atribut biasa (<code>value=&#123;x&#125;</code>). Kalau elemen itu juga bisa <strong>diubah user</strong> dan kamu ingin state ikut berubah, pakai <code>bind:</code>. Jangan refleks memakai <code>bind:</code> di mana-mana — ia hanya perlu saat arah balik benar-benar dibutuhkan.
+</Callout>
+
+## 2. Contoh kode
+
+### `bind:value`, `bind:checked`, `bind:group`
+
+Ketiganya menangani input form paling umum. Perhatikan bagaimana Svelte memilih perilaku yang tepat sesuai jenis input.
+
+```svelte
+<script>
+	let name = $state('');
+	let agree = $state(false);
+	let age = $state(20);          // input number/range -> nilai dikonversi ke number
+	let flavor = $state('cokelat'); // satu pilihan dari radio group
+	let toppings = $state([]);      // banyak pilihan dari checkbox group -> array
+</script>
+
+<!-- bind:value: teks dua arah -->
+<input bind:value={name} placeholder="Nama" />
+
+<!-- type number/range: Svelte otomatis konversi string DOM -> number.
+     Input kosong/invalid menjadi undefined. -->
+<input type="number" bind:value={age} />
+
+<!-- bind:checked: untuk checkbox boolean tunggal -->
+<label><input type="checkbox" bind:checked={agree} /> Saya setuju</label>
+
+<!-- bind:group pada radio: semua radio berbagi satu variabel,
+     yang terpilih = value radio aktif -->
+<label><input type="radio" bind:group={flavor} value="cokelat" /> Cokelat</label>
+<label><input type="radio" bind:group={flavor} value="vanila" /> Vanila</label>
+
+<!-- bind:group pada checkbox: variabel jadi ARRAY berisi value yang dicentang -->
+<label><input type="checkbox" bind:group={toppings} value="keju" /> Keju</label>
+<label><input type="checkbox" bind:group={toppings} value="meses" /> Meses</label>
+
+<p>Halo {name} ({age} th). Rasa: {flavor}. Topping: {toppings.join(', ')}</p>
+```
+
+<Callout type="warning">
+<code>bind:group</code> hanya bekerja kalau semua input berada di <strong>komponen Svelte yang sama</strong>. Kalau radio-radio itu kamu pecah ke komponen anak, mekanisme group tidak akan menyatukan mereka — kamu perlu pendekatan lain (mis. prop callback).
+</Callout>
+
+### `bind:files` dan `bind:this`
+
+```svelte
+<script>
+	let files = $state();   // akan berisi FileList
+	let canvas = $state();  // referensi ke node <canvas> DOM
+
+	$effect(() => {
+		// canvas undefined sampai komponen ter-mount -> akses di dalam effect
+		const ctx = canvas.getContext('2d');
+		ctx.fillRect(10, 10, 50, 50);
+	});
+</script>
+
+<!-- bind:files: ikat ke FileList input bertipe file (readonly dari sisi user).
+     Untuk mengubah secara programatik, kamu harus pakai DataTransfer,
+     bukan langsung menulis ke FileList. -->
+<input type="file" bind:files multiple />
+{#if files}
+	<p>{files.length} berkas dipilih</p>
+{/if}
+
+<!-- bind:this: dapatkan node DOM asli, berguna untuk integrasi imperatif
+     (canvas, fokus, library pihak ketiga). -->
+<canvas bind:this={canvas} width="200" height="100"></canvas>
+```
+
+<Callout type="pitfall">
+Nilai <code>bind:this</code> adalah <code>undefined</code> sampai komponen selesai mount. Jangan mengaksesnya saat inisialisasi (di top-level <code>&lt;script&gt;</code>); akses di dalam <code>$effect</code> atau di event handler — saat itu node DOM-nya sudah pasti ada.
+</Callout>
+
+### `bind:` ke prop komponen (`$bindable`)
+
+`bind:` tidak terbatas pada elemen HTML. Kamu bisa `bind:` ke prop komponen anak — tapi berbeda dari React/Vue, di Svelte ini bersifat **opt-in**: prop tersebut wajib ditandai `$bindable()` di anak, agar alur data tetap jelas dan tidak ada anak yang diam-diam menulisi state induk.
+
+```svelte
+<!-- TextField.svelte (anak) -->
+<script>
+	// $bindable('') = prop boleh di-bind dari parent, default '' bila tidak.
+	let { value = $bindable('') } = $props();
+</script>
+
+<input bind:value placeholder="dari dalam komponen anak" />
+```
+
+```svelte
+<!-- App.svelte (induk) -->
+<script>
+	import TextField from './TextField.svelte';
+	let nama = $state('Rizki');
+</script>
+
+<!-- Perubahan di dalam TextField memantul balik ke variabel nama -->
+<TextField bind:value={nama} />
+<p>Induk melihat: {nama}</p>
+```
+
+### Binding dimensi: `bind:clientWidth` & teman-teman
+
+Setiap elemen yang terlihat mendukung binding ukuran **readonly** yang diukur dengan `ResizeObserver`. Berguna untuk layout responsif berbasis JS tanpa menulis observer manual.
+
+```svelte
+<script>
+	let w = $state(0);
+	let h = $state(0);
+</script>
+
+<!-- Svelte memasang ResizeObserver; w & h selalu sinkron dengan ukuran div.
+     Tersedia juga: clientHeight, offsetWidth, offsetHeight,
+     contentRect, contentBoxSize, borderBoxSize, devicePixelContentBoxSize. -->
+<div bind:clientWidth={w} bind:clientHeight={h} class="box">
+	Ukuran box: {w}px x {h}px
+</div>
+```
+
+<Callout type="warning">
+Elemen dengan <code>display: inline</code> tidak punya width/height yang bisa diamati <code>ResizeObserver</code>, jadi binding dimensinya akan tetap 0. Ubah ke <code>inline-block</code>, <code>block</code>, atau <code>flex</code> dulu.
+</Callout>
+
+### Function bindings (Svelte 5.9+): validasi & transformasi di tengah jalan
+
+Kadang kamu ingin **mencegat** nilai sebelum disimpan — misalnya memaksa huruf kecil, memangkas spasi, atau memvalidasi. Sejak Svelte 5.9 kamu bisa memberi pasangan `get` dan `set` ke `bind:`.
+
+```svelte
+<script>
+	let email = $state('');
+	let width = $state(0);
+</script>
+
+<!-- bind:value={get, set}:
+     get () => nilai yang dikirim ke DOM
+     set (v) => dipanggil saat DOM berubah; di sinilah kamu transformasi -->
+<input
+	bind:value={
+		() => email,
+		(v) => (email = v.toLowerCase().trim())
+	}
+/>
+
+<!-- Untuk binding readonly (mis. dimensi), set get ke null,
+     lalu set jadi tempat menerima nilai. -->
+<div bind:clientWidth={null, (v) => (width = v)}>Lebar: {width}px</div>
+```
+
+## 3. Coba sendiri
+
+Mainkan playground ini: ketik di input (perhatikan transformasi huruf kecil lewat function binding), centang checkbox, pilih radio, dan resize jendela untuk melihat binding dimensi bekerja.
+
+<Playground code={`<script>
+  let name = $state('Rizki');
+  let big = $state(false);
+  let flavor = $state('cokelat');
+  let toppings = $state([]);
+  let w = $state(0);
+
+  // function binding: paksa huruf kecil saat user mengetik
+  function getName() { return name; }
+  function setName(v) { name = v.toLowerCase(); }
+</script>
+
+<input bind:value={getName, setName} placeholder="ketik (otomatis lowercase)" />
+
+<label>
+  <input type="checkbox" bind:checked={big} />
+  Perbesar teks
+</label>
+
+<p class={{ big }}>Halo, {name}!</p>
+
+<fieldset>
+  <legend>Rasa (radio - satu pilihan)</legend>
+  <label><input type="radio" bind:group={flavor} value="cokelat" /> Cokelat</label>
+  <label><input type="radio" bind:group={flavor} value="vanila" /> Vanila</label>
+</fieldset>
+
+<fieldset>
+  <legend>Topping (checkbox - banyak pilihan)</legend>
+  <label><input type="checkbox" bind:group={toppings} value="keju" /> Keju</label>
+  <label><input type="checkbox" bind:group={toppings} value="meses" /> Meses</label>
+</fieldset>
+
+<p>Rasa: {flavor} | Topping: {toppings.join(', ') || '(kosong)'}</p>
+
+<div bind:clientWidth={w} class="box">Lebar box ini: {w}px (resize jendela)</div>
+
+<style>
+  .big { font-size: 1.6rem; font-weight: bold; }
+  .box { padding: 0.75rem; background: #eef; border-radius: 6px; }
+  fieldset { margin: 0.5rem 0; }
+</style>`} />
+
+<Callout type="tip">
+Di playground, function binding ditulis <code>bind:value=&#123;getName, setName&#125;</code> memakai fungsi bernama agar gampang dibaca. Di file <code>.svelte</code> sungguhan kamu bebas pakai bentuk inline arrow seperti contoh di bagian sebelumnya — keduanya identik.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Two-way binding input"
+	svelte={`<script>
+  let text = $state('');
+</script>
+
+<input bind:value={text} />
+<p>{text}</p>`}
+	react={`function Field() {
+  const [text, setText] = useState('');
+  return (
+    <>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <p>{text}</p>
+    </>
+  );
+}`}
+	vue={`<script setup>
+import { ref } from 'vue'
+const text = ref('')
+</script>
+
+<template>
+  <input v-model="text" />
+  <p>{{ text }}</p>
+</template>`}
+	diff={{ react: [4, 5, 6, 7], vue: [7] }}
+	note="React tidak punya two-way binding bawaan: kamu pasang sendiri kabel state->DOM (value) dan DOM->state (onChange). Eksplisit dan fleksibel, tapi verbose. Vue v-model dan Svelte bind:value sama-sama menyatukan dua arah dalam satu atribut. Bedanya: di Svelte, bind: adalah satu pola seragam yang juga berlaku untuk checked, group, files, this, dimensi (clientWidth), dan prop komponen ($bindable) — bukan fitur khusus input saja."
+/>
+
+## 5. Latihan
+
+<Exercise title="Form profil dengan validasi & ukuran live">
+Buat satu komponen Svelte 5 dengan:
+
+1. `<input>` teks untuk `username`, di-bind dua arah. Pakai **function binding** agar input selalu disimpan tanpa spasi di ujung (`trim`) dan dalam huruf kecil.
+2. Checkbox `bind:checked` untuk `setuju` (boolean).
+3. Radio group `bind:group` untuk memilih `peran` (`'admin'` atau `'member'`).
+4. Sebuah box dengan `bind:clientWidth` yang menampilkan lebarnya sendiri secara live.
+5. Tombol "Simpan" yang `disabled` selama `username` kosong **atau** `setuju` masih `false`. Pakai `$derived` untuk menghitung kondisi `siap`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let username = $state('');
+	let setuju = $state(false);
+	let peran = $state('member');
+	let lebar = $state(0);
+
+	// turunan: siap kalau username terisi DAN sudah setuju
+	let siap = $derived(username.length > 0 && setuju);
+</script>
+
+<!-- function binding: simpan selalu trimmed + lowercase -->
+<input
+	bind:value={
+		() => username,
+		(v) => (username = v.trim().toLowerCase())
+	}
+	placeholder="Username"
+/>
+
+<label>
+	<input type="checkbox" bind:checked={setuju} />
+	Saya setuju syarat & ketentuan
+</label>
+
+<fieldset>
+	<legend>Peran</legend>
+	<label><input type="radio" bind:group={peran} value="admin" /> Admin</label>
+	<label><input type="radio" bind:group={peran} value="member" /> Member</label>
+</fieldset>
+
+<div bind:clientWidth={lebar} style:padding="0.5rem" style:background="#eef">
+	Lebar box: {lebar}px
+</div>
+
+<button class={{ siap }} disabled={!siap}>
+	Simpan sebagai {peran}
+</button>
+
+<style>
+	.siap {
+		font-weight: bold;
+	}
+</style>
+```
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>bind:</code> hanya bisa diarahkan ke target yang <strong>bisa ditulisi</strong>: variabel <code>$state</code>, properti objek state, atau prop <code>$bindable()</code>. Mengarahkan <code>bind:value</code> ke nilai <code>$derived</code> atau ke konstanta akan error — tidak ada wadah untuk menampung nilai balik dari DOM.
+</Callout>
+
+<Callout type="warning">
+Untuk mem-<code>bind</code> prop komponen, prop itu <strong>wajib</strong> dideklarasikan dengan <code>$bindable()</code> di anak. Beda dari React/Vue, binding ke komponen di Svelte bersifat opt-in demi kejelasan arah data. Dan kalau <code>$bindable</code> punya nilai fallback lalu kamu bind dari induk, induk wajib memberi nilai bukan <code>undefined</code> — kalau tidak akan terjadi runtime error.
+</Callout>
+
+<Callout type="pitfall">
+Input <code>type="number"</code> dan <code>type="range"</code> mengonversi nilai DOM (selalu string) menjadi <strong>number</strong> saat di-bind. Input yang kosong atau tidak valid menjadi <code>undefined</code>, bukan <code>0</code> atau string kosong. Siapkan logikamu untuk kemungkinan <code>undefined</code> ini.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4, prop yang bisa di-bind cukup ditulis <code>export let value</code> — semua prop otomatis bindable. Di Svelte 5 ini berubah: prop hanya bindable jika eksplisit <code>let &#123; value = $bindable() &#125; = $props()</code>. Sintaks <code>bind:</code> di sisi pemakai tetap sama; yang berubah adalah deklarasi di komponen anak.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'export let value', modern: 'let { value = $bindable() } = $props()', note: 'prop bindable kini harus opt-in' },
+	{ legacy: 'on:input + assign manual', modern: 'bind:value={get, set}', note: 'function binding untuk validasi/transformasi (5.9+)' },
+	{ legacy: 'bind:clientWidth (writable var biasa)', modern: 'bind:clientWidth={w} dengan let w = $state(0)', note: 'target harus reaktif $state' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/bind" label="bind: — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/$bindable" label="$bindable — menandai prop komponen agar bisa di-bind" />

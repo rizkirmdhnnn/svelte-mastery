@@ -1,0 +1,297 @@
+---
+title: $app/env/private
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 19
+status: reference
+description: Modul eksperimental (SvelteKit 2.62+) untuk mengakses environment variable privat yang dideklarasikan secara eksplisit & type-safe di src/env.ts.
+docs: https://svelte.dev/docs/kit/$app-env-private
+keywords: [env, private, explicit, src/env.ts, defineEnvVars, type-safe]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Kalau kamu sudah baca modul `$env/static/private` dan kawan-kawannya, kamu kenal **empat modul** environment SvelteKit: hasil perkalian dua sumbu — **public vs private** (boleh ke browser atau tidak) dan **static vs dynamic** (dibaca saat build atau saat runtime). Sistem itu pintar, tapi punya satu kelemahan: ia **implisit**. SvelteKit menebak apakah sebuah variabel public atau private dari **prefix namanya** (`PUBLIC_`), dan tidak tahu apa-apa soal *bentuk* nilainya — semua dianggap `string`, tanpa validasi, tanpa tipe yang benar-benar ter-infer.
+
+`$app/env/private` adalah bagian dari pendekatan baru yang **eksplisit** (eksperimental, mulai **SvelteKit 2.62**). Idenya: alih-alih menebak dari prefix nama, kamu **mendeklarasikan** semua environment variable di satu file — `src/env.ts` (atau `src/env.js`) — lengkap dengan apakah ia public/privat, static/dynamic, skema validasinya, dan deskripsinya. Lalu kamu mengimpor variabel privat dari `$app/env/private`, dan yang public dari `$app/env/public`.
+
+### Analogi: dari "tebak dari stiker" ke "daftar barang resmi"
+
+Di sistem lama, gudangmu memutuskan barang mana rahasia hanya dari **stiker `PUBLIC_`** di kardusnya — apa pun isinya tidak diperiksa. Praktis, tapi rapuh: salah tempel stiker, atau isi kardus ternyata bukan yang kamu kira, tidak ada yang menjegal sampai produksi.
+
+Pendekatan eksplisit itu seperti membuat **manifes/daftar barang resmi** di pintu gudang. Untuk tiap barang kamu tulis: ini rahasia atau brosur (`public`), diambil saat pabrik produksi atau tiap pagi (`static`), bentuknya harus apa (`schema` — mis. "harus URL yang valid"), dan catatan singkat buat staf (`description`). Karena ada manifesnya, **satpam bisa menolak barang yang bentuknya salah saat gudang dibuka** (validasi saat app start), bukan saat barang sudah sampai pelanggan. Dan karena daftarnya tertulis, editormu tahu persis nama & tipe tiap barang (autocomplete + type-check).
+
+### Kenapa ini penting buat kamu (yang datang dari React)
+
+Pola ini mungkin terasa familiar: di ekosistem Next.js ada **t3-env** (`@t3-oss/env-nextjs` + Zod) yang melakukan hal serupa — mendeklarasikan env secara terpusat, memvalidasi dengan schema, dan meng-infer tipe. SvelteKit kini memasukkan ide itu **ke dalam framework** secara native. Bedanya dengan `import.meta.env` Vite biasa: di sini nilainya **divalidasi & diberi tipe sungguhan** (bukan sekadar `string`), dan pemisahan server/klien tetap dijaga ketat oleh compiler.
+
+Yang penting dipahami: di sistem eksplisit, **sumbu `public/private` menjadi nama modul** (`$app/env/private` vs `$app/env/public`), sedangkan **sumbu `static/dynamic` menjadi sebuah flag** (`static: true/false`) per variabel. Jadi empat modul lama "dilipat" menjadi dua modul + beberapa flag deklaratif.
+
+Default sebuah deklarasi tanpa flag adalah yang paling aman & paling umum: **privat** (server-only), **dynamic** (dibaca saat app start, bukan build), dan **required** (app gagal start kalau variabelnya hilang). Itulah kenapa `$app/env/private` jadi modul "default" tempat sebagian besar secret-mu berakhir.
+
+<Callout type="warning">
+Fitur ini <strong>eksperimental</strong> dan harus di-opt-in lewat <code>experimental.explicitEnvironmentVariables: true</code>. Modul <code>$env/static/*</code> &amp; <code>$env/dynamic/*</code> yang lama <strong>tidak deprecated</strong> — keduanya tetap stabil & didukung. Karena masih eksperimental, detail API (mis. jalur impor <code>defineEnvVars</code>) bisa berubah antar rilis; selalu cek docs versi yang kamu pakai.
+</Callout>
+
+## 2. Contoh kode
+
+Tiga langkah: aktifkan flag, deklarasikan di `src/env.ts`, lalu impor dari `$app/env/private`.
+
+**Langkah 1 — aktifkan di `svelte.config.js`:**
+
+```js
+// svelte.config.js
+const config = {
+	kit: {
+		experimental: {
+			// Tanpa ini, modul $app/env/* tidak tersedia (error "module not found").
+			explicitEnvironmentVariables: true
+		}
+	}
+};
+
+export default config;
+```
+
+**Langkah 2 — deklarasikan di `src/env.ts`:**
+
+```ts
+// src/env.ts
+import { defineEnvVars } from '@sveltejs/kit/hooks';
+import * as v from 'valibot'; // StandardSchema: valibot / zod / arktype, dst.
+
+export const variables = defineEnvVars({
+	// Default tanpa flag = PRIVAT, DYNAMIC (dibaca saat app start), REQUIRED.
+	// Diakses lewat $app/env/private. App gagal start kalau POSTGRES_URL kosong.
+	POSTGRES_URL: {},
+
+	// Privat + divalidasi: harus URL yang valid. Tipe ter-infer dari schema.
+	STRIPE_SECRET_KEY: {
+		schema: v.pipe(v.string(), v.startsWith('sk_'))
+	},
+
+	// Privat + STATIC: dibaca saat BUILD lalu di-inline (bisa dead-code elimination).
+	// Schema bisa mengubah string "true"/"" menjadi boolean asli.
+	ENABLE_EXPERIMENTAL_API: {
+		static: true,
+		description: 'Aktifkan endpoint API eksperimental di server',
+		schema: v.pipe(
+			v.optional(v.string(), ''),
+			v.transform((str) => str !== '')
+		)
+	}
+});
+```
+
+**Langkah 3 — impor variabel privat dari `$app/env/private`:**
+
+```ts
+// src/lib/server/db.ts  (server-only — aman untuk secret)
+// Named import: nama-namanya diketahui dari deklarasi di src/env.ts.
+// POSTGRES_URL bertipe string; ENABLE_EXPERIMENTAL_API bertipe boolean (hasil transform).
+import { POSTGRES_URL, STRIPE_SECRET_KEY } from '$app/env/private';
+import { ENABLE_EXPERIMENTAL_API } from '$app/env/private';
+
+export function createPool() {
+	// Nilai sudah tervalidasi saat app start; di sini dijamin sesuai schema.
+	return connect(POSTGRES_URL, { stripeKey: STRIPE_SECRET_KEY });
+}
+
+export const features = {
+	experimentalApi: ENABLE_EXPERIMENTAL_API // boolean, bukan string
+};
+```
+
+<Callout type="tip">
+Perhatikan: kamu mengimpor <strong>by-name</strong> (<code>import &#123; POSTGRES_URL &#125; from '$app/env/private'</code>), bukan mengakses properti objek <code>env.POSTGRES_URL</code> seperti di <code>$env/dynamic/*</code>. Sumbu static/dynamic kini cuma flag di deklarasi, jadi gaya impornya seragam untuk semuanya.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini butuh server & proses build SvelteKit, jadi tidak bisa dijalankan di playground browser. Sebagai gantinya, berikut satu alur lengkap beranotasi — sebuah halaman yang membaca secret privat di `load` server, dengan validasi yang gagal-cepat saat app start kalau env-nya salah.
+
+```ts
+// src/env.ts
+import { defineEnvVars } from '@sveltejs/kit/hooks';
+import * as v from 'valibot';
+
+export const variables = defineEnvVars({
+	// (a) Secret wajib, dynamic, divalidasi bentuknya.
+	GITHUB_TOKEN: {
+		description: 'Personal access token untuk GitHub API',
+		schema: v.pipe(v.string(), v.minLength(10))
+	},
+	// (b) Opsional dengan default. v.optional bikin variabel ini TIDAK required:
+	//     kalau hilang, nilainya jatuh ke 'ap-southeast-1'.
+	AWS_REGION: {
+		schema: v.optional(v.string(), 'ap-southeast-1')
+	}
+});
+```
+
+```ts
+// src/routes/repos/+page.server.ts  (server-only)
+// Karena diimpor dari $app/env/private, file ini DIJAMIN tidak ikut ke browser.
+import { GITHUB_TOKEN, AWS_REGION } from '$app/env/private';
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async ({ fetch }) => {
+	// GITHUB_TOKEN sudah lolos schema (minLength 10) saat app start.
+	// Kalau tokennya kosong/terlalu pendek, app GAGAL START — bukan gagal di tengah request.
+	const res = await fetch('https://api.github.com/user/repos', {
+		headers: { authorization: 'Bearer ' + GITHUB_TOKEN }
+	});
+
+	return {
+		region: AWS_REGION, // 'ap-southeast-1' kalau env tidak di-set
+		repos: await res.json()
+	};
+};
+```
+
+```ts
+// CONTOH SALAH — ini akan menggagalkan BUILD, bukan diam-diam membocorkan secret.
+// src/routes/+page.svelte  (komponen klien)
+//   <script>
+//     import { GITHUB_TOKEN } from '$app/env/private'; // ❌ ditolak compiler
+//   </script>
+// $app/env/private adalah server-only; mengimpornya dari kode yang bisa
+// berakhir di browser = error eksplisit. Ini fitur, bukan gangguan.
+```
+
+## 4. Ringkasan API
+
+### Modul `$app/env/private`
+
+| Aspek | Detail |
+| --- | --- |
+| Jalur impor | `$app/env/private` |
+| Yang diekspor | Satu **named export** per variabel **privat** yang kamu deklarasikan di `src/env.ts` |
+| Lingkungan | **Server-only**. Diimpor ke kode klien (`+page.svelte`, modul universal) → build gagal |
+| Public vs private | Variabel tanpa `public: true` → muncul di sini. Variabel `public: true` → muncul di `$app/env/public` |
+| Static vs dynamic | Tergantung flag `static` tiap variabel: `true` di-inline saat build, `false` (default) dibaca saat app start |
+| Syarat | `experimental.explicitEnvironmentVariables: true` di `svelte.config.js` |
+| Versi | SvelteKit **2.62.0+** (eksperimental) |
+
+### `defineEnvVars(declarations)`
+
+Diimpor dari `@sveltejs/kit/hooks`, dipakai di `src/env.ts`. Menerima objek pemetaan **nama variabel → opsi deklarasi**, dan mengembalikan objek `variables` (di-ekspor untuk dipakai SvelteKit). Tipe tiap variabel **ter-infer dari `schema`**-nya.
+
+```ts
+defineEnvVars(declarations: Record<string, EnvVarDeclaration>): Variables
+```
+
+### Opsi tiap deklarasi (`EnvVarDeclaration`)
+
+| Opsi | Tipe | Default | Arti |
+| --- | --- | --- | --- |
+| `public` | `boolean` | `false` | `true` → boleh diakses klien lewat `$app/env/public`. `false` → privat, hanya lewat `$app/env/private` |
+| `static` | `boolean` | `false` | `true` → nilai dibaca saat **build** lalu di-inline (memungkinkan dead-code elimination). `false` → dibaca saat **app start** (runtime) |
+| `schema` | StandardSchema validator | — | Memvalidasi, mentransform, & meng-infer tipe nilai. Jalan saat app start (atau build untuk `static`). Bisa menghasilkan tipe apa pun (bukan cuma string) |
+| `description` | `string` | — | Dokumentasi inline yang muncul saat hover variabelnya di editor |
+
+**Default keseluruhan** sebuah deklarasi kosong (`{}`): **privat, dynamic, required**. Untuk membuat variabel opsional, bungkus schema-nya dengan sesuatu seperti `v.optional(...)`.
+
+<Callout type="tip">
+<code>schema</code> menerima <strong>Standard Schema</strong> apa pun — valibot, zod, atau arktype — jadi kamu pakai library validasi yang sudah kamu suka. Untuk variabel <strong>public &amp; non-static</strong>, hasil akhirnya harus bisa di-serialize oleh <code>devalue</code> (karena nilainya dikirim ke browser).
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Migrasi dari $env ke deklarasi eksplisit">
+Kamu punya kode lama yang membaca tiga secret seperti ini:
+
+```js
+import { DATABASE_URL, PORT } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+const webhookSecret = env.WEBHOOK_SECRET;
+```
+
+Spesifikasi:
+
+- `DATABASE_URL` — privat, jarang berubah, ingin di-inline saat build, dan **harus** URL valid yang diawali `postgres://`.
+- `PORT` — privat, dibaca saat build, harus angka (ubah dari string ke `number`).
+- `WEBHOOK_SECRET` — privat, dibaca saat runtime (di-set platform hosting), required.
+
+Tugas: (1) tulis `src/env.ts` dengan `defineEnvVars` memakai valibot, lalu (2) tulis baris impor barunya dari `$app/env/private`.
+
+{#snippet solution()}
+
+  ```ts
+  // src/env.ts
+  import { defineEnvVars } from '@sveltejs/kit/hooks';
+  import * as v from 'valibot';
+
+  export const variables = defineEnvVars({
+  	// static -> dibaca saat build & di-inline. schema memvalidasi prefix.
+  	DATABASE_URL: {
+  		static: true,
+  		schema: v.pipe(v.string(), v.startsWith('postgres://'))
+  	},
+  	// static + transform string -> number. Tipe PORT ter-infer jadi number.
+  	PORT: {
+  		static: true,
+  		schema: v.pipe(v.string(), v.transform(Number), v.number())
+  	},
+  	// Default (dynamic, privat, required) -> tinggal {} + schema string.
+  	WEBHOOK_SECRET: {
+  		schema: v.string()
+  	}
+  });
+  ```
+
+  ```ts
+  // Pemakaian — semua dari SATU modul privat, gaya impor seragam.
+  // DATABASE_URL: string, PORT: number, WEBHOOK_SECRET: string (semua sudah tervalidasi).
+  import { DATABASE_URL, PORT, WEBHOOK_SECRET } from '$app/env/private';
+  ```
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa mengaktifkan flag.</strong> Tanpa <code>experimental.explicitEnvironmentVariables: true</code> di <code>svelte.config.js</code>, impor dari <code>$app/env/private</code> akan gagal dengan error "module not found". Aktifkan flag dulu sebelum membuat <code>src/env.ts</code>.
+</Callout>
+
+<Callout type="pitfall">
+<strong><code>$app/env/private</code> server-only — sama ketatnya seperti <code>$env/*/private</code>.</strong> Mengimpornya dari <code>+page.svelte</code>, <code>+page.js</code> universal, atau modul yang dipakai keduanya akan <strong>menggagalkan build</strong>. Taruh akses secret di <code>*.server.js</code>/<code>+page.server.js</code>/<code>src/lib/server/**</code>. Untuk nilai yang memang boleh ke klien, deklarasikan <code>public: true</code> dan impor dari <code>$app/env/public</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Eksperimental = bisa berubah.</strong> Karena fitur ini masih di belakang flag eksperimental, perilaku & detail API-nya (termasuk jalur impor <code>defineEnvVars</code>) dapat berubah antar versi SvelteKit. Jangan pakai di kode produksi kritis tanpa memantau changelog, dan jangan migrasikan semua env sekaligus sebelum API-nya stabil.
+</Callout>
+
+<Callout type="tip">
+<strong>Validasi = gagal-cepat.</strong> Karena <code>schema</code> dijalankan saat app start (dan saat build untuk <code>static</code>), env yang salah/hilang membuat aplikasi <strong>gagal start</strong> dengan pesan jelas — jauh lebih baik daripada error misterius di tengah request produksi. Manfaatkan ini: beri schema seketat mungkin (prefix, format, panjang minimum).
+</Callout>
+
+<Callout type="tip">
+<strong>Tipe ter-infer dari schema.</strong> Kalau schema-mu mentransform <code>string</code> menjadi <code>number</code> atau <code>boolean</code>, variabel yang kamu impor akan bertipe hasil transform itu — bukan lagi <code>string</code> mentah. Ini menghilangkan banyak <code>Number(...)</code> dan <code>=== 'true'</code> manual yang biasa bertebaran saat memakai <code>$env/*</code>.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Implisit ($env/*) — masih stabil"
+	modernLabel="Eksplisit ($app/env/* + src/env.ts)"
+	rows={[
+		{ legacy: "Visibilitas ditebak dari prefix nama PUBLIC_", modern: "Visibilitas ditulis eksplisit: public: true / false", note: 'tak ada lagi salah-tebak diam-diam' },
+		{ legacy: "Empat modul: $env/{static,dynamic}/{private,public}", modern: "Dua modul: $app/env/private & $app/env/public; static jadi flag", note: 'sumbu static/dynamic pindah ke deklarasi' },
+		{ legacy: "Semua nilai bertipe string, tanpa validasi", modern: "schema StandardSchema: validasi + transform + tipe ter-infer", note: 'valibot/zod/arktype' },
+		{ legacy: "import { X } from '$env/static/private'", modern: "import { X } from '$app/env/private'", note: 'deklarasikan dulu X di src/env.ts' }
+	]}
+/>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-env-private" label="SvelteKit — $app/env/private" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-env-public" label="SvelteKit — $app/env/public" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration" label="SvelteKit — experimental.explicitEnvironmentVariables" />

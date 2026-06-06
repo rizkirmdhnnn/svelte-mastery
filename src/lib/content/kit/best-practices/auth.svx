@@ -1,0 +1,391 @@
+---
+title: Auth
+product: kit
+section: best-practices
+sectionTitle: Best practices
+sectionOrder: 5
+order: 1
+status: stable
+description: Pola autentikasi di SvelteKit 2 — session vs token, cookie aman, hooks + locals, melindungi route lewat load/hooks, alur login/logout, plus pilihan library (Lucia/Auth.js/Better Auth).
+docs: https://svelte.dev/docs/kit/auth
+keywords: [auth, session, token, cookies, hooks, locals]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Authentication (**siapa kamu**) dan authorization (**boleh apa kamu**) adalah dua hal yang sering digabung jadi "auth". Modul ini fokus ke fondasinya: bagaimana SvelteKit mengingat bahwa seorang pengunjung sudah login, dan bagaimana memastikan halaman privat benar-benar privat.
+
+Kunci yang membedakan SvelteKit dari SPA React/Vue biasa: **sumber kebenaran auth ada di server, bukan di client.** Di app React murni, "user yang sedang login" biasanya hidup di Context atau Redux/Pinia — yaitu di memori browser yang bisa diutak-atik lewat devtools. Di SvelteKit, server-lah yang memutuskan siapa kamu di setiap request, lalu client cuma menerima data yang sudah disaring. Ini lebih dekat ke pola middleware Express (`req.user = ...`) ketimbang pola "auth context" di frontend.
+
+### Analogi: gelang tiket konser
+
+Bayangkan aplikasimu sebuah gedung konser.
+
+- **Cookie session** = gelang tiket di pergelangan tangan. Dipasang sekali saat login, lalu otomatis "ikut" tiap kali pengunjung masuk-keluar ruangan. Browser otomatis mengirim cookie di **setiap** request ke domain itu — kamu tidak perlu menempelkannya manual.
+- **Hooks** (`src/hooks.server.js`) = petugas di pintu utama. Setiap request lewat sini lebih dulu. Petugas membaca gelang, mengecek ke buku tamu (database/store session), lalu menempelkan **papan nama** ke pengunjung.
+- **`event.locals`** = papan nama yang menempel pada request itu selama hidupnya. Begitu petugas menulis `locals.user = ...`, semua `load` server dan form action di request itu bisa membacanya tanpa mengecek gelang lagi.
+
+Karena pengecekan terjadi di **pintu** (server hook), bukan "di dalam ruangan" (komponen client), tidak ada cara memalsukan identitas dari sisi browser. Yang dipegang browser cuma sebuah ID acak (isi gelang); makna ID itu hanya server yang tahu.
+
+### Session vs Token — dua cara mengingat login
+
+Saat login berhasil, server harus memberi pengunjung sesuatu yang bisa "dibawa pulang" untuk membuktikan dia sudah lewat pintu. Ada dua mazhab:
+
+**1. Session ID (stateful).** Server membuat ID acak panjang, menyimpannya di database/store bersama `userId`, lalu mengirim ID itu sebagai cookie. Di tiap request, server menukar ID -> data user lewat query.
+
+- Plus: bisa **dicabut seketika** (hapus baris di DB = user langsung logout di semua device). Cookie tidak menyimpan data sensitif, cuma pointer.
+- Minus: satu query datastore di **setiap** request.
+
+Dokumen resmi menyebutnya begini: *"Session IDs ... can be immediately revoked, but require a database query to be made on each request."*
+
+**2. Token / JWT (stateless).** Server menandatangani sebuah token berisi klaim (mis. `userId`, `exp`) dengan secret. Server tidak menyimpan apa-apa; cukup verifikasi tanda tangan untuk percaya isinya.
+
+- Plus: **tanpa query** ke datastore — latensi lebih rendah, beban DB turun.
+- Minus: **susah dicabut.** Token yang sudah terbit valid sampai kedaluwarsa; logout instan butuh trik tambahan (blocklist, token umur pendek + refresh token).
+
+Dokumen resmi: *"JWT generally are not checked against a datastore, which means they cannot be immediately revoked. The advantage of this method is improved latency and reduced load on your datastore."*
+
+<Callout type="tip">
+Untuk mayoritas aplikasi web tradisional (kamu pegang DB sendiri, butuh logout instan, butuh "logout dari semua device"), <strong>session ID lebih aman & lebih sederhana</strong>. JWT bersinar untuk arsitektur stateless/microservice atau saat token dipakai lintas layanan. Banyak orang memilih JWT karena terdengar modern, padahal untuk app monolit session ID justru lebih mudah benar.
+</Callout>
+
+### Kenapa cookie, bukan localStorage?
+
+Pertanyaan klasik dari pendatang React. Jawabannya: **`httpOnly` cookie tidak bisa dibaca JavaScript**, jadi script jahat (XSS) tidak bisa mencurinya lewat `document.cookie`. Token di `localStorage` justru terbuka penuh untuk JS apa pun di halaman — satu celah XSS dan token melayang. Plus, cookie otomatis ikut di setiap request (termasuk navigasi server-side dan SSR), sedangkan `localStorage` tidak ada di server sama sekali sehingga tak berguna untuk SSR auth.
+
+### Melindungi route: di pintu (hooks) atau di ruangan (load)?
+
+Ada dua tempat memasang guard, dan keduanya punya tempat:
+
+- **Di `hooks.server.js` (`handle`)** — guard terpusat. Cocok untuk melindungi seluruh prefix sekaligus (mis. semua di bawah `/app`). Satu tempat, berlaku global.
+- **Di `+page.server.js` / `+layout.server.js` (`load`)** — guard per-area. Cocok kalau aturan otorisasi berbeda per halaman (mis. `/admin` butuh role admin, bukan sekadar login).
+
+Aturan keras: **otorisasi hanya valid kalau dilakukan di kode server.** `load` universal (`+page.js`) ikut jalan di browser, jadi jangan jadikan tempat menyaring data sensitif. Ambil data privat hanya di `+page.server.js`, `+layout.server.js`, atau `+server.js`.
+
+<Callout type="warning">
+Hati-hati dengan <strong>layout load dan auth</strong>. <code>+layout.server.js</code> tidak otomatis dijalankan ulang untuk setiap child route saat navigasi client-side jika datanya tak berubah. Untuk guard yang harus dievaluasi di tiap request, andalkan <code>handle</code> hook (selalu jalan di server tiap request) atau cek eksplisit di <code>+page.server.js</code> milik halaman terkait — jangan berasumsi sebuah cek di layout root pasti memblokir semua anaknya.
+</Callout>
+
+### Aturan SvelteKit 2 yang wajib diingat
+
+`redirect()` dan `error()` dari `@sveltejs/kit` **melempar sendiri** (mereka memanggil `throw` di dalamnya). Jadi di SvelteKit 2 kamu menulis `redirect(303, '/login')` — **tanpa** `throw` di depan. Menulis `throw redirect(...)` adalah pola SvelteKit 1 yang sudah usang.
+
+### Library: bikin sendiri atau pakai yang ada?
+
+Membuat session ID + cookie + hook itu tidak sulit (lihat contoh di bawah) dan sangat mendidik. Tapi begitu butuh OAuth (login dengan Google/GitHub), reset password, verifikasi email, dan rotasi token, pertimbangkan library:
+
+- **Lucia** — bukan library penuh, melainkan **panduan + utilitas** session-based auth dengan contoh SvelteKit. Filosofinya: ajari kamu memegang DB & session sendiri. Bagus kalau ingin kontrol penuh dan paham apa yang terjadi.
+- **Auth.js** (dulu NextAuth, ada adapter `@auth/sveltekit`) — fokus ke **OAuth/social login** banyak provider dengan setup minim. Cepat untuk "login with Google", tapi lebih opinionated.
+- **Better Auth** — solusi auth TypeScript lengkap (email/password, OAuth, 2FA, organizations) yang bisa dipasang via CLI `sv add` ke proyek SvelteKit baru atau yang sudah ada.
+
+<Callout type="tip">
+Saran belajar: <strong>tulis session sederhana sendiri sekali</strong> supaya paham cookie/hooks/locals dari dalam. Setelah itu, untuk produksi yang butuh OAuth & fitur keamanan lanjutan, pakai library matang ketimbang menambal sendiri — auth adalah area di mana bug = kebocoran data.
+</Callout>
+
+## 2. Contoh kode
+
+Fondasi session buatan sendiri. Mulai dari lapisan server "session store" (di sini disederhanakan; di produksi ini query DB sungguhan).
+
+```js
+// src/lib/server/session.js — lapisan akses session (server-only)
+// File di $lib/server TIDAK akan pernah ikut ke bundle client (aman utk secret/DB).
+import { randomBytes } from 'node:crypto';
+
+const sessions = new Map(); // DEMO saja. Produksi: tabel DB (sessions).
+
+export async function createSession(userId) {
+	const id = randomBytes(32).toString('hex'); // ID acak panjang & tak tertebak
+	sessions.set(id, { userId, createdAt: Date.now() });
+	return id;
+}
+
+export async function getSessionUser(sessionId) {
+	const s = sessions.get(sessionId);
+	if (!s) return null;
+	// Di sini biasanya: SELECT user JOIN session WHERE session.id = ...
+	return { id: s.userId, nama: 'Rizki', role: 'user' };
+}
+
+export async function destroySession(sessionId) {
+	sessions.delete(sessionId); // cabut seketika — keunggulan session vs JWT
+}
+```
+
+```js
+// src/hooks.server.js — "petugas pintu": jalan untuk SETIAP request
+import { redirect } from '@sveltejs/kit';
+import { getSessionUser } from '$lib/server/session';
+
+export async function handle({ event, resolve }) {
+	// 1) Baca cookie session (browser mengirimnya otomatis tiap request).
+	const sessionId = event.cookies.get('session');
+
+	// 2) Tukar sessionId -> user. null kalau tak ada / tak valid.
+	event.locals.user = sessionId ? await getSessionUser(sessionId) : null;
+
+	// 3) Guard terpusat: semua rute di bawah /app butuh login.
+	if (event.url.pathname.startsWith('/app') && !event.locals.user) {
+		// SvelteKit 2: redirect() MELEMPAR sendiri — TANPA "throw" di depan.
+		redirect(303, '/login');
+	}
+
+	// 4) Lanjutkan pipeline; SvelteKit merender response.
+	return resolve(event);
+}
+```
+
+```js
+// src/routes/login/+page.server.js — form action: verifikasi & set cookie
+import { fail, redirect } from '@sveltejs/kit';
+import { verifyPassword } from '$lib/server/users';
+import { createSession } from '$lib/server/session';
+
+export const actions = {
+	// Tanda tangan action SvelteKit 2: menerima { request, cookies, ... }
+	default: async ({ request, cookies }) => {
+		const data = await request.formData();
+		const email = String(data.get('email') ?? '');
+		const password = String(data.get('password') ?? '');
+
+		const user = await verifyPassword(email, password);
+		if (!user) {
+			// fail() me-RETURN (bukan throw): kembalikan status + data utk form.
+			return fail(400, { email, message: 'Email atau password salah' });
+		}
+
+		const sessionId = await createSession(user.id);
+		cookies.set('session', sessionId, {
+			path: '/', // wajib: cookie konsisten di semua rute
+			httpOnly: true, // tak terbaca JS -> aman dari XSS pencuri token
+			sameSite: 'lax', // mitigasi CSRF
+			secure: process.env.NODE_ENV === 'production', // HTTPS-only di prod
+			maxAge: 60 * 60 * 24 * 7 // 7 hari
+		});
+
+		redirect(303, '/app'); // melempar sendiri; tak perlu "throw"
+	}
+};
+```
+
+```js
+// src/routes/app/+layout.server.js — sediakan user ke seluruh /app
+export async function load({ locals }) {
+	// hook sudah meng-guard /app, jadi locals.user dijamin ada di sini.
+	// Kembalikan agar komponen layout & halaman bisa menampilkannya.
+	return { user: locals.user };
+}
+```
+
+Logout: form action yang mencabut session dan menghapus cookie.
+
+```js
+// src/routes/logout/+page.server.js
+import { redirect } from '@sveltejs/kit';
+import { destroySession } from '$lib/server/session';
+
+export const actions = {
+	default: async ({ cookies }) => {
+		const sessionId = cookies.get('session');
+		if (sessionId) await destroySession(sessionId); // cabut di server
+		cookies.delete('session', { path: '/' }); // hapus di browser (path harus sama)
+		redirect(303, '/login');
+	}
+};
+```
+
+## 3. Coba sendiri
+
+Auth butuh runtime server (cookies, hooks, DB), jadi tidak bisa dijalankan di playground live. Sebagai gantinya, pelajari **dua pola guard** di bawah dengan teliti — keduanya server-only dan saling melengkapi.
+
+Pola A — **guard per-area di `load`** ketika aturan beda per halaman (bukan sekadar "login"):
+
+```js
+// src/routes/admin/+layout.server.js — hanya admin yang boleh masuk
+import { error, redirect } from '@sveltejs/kit';
+
+export async function load({ locals, url }) {
+	// Belum login -> ke /login, simpan tujuan agar bisa kembali setelah login.
+	if (!locals.user) {
+		redirect(303, `/login?redirectTo=${encodeURIComponent(url.pathname)}`);
+	}
+
+	// Login TAPI bukan admin -> 403 (bukan redirect). Ini authorization, bukan auth.
+	if (locals.user.role !== 'admin') {
+		error(403, 'Khusus admin');
+	}
+
+	return { user: locals.user };
+}
+```
+
+Pola B — **endpoint API terproteksi** (`+server.js`) membaca `locals` yang sama:
+
+```js
+// src/routes/api/secret/+server.js
+import { json, error } from '@sveltejs/kit';
+
+export async function GET({ locals }) {
+	// locals.user diisi oleh handle hook yang SAMA — satu sumber kebenaran.
+	if (!locals.user) error(401, 'Harus login');
+
+	return json({ pesan: `Halo ${locals.user.nama}, ini data rahasia.` });
+}
+```
+
+Lalu di komponen, login otomatis dipakai tanpa kode tambahan: cookie ikut sendiri di setiap navigasi/`fetch`. Ini komponen client murni yang menampilkan user dari `data` (hasil `load` server):
+
+```svelte
+<!-- src/routes/app/+layout.svelte -->
+<script>
+	let { data, children } = $props(); // data.user dari +layout.server.js
+</script>
+
+<header>
+	<span>Masuk sebagai {data.user.nama}</span>
+	<!-- Logout = form action, BUKAN tombol JS yang menghapus state. -->
+	<form method="POST" action="/logout">
+		<button type="submit">Keluar</button>
+	</form>
+</header>
+
+<!-- Svelte 5: render isi layout dengan {@render}, BUKAN <slot> -->
+{@render children()}
+```
+
+<Callout type="tip">
+Perhatikan: tidak ada satu pun kode di komponen yang "memeriksa apakah user login". Komponen cuma menampilkan <code>data.user</code> yang sudah dijamin benar oleh server. Inilah enaknya menaruh kebenaran auth di server — UI jadi bodoh & sederhana, mustahil kebablasan menampilkan data ke orang yang salah karena penyaringan terjadi sebelum data sampai ke client.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Bangun alur auth lengkap: guard, redirect-back, role, logout">
+Kamu punya aplikasi SvelteKit dengan area privat di bawah `/dashboard` dan sub-area `/dashboard/admin` khusus admin. Kerjakan empat hal:
+
+1. **Hook + locals**: di `hooks.server.js`, baca cookie `session`, isi `event.locals.user`, dan redirect ke `/login` bila user membuka `/dashboard` tanpa login. Ingat aturan SvelteKit 2 soal `redirect()`.
+2. **Redirect-back**: saat menolak, sertakan query `redirectTo` berisi path tujuan agar setelah login user dikembalikan ke sana.
+3. **Authorization (role)**: di `/dashboard/admin`, tolak dengan `error(403, ...)` kalau user login tapi `role !== 'admin'`.
+4. **Logout**: form action `logout` yang mencabut session di server dan menghapus cookie, lalu ke `/login`.
+
+{#snippet solution()}
+
+  ```js
+  // 1) + 2) src/hooks.server.js
+  import { redirect } from '@sveltejs/kit';
+  import { getSessionUser } from '$lib/server/session';
+
+  export async function handle({ event, resolve }) {
+    const sid = event.cookies.get('session');
+    event.locals.user = sid ? await getSessionUser(sid) : null;
+
+    if (event.url.pathname.startsWith('/dashboard') && !event.locals.user) {
+      const to = encodeURIComponent(event.url.pathname + event.url.search);
+      redirect(303, `/login?redirectTo=${to}`); // SvelteKit 2: TANPA "throw"
+    }
+    return resolve(event);
+  }
+  ```
+
+  ```js
+  // 3) src/routes/dashboard/admin/+layout.server.js
+  import { error } from '@sveltejs/kit';
+
+  export async function load({ locals }) {
+    // Hook sudah memastikan login; di sini cek OTORISASI (role).
+    if (locals.user.role !== 'admin') {
+      error(403, 'Halaman ini khusus admin'); // 403, bukan redirect
+    }
+    return { user: locals.user };
+  }
+  ```
+
+  ```js
+  // 4) src/routes/logout/+page.server.js
+  import { redirect } from '@sveltejs/kit';
+  import { destroySession } from '$lib/server/session';
+
+  export const actions = {
+    logout: async ({ cookies }) => {
+      const sid = cookies.get('session');
+      if (sid) await destroySession(sid); // cabut session di server
+      cookies.delete('session', { path: '/' }); // path harus sama saat set
+      redirect(303, '/login');
+    }
+  };
+  ```
+
+  ```js
+  // Bonus: src/routes/login/+page.server.js memakai redirectTo
+  import { fail, redirect } from '@sveltejs/kit';
+  import { verifyPassword } from '$lib/server/users';
+  import { createSession } from '$lib/server/session';
+
+  export const actions = {
+    default: async ({ request, cookies, url }) => {
+      const data = await request.formData();
+      const user = await verifyPassword(
+        String(data.get('email') ?? ''),
+        String(data.get('password') ?? '')
+      );
+      if (!user) return fail(400, { message: 'Kredensial salah' });
+
+      cookies.set('session', await createSession(user.id), {
+        path: '/', httpOnly: true, sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 60 * 24 * 7
+      });
+
+      // Kembalikan ke tujuan awal, default /dashboard. Validasi agar path internal.
+      const to = url.searchParams.get('redirectTo');
+      redirect(303, to?.startsWith('/') ? to : '/dashboard');
+    }
+  };
+  ```
+
+  Inti: hook mengisi `locals.user` (authentication) dan menjaga prefix; `load` server mengecek role (authorization); `redirect()`/`error()`/`fail()` mengikuti aturan SvelteKit 2 (tanpa `throw`); logout mencabut di server **dan** menghapus cookie. Validasi `redirectTo` (`startsWith('/')`) penting agar tidak jadi celah open-redirect ke domain luar.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan pernah menjadikan state client (store/Context) sebagai <strong>sumber kebenaran</strong> auth untuk mengizinkan akses data. State client bisa dipalsukan dari devtools. Lakukan otorisasi di <strong>server</strong>: isi <code>event.locals.user</code> di <code>handle</code> hook, lalu cek di <code>load</code> server / form action / <code>+server.js</code>. Ambil data sensitif hanya di modul server (<code>+page.server.js</code>, <code>+layout.server.js</code>, <code>+server.js</code>), bukan di <code>load</code> universal yang ikut jalan di browser.
+</Callout>
+
+<Callout type="warning">
+Cookie session WAJIB <code>httpOnly: true</code> (tak terbaca JS, aman dari XSS pencuri token), <code>sameSite: 'lax'</code> atau <code>'strict'</code> (mitigasi CSRF), dan <code>secure: true</code> di produksi (hanya lewat HTTPS). Lupa <code>httpOnly</code> = token bisa dicuri lewat <code>document.cookie</code>. Selalu set <code>path: '/'</code>, dan saat menghapus pakai opsi <code>path</code> yang sama persis — kalau beda, cookie lama tak terhapus dan user "tak bisa logout".
+</Callout>
+
+<Callout type="warning">
+Logout harus mencabut session di <strong>server</strong> (<code>destroySession</code>), bukan cuma menghapus cookie. Kalau hanya menghapus cookie, session ID yang sudah bocor masih sah dipakai penyerang. Inilah keunggulan session ID atas JWT: pencabutan instan. Untuk JWT, logout instan butuh trik tambahan (blocklist / token umur pendek + refresh).
+</Callout>
+
+<Callout type="pitfall">
+Jangan andalkan satu cek di <code>+layout.server.js</code> root untuk mengamankan semua child route. Selama navigasi client-side, layout load bisa tidak dijalankan ulang jika SvelteKit menilai datanya tak berubah. Untuk guard yang harus dievaluasi tiap request, taruh di <code>handle</code> hook (selalu jalan di server) atau cek eksplisit di <code>+page.server.js</code> halaman sensitif.
+</Callout>
+
+<Callout type="legacy">
+Pola lama yang sering muncul di tutorial usang — jangan dipakai di SvelteKit 2 / Svelte 5:
+</Callout>
+
+<LegacyVsModern rows={[
+  { legacy: 'throw redirect(303, "/login")', modern: 'redirect(303, "/login")', note: 'SvelteKit 2: redirect()/error() melempar sendiri' },
+  { legacy: 'throw error(401, "...")', modern: 'error(401, "...")', note: 'Tanpa "throw" di depan' },
+  { legacy: 'token di localStorage', modern: 'httpOnly cookie', note: 'localStorage rawan dicuri XSS & tak ada di SSR' },
+  { legacy: 'cek auth di onMount/komponen', modern: 'cek di handle hook / load server', note: 'Kebenaran auth di server, bukan client' },
+  { legacy: 'slot untuk konten layout', modern: 'render children() (snippet)', note: 'Svelte 5 memakai snippet, bukan slot' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/auth" label="SvelteKit — Auth (session vs token, cookies, hooks, locals)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (handle, event.locals)" />
+<DocsLink href="https://svelte.dev/docs/kit/load" label="SvelteKit — Loading data (load server vs universal)" />
+<DocsLink href="https://svelte.dev/docs/kit/form-actions" label="SvelteKit — Form actions (login/logout, fail)" />
+<DocsLink href="https://lucia-auth.com" label="Lucia — panduan session-based auth (contoh SvelteKit)" />

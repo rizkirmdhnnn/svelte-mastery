@@ -1,0 +1,244 @@
+---
+title: svelte/reactivity/window
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 10
+status: reference
+description: Nilai reaktif bawaan untuk membaca ukuran & keadaan window (innerWidth, scrollY, online, devicePixelRatio, dll.) tanpa menulis event listener manual.
+docs: https://svelte.dev/docs/svelte/svelte-reactivity-window
+keywords: [reactivity, window, innerWidth, scrollY, online, SSR]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Hampir setiap aplikasi butuh "tahu" sesuatu tentang jendela browser: seberapa lebar layar (untuk responsif), seberapa jauh user men-scroll (untuk progress bar atau header yang menyusut), apakah koneksi sedang online, atau berapa kerapatan piksel layar (retina vs biasa). Masalahnya: nilai-nilai ini — `window.innerWidth`, `window.scrollY`, `navigator.onLine`, `window.devicePixelRatio` — adalah **snapshot statis**. Kamu membacanya sekali, lalu nilainya tidak akan memberitahumu kalau berubah. Supaya reaktif, kamu harus memasang event listener (`resize`, `scroll`, `online`/`offline`), menyimpan hasilnya ke state, dan membersihkan listener saat komponen dilepas.
+
+Modul `svelte/reactivity/window` menghapus seluruh ritual itu. Ia mengekspor sekumpulan **nilai reaktif singleton** yang masing-masing adalah "cermin hidup" dari satu properti `window`. Kamu tinggal `import` lalu membaca properti `.current` — dan setiap kali nilai aslinya berubah di browser, komponenmu ikut ter-render ulang. Listener, throttling via `requestAnimationFrame`, dan cleanup-nya sudah diurus Svelte di balik layar, dan **dibagikan** lintas seluruh komponen yang mengimpornya (jadi seribu komponen yang membaca `innerWidth` tetap hanya memasang satu listener `resize`).
+
+Analoginya: `window.innerWidth` biasa itu seperti **memotret termometer** — kamu dapat angka saat itu juga, tapi foto tidak update saat suhu naik. `innerWidth` dari modul ini seperti **termometer digital yang menempel di dinding** — kamu cukup melirik layarnya kapan saja, dan angkanya selalu yang terbaru tanpa kamu motret ulang.
+
+Buat yang datang dari React/Vue: ini persis peran library seperti `useWindowSize` / `useOnline` dari `react-use` atau `useWindowSize` / `useOnline` dari VueUse — bedanya di sini **bawaan framework**, nol dependency, dan terintegrasi langsung dengan sistem reaktivitas (runes). Bedanya dengan React: di React kamu memanggil hook (`const { width } = useWindowSize()`), sedangkan di sini kamu mengimpor objek global dan membaca `.current`-nya — bukan hook, jadi tidak ada aturan "hanya di top-level komponen". Kamu bisa membacanya di `$derived`, `$effect`, di file `.svelte.ts`, di mana pun.
+
+### Bentuknya: objek dengan `.current`, bukan fungsi
+
+Penting dipahami sejak awal — yang kamu impor **bukan** fungsi yang dipanggil dan **bukan** class yang di-`new`. Ia sudah berupa **instance reaktif tunggal** (singleton). Pola pakainya selalu sama:
+
+```js
+import { innerWidth } from 'svelte/reactivity/window';
+// baca: innerWidth.current   <- BUKAN innerWidth() atau innerWidth saja
+```
+
+Properti `.current` itu **read-only** — ia cermin satu arah. Membaca `scrollY.current` memberitahumu posisi scroll sekarang; tapi menetapkan `scrollY.current = 0` **tidak** akan menggulung halaman (untuk itu pakai `window.scrollTo(...)`). Ini berbeda dari `<svelte:window bind:scrollY>` lama yang dua arah. Lihat bagian Tips.
+
+### Kenapa `.current` bisa `undefined`?
+
+Karena `window` dan `navigator` cuma ada di browser, di server (SSR/prerender) tidak ada. Maka selama render di server, setiap `.current` bernilai `undefined`. Begitu kode hidup di browser (hydration), barulah nilai aslinya terisi. Konsekuensinya: **selalu siapkan fallback** saat membaca, mis. `innerWidth.current ?? 1024`. Ini bukan cacat — ini kontrak yang jujur soal "nilai ini belum diketahui di server".
+
+<Callout type="tip">
+Modul ini tersedia sejak <strong>Svelte 5.11.0</strong>. Kalau import <code>'svelte/reactivity/window'</code> gagal di-resolve, cek versi Svelte di <code>package.json</code> dan jalankan update.
+</Callout>
+
+## 2. Contoh kode
+
+```svelte
+<!-- responsif.svelte — ganti layout berdasarkan lebar window, tanpa listener manual -->
+<script>
+	import { innerWidth, innerHeight } from 'svelte/reactivity/window';
+
+	// .current bisa undefined saat SSR -> selalu beri fallback dengan ??.
+	// $derived otomatis menghitung ulang setiap kali user me-resize jendela.
+	let isMobile = $derived((innerWidth.current ?? 1024) < 640);
+</script>
+
+<p>Viewport: {innerWidth.current} × {innerHeight.current} px</p>
+
+{#if isMobile}
+	<nav class="ringkas">☰ Menu</nav>
+{:else}
+	<nav class="penuh">Beranda · Produk · Tentang · Kontak</nav>
+{/if}
+```
+
+```svelte
+<!-- progress-baca.svelte — bar progres baca berdasarkan posisi scroll -->
+<script>
+	import { scrollY } from 'svelte/reactivity/window';
+
+	// Hitung persentase scroll. Catatan: scrollHeight/innerHeight dibaca dari
+	// window langsung (bukan reaktif), tapi karena $derived ikut bergantung pada
+	// scrollY.current, ia tetap dihitung ulang setiap kali user men-scroll.
+	let persen = $derived.by(() => {
+		if (typeof document === 'undefined') return 0; // jaga-jaga saat SSR
+		const max = document.documentElement.scrollHeight - window.innerHeight;
+		return max > 0 ? ((scrollY.current ?? 0) / max) * 100 : 0;
+	});
+</script>
+
+<div class="bar" style="width: {persen}%"></div>
+```
+
+```svelte
+<!-- status.svelte — banner offline + deteksi layar retina -->
+<script>
+	import { online, devicePixelRatio } from 'svelte/reactivity/window';
+</script>
+
+<!-- Bandingkan eksplisit dengan === false. Jangan pakai !online.current,
+     karena saat SSR nilainya undefined (yang juga "falsy") -> banner salah muncul. -->
+{#if online.current === false}
+	<div class="banner-offline">Kamu sedang offline. Perubahan akan disimpan nanti.</div>
+{/if}
+
+<!-- devicePixelRatio: 1 = layar biasa, 2+ = retina/HiDPI.
+     Juga berubah saat user zoom browser, jadi cocok untuk memilih aset gambar. -->
+<p>Kerapatan piksel: {devicePixelRatio.current}× {(devicePixelRatio.current ?? 1) >= 2 ? '(retina)' : ''}</p>
+```
+
+Bandingkan dengan cara lama yang masih valid tapi lebih bertele-tele, `<svelte:window>`:
+
+```svelte
+<!-- Cara klasik: butuh variabel lokal + binding di SETIAP komponen yang perlu -->
+<script>
+	let w = $state(0);
+</script>
+
+<svelte:window bind:innerWidth={w} />
+<p>Lebar: {w}px</p>
+
+<!-- vs cara modul: cukup import, tanpa variabel lokal, bisa dipakai di mana saja -->
+```
+
+## 3. Coba sendiri
+
+Modul ini membaca global browser sungguhan (`window`, `navigator`) sehingga lebih pas dipelajari lewat contoh statis ketimbang playground sandbox. Berikut satu komponen "header yang menyusut saat scroll + indikator koneksi" yang menggabungkan beberapa nilai sekaligus. Baca anotasinya, lalu coba tempel ke proyek SvelteKit-mu dan scroll/resize/matikan WiFi untuk melihatnya bereaksi.
+
+```svelte
+<!-- AppHeader.svelte -->
+<script>
+	import { scrollY, innerWidth, online } from 'svelte/reactivity/window';
+
+	// Header dianggap "menyusut" setelah user scroll lebih dari 40px.
+	// Karena scrollY.current reaktif, mengubahnya otomatis memicu update kelas.
+	let menyusut = $derived((scrollY.current ?? 0) > 40);
+
+	// Sembunyikan tagline di layar sempit (< 480px) demi hemat ruang.
+	let sempit = $derived((innerWidth.current ?? 1024) < 480);
+</script>
+
+<header class:menyusut>
+	<strong>Svelte Mastery</strong>
+
+	{#if !sempit}
+		<span class="tagline">Belajar Svelte 5 sampai mahir</span>
+	{/if}
+
+	<!-- Titik status: hijau saat online, abu saat undefined (SSR), merah saat offline -->
+	<span
+		class="dot"
+		class:online={online.current === true}
+		class:offline={online.current === false}
+		title={online.current === false ? 'Offline' : 'Online'}
+	></span>
+</header>
+
+<style>
+	header {
+		position: sticky;
+		top: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 1rem;
+		transition: padding 0.2s ease;
+	}
+	header.menyusut {
+		padding: 0.4rem 1rem; /* mengecil saat scroll */
+	}
+	.dot { width: 10px; height: 10px; border-radius: 50%; background: #999; }
+	.dot.online { background: #22c55e; }
+	.dot.offline { background: #ef4444; }
+</style>
+```
+
+Tiga hal yang patut diperhatikan dari contoh ini: (1) tidak ada satu pun `addEventListener` atau `onMount`/cleanup — semua ditangani modul; (2) ketiga nilai (`scrollY`, `innerWidth`, `online`) dipakai langsung di `$derived` dan markup seakan-akan variabel reaktif biasa; (3) setiap pembacaan memakai `?? fallback` atau perbandingan `=== true/false` agar aman saat SSR ketika `.current` masih `undefined`.
+
+## 4. Ringkasan API
+
+Semua export di bawah adalah **nilai reaktif read-only** dengan satu properti `.current`. Pakai polanya selalu sama: `import { nama } from 'svelte/reactivity/window'` lalu baca `nama.current`. Tersedia sejak **Svelte 5.11.0**. Di server, setiap `.current` bernilai `undefined`.
+
+| Export | Tipe `.current` | Mencerminkan | Catatan |
+| --- | --- | --- | --- |
+| `innerWidth` | `number \| undefined` | `window.innerWidth` | Lebar viewport (termasuk scrollbar). Update saat resize. |
+| `innerHeight` | `number \| undefined` | `window.innerHeight` | Tinggi viewport. Update saat resize / muncul-hilang address bar mobile. |
+| `outerWidth` | `number \| undefined` | `window.outerWidth` | Lebar seluruh jendela browser (termasuk chrome browser). |
+| `outerHeight` | `number \| undefined` | `window.outerHeight` | Tinggi seluruh jendela browser. |
+| `scrollX` | `number \| undefined` | `window.scrollX` | Posisi scroll horizontal (px). Read-only — untuk menggulung pakai `window.scrollTo`. |
+| `scrollY` | `number \| undefined` | `window.scrollY` | Posisi scroll vertikal (px). Read-only. |
+| `screenLeft` | `number \| undefined` | `window.screenLeft` | Jarak jendela dari tepi kiri layar. Dipantau via `requestAnimationFrame`. |
+| `screenTop` | `number \| undefined` | `window.screenTop` | Jarak jendela dari tepi atas layar. Dipantau via `requestAnimationFrame`. |
+| `online` | `boolean \| undefined` | `navigator.onLine` | `true` saat ada koneksi, `false` saat offline. Update via event `online`/`offline`. |
+| `devicePixelRatio` | `number \| undefined` | `window.devicePixelRatio` | Rasio piksel fisik:CSS. `2`+ untuk layar retina. Berubah saat zoom browser. |
+
+Catatan tipe: secara teknis ini instance dari kelas reaktif internal (`ReactiveValue` untuk kebanyakan, dan objek reaktif khusus untuk `devicePixelRatio`), tapi dari sisi pemakai kamu cukup tahu satu hal — **baca `.current`**. Tidak ada konstruktor untuk dipanggil, tidak ada parameter; semuanya singleton yang sudah jadi.
+
+Contoh praktis ringkas per kategori:
+
+```svelte
+<script>
+	import {
+		innerWidth, innerHeight,
+		scrollX, scrollY,
+		online, devicePixelRatio
+	} from 'svelte/reactivity/window';
+
+	let ukuran = $derived(`${innerWidth.current} × ${innerHeight.current}`);
+	let posisiScroll = $derived(`x:${scrollX.current ?? 0} y:${scrollY.current ?? 0}`);
+	let retina = $derived((devicePixelRatio.current ?? 1) >= 2);
+</script>
+
+<p>Ukuran: {ukuran}</p>
+<p>Scroll: {posisiScroll}</p>
+<p>Layar retina: {retina ? 'ya' : 'tidak'}</p>
+<p>Koneksi: {online.current === false ? 'offline' : 'online'}</p>
+```
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa bahwa <code>.current</code> bisa <code>undefined</code> saat SSR.</strong> Menulis <code>innerWidth.current &lt; 640</code> menghasilkan <code>undefined &lt; 640</code> = <code>false</code> di server, lalu berubah saat hydration — bisa memicu flicker atau hydration mismatch. Untuk angka, selalu beri fallback: <code>(innerWidth.current ?? 1024) &lt; 640</code>. Untuk boolean <code>online</code>, bandingkan eksplisit (<code>online.current === false</code>) alih-alih <code>!online.current</code>, karena <code>undefined</code> juga falsy dan akan salah dianggap "offline".
+</Callout>
+
+<Callout type="warning">
+<strong>Nilai-nilai ini READ-ONLY.</strong> <code>scrollY.current</code> hanya untuk dibaca; menetapkan <code>scrollY.current = 0</code> tidak menggulung halaman (dan akan diabaikan). Untuk benar-benar menggulung, pakai <code>window.scrollTo(&#123; top: 0 &#125;)</code>. Ini beda dari <code>&lt;svelte:window bind:scrollY&gt;</code> lama yang dua arah (boleh ditulis untuk menggulung).
+</Callout>
+
+<Callout type="tip">
+<strong>Singleton & dibagikan.</strong> Tidak peduli berapa komponen yang mengimpor <code>innerWidth</code>, Svelte hanya memasang <strong>satu</strong> listener <code>resize</code> di balik layar dan membagikan nilainya. Jadi jangan ragu mengimpornya di banyak tempat — tidak ada penalti listener berlipat. Listener pun otomatis dilepas saat tak ada lagi yang membacanya.
+</Callout>
+
+<Callout type="tip">
+<strong>Bukan hook — bebas tempat.</strong> Karena yang kamu impor objek biasa (bukan fungsi hook seperti di React), kamu boleh membaca <code>.current</code> di mana saja: dalam <code>$derived</code>, <code>$effect</code>, fungsi event handler, bahkan di file <code>.svelte.ts</code> untuk membuat util reaktif lintas komponen. Tidak ada aturan "rules of hooks".
+</Callout>
+
+<Callout type="warning">
+<code>scrollX</code>/<code>scrollY</code> berubah <strong>sangat sering</strong> saat user scroll. Kalau di dalam <code>$effect</code> kamu melakukan kerja berat tiap perubahan (mis. fetch atau layout reflow), pertimbangkan throttle/debounce sendiri. Untuk sekadar menampilkan progres atau toggle kelas CSS, membacanya langsung sudah cukup ringan karena Svelte hanya update bagian DOM yang bergantung.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "let w = $state(0); <svelte:window bind:innerWidth={w} />", modern: "import { innerWidth } from 'svelte/reactivity/window'", note: 'Tak perlu variabel lokal + binding di tiap komponen; cukup baca .current.' },
+	{ legacy: "onMount(() => { const h = () => (y = scrollY); addEventListener('scroll', h); return () => removeEventListener('scroll', h); })", modern: "import { scrollY } from 'svelte/reactivity/window'", note: 'Listener & cleanup ditangani otomatis dan dibagikan.' },
+	{ legacy: "window.navigator.onLine (statis, tak update)", modern: 'online.current (reaktif)', note: 'Otomatis ikut event online/offline.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-reactivity-window" label="svelte/reactivity/window — innerWidth, scrollY, online, devicePixelRatio, dll." />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-reactivity" label="svelte/reactivity — SvelteMap, SvelteSet, MediaQuery & koleksi reaktif lain" />

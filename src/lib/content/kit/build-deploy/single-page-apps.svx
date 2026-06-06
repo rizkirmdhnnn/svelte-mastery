@@ -1,0 +1,243 @@
+---
+title: Single-page apps
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 6
+status: stable
+description: Mengubah SvelteKit jadi SPA murni dengan `ssr = false` + `adapter-static` fallback — kapan ini pilihan tepat dan apa harga SEO/performa yang kamu bayar.
+docs: https://svelte.dev/docs/kit/single-page-apps
+keywords: [spa, ssr false, adapter-static, fallback, csr, prerender]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+SvelteKit secara default adalah framework **server-first**: setiap request menghasilkan HTML jadi di server (SSR), browser menerima halaman yang sudah berisi konten, lalu JavaScript "menghidupkan" (hydrate) halaman itu jadi interaktif. **SPA mode** membalik filosofi ini total. Kamu mematikan SSR sepenuhnya, dan server cuma mengirim satu kerangka HTML kosong yang sama untuk SEMUA URL. Browser-lah yang mengunduh JavaScript, lalu merakit, me-routing, dan merender setiap halaman di sisi klien (CSR — Client-Side Rendering).
+
+Kalau kamu datang dari React, ini persis **Create React App** atau **Vite + React Router** biasa. Dari Vue, ini seperti project Vue CLI / Vite default tanpa Nuxt. Tidak ada server yang berpikir; ada satu `index.html` (di SvelteKit namanya halaman *fallback*), dan seluruh aplikasi hidup di browser. Yang menarik: kamu tetap menulis kode dengan API SvelteKit yang sama — file-based routing `src/routes`, `load` di `+page.js`, layout, dan navigasi `goto()` semuanya tetap jalan. Bedanya cuma di **mana** kode itu dieksekusi: semuanya pindah ke klien.
+
+### Mengapa SvelteKit tidak punya "adapter-spa" sendiri
+
+Ini sering bikin bingung pendatang baru. Tidak ada paket bernama `@sveltejs/adapter-spa`. SPA mode bukan adapter terpisah — ia adalah **kombinasi dua pengaturan**:
+
+1. `export const ssr = false` di root `+layout.js` — mematikan rendering server untuk seluruh aplikasi.
+2. `adapter-static` dengan opsi `fallback` — memberi tahu SvelteKit: "jangan coba prerender tiap rute jadi file `.html` masing-masing; cukup buat satu halaman penampung yang dikirim untuk URL apa pun."
+
+Jadi SPA = `adapter-static` yang "menyerah" merender halaman individual dan menyerahkan semua pekerjaan ke browser. Itu sebabnya modul ini ada di section *Build and deploy* — ini soal bagaimana output build dibungkus, bukan fitur runtime baru.
+
+### Apa itu halaman fallback
+
+Halaman fallback adalah inti SPA mode, dan analoginya begini. Bayangkan sebuah **gedung kantor dengan satu resepsionis**. Di mode SSR biasa, tiap ruangan (URL) sudah disiapkan rapi sebelum tamu datang — begitu kamu masuk pintu `/produk`, ruangan "produk" sudah tertata lengkap. Di mode SPA, gedungnya kosong; yang ada cuma lobi kosong yang sama (halaman fallback). Tamu yang minta ruangan apa pun — `/produk`, `/profil/42`, `/pengaturan` — diarahkan ke lobi yang sama. Baru setelah masuk, seorang "asisten" (JavaScript SvelteKit) membaca alamat yang kamu tuju lalu **merakit ruangan itu di tempat**, di depan matamu.
+
+Secara teknis, fallback adalah file HTML yang dibuat SvelteKit dari template `src/app.html`-mu. Isinya nyaris kosong (tidak ada konten halaman), tapi memuat tag `<script>` dan `<link>` aplikasimu. Ketika dimuat, JavaScript membaca URL saat ini di browser, mencocokkannya dengan router SvelteKit, menjalankan `load` rute itu di klien, lalu merender komponennya. Nama file fallback bisa kamu pilih — `200.html`, `index.html`, atau `404.html` — dan pilihan ini bergantung pada cara hosting-mu melayani URL yang tidak cocok dengan file fisik (lebih detail di Bagian 6).
+
+### Trade-off: apa yang kamu dapat & apa yang kamu bayar
+
+SPA mode itu pisau bermata dua. Penting paham keduanya supaya kamu memilih dengan sadar, bukan ikut-ikutan.
+
+**Yang kamu dapat:**
+
+- **Hosting super murah & sederhana.** Outputnya cuma file statis — tidak ada server Node yang harus hidup 24/7. Bisa di-host di GitHub Pages, S3, Cloudflare Pages, Netlify, bahkan object storage biasa. Tidak ada cold start, tidak ada server yang bisa crash.
+- **Deploy gampang.** Upload folder, selesai. Tidak ada runtime environment yang harus dijaga.
+- **Cocok untuk aplikasi "di balik login".** Dashboard admin, tools internal, aplikasi yang isinya per-user — di mana SEO tidak relevan dan SSR cuma menambah kerumitan.
+
+**Yang kamu bayar:**
+
+- **SEO babak belur.** Crawler menerima HTML kosong. Meski Googlebot modern bisa mengeksekusi JavaScript, ini lambat, tidak dijamin, dan mesin pencari lain (serta preview link di WhatsApp/Twitter/Slack) sering cuma membaca HTML mentah — yang isinya kosong. Untuk situs publik yang mengandalkan traffic organik, ini fatal.
+- **Performa awal lebih lambat.** Dokumentasi resmi menyebutnya "dampak performa negatif yang besar". Alurnya: browser unduh shell kosong → unduh JS → eksekusi JS → baru jalankan `load` (yang sering perlu fetch data lagi) → baru konten muncul. Beberapa putaran network bertumpuk sebelum pengguna melihat apa pun. Di koneksi mobile yang lemot, ini terasa.
+- **Rapuh tanpa JavaScript.** Kalau JS gagal dimuat (jaringan putus, error skrip, atau pengguna mematikan JS), pengguna cuma melihat halaman kosong. Di mode SSR, setidaknya konten dasar sudah terkirim.
+
+### Kapan dipakai
+
+Pakai SPA mode kalau **semua** ini benar: aplikasimu di balik autentikasi (SEO tidak relevan), kamu ingin hosting statis termurah dan tersederhana, dan kamu tidak butuh konten tampil instan sebelum JS jalan. Contoh ideal: panel admin internal, dashboard analitik per-akun, tools tim. Jangan pakai SPA mode untuk landing page, blog, toko, atau apa pun yang butuh ditemukan di Google atau tampil rapi saat link-nya dibagikan. Untuk kasus itu, prerender (SSG) atau SSR (`adapter-node`/serverless) jauh lebih tepat.
+
+<Callout type="tip">
+SPA dan SSG bukan pilihan "salah satu". Kamu bisa <strong>mencampur</strong>: jalankan SPA secara default, tapi <code>prerender</code> halaman tertentu yang butuh SEO (mis. landing & dokumentasi) jadi file statis sungguhan. SvelteKit mendukung ini per-rute — dibahas di Bagian 3.
+</Callout>
+
+## 2. Contoh kode
+
+Mengubah project SvelteKit jadi SPA cuma butuh dua sentuhan. Pertama, pasang `adapter-static` dan beri opsi `fallback`.
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-static';
+
+const config = {
+	kit: {
+		adapter: adapter({
+			// Inti SPA mode: SATU halaman HTML penampung untuk SEMUA rute.
+			// Tanpa fallback, adapter-static akan mencoba prerender tiap rute
+			// jadi file .html sendiri (mode SSG) — dan GAGAL untuk rute dinamis.
+			// Dengan fallback, ia berhenti memaksa itu dan menyerahkan ke browser.
+			fallback: '200.html'
+			// Nama file menyesuaikan host (lihat Bagian 6):
+			//   '200.html' -> Surge, Netlify, banyak host SPA
+			//   'index.html' / '404.html' -> GitHub Pages, dll.
+		})
+	}
+};
+
+export default config;
+```
+
+Kedua, matikan SSR untuk seluruh aplikasi lewat root layout. Inilah yang membuat SvelteKit berhenti merender di server dan menyerahkan semuanya ke klien.
+
+```js
+// src/routes/+layout.js
+// Berlaku ke SELURUH aplikasi karena ini layout root.
+export const ssr = false;
+
+// (Opsional) Biasanya kamu juga mau prerender = false di sini supaya
+// adapter-static tidak mencoba membuat file .html per rute. Default-nya
+// memang tidak prerender kecuali kamu menyalakannya, jadi sering tak perlu.
+```
+
+Yang penting dipahami: dengan `ssr = false` di root, **setiap** komponen, `load`, dan store hanya berjalan di browser. Tidak ada lagi "kode ini jalan di server". Ini menyederhanakan mental model (semua di klien, seperti React SPA), tapi juga berarti kamu kehilangan keuntungan SSR sepenuhnya.
+
+```js
+// src/routes/+page.js
+// load() ini sekarang berjalan DI BROWSER, bukan di server.
+// Jadi fetch di sini = fetch dari browser pengguna (kena CORS, kena
+// kecepatan koneksi mereka). Berbeda dengan SSR di mana load jalan
+// di server yang dekat ke database/API.
+export async function load({ fetch }) {
+	const res = await fetch('/api/profil'); // dipanggil dari klien
+	return { profil: await res.json() };
+}
+```
+
+## 3. Coba sendiri
+
+SPA mode menghasilkan file statis yang dijalankan browser, bukan komponen yang bisa kita render di playground. Jadi alih-alih live preview, berikut langkah-langkah nyata untuk mengubah project SvelteKit jadi SPA dan menguji hasilnya secara lokal — plus pola "campuran" SPA + prerender yang paling sering berguna di praktik.
+
+```bash
+# Langkah praktik di project SvelteKit lokal:
+npm i -D @sveltejs/adapter-static   # 1) pasang adapter
+
+# 2) Ubah svelte.config.js -> pakai adapter-static + fallback: '200.html'
+#    (lihat Bagian 2)
+# 3) Tambah src/routes/+layout.js berisi: export const ssr = false;
+
+npm run build      # 4) build -> hasilnya folder build/ berisi 200.html + aset
+npm run preview    # 5) uji lokal; coba akses URL dalam langsung (mis. /profil/42)
+                   #    dan refresh — semua harus tetap memuat aplikasi, bukan 404.
+```
+
+Pola paling berguna di dunia nyata bukan SPA 100%, tapi **SPA dengan beberapa halaman di-prerender**. Misalnya: landing page & halaman dokumentasi butuh SEO (jadi di-prerender), sementara seluruh area aplikasi di balik login berjalan sebagai SPA. SvelteKit mendukung ini per-rute.
+
+```js
+// src/routes/+layout.js
+// Default global: aplikasi adalah SPA (CSR-only).
+export const ssr = false;
+```
+
+```js
+// src/routes/(marketing)/+page.js   <- halaman landing publik
+// Override LOKAL: halaman ini di-prerender jadi file .html sungguhan
+// saat build, lengkap dengan konten untuk SEO & preview link.
+export const prerender = true;
+export const ssr = true; // hidupkan lagi SSR khusus halaman ini
+
+// Hasil build: /index.html berisi konten landing (bukan shell kosong),
+// sementara rute lain tetap dilayani oleh fallback 200.html sebagai SPA.
+```
+
+Untuk hosting di Apache, kamu perlu memberitahu server agar URL yang tidak cocok dengan file fisik diarahkan ke halaman fallback. Taruh file ini di `static/.htaccess` supaya ikut tersalin ke output build.
+
+```apacheconf
+# static/.htaccess — arahkan request yang tak cocok file ke 200.html
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	RewriteBase /
+	RewriteRule ^200\.html$ - [L]
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{REQUEST_FILENAME} !-d
+	RewriteRule . /200.html [L]
+</IfModule>
+```
+
+<Callout type="warning">
+Banyak host statis modern (Netlify, Vercel, Cloudflare Pages, GitHub Pages dengan trik <code>404.html</code>) sudah otomatis melayani SPA fallback. Tapi server "polos" seperti Apache/Nginx tidak — tanpa aturan rewrite di atas, mengakses <code>/profil/42</code> langsung (atau me-refresh-nya) akan menghasilkan <strong>404 sungguhan</strong>, karena tidak ada file fisik bernama <code>profil/42</code>. Aturan rewrite-lah yang membelokkan semua URL "tak dikenal" ke <code>200.html</code> agar router klien yang menanganinya.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Ubah dashboard internal jadi SPA, tapi pertahankan SEO landing page">
+Kamu punya aplikasi SvelteKit: ada landing page publik di `/` (butuh SEO & preview link bagus) dan area dashboard di balik login (`/app/...`) yang penuh interaksi dan tidak butuh SEO. Tim ingin men-deploy ke GitHub Pages (host statis murni, tanpa server Node).
+
+Tulis konfigurasi yang dibutuhkan: `svelte.config.js`, root `+layout.js`, dan override untuk landing page. Jelaskan singkat mengapa tiap bagian ada.
+
+{#snippet solution()}
+
+  ```js
+  // svelte.config.js — adapter-static dgn fallback (mengaktifkan kemampuan SPA)
+  import adapter from '@sveltejs/adapter-static';
+
+  const config = {
+    kit: {
+      adapter: adapter({
+        fallback: '200.html' // shell SPA untuk semua rute dinamis (area /app)
+      })
+    }
+  };
+
+  export default config;
+  ```
+
+  ```js
+  // src/routes/+layout.js — default global: SPA (CSR-only)
+  // Seluruh app jadi SPA kecuali rute yang menimpa setelan ini.
+  export const ssr = false;
+  ```
+
+  ```js
+  // src/routes/+page.js — landing publik: prerender jadi HTML sungguhan
+  // Override lokal agar halaman ini punya konten di HTML-nya -> SEO & preview
+  // link jalan. Sisa app (/app/...) tetap SPA lewat fallback 200.html.
+  export const prerender = true;
+  export const ssr = true;
+  ```
+
+  Kenapa begini: `adapter-static` + `fallback` membuat output 100% statis (cocok GitHub Pages, tanpa server). `ssr = false` di root menjadikan default seluruh app sebagai SPA. Tapi landing butuh SEO, jadi kita timpa khusus rute `/` dengan `prerender = true` + `ssr = true` agar SvelteKit menghasilkan `index.html` berisi konten nyata saat build. Hasilnya: satu deploy statis yang melayani landing ber-SEO sekaligus dashboard SPA.
+
+  Catatan GitHub Pages: ia tidak punya rewrite seperti Apache, jadi trik umum adalah memakai `fallback: '404.html'` — GitHub Pages otomatis menyajikan `404.html` untuk URL tak dikenal, sehingga berfungsi sebagai fallback SPA.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan refleks memilih SPA mode cuma karena "lebih sederhana". Mematikan SSR membuang salah satu keunggulan terbesar SvelteKit: HTML yang langsung berisi konten. Untuk situs publik (blog, toko, marketing), SPA mode bisa menurunkan ranking SEO dan bikin preview link kosong. Default-kan ke SSR/prerender; pilih SPA hanya saat aplikasimu memang di balik login dan SEO tak relevan.
+</Callout>
+
+<Callout type="warning">
+Setelah <code>ssr = false</code>, ingat bahwa <code>load</code> dan semua kode kini berjalan <strong>di browser pengguna</strong>. Jangan menaruh rahasia (API key, kredensial) di <code>+page.js</code> — semuanya terkirim ke klien dan bisa dibaca siapa pun. Fetch ke API pihak ketiga juga sekarang kena CORS dan kecepatan koneksi pengguna, bukan lagi server cepat di dekat database.
+</Callout>
+
+<Callout type="tip">
+Nama file <code>fallback</code> itu penting dan tergantung host. <code>200.html</code> cocok untuk Netlify/Surge; GitHub Pages biasanya pakai <code>404.html</code>. Salah memilih bikin refresh di URL dalam menghasilkan 404. Cek dokumentasi hosting-mu soal cara ia melayani "URL tak cocok file" sebelum menentukan nama fallback.
+</Callout>
+
+<Callout type="legacy">
+Di tutorial lama (era Sapper / SvelteKit awal) kamu mungkin melihat opsi seperti <code>ssr: false</code> ditaruh di <code>svelte.config.js</code> level <code>kit</code>, atau paket <code>adapter-spa</code> komunitas. Itu sudah usang. Cara resmi di SvelteKit 2 adalah <code>export const ssr = false</code> di <code>+layout.js</code> ditambah <code>adapter-static</code> dengan <code>fallback</code>. Tidak ada (dan tidak perlu) paket adapter khusus SPA.
+</Callout>
+
+<LegacyVsModern rows={[
+  { legacy: 'paket adapter-spa pihak ketiga', modern: 'adapter-static + opsi fallback', note: 'SPA = konfigurasi, bukan adapter terpisah' },
+  { legacy: 'kit: { ssr: false } di svelte.config.js', modern: 'export const ssr = false di src/routes/+layout.js', note: 'pengaturan dipindah ke page/layout options' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/single-page-apps" label="SvelteKit — Single-page apps (mode SPA: ssr=false + adapter-static fallback)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapter-static" label="SvelteKit — adapter-static (opsi fallback, pages, assets)" />
+<DocsLink href="https://svelte.dev/docs/kit/page-options" label="SvelteKit — Page options (ssr, prerender, csr per-rute)" />

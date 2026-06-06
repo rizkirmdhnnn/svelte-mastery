@@ -1,0 +1,348 @@
+---
+title: Performance
+product: kit
+section: best-practices
+sectionTitle: Best practices
+sectionOrder: 5
+order: 2
+status: stable
+description: Strategi performa SvelteKit dari hulu ke hilir — mengukur dengan Lighthouse, preload, code-splitting, menghindari waterfall lewat parallel load & streaming, caching, sampai optimasi font & aset.
+docs: https://svelte.dev/docs/kit/performance
+keywords: [performance, lighthouse, preload, code-splitting, waterfall, caching]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Performa web itu bukan satu tombol "buat cepat", melainkan banyak keputusan kecil: **kapan** kode dimuat, **berapa banyak** yang dikirim, **berurutan atau bersamaan** data diambil, dan **berapa lama** browser boleh menyimpannya. Kabar baiknya: SvelteKit sudah memberimu sebagian besar optimasi ini secara **default**. Tugasmu lebih banyak soal *tidak merusak* default itu, plus menambal celah yang khas aplikasimu sendiri.
+
+Kalau kamu datang dari React/Next atau Vue/Nuxt, intuisi besarnya sama (SSR, code-splitting, streaming). Yang berbeda di SvelteKit: banyak hal dikendalikan lewat **konvensi file** (`+page.server.js`, `load`) dan **atribut HTML** (`data-sveltekit-preload-*`), bukan lewat library atau wrapper komponen. Hasilnya: lebih sedikit boilerplate, tapi kamu tetap perlu paham *mengapa*-nya supaya tidak salah pasang.
+
+### Apa yang SvelteKit beri gratis
+
+Sebelum mengoptimasi apa pun, sadari dulu yang sudah berjalan otomatis:
+
+- **Code-splitting** — hanya kode untuk halaman saat ini yang dimuat.
+- **Asset preloading** — file CSS/JS yang dibutuhkan halaman di-*preload* lewat tag `<link rel="modulepreload">`, mencegah waterfall (file yang baru minta file lain).
+- **File hashing** — nama file aset mengandung hash isinya (mis. `app.a1b2c3.js`), jadi bisa di-cache **selamanya**; saat isi berubah, namanya berubah dan cache otomatis "kedaluwarsa".
+- **Request coalescing** — beberapa `load` yang `fetch` ke endpoint sama digabung jadi satu request.
+- **Parallel loading** — beberapa `load` universal yang terpisah berjalan **bersamaan**, bukan antre.
+- **Data inlining** — hasil `fetch` saat SSR disisipkan ke HTML, jadi browser tak perlu mengulang request yang sama saat hydration.
+- **Conservative invalidation** — `load` hanya dijalankan ulang kalau dependensinya benar-benar berubah.
+- **Link preloading** — saat kamu *hover* sebuah link, kode + data tujuan ditarik diam-diam (lebih dalam di bawah).
+
+Intinya: SvelteKit menutup banyak "lubang waterfall" untukmu. Yang tersisa biasanya waterfall yang **kamu** buat sendiri di dalam `load`, dan ukuran bundle yang **kamu** tambahkan lewat dependensi.
+
+### Mengukur dulu, baru optimasi (jangan menebak)
+
+Aturan pertama performa: **kamu tidak bisa memperbaiki yang tidak kamu ukur.** Optimasi tanpa data itu seperti dokter meresepkan obat tanpa diagnosis — kadang kena, sering meleset, kadang malah memperburuk.
+
+Alat yang dipakai:
+
+- **Lighthouse** (di Chrome/Edge DevTools, tab Lighthouse) — skor performa + diagnosa konkret (LCP, CLS, TBT, dst.).
+- **PageSpeed Insights** & **WebPageTest** — untuk situs yang **sudah dideploy** (mengukur dari server eksternal, lebih realistis).
+- Tab **Network** & **Performance** di DevTools — untuk melihat waterfall request nyata dan main-thread.
+- **Server-Timing headers** / **OpenTelemetry** — untuk membongkar lambatnya *backend* (query DB, API hulu).
+
+<Callout type="warning">
+Ukur di **preview mode** (`vite preview` setelah `vite build`), **bukan** di dev mode. Dev server menambah overhead besar — HMR, kompilasi on-demand, kode debug — yang **tidak** ada di produksi. Mengukur performa di `npm run dev` itu seperti menguji mobil balap dengan rem tangan masih tertarik: angkanya menipu.
+</Callout>
+
+### Analogi besar: restoran yang sibuk
+
+Bayangkan aplikasimu sebuah restoran, dan setiap kunjungan halaman adalah satu tamu yang memesan. Sepanjang modul ini kita pakai analogi ini:
+
+- **Code-splitting** = kamu tidak membawa seluruh isi dapur ke meja tamu; cukup hidangan yang dia pesan.
+- **Waterfall vs parallel** = memasak sup, baru memetik sayur, baru memanggang ayam (antre) versus tiga koki memasaknya bersamaan.
+- **Streaming** = mengantar *appetizer* lebih dulu selagi hidangan utama masih dimasak, supaya tamu tidak duduk menatap meja kosong.
+- **Preload** = pelayan mulai menyiapkan pesanan begitu melihat tanganmu bergerak ke menu, bukan menunggu kamu selesai bicara.
+- **Caching** = menyimpan kaldu yang sudah jadi, jadi tamu berikutnya tak perlu menunggu kaldu direbus dari nol.
+
+### Preload: membuat navigasi terasa instan
+
+Saat app sudah ter-*hydrate*, klik link tidak memuat ulang halaman penuh — SvelteKit hanya mengambil data yang berubah lalu menukar komponen. **Preloading** mempercepat ini dengan menarik kode + data **sebelum** kamu mengklik:
+
+- `data-sveltekit-preload-data="hover"` (default di `app.html`) — saat pointer *hover* di atas link, jalankan `load` tujuan lebih awal. Begitu diklik, datanya sudah siap.
+- `data-sveltekit-preload-code` — tarik *modul/kode* tujuan lebih awal (tanpa menjalankan `load`). Nilai: `"eager"` (segera), `"viewport"` (saat link terlihat), `"hover"`, `"tap"`.
+- Secara programatik: `preloadData(href)` dan `preloadCode(href)` dari `$app/navigation`.
+
+Hover memberi kita rata-rata ~200ms "gratis" — jeda alami antara mata melihat link, tangan menggerakkan kursor, dan jari mengklik. SvelteKit memakai jeda itu untuk bekerja di belakang layar.
+
+### Code-splitting & ukuran bundle
+
+Code-splitting sudah otomatis per-rute. Pengungkit terbesar yang **masih** di tanganmu adalah **berapa banyak JS yang kamu kirim**:
+
+- Pakai **Svelte 5** terbaru — runtime-nya lebih kecil & cepat dibanding v4/v3.
+- Untuk kode yang jarang/kondisional (mis. editor berat, chart), pakai **dynamic `import(...)`** alih-alih `import` statis — jadi ia di-split ke chunk terpisah dan hanya diunduh saat dibutuhkan.
+- Audit ukuran dependensi dengan **`rollup-plugin-visualizer`** — sering ada satu library gemuk yang menyumbang separuh bundle.
+- Pindahkan kerja ke server: gunakan **server-side analytics** (lewat adapter Cloudflare/Netlify/Vercel) ketimbang script tracking di client; jalankan script pihak ketiga di web worker via **Partytown**.
+
+### Waterfall: musuh nomor satu
+
+**Waterfall** adalah rantai request yang saling menunggu: A selesai → baru minta B → baru minta C. Tiap mata rantai menambah satu *round-trip*. Ini penyebab lambat paling umum dan paling mudah tak sengaja dibuat.
+
+SvelteKit mencegah waterfall *antar* `load` (mereka jalan paralel). Tapi **di dalam satu `load`**, kalau kamu menulis `await` berurutan, kamu membuat waterfall sendiri. Solusinya: `Promise.all` untuk request yang tak saling bergantung, **streaming** (promise tak di-`await`) untuk data lambat yang tak perlu memblokir render, dan **join database** ketimbang banyak query terpisah.
+
+### Caching: simpan yang stabil
+
+Request tercepat adalah request yang **tidak terjadi**. Dua lapis caching:
+
+- **Aset statis** (JS/CSS/gambar dengan hash) — sudah `immutable` & cache selamanya berkat file hashing. Tak perlu kamu atur.
+- **Data dinamis** — kamu kontrol lewat `setHeaders({ 'cache-control': ... })` di dalam `load`/endpoint, supaya browser & CDN boleh menyimpan respons untuk durasi tertentu. Cocok untuk data yang sama bagi semua orang dan tidak sering berubah (mis. daftar artikel, harga produk).
+
+### Hosting, font, & aset
+
+- **Letakkan frontend dekat backend** (idealnya data center yang sama) untuk memangkas latensi; deploy ke **edge** bila bisa; pakai **HTTP/2+**.
+- **Font** — *preload* font lewat filter di `handle` hook supaya teks tidak "loncat" saat font datang; **subset** font (buang glyph tak terpakai) untuk memperkecil file.
+- **Gambar** — pakai `@sveltejs/enhanced-img` untuk gambar lokal (AVIF/WebP + `srcset` + ukuran otomatis), sajikan gambar dinamis lewat **CDN gambar**, dan jangan lupa `loading="lazy"`.
+- **Video** — kompres (Handbrake), pakai `.webm`/`.mp4`, `preload="none"`, dan strip audio dari video yang di-*mute*.
+
+## 2. Contoh kode
+
+Tiga pola paling berdampak: paralelisasi `load`, streaming data lambat, dan caching.
+
+```js
+// src/routes/produk/[slug]/+page.server.js
+// ❌ WATERFALL: tiga await berurutan = tiga round-trip antre.
+export async function load({ params, fetch }) {
+	const produk = await fetch(`/api/produk/${params.slug}`).then((r) => r.json());
+	const review = await fetch(`/api/review/${params.slug}`).then((r) => r.json());
+	const terkait = await fetch(`/api/terkait/${params.slug}`).then((r) => r.json());
+	return { produk, review, terkait };
+}
+```
+
+```js
+// src/routes/produk/[slug]/+page.server.js
+// ✅ PARALEL: ketiganya tak saling bergantung -> jalankan bersamaan.
+export async function load({ params, fetch }) {
+	// Promise.all menembakkan ketiga request sekaligus, lalu menunggu yang terlama.
+	// Total waktu = request terlambat, bukan jumlah ketiganya.
+	const [produk, review, terkait] = await Promise.all([
+		fetch(`/api/produk/${params.slug}`).then((r) => r.json()),
+		fetch(`/api/review/${params.slug}`).then((r) => r.json()),
+		fetch(`/api/terkait/${params.slug}`).then((r) => r.json())
+	]);
+	return { produk, review, terkait };
+}
+```
+
+```js
+// src/routes/produk/[slug]/+page.server.js
+// ✅ STREAMING: blokir hanya untuk data inti; alirkan yang lambat belakangan.
+export async function load({ params, fetch }) {
+	return {
+		// Di-await -> render HALAMAN menunggu ini (data inti, harus ada di awal).
+		produk: await fetch(`/api/produk/${params.slug}`).then((r) => r.json()),
+
+		// TIDAK di-await -> kembalikan PROMISE. Halaman langsung ter-render,
+		// review "mengalir" masuk lewat HTTP saat siap (lihat #await di komponen).
+		review: fetch(`/api/review/${params.slug}`).then((r) => r.json())
+	};
+}
+```
+
+```svelte
+<!-- src/routes/produk/[slug]/+page.svelte — render promise streaming -->
+<script>
+	let { data } = $props(); // data.produk = nilai; data.review = Promise
+</script>
+
+<h1>{data.produk.nama}</h1>
+
+<!-- {#await} menampilkan placeholder dulu, lalu isi saat promise resolve.
+     Inilah cara "appetizer dulu": halaman tampil instan, review menyusul. -->
+{#await data.review}
+	<p>Memuat ulasan…</p>
+{:then review}
+	<ul>
+		{#each review as r}
+			<li>{r.teks}</li>
+		{/each}
+	</ul>
+{:catch}
+	<p>Gagal memuat ulasan.</p>
+{/await}
+```
+
+```js
+// src/routes/artikel/+page.server.js — caching data yang stabil
+export async function load({ fetch, setHeaders }) {
+	const res = await fetch('/api/artikel');
+
+	// Izinkan browser & CDN menyimpan respons 1 jam; sajikan basi sampai 1 hari
+	// sambil revalidasi di belakang layar. Cocok utk data yang sama bagi semua user.
+	setHeaders({
+		'cache-control': 'public, max-age=3600, stale-while-revalidate=86400'
+	});
+
+	return { artikel: await res.json() };
+}
+```
+
+## 3. Coba sendiri
+
+Pola server di atas (parallel `load`, streaming, `setHeaders`) butuh runtime server, jadi tidak bisa dijalankan di playground live. Tapi dua hal di bawah bisa kamu **terapkan langsung** di proyekmu dan lihat efeknya di tab Network — pelajari anotasinya baik-baik.
+
+```svelte
+<!-- src/app.html — preload default sudah aktif lewat atribut di <body>.
+     Ini alasan navigasi SvelteKit terasa "instan" tanpa kamu menulis apa pun. -->
+<body data-sveltekit-preload-data="hover">
+	%sveltekit.body%
+</body>
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — kontrol preload per-area (atribut diwariskan) -->
+<script>
+	let { children } = $props();
+</script>
+
+<!-- "hover": tarik data tujuan saat pointer mendekat -> klik terasa instan.
+     "tap": untuk mobile, tarik saat jari menyentuh (sebelum lepas). -->
+<nav data-sveltekit-preload-data="hover">
+	<a href="/">Beranda</a>
+	<a href="/produk">Produk</a>
+
+	<!-- Matikan preload untuk link berat/jarang dipakai supaya tak buang bandwidth.
+	     Anak menimpa induk — persis seperti rambu lalu lintas per-blok. -->
+	<a href="/laporan-besar" data-sveltekit-preload-data="off">Laporan</a>
+</nav>
+
+<!-- Svelte 5: render konten layout dengan {@render}, BUKAN <slot> -->
+{@render children()}
+```
+
+```js
+// src/hooks.server.js — preload font supaya teks tak "loncat" (CLS) saat SSR.
+// Default-nya SvelteKit hanya preload 'js' & 'css'; kita tambahkan 'font'.
+export async function handle({ event, resolve }) {
+	return resolve(event, {
+		preload: ({ type }) => type === 'js' || type === 'css' || type === 'font'
+	});
+}
+```
+
+```js
+// vite.config.js — audit ukuran bundle dengan visualizer.
+import { sveltekit } from '@sveltejs/kit/vite';
+import { visualizer } from 'rollup-plugin-visualizer';
+
+export default {
+	plugins: [
+		sveltekit(),
+		// Buka stats.html setelah `vite build` -> lihat siapa biang bundle gemuk.
+		visualizer({ emitFile: true, filename: 'stats.html' })
+	]
+};
+```
+
+<Callout type="tip">
+Untuk kode yang berat tapi jarang dipakai (editor rich-text, library chart, peta), ganti `import statis` dengan `await import('...')` di dalam handler/`onMount`. SvelteKit otomatis memecahnya ke chunk terpisah yang baru diunduh saat fungsi itu dipanggil — bundle awal halamanmu ikut mengecil.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Bedah & perbaiki halaman yang lambat">
+Sebuah halaman `/dashboard` lambat. `load`-nya seperti ini:
+
+```js
+export async function load({ fetch }) {
+	const user = await fetch('/api/me').then((r) => r.json());
+	const stats = await fetch('/api/stats').then((r) => r.json());
+	const feed = await fetch('/api/feed').then((r) => r.json()); // berat & lambat
+	return { user, stats, feed };
+}
+```
+
+Kerjakan tiga hal:
+
+1. **Hilangkan waterfall** untuk `user` dan `stats` (keduanya tak saling bergantung dan dibutuhkan segera).
+2. **Stream** `feed` yang berat supaya halaman tampil tanpa menunggunya, lalu render dengan placeholder di komponen.
+3. **Cache** respons `stats` selama 5 menit karena angkanya tak perlu real-time.
+
+Tulis ulang `load`-nya dan tunjukkan potongan `+page.svelte` untuk menampilkan `feed` yang di-stream.
+
+{#snippet solution()}
+
+  ```js
+  // src/routes/dashboard/+page.server.js
+  export async function load({ fetch, setHeaders }) {
+    // 1) user & stats jalan paralel (tak saling bergantung) — bukan antre.
+    const [user, stats] = await Promise.all([
+      fetch('/api/me').then((r) => r.json()),
+      fetch('/api/stats').then((r) => r.json())
+    ]);
+
+    // 3) cache stats 5 menit; sajikan basi 1 jam sambil revalidasi.
+    setHeaders({
+      'cache-control': 'public, max-age=300, stale-while-revalidate=3600'
+    });
+
+    return {
+      user,
+      stats,
+      // 2) feed TIDAK di-await -> dikembalikan sebagai promise (streaming).
+      //    Halaman ter-render duluan; feed mengalir masuk belakangan.
+      feed: fetch('/api/feed').then((r) => r.json())
+    };
+  }
+  ```
+
+  ```svelte
+  <!-- src/routes/dashboard/+page.svelte -->
+  <script>
+    let { data } = $props(); // data.feed = Promise
+  </script>
+
+  <h1>Halo, {data.user.nama}</h1>
+  <p>Total kunjungan: {data.stats.total}</p>
+
+  <!-- feed yang di-stream: placeholder dulu, isi menyusul -->
+  {#await data.feed}
+    <p>Memuat feed…</p>
+  {:then feed}
+    <ul>
+      {#each feed as item}
+        <li>{item.judul}</li>
+      {/each}
+    </ul>
+  {:catch}
+    <p>Gagal memuat feed.</p>
+  {/await}
+  ```
+
+  Inti: `Promise.all` mematikan waterfall untuk data inti, promise tak-di-`await` + blok `{#await}` membuat data berat **streaming** (halaman tampil instan), dan `setHeaders` membiarkan browser/CDN menyimpan `stats` agar request berikutnya nyaris gratis.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menumpuk `await` berurutan di dalam satu `load` untuk request yang **tidak** saling bergantung — itu waterfall buatan sendiri dan penyebab lambat paling umum. Pakai `Promise.all` untuk menembakkannya bersamaan. Ingat: SvelteKit memparalelkan `load` yang **berbeda**, tapi tidak bisa menebak bahwa dua `await` di dalam `load` yang **sama** sebenarnya independen — itu tanggung jawabmu.
+</Callout>
+
+<Callout type="warning">
+Ukur performa di **preview** (`vite build` lalu `vite preview`), bukan di `npm run dev`. Dev mode penuh overhead (HMR, kompilasi on-demand, kode debug) yang tidak ada di produksi, jadi skor Lighthouse-nya menyesatkan — biasanya jauh lebih buruk dari kenyataan, kadang menyembunyikan masalah nyata.
+</Callout>
+
+<Callout type="tip">
+Streaming (`load` mengembalikan promise tanpa `await`) ampuh, tapi pakai untuk data yang **boleh datang terlambat** (review, rekomendasi, feed sekunder). Untuk data **inti** halaman (judul, harga, konten utama) tetap `await` — kalau di-stream, crawler/SEO bisa melihat halaman setengah kosong, dan user melihat banyak placeholder yang justru terasa lambat.
+</Callout>
+
+<Callout type="warning">
+Hati-hati `setHeaders` untuk respons yang **bergantung user** (mis. data berisi nama/saldo akun). `cache-control: public` akan membuat CDN menyimpan dan menyajikannya ke orang lain. Untuk data per-user, gunakan `private` (hanya browser user itu) atau jangan cache sama sekali. Selain itu, `setHeaders` hanya boleh dipanggil **sekali** per nama header dan tidak boleh menyetel `set-cookie`.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/performance" label="SvelteKit — Performance (overview lengkap)" />
+<DocsLink href="https://svelte.dev/docs/kit/load#Streaming-with-promises" label="SvelteKit — Streaming with promises (di load)" />
+<DocsLink href="https://svelte.dev/docs/kit/link-options" label="SvelteKit — Link options (data-sveltekit-preload-*)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (preload filter di handle)" />
+<DocsLink href="https://svelte.dev/docs/kit/images" label="SvelteKit — Images (@sveltejs/enhanced-img)" />

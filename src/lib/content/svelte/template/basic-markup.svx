@@ -1,0 +1,263 @@
+---
+title: Basic markup
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 1
+status: stable
+description: Cara menyisipkan nilai JavaScript ke teks & atribut HTML di Svelte lewat kurung kurawal, plus shorthand, spread, boolean attribute, dan komentar.
+docs: https://svelte.dev/docs/svelte/basic-markup
+keywords: [markup, interpolation, attributes, shorthand, spread, boolean attributes]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+React dan Vue sama-sama menaruh satu lapisan terjemahan antara kamu dan HTML. React pakai JSX — yang kelihatan seperti HTML tapi sebenarnya JavaScript yang menyamar, makanya `class` jadi `className` dan `for` jadi `htmlFor`. Vue pakai `<template>` dengan direktif (`{{ }}` untuk teks, `:` / `v-bind` untuk atribut). Svelte mengambil jalan ketiga: **markup-nya HTML beneran, lalu kamu "menumpahkan" sedikit JavaScript ke dalamnya lewat kurung kurawal `{ }`**.
+
+Analogi yang enak dipakai: bayangkan HTML sebagai formulir kertas yang sudah dicetak. Sebagian besar isinya teks tetap. Tapi ada beberapa kotak kosong bertuliskan "isi di sini". Kurung kurawal `{ }` itu adalah kotak kosong tersebut — di mana pun kamu taruh, Svelte mengisinya dengan hasil ekspresi JavaScript, lalu mengisinya ulang otomatis tiap nilainya berubah. Kamu tidak menulis ulang seluruh formulir; kamu cuma menandai lubang-lubangnya.
+
+Kenapa pendekatan ini penting, bukan cuma soal selera? Karena "satu sintaks untuk satu hal" mengurangi beban hafalan. Di Svelte ada **tepat satu** cara menaruh nilai dinamis: kurawal `{ }`. Tidak peduli itu di teks, di atribut, atau sebagai event handler — semuanya kurawal. Tidak ada alias atribut, tidak ada dua notasi berbeda untuk teks vs atribut.
+
+Ada beberapa tempat kurawal itu muncul:
+
+- **Di antara tag (text expression)**: `<h1>Halo, {name}</h1>` — mengisi kotak teks.
+- **Di dalam atribut**: `<img src={url}>` — mengisi nilai atribut, tanpa tanda kutip.
+- **Sebagai event handler**: `<button onclick={kirim}>` — `onclick`, bukan `on:click` (itu API lama) dan bukan `onClick` ala React.
+
+Satu aturan kecil soal nama tag yang gampang terlewat: **tag huruf kecil** (`<div>`, `<span>`) dianggap elemen HTML, sedangkan **tag berhuruf besar** (`<Widget>`) atau bertitik (`<my.stuff>`) dianggap komponen. Jadi penamaan komponen dengan PascalCase bukan sekadar konvensi gaya — itulah yang membedakan komponen dari elemen di mata compiler.
+
+Karena markup-nya HTML asli, atribut juga ditulis dengan nama HTML asli: `class`, `for`, `tabindex`, `readonly` — bukan versi "JS-friendly" seperti `className` atau `htmlFor`. Buat orang yang sudah lelah mengingat alias JSX, ini langsung terasa lebih ringan.
+
+<Callout type="tip">
+Aturan praktis: di Svelte, satu pasang kurawal <code>&#123; &#125;</code> = satu <strong>ekspresi</strong> JavaScript yang nilainya ditampilkan atau dipasang. Bukan blok statement — tidak boleh ada <code>if</code>/<code>for</code> mentah di situ. Kontrol alur memakai blok khusus seperti <code>&#123;#if&#125;</code> dan <code>&#123;#each&#125;</code> yang dibahas di modul lain.
+</Callout>
+
+## 2. Contoh kode
+
+Text expression — apa pun yang valid sebagai ekspresi JS boleh masuk ke kurawal, selama menghasilkan satu nilai:
+
+```svelte
+<script>
+	let name = $state('Dunia');
+	let price = $state(15000);
+</script>
+
+<!-- ekspresi sederhana: cukup nama variabel -->
+<h1>Halo {name}!</h1>
+
+<!-- pemanggilan method & operasi tetap boleh, selama menghasilkan satu nilai -->
+<p>Harga: Rp {price.toLocaleString('id-ID')}</p>
+<p>Huruf besar: {name.toUpperCase()}</p>
+
+<!-- null & undefined sengaja dilewati (tidak dicetak "null"); nilai lain dipaksa jadi string -->
+<!-- teks juga di-HTML-escape otomatis, jadi aman dari XSS -->
+<p>{name} punya {3 + 4} apel</p>
+```
+
+Atribut: nilai dari ekspresi (tanpa tanda kutip di sekeliling kurawal), shorthand, boolean, dan spread:
+
+```svelte
+<script>
+	let src = $state('/foto.jpg');
+	let alt = $state('Foto profil');
+	let disabled = $state(true);
+	let page = $state(2);
+
+	// objek berisi banyak atribut sekaligus, untuk di-spread
+	let attrs = $state({ type: 'text', placeholder: 'Nama kamu', maxlength: 20 });
+</script>
+
+<!-- atribut biasa: nilai dari ekspresi, tanpa kutip mengelilingi { } -->
+<img src={src} alt={alt} />
+
+<!-- ekspresi boleh diselipkan di dalam string atribut juga -->
+<a href="page/{page}">Halaman {page}</a>
+
+<!-- SHORTHAND: kalau nama atribut == nama variabel, cukup tulis {src} -->
+<!-- {src} sama persis dengan src={src} -->
+<img {src} {alt} />
+
+<!-- BOOLEAN attribute: hadir kalau nilainya truthy, hilang kalau falsy -->
+<!-- saat disabled=false, atribut 'disabled' TIDAK dirender sama sekali -->
+<button {disabled}>Kirim</button>
+
+<!-- SPREAD: tebar semua key objek jadi atribut sekaligus -->
+<!-- hasilnya: <input type="text" placeholder="Nama kamu" maxlength="20" /> -->
+<input {...attrs} />
+
+<!-- spread bisa digabung; atribut SETELAH spread menimpa yang dari spread -->
+<input {...attrs} placeholder="Override!" />
+```
+
+Event handler dan komentar:
+
+```svelte
+<script>
+	let n = $state(0);
+	function reset() {
+		n = 0;
+	}
+</script>
+
+<!-- event = 'on' + nama event, huruf kecil. onclick, bukan on:click / onClick -->
+<button onclick={() => n++}>Tambah ({n})</button>
+
+<!-- shorthand jalan untuk event juga: {onclick} == onclick={onclick} bila nama cocok -->
+<!-- di sini kita pakai fungsi bernama 'reset', jadi tulis eksplisit -->
+<button onclick={reset}>Reset</button>
+
+<!-- komentar di markup pakai sintaks HTML biasa, bukan kurawal -->
+<!-- komentar berawalan "svelte-" bisa mematikan warning compiler tertentu: -->
+<!-- svelte-ignore a11y_missing_attribute -->
+<img src="/logo.png" />
+```
+
+## 3. Coba sendiri
+
+Ubah variabel di `$state`, lalu perhatikan teks & atribut ikut berubah otomatis. Coba klik tombol, toggle tema, dan habiskan stok sampai tombol "Beli" mati.
+
+<Playground code={`<script>
+	let name = $state('Rizki');
+	let count = $state(3);
+	let stock = $state(2);
+	let dark = $state(true);
+	let inputProps = $state({ type: 'text', placeholder: 'Ketik di sini', maxlength: 12 });
+</script>
+
+<h2>Halo {name}, kamu klik {count} kali</h2>
+<p>Nama kapital: {name.toUpperCase()}</p>
+
+<!-- spread: sebar type, placeholder, maxlength jadi atribut sekaligus -->
+<input {...inputProps} />
+
+<!-- boolean attribute: tombol mati saat stok habis -->
+<p>Sisa stok: {stock}</p>
+<button onclick={() => count++}>Klik aku</button>
+<button onclick={() => stock--} disabled={stock <= 0}>Beli</button>
+
+<!-- atribut HTML asli: class & data-* langsung, tanpa className -->
+<div class="kotak" data-theme={dark ? 'gelap' : 'terang'}>
+	Tema sekarang: {dark ? 'gelap' : 'terang'}
+</div>
+<button onclick={() => (dark = !dark)}>Toggle tema</button>
+
+<style>
+	.kotak {
+		padding: 12px;
+		margin-top: 10px;
+		border-radius: 8px;
+	}
+	.kotak[data-theme='gelap'] { background: #222; color: #eee; }
+	.kotak[data-theme='terang'] { background: #eee; color: #222; }
+</style>`} />
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Interpolasi & atribut"
+	svelte={`<script>
+	let name = $state('Rizki');
+	let url = $state('/foto.jpg');
+</script>
+
+<h1 class="judul">Halo {name}</h1>
+<img src={url} alt={name} />
+<label for="email">Email</label>`}
+	react={`function Profile() {
+	const [name] = useState('Rizki');
+	const [url] = useState('/foto.jpg');
+	return (
+		<>
+			<h1 className="judul">Halo {name}</h1>
+			<img src={url} alt={name} />
+			<label htmlFor="email">Email</label>
+		</>
+	);
+}`}
+	vue={`<script setup>
+import { ref } from 'vue'
+const name = ref('Rizki')
+const url = ref('/foto.jpg')
+</script>
+
+<template>
+	<h1 class="judul">Halo {{ name }}</h1>
+	<img :src="url" :alt="name" />
+	<label for="email">Email</label>
+</template>`}
+	diff={{ svelte: [5, 6, 7], react: [6, 7, 8], vue: [7, 8, 9] }}
+	note="JSX memakai atribut versi JS (className, htmlFor) karena JSX dikompilasi jadi objek JS dan 'class'/'for' adalah reserved word. Svelte & Vue memakai nama HTML asli (class, for). Untuk interpolasi: Svelte & JSX sama-sama satu kurawal &#123;expr&#125; di teks maupun atribut; Vue membedakan teks (&#123;&#123; &#125;&#125;) dari binding atribut (: / v-bind). Tidak ada yang mutlak lebih benar — JSX seragam tapi butuh alias, Vue eksplisit tapi dua sintaks, Svelte HTML-asli dengan satu kurawal di mana saja."
+/>
+
+## 5. Latihan
+
+<Exercise title="Kartu produk dari satu objek">
+Buat komponen kecil yang menampilkan kartu produk. Diberikan objek `product` di `$state`, tampilkan:
+
+1. Nama produk sebagai teks di dalam `<h3>`.
+2. Gambar `<img>` yang `src` & `alt`-nya diambil dari `product`.
+3. Harga diformat dengan `toLocaleString('id-ID')`.
+4. Tombol "Beli" yang `disabled` ketika `product.stock` bernilai `0` (gunakan boolean attribute).
+5. Sebarkan objek `extraAttrs` ke elemen `<article>` pembungkus memakai spread.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let product = $state({
+		name: 'Kopi Susu',
+		src: '/kopi.jpg',
+		alt: 'Segelas kopi susu',
+		price: 18000,
+		stock: 0
+	});
+
+	let extraAttrs = $state({ id: 'card-1', 'data-kategori': 'minuman' });
+</script>
+
+<!-- spread menebar id & data-kategori jadi atribut <article> -->
+<article {...extraAttrs} class="card">
+	<h3>{product.name}</h3>
+
+	<!-- nilai atribut dari ekspresi, tanpa kutip mengelilingi { } -->
+	<img src={product.src} alt={product.alt} />
+
+	<p>Rp {product.price.toLocaleString('id-ID')}</p>
+
+	<!-- boolean attribute: 'disabled' muncul hanya saat stock === 0 -->
+	<button disabled={product.stock === 0}>Beli</button>
+</article>
+```
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan bungkus kurawal dengan tanda kutip di atribut. <code>src="&#123;url&#125;"</code> memang masih jalan untuk string sederhana, tapi <code>src=&#123;url&#125;</code> lebih tepat: bentuk tanpa kutip meneruskan <em>nilai asli</em> (boleh angka, boolean, atau objek untuk spread), sedangkan bentuk berkutip selalu memaksanya jadi string. Untuk boolean attribute & spread, bentuk berkutip akan rusak.
+</Callout>
+
+<Callout type="warning">
+Kurawal hanya untuk <strong>ekspresi</strong> (sesuatu yang menghasilkan nilai), bukan statement. <code>&#123;name.toUpperCase()&#125;</code> boleh; <code>&#123;if (x) ...&#125;</code> tidak — kontrol alur pakai blok <code>&#123;#if&#125;</code>. Kalau perlu menampilkan karakter kurawal literal di teks (misal <code>&#123;</code>), tulis sebagai entitas HTML <code>&amp;#123;</code> / <code>&amp;lbrace;</code>, atau bungkus dalam ekspresi: <code>&#123;'&#123;'&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+Mau menaruh <strong>regex literal</strong> langsung di kurawal? Bungkus dengan tanda kurung biasa lebih dulu, mis. <code>&#123;(/^[A-Za-z ]+$/).test(value) ? 'ok' : 'salah'&#125;</code>. Tanpa kurung, garis miring regex bisa salah ditafsirkan oleh parser sebagai penutup tag/blok.
+</Callout>
+
+<Callout type="legacy">
+Event di Svelte 5 pakai atribut <code>onclick</code> (huruf kecil, seperti HTML asli) — <strong>bukan</strong> <code>on:click</code>. Sintaks <code>on:click</code> beserta modifier seperti <code>on:click|preventDefault</code> adalah API lama Svelte 4. Di Svelte 5, gantinya cukup panggil <code>event.preventDefault()</code> di dalam handler biasa. Untuk meneruskan banyak atribut tak terdeklarasi ke komponen, pakai spread <code>&#123;...rest&#125;</code> dari <code>let &#123; ...rest &#125; = $props()</code>; <code>$$props</code> / <code>$$restProps</code> ala Svelte 4 sudah ditinggalkan.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/basic-markup" label="Basic markup — Svelte (text expressions, attributes, spread, comments)" />

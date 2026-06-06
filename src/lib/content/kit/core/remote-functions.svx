@@ -1,0 +1,437 @@
+---
+title: Remote functions
+product: kit
+section: core
+sectionTitle: Core concepts
+sectionOrder: 2
+order: 6
+status: stable
+description: RPC type-safe antara klien & server lewat file .remote.js — query, form, command, dan prerender — tanpa menulis endpoint manual.
+docs: https://svelte.dev/docs/kit/remote-functions
+keywords: [remote-functions, query, form, command, prerender, rpc]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Di SvelteKit kamu sudah punya tiga cara memindahkan data melewati batas klien-server: `load` (baca data saat navigasi), file `+server.ts` (endpoint JSON yang kamu tulis tangan), dan **form actions** (mutasi yang menempel pada satu rute). Ketiganya jalan, tapi masing-masing punya gesekan:
+
+- `load` itu **per-halaman**. Ia jalan saat navigasi, bukan saat sebuah tombol kecil di pojok butuh data tambahan.
+- `+server.ts` **tidak type-safe**. Kamu menulis `fetch('/api/post')` di klien, lalu menebak bentuk JSON-nya. Saat server berubah, klien diam-diam ikut rusak — tidak ada yang menegur di waktu compile.
+- form actions **menempel pada `+page.server.ts`** sebuah rute. Mau dipanggil dari komponen lain? Repot.
+
+**Remote functions** menutup ketiga celah itu sekaligus. Idenya: kamu menulis fungsi **server** di file khusus berakhiran `*.remote.js` / `*.remote.ts`, lalu **meng-import fungsi itu langsung di komponen** seolah-olah fungsi lokal biasa. SvelteKit otomatis membuat endpoint HTTP di belakang layar, dan tipe argumen serta nilai balik **nyambung end-to-end** — kalau kamu salah memberi argumen, TypeScript menegur sebelum app jalan.
+
+Kalau kamu pernah pakai **tRPC**, ini persis konsepnya, tapi **bawaan framework** (tanpa setup router/client). Kalau kamu dari React modern, ini sangat dekat dengan **Server Actions / `'use server'`**: fungsi yang fisiknya di server tapi dipanggil seakan lokal dari komponen.
+
+### Analogi: aplikasi pesan makanan
+
+Bayangkan kamu di restoran dan ingin nasi goreng.
+
+- **Cara lama (`+server.ts` manual)** seperti menulis surat ke dapur: kamu harus tahu alamat dapur, format suratnya, bahasa juru masaknya. Kalau dapur mengganti format menu, suratmu jadi salah dan kamu baru sadar saat makanan datang keliru.
+- **Remote function** seperti memesan lewat **aplikasi**: kamu cuma tap "Nasi Goreng" di menu. Di balik layar app yang mengurus jaringan, protokol, antrian dapur. Menunya **dibagi** antara kamu dan dapur, jadi kamu **tak mungkin** memesan item yang tidak ada — pilihannya sudah dibatasi tipe.
+
+"Menu yang dibagi" itulah type-safety end-to-end. "App yang mengurus jaringan" itulah endpoint HTTP yang dibuat otomatis. Kamu fokus pada *apa* yang diminta, bukan *bagaimana* surat dikirim.
+
+### Empat rasa remote function
+
+Ada empat jenis, masing-masing menjawab kebutuhan berbeda. Pikirkan dua sumbu: **baca vs tulis**, dan **kapan dijalankan**.
+
+| Jenis | Untuk | Dipanggil dari | Ciri khas |
+| --- | --- | --- | --- |
+| `query` | **Baca** data dinamis | template / mana saja | reaktif, auto-dedupe, punya `.refresh()` |
+| `form` | **Tulis** (mutasi) | elemen `<form>` | progressive enhancement (jalan tanpa JS) |
+| `command` | **Tulis** (mutasi) | event handler (`onclick`) | imperatif, tanpa `<form>` |
+| `prerender` | **Baca** data | template / mana saja | hasil dibekukan saat build, super cepat |
+
+Cara gampang memilih:
+
+- Mau **menampilkan** data yang bisa berubah? `query`.
+- Data **tidak akan berubah** sampai deploy berikutnya (mis. daftar artikel blog)? `prerender` — lebih cepat karena di-cache di build.
+- Mau **mengubah** data lewat formulir yang sebaiknya tetap jalan walau JS gagal dimuat? `form`.
+- Mau **mengubah** data dari klik tombol biasa (like, toggle, hapus) tanpa membungkus `<form>`? `command`.
+
+### Kenapa argumen wajib divalidasi
+
+Karena remote function diam-diam menjadi **endpoint HTTP publik**, siapa pun bisa memanggilnya dengan payload apa pun — bukan hanya kode klienmu yang sopan. Maka argumennya **divalidasi saat runtime** memakai schema (Valibot, Zod, atau pustaka **Standard Schema** apa pun). Ini menutup lubang yang sering lupa di REST buatan tangan: *klien tidak boleh dipercaya*. Schema bukan formalitas TypeScript — ia benteng runtime yang menolak data jahat sebelum menyentuh database-mu.
+
+### Status fitur
+
+Remote functions masih **eksperimental** (diperkenalkan di SvelteKit v2.27) dan harus **diaktifkan manual** lewat config. API-nya bisa berubah sebelum stabil, jadi sematkan versi dan baca changelog saat upgrade. Aktifkan begini:
+
+```js
+// svelte.config.js
+export default {
+	kit: {
+		experimental: {
+			remoteFunctions: true // aktifkan remote functions
+		}
+	},
+	compilerOptions: {
+		experimental: {
+			async: true // izinkan {#each await ...} di template
+		}
+	}
+};
+```
+
+Opsi `compilerOptions.experimental.async` perlu karena `query` di-`await` **langsung di dalam template** — fitur async template Svelte yang juga masih eksperimental.
+
+## 2. Contoh kode
+
+Mari bangun blog mini. Pertama, file remote berisi keempat jenis (taruh di mana saja dalam `src/`, **kecuali** `src/lib/server/`):
+
+```ts
+// src/routes/blog/data.remote.ts
+import * as v from 'valibot';
+import { error } from '@sveltejs/kit';
+import { query, form, command, prerender } from '$app/server';
+import * as db from '$lib/server/database';
+
+// query TANPA argumen: baca daftar semua post.
+// Bisa di-await langsung di template; otomatis di-dedupe & reaktif.
+export const getPosts = query(async () => {
+	return db.sql`SELECT slug, title FROM post ORDER BY created_at DESC`;
+});
+
+// query DENGAN argumen: argumen "slug" divalidasi harus string.
+export const getPost = query(v.string(), async (slug) => {
+	const [post] = await db.sql`SELECT * FROM post WHERE slug = ${slug}`;
+	// error() melempar sendiri — TANPA "throw" di depannya (SvelteKit 2).
+	if (!post) error(404, 'Post tidak ditemukan');
+	return post;
+});
+
+// form: mutasi lewat <form>. Schema memvalidasi seluruh field sekaligus.
+export const createPost = form(
+	v.object({
+		title: v.pipe(v.string(), v.nonEmpty('Judul wajib diisi')),
+		content: v.pipe(v.string(), v.nonEmpty('Isi wajib diisi'))
+	}),
+	async ({ title, content }) => {
+		const slug = title.toLowerCase().replace(/ /g, '-');
+		await db.sql`INSERT INTO post (slug, title, content)
+			VALUES (${slug}, ${title}, ${content})`;
+
+		// single-flight: refresh query terkait dalam request yang SAMA,
+		// jadi klien tak perlu dua kali jalan-jalan ke server.
+		await getPosts().refresh();
+	}
+);
+
+// command: mutasi imperatif dari event handler (bukan <form>).
+export const likePost = command(v.string(), async (slug) => {
+	await db.sql`UPDATE post SET likes = likes + 1 WHERE slug = ${slug}`;
+});
+
+// prerender: seperti query, tapi hasilnya dibekukan saat build.
+// "inputs" memberi tahu daftar argumen yang harus dirender saat build.
+export const getStaticPost = prerender(
+	v.string(),
+	async (slug) => {
+		const [post] = await db.sql`SELECT * FROM post WHERE slug = ${slug}`;
+		if (!post) error(404, 'Tidak ditemukan');
+		return post;
+	},
+	{
+		inputs: () => ['post-pertama', 'post-kedua'],
+		dynamic: true // izinkan slug lain dipanggil saat runtime juga
+	}
+);
+```
+
+Lalu komponennya — perhatikan tidak ada `fetch`, tidak ada URL, tidak ada anotasi tipe manual:
+
+```svelte
+<!-- src/routes/blog/+page.svelte -->
+<script lang="ts">
+	import { getPosts, createPost, likePost } from './data.remote';
+</script>
+
+<!-- query di-await LANGSUNG di template; Svelte mengurus loading/await -->
+<ul>
+	{#each await getPosts() as post (post.slug)}
+		<li>
+			<a href="/blog/{post.slug}">{post.title}</a>
+			<!-- command dipanggil dari onclick, bukan dari <form> -->
+			<button onclick={() => likePost(post.slug)}>Suka</button>
+		</li>
+	{/each}
+</ul>
+
+<!-- spread objek form: ini memasang method, action, & progressive enhancement -->
+<form {...createPost}>
+	<input name="title" />
+	<textarea name="content"></textarea>
+	<button>Terbitkan</button>
+</form>
+```
+
+Itu saja. Tidak ada `+server.ts`, tidak ada `+page.server.ts` untuk action, tidak ada fetcher. `getPost` adalah satu-satunya sumber kebenaran untuk tipe `post`, dipakai bersama klien dan server.
+
+## 3. Coba sendiri
+
+Remote functions **butuh server** (file `*.remote.ts` di-bundle jadi endpoint), jadi tidak bisa dijalankan di playground klien. Sebagai gantinya, mari bedah pola-pola penting lewat contoh statis beranotasi.
+
+### a. `query` dan menyegarkan datanya
+
+Sebuah `query` mengembalikan objek Promise yang **reaktif**. Selain di-`await`, ia punya properti berguna:
+
+```svelte
+<script lang="ts">
+	import { getPosts } from './data.remote';
+
+	// Panggil sekali, simpan referensinya untuk dipakai berkali-kali.
+	const posts = getPosts();
+</script>
+
+<!-- Bentuk eksplisit tanpa await: pakai .loading / .error / .current -->
+{#if posts.loading}
+	<p>Memuat…</p>
+{:else if posts.error}
+	<p>Gagal memuat.</p>
+{:else}
+	<ul>
+		{#each posts.current as post (post.slug)}
+			<li>{post.title}</li>
+		{/each}
+	</ul>
+{/if}
+
+<!-- .refresh() menarik ulang data dari server secara manual -->
+<button onclick={() => posts.refresh()}>Muat ulang</button>
+```
+
+Dua hal penting: (1) memanggil `getPosts()` di banyak komponen **tidak** menembak server berkali-kali — SvelteKit men-dedupe panggilan identik selama masih dipakai. (2) Argumen di-dedupe **berdasarkan isi**, bukan urutan kunci: `getThing({ a: 1, b: 2 })` dan `getThing({ b: 2, a: 1 })` dianggap sama. Kalau urutan penting bagimu, gunakan array.
+
+### b. `form` dengan field & pesan error
+
+Spread `{...createPost}` cukup untuk kasus dasar, tapi `form` juga menyediakan binding field plus validasi yang tampil di UI:
+
+```svelte
+<script lang="ts">
+	import { createPost } from './data.remote';
+</script>
+
+<form {...createPost}>
+	<!-- .fields.<nama>.as('text') menghasilkan atribut input yang benar -->
+	<input {...createPost.fields.title.as('text')} />
+
+	<!-- .issues() berisi array error validasi untuk field ini -->
+	{#each createPost.fields.title.issues() as issue}
+		<p class="error">{issue.message}</p>
+	{/each}
+
+	<textarea {...createPost.fields.content.as('text')}></textarea>
+
+	<!-- .pending true selama submit berlangsung -->
+	<button disabled={createPost.pending}>
+		{createPost.pending ? 'Menyimpan…' : 'Terbitkan'}
+	</button>
+</form>
+
+<!-- .result = nilai balik handler (ephemeral, hilang saat navigasi) -->
+{#if createPost.result?.success}
+	<p>Berhasil diterbitkan!</p>
+{/if}
+```
+
+Tips bonus: beri awalan underscore pada nama field sensitif (mis. `_password`) supaya **tidak ikut diisi ulang** ke form saat validasi gagal.
+
+### c. `command` vs `form` — kapan pakai yang mana
+
+```svelte
+<script lang="ts">
+	import { likePost } from './data.remote';
+
+	let busy = $state(false);
+
+	async function handleLike(slug: string) {
+		busy = true;
+		try {
+			// command itu Promise biasa: await, bungkus try/catch sendiri.
+			await likePost(slug);
+		} catch (e) {
+			console.error('Gagal menyukai', e);
+		} finally {
+			busy = false;
+		}
+	}
+</script>
+
+<button disabled={busy} onclick={() => handleLike('post-pertama')}>
+	Suka
+</button>
+```
+
+Aturan praktis: kalau aksinya **berupa formulir** yang idealnya tetap jalan tanpa JavaScript (login, kirim komentar), pakai `form`. Kalau aksinya **klik kecil** yang memang butuh JS (like, toggle, drag-reorder), pakai `command`. Ingat: `command` **tidak boleh** dipanggil saat render — hanya di dalam event handler atau efek.
+
+### d. Mengakses cookies/sesi di dalam remote function
+
+```ts
+// auth.remote.ts
+import { query, getRequestEvent } from '$app/server';
+
+export const getProfile = query(async () => {
+	// getRequestEvent() memberi akses ke cookies, locals, request, dll.
+	const { cookies, locals } = getRequestEvent();
+	const sessionId = cookies.get('session_id');
+	// Otorisasi berdasarkan SESI/COOKIE — bukan url/params (lihat pitfall).
+	return locals.user ?? null;
+});
+```
+
+## 4. Latihan
+
+<Exercise title="Ganti +server.ts manual dengan remote functions">
+
+Sebuah halaman "todo" sekarang memakai endpoint manual dan `fetch` yang rapuh:
+
+```ts
+// src/routes/api/todos/+server.ts
+import { json } from '@sveltejs/kit';
+import * as db from '$lib/server/database';
+
+export async function GET() {
+	const todos = await db.sql`SELECT * FROM todo ORDER BY id`;
+	return json(todos);
+}
+
+export async function POST({ request }) {
+	const { text } = await request.json(); // tidak divalidasi!
+	await db.sql`INSERT INTO todo (text, done) VALUES (${text}, false)`;
+	return json({ ok: true });
+}
+```
+
+```svelte
+<!-- +page.svelte -->
+<script lang="ts">
+	let todos = $state([]);
+	async function load() {
+		todos = await (await fetch('/api/todos')).json(); // tipe: any 😬
+	}
+	async function add(text: string) {
+		await fetch('/api/todos', {
+			method: 'POST',
+			body: JSON.stringify({ text })
+		});
+		await load();
+	}
+	$effect(() => { load(); });
+</script>
+```
+
+Tugas: tulis ulang memakai remote functions. Buat `getTodos` (query), `addTodo` (form dengan validasi `text` tidak boleh kosong), dan `toggleTodo` (command). Pakai single-flight refresh agar daftar otomatis ter-update setelah mutasi. Tampilkan juga di komponennya.
+
+{#snippet solution()}
+
+```ts
+// src/routes/todos/data.remote.ts
+import * as v from 'valibot';
+import { query, form, command } from '$app/server';
+import * as db from '$lib/server/database';
+
+export const getTodos = query(async () => {
+	return db.sql`SELECT * FROM todo ORDER BY id`;
+});
+
+export const addTodo = form(
+	v.object({
+		text: v.pipe(v.string(), v.nonEmpty('Teks wajib diisi'))
+	}),
+	async ({ text }) => {
+		await db.sql`INSERT INTO todo (text, done) VALUES (${text}, false)`;
+		// single-flight: segarkan daftar dalam request yang sama.
+		await getTodos().refresh();
+	}
+);
+
+export const toggleTodo = command(v.number(), async (id) => {
+	await db.sql`UPDATE todo SET done = NOT done WHERE id = ${id}`;
+	await getTodos().refresh();
+});
+```
+
+```svelte
+<!-- src/routes/todos/+page.svelte -->
+<script lang="ts">
+	import { getTodos, addTodo, toggleTodo } from './data.remote';
+</script>
+
+<ul>
+	{#each await getTodos() as todo (todo.id)}
+		<li>
+			<label>
+				<input
+					type="checkbox"
+					checked={todo.done}
+					onchange={() => toggleTodo(todo.id)}
+				/>
+				{todo.text}
+			</label>
+		</li>
+	{/each}
+</ul>
+
+<form {...addTodo}>
+	<input {...addTodo.fields.text.as('text')} />
+	{#each addTodo.fields.text.issues() as issue}
+		<p class="error">{issue.message}</p>
+	{/each}
+	<button disabled={addTodo.pending}>Tambah</button>
+</form>
+```
+
+Hasilnya: tidak ada lagi `any`, validasi otomatis, dan daftar ter-update sendiri tanpa `fetch` manual atau efek `load`. Tipe `todo` mengalir dari query ke template tanpa kamu tulis sekali pun.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+<strong>Masih eksperimental.</strong> Remote functions baru ada sejak SvelteKit v2.27 dan harus diaktifkan lewat <code>kit.experimental.remoteFunctions</code> + <code>compilerOptions.experimental.async</code>. API bisa berubah — sematkan versi dan cek changelog saat upgrade. Untuk fitur produksi kritis yang butuh stabilitas penuh, <code>load</code> + form actions masih pilihan aman.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Selalu validasi argumen — klien tidak bisa dipercaya.</strong> Setiap remote function diam-diam menjadi endpoint HTTP publik. Tanpa schema (Valibot/Zod), siapa pun bisa mengirim payload jahat langsung ke fungsimu. Opsi <code>'unchecked'</code> ada, tapi pakai hanya bila kamu benar-benar memvalidasi sendiri di dalam fungsi.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Jangan otorisasi berdasarkan <code>url</code>/<code>params</code>/<code>route</code> dari <code>getRequestEvent()</code>.</strong> Di dalam remote function, ketiga nilai itu merujuk ke <em>halaman pemanggil</em>, bukan ke endpoint, dan <code>query</code> tidak otomatis jalan ulang saat navigasi kecuali argumennya berubah. Cek izin berdasarkan <strong>sesi/cookie</strong> (<code>cookies.get(...)</code> atau <code>locals.user</code>), bukan rute.
+</Callout>
+
+<Callout type="tip">
+<strong>Pakai single-flight mutation.</strong> Setelah <code>form</code>/<code>command</code> mengubah data, panggil <code>void getX().refresh()</code> <em>di dalam handler server</em>. SvelteKit menggabungkan mutasi + data baru dalam <strong>satu</strong> perjalanan jaringan, bukan dua. Untuk update optimistik di klien, pakai <code>.enhance(...)</code> dengan <code>.withOverride(...)</code>.
+</Callout>
+
+<Callout type="tip">
+<strong>Pilih jenis sesuai sifat data.</strong> Data statis sampai deploy berikutnya? <code>prerender</code> (di-cache di build, paling cepat). Data dinamis? <code>query</code>. Butuh stream real-time? <code>query.live</code> (async generator). Banyak panggilan kecil yang memicu N+1? <code>query.batch</code> menggabungkannya jadi satu request.
+</Callout>
+
+<Callout type="legacy">
+Di SvelteKit lama, <code>error()</code> dan <code>redirect()</code> dipanggil dengan <code>throw</code> (mis. <code>throw error(404)</code>). Sejak SvelteKit 2 keduanya <strong>melempar sendiri</strong> — cukup <code>error(404, 'Tidak ditemukan')</code> atau <code>redirect(303, '/login')</code> tanpa <code>throw</code>, termasuk di dalam remote functions. Catatan: <code>redirect()</code> didukung di <code>query</code>/<code>form</code>/<code>prerender</code>, tapi <strong>tidak</strong> di <code>command</code>.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Pola lama (manual)"
+	modernLabel="Remote functions"
+	rows={[
+		{ legacy: "+server.ts + fetch('/api/...') di klien", modern: "query(...) di-import langsung", note: "type-safe end-to-end, tanpa fetch manual" },
+		{ legacy: "form action di +page.server.ts (per-rute)", modern: "form(...) di file .remote, dipakai dari mana saja", note: "tetap progressive enhancement, validasi schema bawaan" },
+		{ legacy: "POST + tulis fetcher sendiri untuk aksi tombol", modern: "command(...) dipanggil dari onclick", note: "imperatif, tanpa boilerplate endpoint" },
+		{ legacy: "invalidate() lalu load ulang halaman", modern: "getX().refresh() (single-flight)", note: "mutasi + data baru dalam satu request" },
+		{ legacy: "validasi argumen ditulis manual", modern: "schema Valibot/Zod (Standard Schema)", note: "benteng runtime, bukan cuma tipe compile-time" }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/remote-functions" label="SvelteKit — Remote functions (docs resmi)" />

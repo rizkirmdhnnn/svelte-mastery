@@ -1,0 +1,268 @@
+---
+title: Scoped styles
+product: svelte
+section: styling
+sectionTitle: Styling
+sectionOrder: 4
+order: 1
+status: stable
+description: Bagaimana Svelte membuat CSS komponen otomatis terisolasi lewat hash class, plus aturan spesifisitas dan scoping keyframes.
+docs: https://svelte.dev/docs/svelte/scoped-styles
+keywords: [scoped, styling, hash, specificity, keyframes, css]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di Svelte, setiap blok `<style>` di dalam sebuah komponen **scoped otomatis**. Artinya: aturan CSS yang kamu tulis di `Card.svelte` hanya berlaku untuk markup di `Card.svelte`. Tulis `p { color: red }` di situ, dan hanya `<p>` di dalam `Card.svelte` yang merah — `<p>` di komponen tetangga aman, bahkan `<p>` di `<body>` global pun tidak tersentuh. Kamu tidak perlu menulis kata kunci apa pun; ini perilaku default.
+
+Analoginya seperti **apartemen dengan meteran listrik per unit**. Kamu boleh memasang lampu seterang apa pun di unitmu; tetangga tidak ikut terang dan tidak ikut bayar. Bandingkan dengan CSS global tradisional yang seperti **satu lampu raksasa di lorong gedung**: nyalakan sekali, semua kena, dan kalau dua orang memasang saklar bernama sama (`.button`) mereka saling timpa. Scoped styling membunuh kelas masalah "siapa menimpa siapa" itu sejak awal — bukan dengan disiplin penamaan (BEM) atau tooling runtime, tapi di tingkat **compile**.
+
+### Mengapa pakai hash, bukan sekadar prefix?
+
+Pertanyaan yang lebih dalam: *bagaimana* Svelte mencapai isolasi ini? Saat compile, Svelte menghitung **hash dari isi blok style** komponen (mis. `svelte-123xyz`) lalu:
+
+1. Menambahkan hash itu sebagai **class** ke setiap elemen di markup yang disentuh oleh selector — `<p>` menjadi `<p class="svelte-123xyz">`.
+2. Menulis ulang **selector**-mu agar ikut menargetkan hash itu — `p { ... }` menjadi `p.svelte-123xyz { ... }`.
+
+Kenapa hash dan bukan, katakanlah, nama komponen sebagai prefix? Karena hash dihitung dari **isi style**, dua komponen dengan style identik bisa berbagi hash (deduplikasi), sementara nama file rawan tabrakan dan tidak menjamin keunikan. Yang penting buat kamu: scoping ini **build-time** — tidak ada overhead JavaScript saat runtime, tidak ada penamaan kelas manual, dan kelas hash itu yang melakukan semua pekerjaan isolasi.
+
+Kalau datang dari **Vue**, ini persis seperti `<style scoped>` — bedanya Svelte tidak butuh kata `scoped`, itu default. Kalau datang dari **React**, kamu biasanya meraih CSS Modules, styled-components, atau Tailwind untuk isolasi; Svelte memberikannya gratis, tanpa library.
+
+## 2. Contoh kode
+
+Mari lihat transformasinya secara konkret. Kode yang **kamu tulis**:
+
+```svelte
+<p>Halo</p>
+<div class="card">
+	<span>Isi</span>
+</div>
+
+<style>
+	p {
+		color: rebeccapurple;
+	}
+	.card span {
+		font-weight: bold;
+	}
+</style>
+```
+
+Kira-kira di-compile menjadi seperti ini (disederhanakan agar terlihat mekanismenya):
+
+```html
+<!-- Markup: setiap elemen yang disentuh selector dapat class hash -->
+<p class="svelte-123xyz">Halo</p>
+<div class="card svelte-123xyz">
+	<span class="svelte-123xyz">Isi</span>
+</div>
+
+<style>
+	/* Selector ikut ditempeli .svelte-123xyz */
+	p.svelte-123xyz {
+		color: rebeccapurple;
+	}
+	/* Selector turunan: hash ditambahkan ke elemen TERAKHIR.
+	   Occurrence pertama (.card) dibungkus :where(...) — lihat bagian spesifisitas. */
+	.card:where(.svelte-123xyz) span.svelte-123xyz {
+		font-weight: bold;
+	}
+</style>
+```
+
+Perhatikan: pada selector turunan `.card span`, hash ditambahkan ke **kedua** elemen, tapi yang kedua dan seterusnya dibungkus `:where(...)`. Ini detail penting yang kita bahas di bagian 3.
+
+`@keyframes` juga di-scope dengan hash yang sama, jadi nama animasi komponenmu tidak akan bentrok dengan animasi global atau komponen lain:
+
+```svelte
+<div class="pulse">denyut</div>
+
+<style>
+	.pulse {
+		/* nama 'beat' otomatis di-scope: di output jadi 'svelte-123xyz-beat' */
+		animation: beat 1s infinite;
+	}
+	@keyframes beat {
+		from { transform: scale(1); }
+		to   { transform: scale(1.2); }
+	}
+</style>
+```
+
+Karena `beat` di-rename otomatis, ada satu kasus khusus: kalau kamu **butuh** keyframe yang bisa dipakai dari luar komponen (global), prefix namanya dengan `-global-`. Svelte akan mengeluarkannya dari scoping dan **membuang** prefix `-global-` di output:
+
+```svelte
+<style>
+	.spin {
+		/* pakai nama tanpa -global- saat memanggilnya */
+		animation: rotate 2s linear infinite;
+	}
+	/* didefinisikan sebagai global; output: @keyframes rotate { ... } */
+	@keyframes -global-rotate {
+		to { transform: rotate(360deg); }
+	}
+</style>
+```
+
+## 3. Coba sendiri
+
+Dua komponen "palsu" di bawah (`.box-a` dan `.box-b`) sama-sama menulis aturan untuk `p`, tapi karena masing-masing di-scope, mereka tidak saling bocor. Ubah angka dan warna, perhatikan bahwa `p` di satu kotak tidak pernah memengaruhi `p` di kotak lain — padahal selectornya sama persis (`p`). Itulah scoping bekerja.
+
+<Playground code={`<script>
+	let n = $state(0);
+</script>
+<div class="box-a">
+	<p>Aku paragraf di kotak A. Warnaku ungu.</p>
+</div>
+<div class="box-b">
+	<p>Aku paragraf di kotak B. Warnaku hijau, bukan ungu.</p>
+	<button onclick={() => n++}>klik {n}</button>
+</div>
+<!----><style>
+	/* Kedua aturan menargetkan 'p' yang sama persis, tapi terisolasi karena scoped ke komponen ini. */
+	.box-a {
+		padding: 1rem;
+		border: 2px solid rebeccapurple;
+		border-radius: 8px;
+		margin-bottom: 1rem;
+	}
+	.box-a p {
+		color: rebeccapurple;
+		font-weight: bold;
+	}
+	.box-b {
+		padding: 1rem;
+		border: 2px solid seagreen;
+		border-radius: 8px;
+	}
+	.box-b p {
+		color: seagreen;
+		font-weight: bold;
+	}
+	button {
+		margin-top: 0.5rem;
+		padding: 0.4rem 0.9rem;
+		border: none;
+		border-radius: 6px;
+		background: seagreen;
+		color: white;
+		cursor: pointer;
+	}
+</style>`} />
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Scoped styling"
+	svelte={`<script>
+	let active = $state(false);
+</script>
+<button class="btn" class:active onclick={() => active = !active}>
+	Toggle
+</button>
+<!----><style>
+	/* scoped OTOMATIS: .btn di sini tak bentrok dengan .btn manapun. Tanpa kata kunci, tanpa library. */
+	.btn { padding: 0.5rem 1rem; }
+	.active { background: tomato; }
+</style>`}
+	vue={`<script setup>
+import { ref } from 'vue'
+const active = ref(false)
+</script>
+<template>
+	<button class="btn" :class="{ active }" @click="active = !active">
+		Toggle
+	</button>
+</template>
+<!-- kata 'scoped' WAJIB ditulis eksplisit --><style scoped>
+	.btn { padding: 0.5rem 1rem; }
+	.active { background: tomato; }
+</style>`}
+	react={`import { useState } from 'react'
+import styles from './Button.module.css' // CSS Modules
+export default function Button() {
+	const [active, setActive] = useState(false)
+	// Tidak ada scoping bawaan. Kelas diakses lewat objek 'styles',
+	// bukan string mentah — bundler yang menjamin keunikannya.
+	return (
+		<button
+			className={active ? styles.btnActive : styles.btn}
+			onClick={() => setActive(a => !a)}
+		>
+			Toggle
+		</button>
+	)
+}`}
+	diff={{ vue: [11], react: [2] }}
+	note="Svelte: scoped by default lewat hash class, tanpa kata kunci & tanpa library. Vue: sama-sama scoped (juga pakai atribut hash data-v-xxxx), tapi kata 'scoped' wajib ditulis. React: tidak ada scoping bawaan — kamu memilih CSS Modules / CSS-in-JS / Tailwind, dan kelas diakses lewat objek hasil import. Plus-minus: Svelte & Vue mengikat gaya ke file komponen (rapi, tapi kurang nyaman bila ingin berbagi satu stylesheet besar antar banyak komponen); pendekatan React lebih eksplisit soal asal-usul tiap kelas tapi butuh setup/konvensi tambahan."
+/>
+
+## 5. Latihan
+
+<Exercise title="Tebak output scoping & spesifisitas">
+Misal kamu menulis komponen ini:
+
+```svelte
+<a href="/">Beranda</a>
+
+<style>
+	a { color: teal; }
+</style>
+```
+
+Di halaman yang sama ada stylesheet **global** (dimuat setelah komponen) berisi:
+
+```css
+a { color: hotpink; }
+```
+
+Pertanyaan:
+1. Tautan "Beranda" akan berwarna apa, teal atau hotpink? Kenapa?
+2. Apa kira-kira bentuk selector `a` setelah Svelte meng-compile komponen?
+
+{#snippet solution()}
+
+1. **Teal.** Meskipun stylesheet global dimuat belakangan (biasanya menang kalau spesifisitas sama), selector scoped Svelte mendapat **tambahan spesifisitas 0-1-0** dari class hash. Jadi `a.svelte-xxxxxx` (spesifisitas 0-1-1) mengalahkan `a` global (spesifisitas 0-0-1) — bukan karena urutan, tapi karena spesifisitas lebih tinggi.
+
+2. Kira-kira menjadi:
+
+   ```css
+   a.svelte-xxxxxx {
+   	color: teal;
+   }
+   ```
+
+   Inilah alasan gaya komponen biasanya "menang" atas reset/normalize global tanpa kamu harus menulis `!important`.
+
+{/snippet}
+</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Svelte <strong>membuang selector yang tidak terpakai</strong> saat compile. Kalau kamu menulis aturan untuk <code>.foo</code> di <code>&lt;style&gt;</code> tapi tak ada elemen <code>.foo</code> di markup komponen, gayanya dihapus dan kamu dapat warning <code>css_unused_selector</code>. Ini fitur (CSS-mu jadi ramping), tapi mengejutkan kalau kelas itu sebenarnya dipasang dinamis ke elemen anak dari luar. Solusinya: tandai dengan <code>:global(...)</code> agar Svelte tahu selector itu memang ditujukan keluar scope.
+</Callout>
+
+<Callout type="warning">
+Karena setiap selector scoped naik <strong>+0-1-0</strong> spesifisitasnya, gaya komponen cenderung menang atas CSS global. Bagus untuk mengalahkan reset, tapi waspada: kalau kamu <em>ingin</em> sebuah utility global (mis. Tailwind <code>.mt-4</code>) menimpa gaya komponen, ia bisa kalah karena spesifisitas hash. Untuk selector turunan yang panjang, Svelte sengaja membungkus occurrence kedua-dst dengan <code>:where(...)</code> supaya spesifisitas tidak naik berlipat — tapi occurrence pertama tetap menambah satu class.
+</Callout>
+
+<Callout type="tip">
+Untuk <strong>keyframes</strong>: nama animasi di-scope otomatis, jadi aman menamainya <code>spin</code> tanpa takut bentrok. Hanya saat kamu butuh animasi yang dipakai lintas komponen, definisikan dengan prefix <code>-global-</code> (mis. <code>@keyframes -global-spin</code>) dan panggil dengan nama tanpa prefix (<code>animation: spin ...</code>). Svelte membuang <code>-global-</code> di output.
+</Callout>
+
+<Callout type="tip">
+Hash dihitung dari <strong>isi blok style</strong>, bukan nama file. Konsekuensinya: dua komponen dengan style identik bisa berbagi hash yang sama (deduplikasi otomatis), dan mengubah satu karakter di CSS akan mengubah hash — jadi jangan pernah meng-hardcode string <code>svelte-xxxxxx</code> di tempat lain; ia bukan API publik dan bisa berubah.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/scoped-styles" label="Scoped styles — dokumentasi resmi Svelte" />

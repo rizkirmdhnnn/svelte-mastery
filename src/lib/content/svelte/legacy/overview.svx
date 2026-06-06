@@ -1,0 +1,335 @@
+---
+title: Overview (legacy)
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 1
+status: legacy
+description: Peta lengkap API Svelte 4 (non-runes) yang masih jalan di Svelte 5 — kapan kamu menemuinya dan cara membaca kode lama tanpa panik.
+docs: https://svelte.dev/docs/svelte/legacy-overview
+keywords: [legacy, svelte-4, non-runes, membaca-kode-lama, deprecated, migrasi]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Svelte 5 memperkenalkan tiga perubahan besar — **runes**, **snippets**, dan **event attribute** — dan akibatnya sejumlah fitur Svelte 3/4 menjadi *deprecated*. Kata kuncinya: **deprecated, bukan dihapus**. Compiler Svelte 5 masih menjalankan kode gaya lama tanpa keluhan, supaya jutaan baris kode yang sudah ada tidak mendadak rusak hanya karena upgrade versi.
+
+Konsekuensinya buatmu: kamu **tidak akan menulis** API ini lagi, tapi kamu **wajib bisa membacanya**. Repo kerjaan jarang lahir bersih hari ini — kamu akan membuka komponen yang ditulis 2022, library di `node_modules` yang belum migrasi, atau jawaban Stack Overflow lama. Modul ini adalah *peta* untuk semua API tersebut: apa bentuknya, apa artinya, dan apa padanan modernnya.
+
+### Analogi: membaca ejaan lama
+
+Orang Indonesia modern menulis "Surabaya", "Yogyakarta", "uang". Tapi kamu tetap bisa membaca papan nama tua bertuliskan "Soerabaja", "Jogjakarta", "oeang" — kamu tahu "oe" dibaca "u", "dj" dibaca "j", "tj" dibaca "c". Kamu tidak menulis begitu lagi, tapi kemampuan *membaca* ejaan lama itu penting agar kamu bisa memahami dokumen, prasasti, atau buku terbitan lama.
+
+API legacy Svelte persis seperti ejaan lama itu. `export let` dibaca "ini sebuah prop". `$:` dibaca "ini reaktif". `on:click` dibaca "ini event listener". `<slot>` dibaca "ini lubang untuk konten anak". Begitu kamu hafal "kamus pengucapan"-nya, kode Svelte 4 jadi transparan — kamu bisa langsung menerjemahkannya ke runes di kepala. Tujuan modul ini bukan mengajarimu *menulis* dialek lama, tapi membuatmu **fasih membacanya**.
+
+### Satu aturan besar: legacy dan runes tidak boleh dicampur dalam satu file
+
+Sebelum masuk daftar, hafalkan satu hukum yang sering bikin pemula tersandung: **dalam satu komponen `.svelte`, kamu memilih SATU mode — legacy atau runes — tidak bisa dua-duanya.** Begitu sebuah file memakai satu rune saja (misalnya `$state`), seluruh file otomatis masuk *runes mode*, dan saat itu juga semua API legacy di file itu menjadi **error**, bukan sekadar peringatan. Jadi `export let` di file yang sudah pakai `$props()` = error.
+
+Sebaliknya, file yang sama sekali tidak menyentuh rune dianggap *legacy mode* dan semua API di halaman ini valid. Ini yang membuat migrasi bertahap mungkin: kamu memodernkan **file demi file**, bukan harus semuanya sekaligus.
+
+### Peta cepat: 11 API legacy yang akan kamu temui
+
+Inilah seluruh kosakata lama yang dibahas di seksi Legacy ini. Hafalkan "cara membacanya" — kolom kanan adalah terjemahan runes-nya:
+
+| API legacy (Svelte 4) | "Dibaca sebagai…" | Padanan modern (Svelte 5) |
+| --- | --- | --- |
+| Top-level `let count = 0` | state reaktif lokal | `let count = $state(0)` |
+| `$: double = a * 2` | nilai turunan (derived) | `let double = $derived(a * 2)` |
+| `$: { sideEffect() }` | efek samping | `$effect(() => { ... })` |
+| `export let title` | sebuah prop masuk | `let { title } = $props()` |
+| `$$props` / `$$restProps` | semua / sisa props | `let { ...rest } = $props()` |
+| `on:click={fn}` | event listener DOM | `onclick={fn}` |
+| `<slot />` | lubang konten anak | `{@render children()}` |
+| `$$slots` | slot mana yang terisi | cek apakah snippet prop ada |
+| `<svelte:fragment>` | isi slot tanpa elemen pembungkus | snippet (tak perlu wrapper) |
+| `<svelte:component this={X}>` | komponen dinamis | `<X />` (komponen kini nilai biasa) |
+| `<svelte:self>` | komponen memanggil dirinya | import file-nya sendiri |
+| `new App({ target })` / `$set` / `$destroy` | API komponen imperatif | `mount()` / `unmount()` |
+
+Sisa modul ini membongkar tiap baris itu: apa yang sebenarnya terjadi, kenapa idiomnya membingungkan dulu, dan bagaimana membacanya cepat.
+
+## 2. Contoh kode
+
+Mari baca satu komponen Svelte 4 yang "padat legacy" lalu lihat versi runes-nya. Anggap ini latihan menerjemahkan ejaan lama ke ejaan baru — perhatikan tiap anotasi.
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — UserCard.svelte -->
+<script>
+	import { createEventDispatcher } from 'svelte';
+	const dispatch = createEventDispatcher();
+
+	// 'export let' = prop masuk dari parent (BUKAN export modul!)
+	export let name;
+	export let age = 0; // default value
+
+	// top-level 'let' di mode legacy = reaktif otomatis.
+	// reassign 'expanded = ...' akan memicu re-render.
+	let expanded = false;
+
+	// '$:' dengan assignment = DERIVED (nilai turunan)
+	$: greeting = age >= 17 ? 'Halo, ' + name : 'Hai dik ' + name;
+
+	// '$:' dengan blok = EFFECT (efek samping)
+	$: { console.log('expanded sekarang:', expanded); }
+
+	function toggle() {
+		expanded = !expanded;
+		// memancarkan event ke parent — parent dengarkan via on:reveal
+		dispatch('reveal', { name });
+	}
+</script>
+
+<!-- 'on:click' = event listener (sintaks titik dua khas Svelte 4) -->
+<article on:click={toggle}>
+	<h3>{greeting}</h3>
+
+	<!-- 'if ($$slots.badge)' = cek apakah parent mengisi slot bernama 'badge' -->
+	{#if $$slots.badge}
+		<slot name="badge" />
+	{/if}
+
+	{#if expanded}
+		<!-- <slot> tanpa nama = lubang konten default -->
+		<slot>Tidak ada detail.</slot>
+	{/if}
+</article>
+```
+
+Sekarang komponen yang sama, dibaca-ulang ke **Svelte 5 (runes)**:
+
+```svelte
+<!-- ✅ GAYA BARU (Svelte 5 runes) — UserCard.svelte -->
+<script>
+	// semua prop jadi satu objek; 'onreveal' & 'badge' & 'children' ikut di sini.
+	// createEventDispatcher hilang → event jadi callback prop 'onreveal'.
+	let { name, age = 0, onreveal, badge, children } = $props();
+
+	// 'let' biasa TIDAK reaktif di runes mode → bungkus dengan $state.
+	let expanded = $state(false);
+
+	// '$:' derived → $derived
+	let greeting = $derived(age >= 17 ? 'Halo, ' + name : 'Hai dik ' + name);
+
+	// '$:' blok efek → $effect
+	$effect(() => { console.log('expanded sekarang:', expanded); });
+
+	function toggle() {
+		expanded = !expanded;
+		onreveal?.({ name }); // panggil callback, bukan dispatch()
+	}
+</script>
+
+<!-- on:click → onclick -->
+<article onclick={toggle}>
+	<h3>{greeting}</h3>
+
+	<!-- '$$slots.badge' → cukup cek apakah snippet 'badge' dioper -->
+	{#if badge}
+		{@render badge()}
+	{/if}
+
+	{#if expanded}
+		<!-- <slot> → {@render children()}; fallback pakai #if + #snippet -->
+		{@render children?.()}
+	{/if}
+</article>
+```
+
+Perhatikan: strukturnya **identik baris-per-baris**. Membaca kode legacy bukan soal menghafal API yang asing — ia cuma "ejaan lama" dari konsep yang sudah kamu tahu. Setiap idiom lama punya terjemahan satu-ke-satu.
+
+## 3. Coba sendiri
+
+> Modul ini bersifat referensi/bacaan, jadi tidak ada playground live. Sebagai gantinya, latih "membaca" potongan-potongan kode legacy berikut. Tiap potongan disertai anotasi cara menerjemahkannya.
+
+**a) Reactive `let` / `var` (state implisit).** Di file legacy, setiap variabel top-level adalah state reaktif — tidak ada penanda khusus. Ini jebakan terbesar saat membaca: kamu harus sadar *mana* yang dimaksud sebagai state.
+
+```svelte
+<!-- Svelte 4: 'count' & 'items' reaktif TANPA penanda apa pun -->
+<script>
+	let count = 0;        // baca sebagai: let count = $state(0)
+	let items = [];       // baca sebagai: let items = $state([])
+
+	function add() {
+		count += 1;         // reassign → memicu update (otomatis)
+		items = [...items, count]; // di Svelte 4 array WAJIB di-reassign agar reaktif
+	}
+</script>
+```
+
+Cara baca: **anggap setiap `let` top-level dibungkus `$state(...)` secara tak terlihat.** Catat juga idiom `items = [...items, x]` — di Svelte 4 kamu *harus* meng-assign ulang array/objek agar reaktivitas menyala (`items.push(x)` saja tidak cukup). Di runes dengan `$state`, `items.push(x)` justru sudah cukup karena `$state` membuat objek/array jadi *deeply reactive*.
+
+**b) `$$props` dan `$$restProps`.** Dua variabel ajaib ini muncul saat komponen ingin "meneruskan semua prop yang tidak ia pakai sendiri" ke sebuah elemen.
+
+```svelte
+<!-- Svelte 4: teruskan semua atribut sisa ke <input> -->
+<script>
+	export let label;
+	// $$restProps = semua prop SELAIN yang di-'export let' (di sini: selain 'label')
+	// $$props      = SEMUA prop, termasuk 'label'
+</script>
+
+<label>{label}</label>
+<input {...$$restProps} />
+```
+
+Cara baca: `$$restProps` = "sisa props setelah yang sudah saya ambil". Padanan modern memakai rest destructuring biasa: `let { label, ...rest } = $props()`, lalu `<input {...rest} />`. Jauh lebih eksplisit — kamu lihat persis apa yang "tersisa".
+
+**c) `<svelte:self>` dan `<svelte:component>`.** Dua elemen khusus untuk rekursi dan komponen dinamis.
+
+```svelte
+<!-- Svelte 4: Tree.svelte memanggil DIRINYA sendiri secara rekursif -->
+{#each node.children as child}
+	<svelte:self node={child} />
+{/each}
+
+<!-- Svelte 4: render komponen yang ditentukan saat runtime -->
+<svelte:component this={currentTab} />
+```
+
+Cara baca: `<svelte:self>` = "komponen ini, lagi" (untuk pohon/menu bersarang). `<svelte:component this={X}>` = "render komponen yang variabelnya `X`". Keduanya tidak perlu lagi di Svelte 5: untuk rekursi kamu cukup meng-`import` file ke dalam dirinya sendiri lalu pakai namanya; untuk komponen dinamis cukup tulis `<X />` karena di Svelte 5 sebuah komponen **adalah nilai JavaScript biasa** yang bisa disimpan di variabel.
+
+**d) `<svelte:fragment>`.** Pembungkus untuk mengisi named slot tanpa menambah elemen DOM nyata.
+
+```svelte
+<!-- Svelte 4: isi slot 'footer' dengan DUA elemen, tanpa <div> pembungkus -->
+<Modal>
+	<svelte:fragment slot="footer">
+		<button>Batal</button>
+		<button>OK</button>
+	</svelte:fragment>
+</Modal>
+```
+
+Cara baca: `<svelte:fragment>` = "kelompokkan beberapa elemen untuk satu slot, tapi jangan tambahkan node pembungkus". Di Svelte 5 ini lenyap dengan sendirinya: snippet (`{#snippet footer()} ... {/snippet}`) memang tidak pernah menghasilkan elemen pembungkus, jadi tidak ada lagi yang perlu "difragmentasi".
+
+## 4. Latihan
+
+<Exercise title="Baca & terjemahkan komponen legacy ini">
+
+Berikut komponen `Accordion.svelte` gaya **Svelte 4**. Tanpa menulis ulang dulu, jawab di kepalamu: (1) variabel mana yang reaktif? (2) `$:` mana yang derived, mana yang effect? (3) apa peran `$$slots` dan `<slot>`-nya? (4) bagaimana event diteruskan ke parent? Lalu tulis ulang sepenuhnya ke **Svelte 5 (runes)**.
+
+```svelte
+<!-- ❌ Accordion.svelte (Svelte 4) -->
+<script>
+	import { createEventDispatcher } from 'svelte';
+	const dispatch = createEventDispatcher();
+
+	export let title;
+	export let open = false;
+
+	$: label = open ? '▼ ' + title : '▶ ' + title;
+	$: dispatch('toggle', open);
+
+	function flip() {
+		open = !open;
+	}
+</script>
+
+<section>
+	<button on:click={flip}>{label}</button>
+
+	{#if $$slots.icon}
+		<span class="icon"><slot name="icon" /></span>
+	{/if}
+
+	{#if open}
+		<div class="content"><slot /></div>
+	{/if}
+</section>
+```
+
+{#snippet solution()}
+
+Jawaban bacaan: `open` itu state reaktif (top-level `let`/`export let`); `$: label = ...` adalah **derived**; `$: dispatch('toggle', open)` adalah **effect** (ia *melakukan sesuatu* tiap `open` berubah); `$$slots.icon` mengecek apakah parent mengisi slot `icon`; `<slot />` adalah lubang konten default; event `toggle` diteruskan lewat `createEventDispatcher`.
+
+```svelte
+<!-- ✅ Accordion.svelte (Svelte 5 runes) -->
+<script>
+	// export let title/open → $props(); event 'toggle' → callback prop 'ontoggle';
+	// <slot name="icon"> → snippet prop 'icon'; <slot/> → 'children'.
+	let { title, open = false, ontoggle, icon, children } = $props();
+
+	// $: label = ... (derived) → $derived
+	let label = $derived(open ? '▼ ' + title : '▶ ' + title);
+
+	// $: dispatch(...) (effect) → $effect yang memanggil callback
+	$effect(() => { ontoggle?.(open); });
+
+	function flip() {
+		open = !open;
+	}
+</script>
+
+<section>
+	<!-- on:click → onclick -->
+	<button onclick={flip}>{label}</button>
+
+	<!-- $$slots.icon → cek snippet 'icon' -->
+	{#if icon}
+		<span class="icon">{@render icon()}</span>
+	{/if}
+
+	{#if open}
+		<div class="content">{@render children?.()}</div>
+	{/if}
+</section>
+```
+
+Catatan: kalau `open` perlu dua-arah (parent memakai `bind:open`), ubah jadi `let { open = $bindable(false), ... } = $props()`. Dan hati-hati — meletakkan `ontoggle?.(open)` di dalam `$effect` meniru perilaku lama persis, tapi memanggil callback dari `$effect` bisa terasa "berlebihan"; sering lebih bersih memanggilnya langsung di dalam `flip()`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<strong>Semua API di halaman ini adalah Svelte 4 (legacy).</strong> Daftar lengkapnya: top-level <code>let</code> reaktif, label <code>$:</code>, <code>export let</code>, <code>$$props</code> / <code>$$restProps</code>, event <code>on:</code>, elemen <code>&lt;slot&gt;</code>, <code>$$slots</code>, <code>&lt;svelte:fragment&gt;</code>, <code>&lt;svelte:component&gt;</code>, <code>&lt;svelte:self&gt;</code>, serta API komponen imperatif (<code>new App()</code> / <code>$set</code> / <code>$on</code> / <code>$destroy</code>). Compiler Svelte 5 masih menerimanya demi kompatibilitas, tapi <strong>jangan menulis kode baru</strong> dengan pola ini — semuanya punya padanan runes yang lebih eksplisit.
+</Callout>
+
+<Callout type="warning">
+Jangan mencampur legacy dan runes <em>dalam satu file</em>. Begitu satu rune (mis. <code>$state</code>) muncul, file itu masuk <em>runes mode</em> dan semua API legacy di dalamnya menjadi <strong>error</strong> — bukan sekadar warning. Jadi kalau kamu memodernkan sebuah komponen, kamu harus mengubah <em>seluruh</em> idiom lama di file itu sekaligus (jangan setengah-setengah). Migrasi dilakukan per-file, bukan per-baris dalam satu file.
+</Callout>
+
+<Callout type="pitfall">
+Jebakan paling halus saat <em>membaca</em> kode lama: di file legacy, <strong>setiap top-level <code>let</code> adalah state reaktif</strong> tanpa penanda. Pembaca yang terbiasa runes sering salah kira variabel biasa, padahal reassign-nya memicu re-render. Sebaliknya, idiom <code>items = [...items, x]</code> yang banyak kamu lihat bukan gaya fungsional iseng — di Svelte 4 array/objek <em>harus</em> di-assign ulang agar reaktif, karena mutasi seperti <code>items.push(x)</code> tidak terdeteksi. Di runes, <code>$state</code> membuat array/objek <em>deeply reactive</em>, jadi <code>push</code> kembali bekerja.
+</Callout>
+
+<Callout type="tip">
+Cara tercepat memodernkan kode lama bukan manual, tapi jalankan migration script resmi: <code>npx sv migrate svelte-5</code>. Ia mengotomasi pergeseran mekanis (<code>export let</code> → <code>$props</code>, <code>on:</code> → <code>on</code>, dll) dan menaruh komentar <code>@migration-task</code> di tempat yang ambigu (terutama <code>$:</code> rumit & two-way binding). Setelah itu, <code>grep -rn "@migration-task"</code> dan beresi sisanya manual. Untuk pola yang sintaksnya benar-benar hilang (event modifier <code>on:click|preventDefault</code>, event forwarding), script memakai modul jembatan <code>svelte/legacy</code> sebagai perancah sementara.
+</Callout>
+
+<Callout type="tip">
+Untuk membaca dokumentasi Svelte 4 yang utuh (lengkap dengan contoh interaktif gaya lama), situs <a href="https://v4.svelte.dev">v4.svelte.dev</a> masih hidup. Berguna saat kamu mewarisi proyek lawas dan butuh referensi resmi versi 4, bukan sekadar peta terjemahan seperti modul ini.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'let count = 0 (top-level)', modern: 'let count = $state(0)', note: 'Di legacy, setiap let top-level reaktif otomatis.' },
+	{ legacy: 'items = [...items, x]', modern: 'items.push(x)', note: '$state deeply reactive; mutasi langsung sudah cukup.' },
+	{ legacy: '$: double = a * 2', modern: 'let double = $derived(a * 2)', note: 'Nilai turunan → $derived.' },
+	{ legacy: '$: { sideEffect() }', modern: '$effect(() => { sideEffect() })', note: 'Efek samping → $effect.' },
+	{ legacy: 'export let title', modern: 'let { title } = $props()', note: 'Prop jadi destructuring objek biasa.' },
+	{ legacy: '$$props / $$restProps', modern: 'let { ...rest } = $props()', note: 'Semua/sisa props lewat rest destructuring.' },
+	{ legacy: 'on:click={fn}', modern: 'onclick={fn}', note: 'Event jadi properti biasa, huruf kecil.' },
+	{ legacy: '<slot />', modern: '{@render children()}', note: 'children adalah snippet dari $props().' },
+	{ legacy: '<slot name="head" />', modern: '{@render head()}', note: 'Named slot → named snippet prop.' },
+	{ legacy: '{#if $$slots.head}', modern: '{#if head}', note: 'Cek keberadaan snippet prop, bukan objek $$slots.' },
+	{ legacy: '<svelte:fragment slot="x">', modern: '{#snippet x()} ... {/snippet}', note: 'Snippet tak pernah bikin elemen pembungkus.' },
+	{ legacy: '<svelte:component this={X} />', modern: '<X />', note: 'Komponen kini nilai biasa; this tak perlu.' },
+	{ legacy: '<svelte:self ... />', modern: 'import Self from "./Self.svelte"', note: 'Komponen boleh meng-import dirinya sendiri.' },
+	{ legacy: 'new App({ target, props })', modern: 'mount(App, { target, props })', note: 'API komponen imperatif → mount().' },
+	{ legacy: 'app.$destroy()', modern: 'unmount(app)', note: 'Pembongkaran instance → unmount().' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-overview" label="Legacy APIs — Overview (dokumentasi resmi Svelte)" />
+<DocsLink href="https://svelte.dev/docs/svelte/v5-migration-guide" label="Svelte 5 Migration Guide — peta lengkap legacy → runes" />
+<DocsLink href="https://v4.svelte.dev" label="v4.svelte.dev — dokumentasi Svelte 4 utuh untuk proyek lawas" />

@@ -1,0 +1,256 @@
+---
+title: $host
+product: svelte
+section: runes
+sectionTitle: Runes
+sectionOrder: 2
+order: 8
+status: stable
+description: Mengakses elemen host saat komponen di-compile sebagai custom element, terutama untuk men-dispatch CustomEvent ke dunia non-Svelte.
+docs: https://svelte.dev/docs/svelte/$host
+keywords: [host, custom-element, web-component, CustomEvent, dispatch]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`$host` adalah rune paling "niche" di seluruh keluarga runes: kamu mungkin tidak pernah memakainya, tapi saat butuh, ia satu-satunya jalan. Ia hanya berlaku ketika komponen Svelte-mu di-compile menjadi **custom element** (Web Component) — bukan komponen Svelte biasa.
+
+### Sedikit latar: custom element itu apa?
+
+Biasanya komponen Svelte hidup di dalam aplikasi Svelte lain. Tapi Svelte bisa membungkus sebuah komponen menjadi **tag HTML asli** — misalnya `<my-stepper>` — yang bisa dipakai di project apa pun: vanilla JS, React, Vue, WordPress, bahkan file `.html` polos tanpa bundler. Kamu mengaktifkannya dengan satu baris:
+
+```svelte
+<svelte:options customElement="my-stepper" />
+```
+
+Begitu di-compile, Svelte mendaftarkan `my-stepper` ke `customElements` registry browser. Sekarang siapa pun bisa menulis `<my-stepper></my-stepper>` di HTML dan komponenmu hidup di dalamnya — lengkap dengan reaktivitas Svelte, tapi dibungkus standar Web Components (shadow DOM dan semua temannya).
+
+### Mengapa butuh `$host`? Soal "bahasa perbatasan"
+
+Di sinilah masalahnya muncul. Di dalam aplikasi Svelte, komponen anak "berbicara" ke induknya lewat **prop callback** — misalnya `onincrement`. Itu enak karena induknya juga Svelte; mereka satu bahasa.
+
+Tapi custom element dipakai di **luar** dunia Svelte. Konsumennya mungkin React, mungkin jQuery, mungkin HTML mentah. Mereka tidak tahu apa itu "prop callback Svelte". Satu-satunya bahasa yang dipahami **semua** dunia di perbatasan DOM adalah **DOM event**: `addEventListener` dan `CustomEvent`. Itulah kontrak universal antar-framework.
+
+Nah, untuk men-dispatch sebuah `CustomEvent`, kamu butuh sebuah **elemen DOM** sebagai pengirimnya — yaitu tag `<my-stepper>` itu sendiri. `$host()` memberimu referensi ke elemen itu.
+
+> **Analogi: penyewa dan alamat rumah.** Kalau komponenmu adalah seorang penyewa, `$host()` adalah **alamat rumah** yang ia tempati (tag `<my-stepper>`). Selama tinggal di dalam rumah, penyewa bisa berteriak dari ambang pintu rumah itu — `$host().dispatchEvent(...)` — dan tetangga di luar (kode non-Svelte) bisa mendengarnya lewat `addEventListener`. Tanpa tahu alamat rumahnya, kamu tidak punya tempat berdiri untuk berteriak keluar.
+
+### Apa yang `$host()` kembalikan
+
+`$host()` mengembalikan **elemen host** itu sendiri — sebuah `HTMLElement` biasa (instance custom element-mu). Dari situ kamu bisa melakukan apa pun yang bisa dilakukan ke elemen DOM: `dispatchEvent`, baca/atribut, dan sebagainya. 99% kasus nyata: men-dispatch `CustomEvent`.
+
+Aturan keras yang wajib diingat: **`$host()` hanya valid di dalam komponen yang di-compile sebagai custom element.** Memanggilnya di komponen Svelte biasa adalah error — karena tidak ada "rumah" custom element untuk ditunjuk.
+
+> Buat yang dari Vue: ini mirip alur `defineCustomElement` di Vue, di mana komponen yang dibungkus jadi custom element juga berkomunikasi keluar via `this.$emit`/`dispatchEvent` yang menjadi DOM event pada host. Buat yang dari React: React tidak punya konsep custom-element-compilation bawaan; `$host` ini memang fitur khas batas Web Components, bukan komunikasi antar-komponen biasa.
+
+## 2. Contoh kode
+
+Contoh kanonik dari docs: sebuah stepper yang mengirim event `increment` / `decrement` ke luar.
+
+```svelte
+<!-- Stepper.svelte -->
+<svelte:options customElement="my-stepper" />
+
+<script>
+	// Helper: kirim CustomEvent bernama `type` dari elemen host.
+	// $host() = elemen <my-stepper> tempat komponen ini "tinggal".
+	function dispatch(type) {
+		$host().dispatchEvent(new CustomEvent(type));
+	}
+</script>
+
+<button onclick={() => dispatch('decrement')}>decrement</button>
+<button onclick={() => dispatch('increment')}>increment</button>
+```
+
+Cara memakainya **dari dalam aplikasi Svelte lain**. Perhatikan: untuk custom element, Svelte memetakan atribut `onincrement` menjadi `addEventListener('increment', ...)` di balik layar — jadi nama event tanpa awalan `on` saat dispatch, lalu diberi awalan `on` saat listen:
+
+```svelte
+<!-- App.svelte -->
+<script>
+	import './Stepper.svelte'; // cukup di-import agar custom element-nya terdaftar
+
+	let count = $state(0);
+</script>
+
+<my-stepper
+	ondecrement={() => count -= 1}
+	onincrement={() => count += 1}
+></my-stepper>
+
+<p>count: {count}</p>
+```
+
+Kekuatan sebenarnya: konsumen tidak harus Svelte. Inilah cara me-listen dari **HTML + JS polos** — tidak ada Svelte sama sekali di sisi ini:
+
+```html
+<!-- index.html (konsumen non-Svelte) -->
+<script type="module" src="/build/stepper.js"></script>
+
+<my-stepper id="s"></my-stepper>
+<p id="out">count: 0</p>
+
+<script>
+	let count = 0;
+	const out = document.getElementById('out');
+	const s = document.getElementById('s');
+
+	// Karena event-nya CustomEvent DOM standar, addEventListener biasa cukup.
+	s.addEventListener('increment', () => { out.textContent = 'count: ' + (++count); });
+	s.addEventListener('decrement', () => { out.textContent = 'count: ' + (--count); });
+</script>
+```
+
+Ingin **membawa data** keluar? Pakai `detail` pada `CustomEvent`. Konsumen membacanya lewat `event.detail`:
+
+```svelte
+<!-- Counter.svelte -->
+<svelte:options customElement="my-counter" />
+
+<script>
+	let count = $state(0);
+
+	function increment() {
+		count++;
+		// detail membawa payload; di sisi listener jadi e.detail
+		$host().dispatchEvent(new CustomEvent('change', { detail: count }));
+	}
+</script>
+
+<button onclick={increment}>klik: {count}</button>
+```
+
+## 3. Coba sendiri
+
+Custom element butuh langkah **compile + register** (lewat `<svelte:options customElement>`), jadi tidak bisa dijalankan di playground inline yang hanya merender satu komponen biasa. Berikut contoh lengkap beranotasi yang bisa kamu jalankan sendiri di project SvelteKit/Vite lokal. Bacalah alurnya dari atas ke bawah.
+
+```svelte
+<!-- src/lib/ToggleSwitch.svelte -->
+<svelte:options customElement="toggle-switch" />
+
+<script>
+	// State internal komponen — tetap reaktif seperti komponen Svelte biasa.
+	let on = $state(false);
+
+	function toggle() {
+		on = !on;
+
+		// $host() = elemen <toggle-switch> di DOM.
+		// Kita kirim event 'toggle' SEKALIGUS membawa status terbaru di detail.
+		// composed:true => event boleh menembus batas shadow DOM milik custom
+		// element ini, sehingga listener di luar pasti kebagian (lihat Pitfalls).
+		$host().dispatchEvent(
+			new CustomEvent('toggle', { detail: { on }, composed: true })
+		);
+	}
+</script>
+
+<button onclick={toggle} aria-pressed={on}>
+	{on ? 'ON' : 'OFF'}
+</button>
+```
+
+```svelte
+<!-- src/routes/+page.svelte — konsumen Svelte -->
+<script>
+	import '$lib/ToggleSwitch.svelte'; // import => custom element terdaftar
+	let status = $state('OFF');
+</script>
+
+<!-- Atribut ontoggle dipetakan ke addEventListener('toggle', ...).
+     e.detail.on berisi { on: true|false } yang tadi kita kirim. -->
+<toggle-switch ontoggle={(e) => (status = e.detail.on ? 'ON' : 'OFF')}></toggle-switch>
+
+<p>status saat ini: {status}</p>
+```
+
+Yang terjadi saat tombol diklik: state `on` di dalam komponen berubah, lalu `$host()` men-dispatch `CustomEvent('toggle')` dari tag `<toggle-switch>`. Induk (apa pun frameworknya) menangkapnya dan membaca `e.detail.on`. Komponen tetap memegang state-nya sendiri; event hanya **memberi tahu** dunia luar, bukan meminta izin.
+
+## 4. Latihan
+
+<Exercise title="Custom element 'rating-stars' yang mengirim event 'rate'">
+Buat komponen `RatingStars.svelte` yang di-compile sebagai custom element bernama `rating-stars`. Komponen punya state `value` (1–5). Render 5 tombol bintang; mengklik bintang ke-`n` menyetel `value = n` **dan** men-dispatch `CustomEvent('rate')` dengan `detail` berisi nilai rating terbaru.
+
+Lalu tunjukkan cara konsumen Svelte me-listen event itu lewat atribut `onrate` dan menampilkan nilainya.
+
+{#snippet solution()}
+
+```svelte
+<!-- RatingStars.svelte -->
+<svelte:options customElement="rating-stars" />
+
+<script>
+	let value = $state(0);
+
+	function rate(n) {
+		value = n;
+		// kirim nilai terbaru ke dunia luar lewat detail
+		$host().dispatchEvent(
+			new CustomEvent('rate', { detail: n, composed: true })
+		);
+	}
+</script>
+
+{#each [1, 2, 3, 4, 5] as n}
+	<button onclick={() => rate(n)}>
+		{n <= value ? '★' : '☆'}
+	</button>
+{/each}
+```
+
+```svelte
+<!-- +page.svelte (konsumen) -->
+<script>
+	import '$lib/RatingStars.svelte';
+	let rating = $state(0);
+</script>
+
+<rating-stars onrate={(e) => (rating = e.detail)}></rating-stars>
+<p>kamu memberi {rating} bintang</p>
+```
+
+Inti latihan: state hidup di dalam komponen (`value`), tapi cara satu-satunya memberi tahu luar adalah `$host().dispatchEvent(...)`. Atribut `onrate` di sisi konsumen otomatis menjadi `addEventListener('rate', ...)`, dan `e.detail` membawa angka yang kita kirim.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>$host()</code> <strong>error di komponen Svelte biasa</strong>. Ia hanya hidup saat komponen di-compile sebagai custom element (ada <code>&lt;svelte:options customElement="..." /&gt;</code>). Untuk komunikasi antar-komponen Svelte normal, JANGAN pakai <code>$host</code> — pakai <strong>prop callback</strong> seperti <code>onincrement</code> / <code>onsave</code>. <code>$host</code> khusus untuk batas Web Components.
+</Callout>
+
+<Callout type="warning">
+<strong>Dispatch dari <code>$host()</code>, bukan dari elemen di dalamnya.</strong> Custom element Svelte memakai shadow DOM secara default. Event yang kamu dispatch dari sebuah elemen <em>di dalam</em> shadow root tidak akan terlihat oleh listener di luar — kecuali kamu set <code>composed: true</code>. Karena <code>$host()</code> adalah elemen host (sudah di luar shadow root-nya sendiri), men-dispatch dari sana adalah cara paling aman agar event terdengar. Untuk payload yang harus menyeberang dengan pasti, tetap tambahkan <code>composed: true</code>.
+</Callout>
+
+<Callout type="tip">
+Bawa data lewat <code>detail</code>: <code>new CustomEvent('change', &#123; detail: count &#125;)</code>, lalu di sisi listener baca <code>e.detail</code>. Nama event saat dispatch <strong>tanpa</strong> awalan <code>on</code> (<code>'increment'</code>), tapi saat di-listen dari markup Svelte pakai atribut <strong>dengan</strong> <code>on</code> (<code>onincrement</code>). Dua sisi, satu nama.
+</Callout>
+
+<Callout type="tip">
+Butuh konfigurasi lebih? Bentuk objek <code>customElement</code> memberi kontrol penuh: <code>&lt;svelte:options customElement=&#123;&#123; tag: 'my-el', shadow: 'none', props: &#123; count: &#123; reflect: true, type: 'Number' &#125; &#125; &#125;&#125; /&gt;</code>. Set <code>shadow: 'none'</code> kalau kamu tidak ingin shadow DOM (style global bisa masuk, dan urusan <code>composed</code> jadi tak relevan).
+</Callout>
+
+Untuk pembaca dari Svelte 4: dulu komunikasi keluar (baik komponen biasa maupun custom element) lewat `createEventDispatcher`. Di Svelte 5 itu sudah usang — pisahkan dua kasusnya:
+
+<LegacyVsModern rows={[
+  { legacy: "const dispatch = createEventDispatcher(); dispatch('save', data)", modern: "let { onsave } = $props(); onsave(data)", note: 'Komponen Svelte biasa: pakai prop callback, bukan event' },
+  { legacy: "createEventDispatcher() (di custom element)", modern: "$host().dispatchEvent(new CustomEvent('save', { detail: data }))", note: 'Custom element: dispatch CustomEvent dari host' }
+]} />
+
+<Callout type="legacy">
+<code>createEventDispatcher</code> masih ada demi kompatibilitas, tapi dianggap API lama (Svelte 4). Jangan memakainya di kode baru. Untuk komponen biasa: <strong>prop callback</strong>. Untuk custom element yang harus didengar dunia non-Svelte: <strong><code>$host().dispatchEvent(...)</code></strong>.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/$host" label="$host — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/custom-elements" label="Custom elements — panduan svelte:options customElement" />

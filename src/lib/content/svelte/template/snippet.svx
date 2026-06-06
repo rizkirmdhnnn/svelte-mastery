@@ -1,0 +1,405 @@
+---
+title: "{#snippet ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 6
+status: stable
+description: Membuat potongan markup yang bisa dipakai ulang dengan {#snippet}, memanggilnya lewat {@render}, dan mengirimnya sebagai prop untuk menggantikan slot Svelte 4.
+docs: https://svelte.dev/docs/svelte/snippet
+keywords: [snippet, render, children, slot, render props, scoped slot]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Di hampir setiap komponen ada markup yang berulang: baris tabel berbentuk sama, kartu dengan struktur serupa, item daftar yang mirip. Dulu pilihanmu cuma dua, dan dua-duanya kurang enak. **Copy-paste** markup itu (lalu menderita saat harus mengubah semuanya satu per satu), atau **memecahnya jadi komponen baru** di file terpisah — padahal kadang ia cuma dipakai di satu tempat dan tak butuh file sendiri. Svelte 5 menambah jalan ketiga yang ringan: **snippet**.
+
+Snippet adalah **potongan markup yang bisa dipakai ulang**. Kamu mendeklarasikannya dengan `{#snippet nama(args)}...{/snippet}` dan memanggilnya dengan `{@render nama(args)}`. Inti mentalnya: anggap snippet sebagai **fungsi** — tapi alih-alih mengembalikan angka atau string, ia "mengembalikan" sepotong HTML. Ia bisa diberi argumen, dipanggil berkali-kali, dan hidup di dalam komponen tempat ia dideklarasikan.
+
+### Analogi: cetakan kue
+
+Bayangkan kamu mau membuat 10 kue berbentuk sama. Kamu tidak menggambar tiap kue dari nol — kamu buat **satu cetakan** (`{#snippet}`), lalu menuang adonan ke cetakan itu berulang kali (`{@render}`). Tiap tuangan bisa pakai "rasa" berbeda lewat argumen: cetakan sama, isi berbeda.
+
+Jadi `{#snippet kartu(produk)}` adalah cetakannya, dan tiap `{@render kartu(susu)}`, `{@render kartu(roti)}` adalah hasil cetakan dengan data berlainan. Bentuk markup-nya konsisten, datanya yang berganti.
+
+### Kenapa "snippet", bukan sekadar variabel HTML?
+
+Kalau kamu datang dari React, godaannya adalah membayangkan snippet sebagai "string HTML" atau "variabel JSX". Bukan. Snippet itu lebih dekat ke **fungsi yang mengembalikan UI**: ia menerima argumen, nilainya **reaktif** (kalau argumen atau `$state` yang dirujuknya berubah, hasil render ikut diperbarui), dan ia hanya benar-benar "dieksekusi" ketika di-`{@render}`. Inilah yang membuatnya kuat untuk daftar: deklarasikan cetakan sekali dengan parameter `item`, lalu di dalam `{#each}` render cetakan itu untuk tiap elemen.
+
+### children: snippet implisit (pengganti `<slot>`)
+
+Inilah bagian yang menggantikan `<slot>` dari Svelte 4. Saat sebuah komponen dipakai dan kamu menaruh konten di antara tag buka dan tag tutupnya, konten itu **otomatis** menjadi snippet bernama `children` yang dikirim ke komponen sebagai prop.
+
+Jadi ketika parent menulis sesuatu di dalam `<Card>...</Card>`, di dalam `Card.svelte` kamu cukup ambil `children` dari `$props()` lalu render dengan `{@render children()}`. Tidak ada elemen `<slot>` lagi — yang dulu "lubang" tempat konten masuk, sekarang adalah pemanggilan snippet biasa. Ini bukan sihir baru: `children` hanyalah snippet seperti yang lain, hanya namanya sudah disepakati dan pengirimannya implisit.
+
+<Callout type="tip">
+Karena `children` cuma prop biasa, kamu bisa memperlakukannya seperti data: cek `&#123;#if children&#125;` untuk fallback, atau render lebih dari sekali. Mirip `props.children` di React — bukan kebetulan, idenya memang sejalan.
+</Callout>
+
+### Snippet sebagai prop: menggantikan named & scoped slot
+
+Bagaimana kalau parent ingin mengirim **lebih dari satu** potongan markup ke anak? Misalnya komponen `Table` yang perlu tahu cara render header dan cara render tiap baris. Di sinilah snippet bersinar: kamu bisa mengirim snippet sebagai **prop bernama**.
+
+Caranya enak: deklarasikan `{#snippet header()}` langsung sebagai child sebuah komponen, dan Svelte otomatis menjadikannya prop bernama `header` untuk anak. Anak menerimanya lewat `$props()` dan me-render-nya kapan pun ia mau — bahkan sambil **mengoper data balik** lewat argumen.
+
+Argumen balik inilah padanan **scoped slot** Vue atau **render prop** React: anak yang memegang data (misalnya `item` hasil iterasi), lalu ia "meminjamkan" data itu ke markup yang parent kirim. Bedanya, di Svelte alurnya sangat eksplisit — kamu melihat jelas snippet mana yang dikirim dan argumen apa yang mengalir bolak-balik.
+
+### Aturan scope & rekursi
+
+Beberapa hal penting soal di mana snippet "hidup":
+
+- Snippet **visible** ke segala sesuatu di lexical scope yang sama — yaitu sibling-nya dan anak-anak dari sibling itu. Snippet yang dideklarasikan di dalam `{#each}` tidak bisa dipanggil dari luar `{#each}` itu.
+- Snippet bisa **memanggil dirinya sendiri** (rekursif) atau saling memanggil (mutual recursion) — berguna untuk struktur seperti pohon/menu bertingkat.
+- Snippet boleh mengakses nilai dari scope sekitarnya (mis. variabel `$state`), jadi tidak semuanya harus lewat argumen — tapi mengoper lewat argumen membuatnya lebih portabel dan jelas.
+- Parameter snippet mendukung **default value** dan **destructuring**, tetapi **tidak boleh** rest parameter (`...args`).
+
+## 2. Contoh kode
+
+Snippet dasar: deklarasi sekali, render berkali-kali dengan argumen berbeda.
+
+```svelte
+<script>
+	let buah = $state([
+		{ nama: 'Apel', harga: 5000 },
+		{ nama: 'Mangga', harga: 8000 }
+	]);
+</script>
+
+<!-- Deklarasi "cetakan" bernama kartu, menerima 1 argumen: item -->
+{#snippet kartu(item)}
+	<div class="kartu">
+		<strong>{item.nama}</strong> — Rp{item.harga}
+	</div>
+{/snippet}
+
+<!-- Render cetakan itu untuk tiap elemen dalam each -->
+{#each buah as b}
+	{@render kartu(b)}
+{/each}
+
+<!-- Bisa juga dipanggil manual dengan data lepas -->
+{@render kartu({ nama: 'Promo', harga: 0 })}
+```
+
+`children` — konten di antara tag komponen otomatis jadi snippet:
+
+```svelte
+<!-- Card.svelte -->
+<script>
+	// 'children' = snippet implisit: isi <Card>...</Card> dari parent.
+	let { children } = $props();
+</script>
+
+<div class="card">
+	<!-- {@render children()} = "lubang" tempat konten parent muncul,
+	     pengganti <slot> dari Svelte 4. -->
+	{#if children}
+		{@render children()}
+	{:else}
+		<em>Kartu kosong</em>
+	{/if}
+</div>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Card from './Card.svelte';
+</script>
+
+<!-- Apa pun di sini otomatis dikirim sebagai snippet 'children' -->
+<Card>
+	<h3>Judul</h3>
+	<p>Isi kartu ditaruh di sini.</p>
+</Card>
+```
+
+Snippet sebagai **prop bernama** — pengganti named/scoped slot, lengkap dengan argumen balik:
+
+```svelte
+<!-- List.svelte -->
+<script>
+	// 'item' & 'header' = snippet prop. Anak yang memegang data tiap baris,
+	// lalu "meminjamkannya" ke markup parent lewat argumen render.
+	// Ini padanan scoped slot Vue / render prop React.
+	let { data, item, header } = $props();
+</script>
+
+<section>
+	<!-- header: snippet tanpa argumen -->
+	{@render header()}
+
+	{#each data as baris}
+		<!-- kirim 'baris' balik ke markup milik parent -->
+		{@render item(baris)}
+	{/each}
+</section>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import List from './List.svelte';
+	let orang = [{ nama: 'Ani', umur: 20 }, { nama: 'Budi', umur: 25 }];
+</script>
+
+<List data={orang}>
+	<!-- snippet bernama 'header' -> otomatis jadi prop header -->
+	{#snippet header()}
+		<h2>Daftar Orang</h2>
+	{/snippet}
+
+	<!-- snippet bernama 'item' menerima argumen 'o' dari anak -->
+	{#snippet item(o)}
+		<p>{o.nama} ({o.umur} th)</p>
+	{/snippet}
+</List>
+```
+
+Dengan TypeScript, beri tipe snippet pakai `Snippet` dari `svelte`. Argumen tipe-nya adalah **tuple** dari tipe-tipe parameter:
+
+```svelte
+<!-- List.svelte (lang="ts") -->
+<script lang="ts">
+	import type { Snippet } from 'svelte';
+
+	interface Props {
+		data: { nama: string; umur: number }[];
+		header: Snippet;                                  // snippet tanpa argumen
+		item: Snippet<[{ nama: string; umur: number }]>;  // snippet dengan 1 argumen
+	}
+
+	let { data, header, item }: Props = $props();
+</script>
+```
+
+## 3. Coba sendiri
+
+Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan snippet tanpa butuh dua file. Perhatikan: satu cetakan `baris` dipanggil tiga kali dengan data berbeda, dan satu cetakan `badge` bahkan dipakai **di dalam** cetakan lain. Ubah datanya lewat tombol dan lihat semuanya ikut bereaksi.
+
+<Playground code={`<script>
+	let produk = $state([
+		{ nama: 'Kopi', stok: 3 },
+		{ nama: 'Teh', stok: 0 },
+		{ nama: 'Gula', stok: 12 }
+	]);
+	function tambahStok() {
+		produk = produk.map((p) => ({ ...p, stok: p.stok + 1 }));
+	}
+</script>
+
+<h3>Daftar Produk</h3>
+
+<!-- cetakan kecil: badge status, menerima argumen 'ada' -->
+{#snippet badge(ada)}
+	{#if ada}
+		<span style='color: green'>tersedia</span>
+	{:else}
+		<span style='color: red'>habis</span>
+	{/if}
+{/snippet}
+
+<!-- cetakan baris MEMAKAI cetakan badge di dalamnya -->
+{#snippet baris(item)}
+	<li>
+		<strong>{item.nama}</strong> (stok: {item.stok}) —
+		{@render badge(item.stok > 0)}
+	</li>
+{/snippet}
+
+<ul>
+	{#each produk as p}
+		{@render baris(p)}
+	{/each}
+</ul>
+
+<button onclick={tambahStok}>Tambah stok semua</button>`} />
+
+<Callout type="tip">
+Di dalam satu komponen, snippet boleh memanggil snippet lain selama keduanya berada di scope yang sama. Ini cara natural memecah markup besar jadi bagian-bagian kecil tanpa harus membuat file komponen baru.
+</Callout>
+
+## 4. Kalau di framework lain
+
+Ketiga framework menyelesaikan masalah yang sama — "biarkan parent menyisipkan markup ke dalam anak, bahkan sambil membawa data dari anak" — tapi dengan mekanisme yang berbeda.
+
+<FrameworkCompare
+	task="Konten yang bisa disisipkan"
+	svelte={`<!-- List.svelte (anak) -->
+<script>
+  let { data, item } = $props();
+</script>
+{#each data as row}
+  {@render item(row)}
+{/each}
+
+<!-- Parent -->
+<List data={orang}>
+  {#snippet item(o)}
+    <p>{o.nama}</p>
+  {/snippet}
+</List>`}
+	react={`// List.tsx (anak) — render prop
+function List({ data, item }) {
+  return data.map((row) => item(row));
+}
+
+// Parent: kirim fungsi yang mengembalikan JSX
+<List
+  data={orang}
+  item={(o) => <p>{o.nama}</p>}
+/>
+// 'children' juga sekadar prop biasa di React`}
+	vue={`<!-- List.vue (anak) — scoped slot -->
+<template>
+  <div v-for="row in data" :key="row.id">
+    <slot name="item" :o="row" />
+  </div>
+</template>
+
+<!-- Parent: v-slot menerima data dari anak -->
+<List :data="orang">
+  <template #item="{ o }">
+    <p>{{ o.nama }}</p>
+  </template>
+</List>`}
+	diff={{ react: [9], vue: [9] }}
+	note={`React: konten sisipan lewat children atau render prop (fungsi -> JSX); data balik mengalir sebagai argumen fungsi — fleksibel, tapi "slot mana yang dikirim" tersamar sebagai prop fungsi biasa. Vue: slot default + named/scoped slot; data balik lewat slot props (v-slot) — deklaratif, tapi sintaks slot adalah dunia tersendiri. Svelte: snippet + {@render}; tiap snippet adalah nilai berargumen seperti fungsi, dan named slot + scoped slot menyatu jadi satu konsep. Plus: paling eksplisit & seragam (snippet bisa dipakai di mana saja, bukan cuma sebagai prop). Minus: sedikit lebih verbose dibanding 'children' polos React.`}
+/>
+
+## 5. Latihan
+
+<Exercise title="Buat komponen Daftar dengan snippet sebagai prop">
+Buat komponen `Daftar.svelte` yang menerima prop `data` (array objek) dan sebuah snippet prop bernama `item`. Komponen merender `<ul>`, lalu untuk tiap elemen `data` memanggil snippet `item` sambil mengirim elemen itu sebagai argumen. Tambahkan fallback: kalau `data` kosong, tampilkan teks "Tidak ada data". Lalu buat parent yang mengirim daftar tugas `[&#123; judul, selesai &#125;]` dan merender tiap item dengan tanda centang bila `selesai`.
+
+{#snippet solution()}
+
+```svelte
+<!-- Daftar.svelte -->
+<script>
+	// 'item' = snippet prop. Anak yang memegang tiap elemen,
+	// lalu meminjamkannya ke markup parent lewat argumen.
+	let { data, item } = $props();
+</script>
+
+{#if data.length === 0}
+	<p>Tidak ada data</p>
+{:else}
+	<ul>
+		{#each data as elemen}
+			<!-- kirim 'elemen' balik ke snippet milik parent -->
+			<li>{@render item(elemen)}</li>
+		{/each}
+	</ul>
+{/if}
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Daftar from './Daftar.svelte';
+
+	let tugas = $state([
+		{ judul: 'Belajar snippet', selesai: true },
+		{ judul: 'Latihan', selesai: false }
+	]);
+</script>
+
+<Daftar data={tugas}>
+	<!-- snippet bernama 'item' -> jadi prop item, menerima argumen 't' -->
+	{#snippet item(t)}
+		{t.selesai ? '✅' : '⬜'} {t.judul}
+	{/snippet}
+</Daftar>
+```
+
+Kuncinya dua sisi: anak mendeklarasikan parameter snippet (`item(elemen)`) dan mengirim data lewat argumen; parent mendeklarasikan `{#snippet item(t)}` dengan nama yang cocok agar otomatis jadi prop. Itulah inti scoped slot / render prop versi Svelte.
+
+{/snippet}</Exercise>
+
+<Exercise title="Snippet rekursif untuk menu bertingkat">
+Buat satu snippet `cabang(node)` yang merender `node.label`, lalu — bila `node.anak` ada — memanggil **dirinya sendiri** untuk tiap anak di dalam `<ul>` bersarang. Render dari sebuah root. Ini melatih bahwa snippet boleh rekursif.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let pohon = $state({
+		label: 'Root',
+		anak: [
+			{ label: 'A', anak: [{ label: 'A1' }, { label: 'A2' }] },
+			{ label: 'B' }
+		]
+	});
+</script>
+
+{#snippet cabang(node)}
+	<li>
+		{node.label}
+		{#if node.anak}
+			<ul>
+				{#each node.anak as c}
+					<!-- snippet memanggil dirinya sendiri -->
+					{@render cabang(c)}
+				{/each}
+			</ul>
+		{/if}
+	</li>
+{/snippet}
+
+<ul>
+	{@render cabang(pohon)}
+</ul>
+```
+
+Karena snippet "visible" ke dirinya sendiri di scope yang sama, rekursi jalan tanpa trik tambahan — sangat pas untuk pohon, komentar bersarang, atau menu navigasi bertingkat.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="legacy">
+Snippet menggantikan API <strong>slot</strong> dari Svelte 4. Kalau kamu menemukan <code>&lt;slot&gt;</code>, <code>&lt;slot name="x"&gt;</code>, atau <code>$$slots</code> di sebuah tutorial, itu API lama (Svelte 4). Di Svelte 5 runes: konten implisit jadi <code>children</code>, named slot jadi snippet prop, dan scoped slot (slot props) jadi argumen snippet. Lihat tabel pemetaan di bawah.
+</Callout>
+
+<Callout type="pitfall">
+Snippet hanya hidup di <strong>scope</strong>-nya. Snippet yang dideklarasikan di dalam `&#123;#each&#125;` atau `&#123;#if&#125;` tidak bisa di-`&#123;@render&#125;` dari luar blok itu. Kalau sebuah snippet perlu dipakai di banyak tempat, deklarasikan di level teratas komponen (atau kirim sebagai prop), bukan di dalam blok bersarang.
+</Callout>
+
+<Callout type="warning">
+Untuk snippet yang <strong>mungkin tidak ada</strong> (mis. prop opsional seperti `children`), jangan panggil langsung tanpa pengecekan. Pakai optional chaining `&#123;@render children?.()&#125;`, atau bungkus dengan `&#123;#if children&#125;...&#123;:else&#125;...&#123;/if&#125;` untuk memberi fallback. Memanggil snippet yang `undefined` akan menimbulkan error saat render.
+</Callout>
+
+<Callout type="warning">
+Parameter snippet boleh punya <strong>default value</strong> dan boleh di-<strong>destructure</strong>, tetapi <strong>tidak boleh</strong> rest parameter — `&#123;#snippet x(...args)&#125;` tidak valid. Kalau butuh banyak nilai, kirim satu objek sebagai argumen.
+</Callout>
+
+<Callout type="tip">
+Hindari nama prop <code>children</code> untuk hal lain selain konten sisipan. Nama itu sudah "dipesan" Svelte untuk konten implisit antara tag komponen; memakainya untuk data lain akan membingungkan dan bisa bentrok dengan konten yang dikirim parent.
+</Callout>
+
+<Callout type="tip">
+Sejak Svelte 5.5.0 kamu bisa meng-<code>export</code> snippet dari <code>&lt;script module&gt;</code> agar bisa dipakai komponen lain, selama snippet itu tidak merujuk deklarasi dari script instance (non-module). Berguna untuk markup util yang dipakai lintas file.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '<slot />', modern: '{@render children()}', note: 'Konten implisit kini lewat snippet children.' },
+	{ legacy: '<slot name="header" />', modern: '{@render header()} + {#snippet header()}', note: 'Named slot jadi snippet prop bernama.' },
+	{ legacy: '<slot {item} /> (slot props)', modern: '{@render row(item)}', note: 'Scoped slot kini argumen snippet.' },
+	{ legacy: '$$slots.header', modern: '{#if header}...{/if}', note: 'Cek keberadaan = cek prop snippet biasa.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/snippet" label={`{#snippet} — dokumentasi resmi Svelte`} />
+<DocsLink href="https://svelte.dev/docs/svelte/@render" label={`{@render} — dokumentasi resmi Svelte`} />

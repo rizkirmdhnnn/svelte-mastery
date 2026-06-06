@@ -1,0 +1,298 @@
+---
+title: Best practices
+product: svelte
+section: misc
+sectionTitle: Misc
+sectionOrder: 7
+order: 1
+status: stable
+description: Pola idiomatik Svelte 5 — kapan pakai $derived vs $effect, struktur komponen yang sehat, aksesibilitas, performa, dan cara menghindari anti-pattern reaktivitas.
+docs: https://svelte.dev/docs/svelte/best-practices
+keywords: [best-practices, derived, effect, anti-pattern, aksesibilitas, performa]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+"Best practices" itu bukan daftar aturan untuk dihafal, tapi sekumpulan kebiasaan yang membuat kode Svelte 5-mu **mudah diprediksi**. Inti dari semuanya satu: biarkan reaktivitas mengalir secara deklaratif, dan sentuh dunia luar (DOM API, library pihak ketiga, logging) hanya bila benar-benar perlu. Hampir semua "kode jelek" di Svelte 5 berakar dari satu kesalahan: memakai `$effect` untuk sesuatu yang seharusnya jadi `$derived`.
+
+### Analogi: spreadsheet vs salin-tempel manual
+
+Bayangkan kamu punya kolom A (harga) dan kolom B (qty), lalu kolom C harus berisi total. Ada dua cara mengisinya:
+
+- **Cara formula** — kamu tulis `=A*B` di sel C. Setiap A atau B berubah, C ikut berubah sendiri. Kamu tidak pernah menyentuh C lagi. Inilah `$derived`.
+- **Cara salin-tempel** — setiap kali A atau B berubah, kamu manual menghitung lalu mengetik hasilnya ke C. Sekali kamu lupa, C jadi basi (stale) dan salah. Inilah memakai `$effect` untuk menulis state.
+
+Orang yang baru pindah dari React refleks memilih cara salin-tempel, karena `useEffect` adalah palu serbaguna di sana. Di Svelte 5, refleks itu justru sumber bug. `$derived` adalah formula; `$effect` adalah pintu darurat untuk hal yang **tidak bisa** dirumuskan — seperti menempelkan grafik dari library Chart.js ke sebuah `<canvas>`, atau menyetel `document.title`.
+
+### `$derived`: nilai yang dihitung, malas, dan selalu segar
+
+`$derived(expr)` mendeklarasikan nilai yang **dihitung dari state lain**. Tiga sifat penting yang membuatnya lebih unggul daripada menghitung manual:
+
+1. **Otomatis melacak dependensi** — Svelte tahu ekspresimu membaca `count`, jadi ia tahu kapan harus menghitung ulang. Kamu tidak menulis daftar dependensi (tidak ada array `[count]` seperti React).
+2. **Lazy (malas)** — nilai baru dihitung saat dibaca, bukan saat dependensi berubah. Kalau hasilnya tak pernah dipakai di layar, perhitungannya dilewati.
+3. **Tidak pernah stale** — karena ia formula, tidak mungkin ketinggalan. Mustahil lupa meng-update-nya.
+
+Untuk perhitungan yang butuh beberapa baris, pakai `$derived.by(() => { ... })` — sama persis, hanya bentuknya fungsi.
+
+### `$effect`: pintu darurat, bukan pintu utama
+
+`$effect(() => { ... })` menjalankan kode **setelah** DOM ter-update, setiap kali state yang dibaca di dalamnya berubah. Gunakan ini HANYA untuk *side effect* yang benar-benar keluar dari dunia Svelte:
+
+- Sinkronisasi dengan library eksternal (chart, map, editor).
+- Memanggil API browser yang bukan bagian dari render (mis. `localStorage`, `document.title`, `IntersectionObserver`).
+- Membersihkan resource (return sebuah fungsi cleanup).
+
+Kalau yang kamu lakukan di dalam `$effect` cuma "menghitung X lalu menyimpannya ke variabel Y", itu hampir pasti salah — ubah Y jadi `$derived`. Aturan praktisnya: **kalau efeknya menulis ke `$state`, curigai dirimu sendiri.**
+
+### Perlakukan props seakan akan berubah
+
+Props itu reaktif. Jangan "memotret" nilainya sekali di awal lalu menyimpannya ke `$state` biasa, karena snapshot itu tidak akan ikut berubah ketika parent mengirim nilai baru. Kalau sebuah nilai bergantung pada prop, jadikan ia `$derived`, bukan diinisialisasi sekali. Ini setara dengan pelajaran lama React "jangan menyalin props ke state".
+
+### Struktur komponen yang sehat
+
+Komponen yang baik itu **tipis**. Pisahkan *business logic* dan tipe domain ke modul `.ts` atau `.svelte.ts` (file `.svelte.ts` boleh memakai runes), lalu impor ke komponen. Hasilnya: komponen fokus pada tampilan, logikanya bisa dites tanpa me-render apa pun, dan tipe domain (mis. `User`, `Product`) didefinisikan sekali lalu dipakai ulang — bukan ditulis ulang di banyak file. Untuk state lintas komponen, sebuah class dengan field `$state` (atau `setContext`/`getContext`) lebih aman daripada store yang di-share lewat modul, terutama saat SSR.
+
+## 2. Contoh kode
+
+```svelte
+<!-- ❌ ANTI-PATTERN: pakai $effect untuk menghitung nilai turunan -->
+<script>
+	let count = $state(0);
+	let double = $state(0); // state ekstra yang sebenarnya tak perlu
+
+	// Efek ini "menyalin-tempel" count*2 ke double setiap count berubah.
+	// Masalah: ada langkah render ekstra, mudah lupa, dan double sempat stale
+	// selama satu tick sebelum efek jalan.
+	$effect(() => {
+		double = count * 2;
+	});
+</script>
+
+<button onclick={() => count++}>{count} → {double}</button>
+```
+
+```svelte
+<!-- ✅ IDIOMATIK: jadikan formula dengan $derived -->
+<script>
+	let count = $state(0);
+
+	// double otomatis terhitung, malas, dan tak pernah stale.
+	// Tidak ada $state kedua, tidak ada $effect.
+	let double = $derived(count * 2);
+
+	// Untuk perhitungan banyak baris, pakai $derived.by:
+	let label = $derived.by(() => {
+		if (count === 0) return 'kosong';
+		return count % 2 === 0 ? 'genap' : 'ganjil';
+	});
+</script>
+
+<button onclick={() => count++}>{count} → {double} ({label})</button>
+```
+
+```svelte
+<!-- ✅ $effect yang BENAR: sinkronisasi dengan dunia luar -->
+<script>
+	let title = $state('Halo');
+
+	// Ini side effect sejati: menulis ke document.title (API browser),
+	// bukan menghitung nilai turunan. $effect adalah tempat yang tepat.
+	$effect(() => {
+		document.title = title;
+	});
+
+	let detik = $state(0);
+
+	// Efek dengan cleanup: return fungsi untuk membersihkan resource.
+	// Svelte memanggilnya saat efek dijalankan ulang atau komponen dibongkar.
+	$effect(() => {
+		const id = setInterval(() => detik++, 1000);
+		return () => clearInterval(id);
+	});
+</script>
+
+<input bind:value={title} />
+<p>Sudah {detik} detik</p>
+```
+
+```ts
+// counter.svelte.ts — business logic dipindah keluar dari komponen.
+// File .svelte.ts boleh memakai runes; komponen jadi tipis & logika ini bisa dites.
+export function createCounter(awal = 0) {
+	let count = $state(awal);
+
+	return {
+		get count() {
+			return count;
+		},
+		get double() {
+			return count * 2; // turunan tetap di sini, dibaca lewat getter
+		},
+		inc() {
+			count++;
+		}
+	};
+}
+```
+
+## 3. Coba sendiri
+
+Modul ini bersifat panduan, jadi alih-alih playground interaktif, perhatikan baik-baik dua contoh statis berikut. Keduanya menghasilkan tampilan yang sama, tapi yang satu menyimpan bug laten dan yang satu bersih. Tugasmu: bisakah kamu menjelaskan *mengapa* versi kedua lebih baik tanpa membaca komentarnya?
+
+```svelte
+<!-- VERSI BERMASALAH: keranjang belanja dengan state turunan manual -->
+<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh', harga: 12000, qty: 1 }
+	]);
+
+	let total = $state(0);
+
+	// Anti-pattern klasik: efek yang membaca items lalu menulis total.
+	// Bahaya tersembunyi: jika nanti ada efek lain yang juga menulis items,
+	// urutan eksekusi efek bisa membuat total telat satu langkah (stale).
+	$effect(() => {
+		total = items.reduce((s, it) => s + it.harga * it.qty, 0);
+	});
+
+	function tambahQty(i) {
+		items[i].qty++;
+	}
+</script>
+
+<ul>
+	{#each items as it, i}
+		<li>{it.nama} × {it.qty}
+			<button onclick={() => tambahQty(i)}>+</button>
+		</li>
+	{/each}
+</ul>
+<p>Total: {total}</p>
+```
+
+```svelte
+<!-- VERSI IDIOMATIK: total sebagai formula -->
+<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh', harga: 12000, qty: 1 }
+	]);
+
+	// total adalah turunan murni dari items → $derived.
+	// Tidak ada $state kedua, tidak ada $effect, mustahil stale.
+	let total = $derived(items.reduce((s, it) => s + it.harga * it.qty, 0));
+
+	function tambahQty(i) {
+		items[i].qty++; // mutasi langsung; proxy $state menangkapnya
+	}
+</script>
+
+<ul>
+	{#each items as it, i (it.nama)}
+		<!-- each ber-key (it.nama) → update DOM bedah, bukan render ulang massal -->
+		<li>{it.nama} × {it.qty}
+			<button onclick={() => tambahQty(i)}>+</button>
+		</li>
+	{/each}
+</ul>
+<p>Total: {total}</p>
+```
+
+Perbedaan kunci: di versi kedua, `total` tidak punya keberadaan sendiri — ia cuma "bayangan" dari `items`. Tidak ada kemungkinan ia salah, karena tidak ada kode yang menulisnya. Perhatikan juga `each` yang diberi key `(it.nama)`: ini membuat Svelte memindahkan/menghapus node yang tepat alih-alih membongkar ulang seluruh list, yang penting untuk performa pada daftar panjang.
+
+## 4. Latihan
+
+<Exercise title="Bersihkan anti-pattern reaktivitas">
+Komponen di bawah ini punya tiga masalah idiomatik sekaligus: (1) sebuah `$effect` dipakai untuk menghitung nilai turunan, (2) sebuah prop "dipotret" ke `$state` sehingga tidak ikut berubah saat parent meng-update-nya, dan (3) `each` tanpa key. Tulis ulang menjadi versi idiomatik Svelte 5.
+
+```svelte
+<script>
+	let { daftar, pajak } = $props();
+
+	let subtotal = $state(0);
+	let tarif = $state(pajak); // memotret prop — salah
+
+	$effect(() => {
+		subtotal = daftar.reduce((s, x) => s + x.harga, 0);
+	});
+
+	let totalAkhir = $state(0);
+	$effect(() => {
+		totalAkhir = subtotal + subtotal * tarif;
+	});
+</script>
+
+{#each daftar as x}
+	<p>{x.nama}: {x.harga}</p>
+{/each}
+<strong>Total: {totalAkhir}</strong>
+```
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let { daftar, pajak } = $props();
+
+	// 1. subtotal & totalAkhir adalah turunan murni → $derived, bukan $effect.
+	let subtotal = $derived(daftar.reduce((s, x) => s + x.harga, 0));
+
+	// 2. JANGAN potret prop ke $state. Pajak dipakai langsung dari props,
+	//    sehingga totalAkhir ikut berubah ketika parent mengubah pajak.
+	let totalAkhir = $derived(subtotal + subtotal * pajak);
+</script>
+
+<!-- 3. each diberi key unik (mis. x.id) untuk update DOM yang presisi -->
+{#each daftar as x (x.id)}
+	<p>{x.nama}: {x.harga}</p>
+{/each}
+<strong>Total: {totalAkhir}</strong>
+```
+
+Hasilnya: nol `$effect`, nol `$state` turunan, dan tidak ada satu pun nilai yang bisa basi. Tiga `$effect`/`$state` digantikan dua `$derived` yang lebih pendek sekaligus lebih benar. Inilah arah yang kamu tuju setiap kali melihat `$effect` yang menulis ke `$state`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Menulis <code>$state</code> di dalam <code>$effect</code> yang juga membaca state yang sama = loop tak terhingga.</strong> Contoh: <code>$effect(() =&gt; &#123; n = n + 1 &#125;)</code> akan memicu dirinya sendiri terus-menerus. Kalau kamu butuh efek yang membaca sebuah nilai tanpa ikut "berlangganan" perubahannya, bungkus pembacaan itu dengan <code>untrack(() =&gt; ...)</code> dari <code>svelte</code>. Tapi sering kali kebutuhan ini adalah tanda bahwa logikamu seharusnya <code>$derived</code>, bukan efek.
+</Callout>
+
+<Callout type="warning">
+<strong>Aksesibilitas: jangan pasang <code>onclick</code> di elemen non-interaktif</strong> seperti <code>&lt;div&gt;</code> atau <code>&lt;span&gt;</code>. Pakai <code>&lt;button&gt;</code> untuk aksi dan <code>&lt;a href&gt;</code> untuk navigasi — keduanya gratis dapat fokus keyboard, peran ARIA, dan dukungan screen reader. Compiler Svelte memang akan memberi peringatan <code>a11y_*</code> (mis. <code>a11y_click_events_have_key_events</code>), jangan dibungkam asal-asalan; perlakukan peringatan itu seperti error. Selalu kaitkan <code>&lt;label&gt;</code> dengan input-nya, dan beri <code>alt</code> pada gambar.
+</Callout>
+
+<Callout type="tip">
+<strong>Performa data besar: <code>$state.raw</code>.</strong> Objek <code>$state</code> biasa dibungkus proxy agar mutasi sedalam apa pun terlacak. Untuk data besar yang hanya akan kamu <em>ganti seluruhnya</em> (bukan dimutasi per-field) — misalnya respons API mentah — pakai <code>$state.raw(...)</code> supaya Svelte tidak membuat proxy dan biayanya lebih murah. Aturannya: butuh mutasi nested → <code>$state</code>; cuma reassignment → <code>$state.raw</code>.
+</Callout>
+
+<Callout type="tip">
+<strong>Struktur proyek.</strong> Taruh logika & tipe yang dipakai ulang di <code>src/lib</code> (akses lewat alias <code>$lib</code>), bukan tercecer di <code>routes</code>. Pisahkan <em>business logic</em> ke modul <code>.ts</code> / <code>.svelte.ts</code> sehingga komponen <code>.svelte</code> tetap tipis dan mudah dites. Untuk styling yang bisa dikonfigurasi parent, oper <strong>CSS custom property</strong> ke anak (mis. <code>--gap</code>), jangan menembus enkapsulasi style komponen anak.
+</Callout>
+
+<Callout type="legacy">
+Beberapa pola lama masih sering tersisa di kode hasil migrasi. Padanan modernnya: <code>export let</code> → <code>$props()</code>; <code>$:</code> (reactive statement) → <code>$derived</code> atau <code>$effect</code>; <code>on:click</code> → <code>onclick</code>; <code>&lt;slot&gt;</code> → snippet + <code>&#123;@render&#125;</code>; <code>createEventDispatcher</code> → prop callback (mis. <code>onsave</code>). Store yang di-share lewat modul untuk state lintas komponen sebaiknya jadi class dengan field <code>$state</code> atau dilewatkan via context.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '$effect(() => { double = count * 2 })', modern: 'let double = $derived(count * 2)', note: 'Nilai turunan = formula, bukan efek.' },
+	{ legacy: 'let snap = $state(prop)', modern: 'let snap = $derived(prop)', note: 'Jangan potret prop; biarkan ikut berubah.' },
+	{ legacy: '{#each rows as r}', modern: '{#each rows as r (r.id)}', note: 'Beri key unik untuk update DOM presisi.' },
+	{ legacy: '<div onclick={...}>', modern: '<button onclick={...}>', note: 'Aksi pakai elemen interaktif sejati.' },
+	{ legacy: '$state(responsApiBesar)', modern: '$state.raw(responsApiBesar)', note: 'Data besar yang cuma di-reassign → raw.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/best-practices" label="Best practices — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/$derived" label="$derived — rune untuk nilai turunan" />
+<DocsLink href="https://svelte.dev/docs/svelte/$effect" label="$effect — kapan (dan kapan tidak) memakainya" />

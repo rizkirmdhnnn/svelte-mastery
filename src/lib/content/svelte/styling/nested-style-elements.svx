@@ -1,0 +1,240 @@
+---
+title: Nested <style> elements
+product: svelte
+section: styling
+sectionTitle: Styling
+sectionOrder: 4
+order: 4
+status: stable
+description: Aturan style bertingkat di Svelte — kenapa cuma satu blok style top-level yang di-scope, sisanya disisipkan apa adanya dan menjadi global.
+docs: https://svelte.dev/docs/svelte/nested-style-elements
+keywords: [nested-style, scoped, global, style-tag, top-level]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Kamu sudah tahu dari modul **Scoped styles** bahwa blok `<style>` di sebuah komponen otomatis terisolasi: `p { color: red }` cuma kena `<p>` di komponen itu, tidak bocor ke tetangga. Modul ini menjelaskan satu detail penting yang sering bikin orang bingung: **isolasi itu hanya berlaku untuk SATU blok `<style>` saja — yaitu yang berada di level paling atas (top-level) komponen.**
+
+Aturannya cuma dua kalimat, tapi konsekuensinya besar:
+
+1. **Hanya boleh ada satu `<style>` top-level per komponen.** Menulis dua blok `<style>` di level atas = compiler error.
+2. **`<style>` yang bertingkat (nested)** — yaitu yang kamu taruh *di dalam* sebuah elemen atau logic block — **boleh ada, tapi TIDAK diproses sama sekali.** Svelte menyisipkannya ke DOM apa adanya. Tidak ada hash, tidak ada scoping, tidak ada pemangkasan selector tak terpakai. Hasilnya: **gaya itu menjadi global.**
+
+### Kenapa cuma yang top-level yang di-scope?
+
+Ini bukan keputusan acak; ini konsekuensi dari **bagaimana scoping bekerja**. Scoping di Svelte adalah trik **compile-time**: saat compile, Svelte membaca isi blok `<style>` top-level, menghitung satu hash unik (mis. `svelte-abc123`), menulis ulang setiap selector agar ikut menargetkan hash itu (`p.svelte-abc123`), lalu menempelkan hash yang sama ke elemen-elemen di markup. Supaya bisa melakukan ini, compiler harus **menganalisis statis** isi style block tersebut.
+
+Blok `<style>` yang bertingkat itu, di mata compiler, hanyalah bagian dari **konten markup** — sama statusnya seperti teks atau elemen lain di dalam template. Ia bisa berada di posisi dinamis (di dalam `{#if}`, di dalam `{#each}`, di dalam komponen anak). Karena itu Svelte memilih untuk **tidak mengutak-atiknya**: ia memperlakukannya sebagai blok opaque dan menaruhnya ke DOM persis seperti yang kamu tulis.
+
+Dan di sinilah kuncinya: **browser sendiri tidak punya konsep "scoped".** Sebuah elemen `<style>` yang nongol di DOM akan menata seluruh dokumen, tidak peduli ia bersarang di dalam `<div>` mana pun. Scoping itu sesuatu yang **Svelte lakukan TERHADAP** CSS-mu, bukan sifat bawaan tag `<style>`. Jadi begitu sebuah `<style>` lolos tanpa diproses Svelte, ia jatuh kembali ke perilaku default browser: **global**.
+
+### Analogi
+
+Bayangkan blok `<style>` top-level seperti **dokumen resmi yang kamu serahkan ke notaris kantor**. Notaris (compiler) membaca tiap baris, lalu menstempel setiap aturan dengan **segel divisimu**. Hasilnya, aturan itu cuma berlaku untuk berkas-berkas divisimu — tidak mengganggu divisi lain.
+
+Sekarang bayangkan `<style>` bertingkat seperti **selebaran yang kamu tempel di papan pengumuman lobi**. Tidak ada notaris yang menyentuhnya, tidak ada stempel. Begitu menempel, **semua orang yang lewat lobi membacanya dan ikut terikat.** Isinya mungkin cuma kamu maksudkan untuk satu meja, tapi karena ditempel di ruang publik tanpa segel, efeknya menyebar ke seluruh gedung.
+
+Itulah kenapa contoh paling terkenal dari docs ini begitu mengejutkan: sebuah `<style>` bersarang di dalam `<div>` yang menulis `div { color: red }` akan mewarnai **semua `<div>` di seluruh halaman**, bukan cuma `<div>` pembungkusnya.
+
+## 2. Contoh kode
+
+Perbandingan langsung: top-level (di-scope) vs nested (global apa adanya).
+
+```svelte
+<script>
+	// tidak ada logika; fokus ke perilaku style
+</script>
+
+<div class="box">
+	<p>Paragraf di dalam komponen ini.</p>
+
+	<!-- ⬇️ INI <style> BERTINGKAT: berada DI DALAM markup, bukan top-level.
+	     Svelte tidak memprosesnya sama sekali — disisipkan apa adanya ke DOM.
+	     Tidak ada hash, tidak ada scoping => aturan di bawah jadi GLOBAL. -->
+	<style>
+		div {
+			/* HATI-HATI: ini kena SEMUA <div> di seluruh dokumen,
+			   bukan cuma .box di komponen ini. */
+			color: red;
+		}
+	</style>
+</div>
+
+<!-- ⬇️ INI <style> TOP-LEVEL: satu-satunya yang di-scope otomatis.
+     Selector di sini ditulis ulang jadi .box.svelte-xxxx, p.svelte-xxxx, dst. -->
+<style>
+	.box {
+		padding: 1rem;
+		border: 1px solid #ddd;
+	}
+	p {
+		/* cuma <p> di komponen INI; aman dari komponen lain */
+		font-weight: bold;
+	}
+</style>
+```
+
+Dua `<style>` top-level = error. Kalau butuh memecah gaya, gabungkan dalam satu blok.
+
+```svelte
+<style>
+	p { color: blue; }
+</style>
+
+<!-- ❌ Compile error: "A component can have a single top-level <style> element"
+     Hapus salah satu, atau satukan aturannya ke dalam blok di atas. -->
+<style>
+	p { color: green; }
+</style>
+```
+
+Pemakaian sah dari nested `<style>`: menyalakan/mematikan **CSS global secara sengaja dan kondisional** lewat logic block.
+
+```svelte
+<script>
+	let locked = $state(false);
+</script>
+
+<button onclick={() => (locked = !locked)}>
+	{locked ? 'Buka' : 'Kunci'} scroll halaman
+</button>
+
+{#if locked}
+	<!-- nested <style> di dalam {#if}: node-nya muncul/hilang mengikuti kondisi.
+	     Karena nested = global, aturan ini sengaja menargetkan <body> dokumen.
+	     Saat locked=false, blok ini lenyap dari DOM dan efeknya hilang. -->
+	<style>
+		body {
+			overflow: hidden;
+		}
+	</style>
+{/if}
+```
+
+## 3. Coba sendiri
+
+Modul ini tidak memakai live playground karena perilakunya **global**: aturan dari sebuah nested `<style>` akan bocor menata seluruh halaman (termasuk chrome editor/preview), jadi sulit diamati dengan adil di kotak kecil. Selain itu inti pelajarannya adalah keputusan **compile-time** Svelte, bukan interaksi runtime. Jadi kita telusuri lewat contoh statis beranotasi — bayangkan ini dirender di sebuah halaman yang juga punya `<div>` lain di luar komponen.
+
+```svelte
+<!-- Panel.svelte -->
+<div class="panel">
+	<p>Aku di dalam Panel.</p>
+
+	<!-- nested => global. Targetnya 'div' yang sangat umum. -->
+	<style>
+		div {
+			outline: 2px dashed red; /* niatnya cuma .panel... */
+		}
+	</style>
+</div>
+
+<style>
+	/* top-level => scoped. Aman, cuma .panel komponen ini. */
+	.panel {
+		padding: 1rem;
+	}
+</style>
+```
+
+Kalau halaman induknya seperti ini:
+
+```svelte
+<!-- App.svelte (induk) -->
+<script>
+	import Panel from './Panel.svelte';
+</script>
+
+<div class="sidebar">Aku BUKAN bagian Panel.</div>
+<Panel />
+<div class="footer">Aku juga di luar Panel.</div>
+```
+
+Maka hasil yang **benar-benar** terjadi di layar:
+
+- `.panel` mendapat `padding: 1rem` — sesuai harapan (ini dari blok top-level yang di-scope).
+- **`.sidebar`, `.footer`, DAN `.panel` ketiganya** mendapat `outline: 2px dashed red`. Padahal kamu hanya menulis aturan itu "di dalam" Panel. Karena nested `<style>` disisipkan apa adanya dan selector-nya `div` (tanpa hash), ia menyapu **semua** `<div>` di dokumen.
+
+Anotasi penting yang harus kamu internalisasi: posisi sebuah `<style>` di pohon DOM **tidak** membatasi jangkauannya. Yang membatasi jangkauan hanyalah **stempel hash** dari Svelte — dan stempel itu cuma diberikan ke blok `<style>` top-level.
+
+## 4. Latihan
+
+<Exercise title="Bedah bug: kenapa semua judul jadi tebal?">
+
+Seorang rekan menulis `Card.svelte` di bawah ini. Maksudnya: hanya `.title` **di dalam Card** yang tebal. Tapi setelah dipakai, **semua** elemen ber-class `.title` di seluruh halaman (termasuk judul navbar dan footer di komponen lain) ikut menjadi tebal.
+
+```svelte
+<!-- Card.svelte (versi bermasalah) -->
+<script>
+	let { title, body } = $props();
+</script>
+
+<article class="card">
+	<h3 class="title">{title}</h3>
+	<p>{body}</p>
+
+	<style>
+		.title {
+			font-weight: 800;
+		}
+	</style>
+</article>
+```
+
+Jawab dua hal:
+
+1. **Kenapa** gaya `.title` bocor ke seluruh halaman, padahal ditulis di dalam komponen?
+2. **Perbaiki** agar `.title` kembali ter-scope hanya ke Card.
+
+{#snippet solution()}
+
+**1. Kenapa bocor.** Blok `<style>` itu diletakkan **di dalam** `<article class="card">`, jadi ia adalah `<style>` **bertingkat (nested)**, bukan top-level. Svelte tidak memprosesnya: tidak ada hash yang ditambahkan, tidak ada scoping. Tag itu disisipkan apa adanya ke DOM, dan sebuah `<style>` di DOM berlaku **global**. Selector `.title` pun cocok dengan setiap `.title` di mana saja di halaman — bukan cuma di dalam Card.
+
+**2. Perbaikan.** Pindahkan blok `<style>` keluar dari `<article>` ke **level atas** komponen. Begitu jadi top-level, Svelte akan men-scope-nya otomatis (`.title` ditulis ulang menjadi `.title.svelte-xxxx`), sehingga hanya `<h3 class="title">` milik Card yang kena.
+
+```svelte
+<!-- Card.svelte (sudah benar) -->
+<script>
+	let { title, body } = $props();
+</script>
+
+<article class="card">
+	<h3 class="title">{title}</h3>
+	<p>{body}</p>
+</article>
+
+<!-- top-level => scoped otomatis, hanya .title di Card yang tebal -->
+<style>
+	.title {
+		font-weight: 800;
+	}
+</style>
+```
+
+Catatan: kalau kamu memang ingin `.title` global (jarang), pilih cara yang lebih jelas niatnya — `:global(.title)` di blok top-level — daripada mengandalkan nested `<style>` yang tersembunyi di tengah markup.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Nested `<style>` <strong>diam-diam menjadi global</strong>, dan Svelte tidak memberi peringatan bahwa ia global. Ini paling sering terjadi saat kamu <em>copy-paste</em> sepotong markup yang kebetulan menyertakan blok `<style>` ke dalam sebuah elemen pembungkus. Gejalanya: gaya tiba-tiba bocor ke seluruh halaman, dan selector tak terpakai pun tidak dipangkas (karena nested = tak diproses). Kalau gaya komponenmu mendadak "menular", cek dulu: apakah ada `<style>` yang tidak sengaja bersarang di dalam markup?
+</Callout>
+
+<Callout type="warning">
+Hanya boleh ada <strong>satu</strong> `<style>` top-level per komponen. Menulis dua blok di level atas akan gagal compile dengan pesan semacam <em>"A component can have a single top-level &lt;style&gt; element"</em>. Kalau butuh memisahkan gaya secara logis, gabungkan dalam satu blok (boleh pakai komentar sebagai pemisah), atau pindahkan sebagian ke file CSS eksternal.
+</Callout>
+
+<Callout type="tip">
+Butuh CSS yang <strong>memang global</strong>? Pilih cara yang lebih mudah ditemukan dan dipahami orang lain, bukan nested `<style>` yang terkubur di tengah markup. Urutan rekomendasi: (1) `:global(...)` di dalam blok top-level — niatnya eksplisit dan tetap dekat dengan komponen; (2) stylesheet eksternal seperti `app.css` untuk reset/utility global; (3) `<svelte:head><style>...</style></svelte:head>` untuk gaya level-dokumen. Sisakan nested `<style>` untuk kasus langka di mana kamu benar-benar perlu menaruh CSS mentah-tanpa-diproses pada titik tertentu (mis. menyuntik CSS dinamis secara kondisional lewat `{#if}`).
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/nested-style-elements" label="Nested <style> elements — dokumentasi resmi Svelte" />

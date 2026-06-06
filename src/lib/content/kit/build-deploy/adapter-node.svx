@@ -1,0 +1,364 @@
+---
+title: Node servers
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 4
+status: stable
+description: Membungkus aplikasi SvelteKit jadi server Node.js mandiri dengan adapter-node — cara build, menjalankan, mengatur env (PORT/HOST/ORIGIN), reverse proxy, dan custom server.
+docs: https://svelte.dev/docs/kit/adapter-node
+keywords: [adapter-node, node, deploy, reverse-proxy, ORIGIN, custom-server]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`@sveltejs/adapter-node` adalah adapter yang mengubah hasil `vite build`-mu menjadi **sebuah server Node.js sungguhan** — sebuah folder `build/` yang berisi `index.js`. Kamu jalankan dengan `node build`, ia membuka port, mendengarkan HTTP request, dan menjalankan SSR penuh persis seperti `npm run dev` tapi dalam mode produksi. Tidak ada platform ajaib di belakangnya: cuma proses Node yang kamu kontrol sepenuhnya.
+
+Kalau kamu datang dari React, ini setara dengan `next start` setelah `next build` (Next.js dengan `output: 'standalone'`), atau dari Vue/Nuxt dengan preset Nitro `node-server`. Bedanya, di SvelteKit pemilihan target ini eksplisit lewat satu baris di `svelte.config.js` — kamu sadar persis "aku sedang membuat server Node", bukan menebak-nebak apa yang dilakukan framework di belakang layar.
+
+### Kapan memilih adapter-node
+
+Pilih `adapter-node` ketika kamu butuh **proses yang berjalan terus-menerus** dan kontrol penuh atas lingkungannya:
+
+- VPS (DigitalOcean, Hetzner, EC2) — kamu punya akses SSH dan menjalankan prosesnya sendiri.
+- Container Docker / Kubernetes — kamu butuh image yang bisa di-`node build`.
+- Platform PaaS yang menjalankan Node (Render, Railway, Fly.io, app yang dibungkus systemd).
+- Saat kamu butuh full Node runtime: akses `fs`, library native, koneksi database long-lived, atau WebSocket — hal-hal yang **tidak** tersedia di edge runtime (Cloudflare Workers / Vercel Edge).
+
+Kalau target deploy-mu serverless atau edge, `adapter-node` bukan pilihan tepat — pakai adapter spesifik platform itu. Tapi untuk "aku punya server dan mau menjalankannya sendiri", inilah adapter default-nya.
+
+### Analogi: rumah kontrakan vs. kamar hotel
+
+Adapter serverless (Vercel/Netlify Functions) itu seperti **kamar hotel**: kamu datang saat butuh, listrik dan air sudah diurus resepsionis, dan kamu pergi begitu selesai (fungsi mati setelah request). Praktis, tapi kamu tidak boleh mengebor dinding atau memasang mesin cuci sendiri — banyak batasan.
+
+`adapter-node` itu seperti **rumah kontrak**: kamu pegang kuncinya, listrik dan air kamu yang atur (PORT, HOST), kamu boleh pasang apa saja (library native, koneksi DB persisten). Tanggung jawabnya lebih besar — kamu yang urus reverse proxy, restart kalau crash, sertifikat HTTPS — tapi kebebasannya juga penuh. Server tetap hidup menunggu tamu (request) datang, bukan dipanggil-buang seperti kamar hotel.
+
+### Apa yang dihasilkan `node build`
+
+Proses `node build` membungkus aplikasimu dengan server HTTP minimalis berbasis **Polka** (mirip Express tapi ramping). Server itu otomatis:
+
+- melayani aset statis dari `client/` dan `prerendered/`,
+- menjalankan handler SvelteKit untuk request dinamis (SSR, form actions, `+server.js`),
+- membaca konfigurasi dari **environment variables** (bukan file config), agar image yang sama bisa dipakai di staging dan produksi cuma dengan mengganti env.
+
+Poin terakhir itu penting: server-nya **stateless terhadap konfigurasi build**. Kamu build sekali, lalu atur perilaku runtime (port, origin, header proxy) lewat env saat menjalankan. Ini sengaja, supaya cocok dengan praktik 12-factor app dan Docker.
+
+## 2. Contoh kode
+
+Pemasangannya dua langkah: install paket, lalu tunjuk `kit.adapter` ke sana.
+
+```bash
+npm i -D @sveltejs/adapter-node
+```
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-node';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(),
+	kit: {
+		// Memanggil adapter() tanpa argumen pun sudah cukup.
+		// Opsi di bawah semuanya OPSIONAL — ini nilai default-nya.
+		adapter: adapter({
+			out: 'build', // folder output hasil build (default: 'build')
+			precompress: true, // pra-kompres aset jadi .gz & .br saat build
+			envPrefix: '' // prefiks untuk env runtime (lihat Bagian 6)
+		})
+	}
+};
+```
+
+Setelah itu, build & jalankan:
+
+```bash
+npm run build        # vite build + adapter-node -> menghasilkan folder build/
+node build           # menjalankan server -> default http://localhost:3000
+```
+
+Struktur folder `build/` yang dihasilkan (yang penting kamu kenali):
+
+```text
+build/
+├── index.js        # ENTRY POINT — ini yang dijalankan `node build`
+├── handler.js      # handler request mentah (dipakai untuk CUSTOM SERVER, lihat Bagian 3)
+├── env.js          # pembaca environment variable
+├── client/         # aset sisi-klien (JS/CSS hasil bundle)
+├── server/         # kode SSR
+└── prerendered/    # halaman yang sempat di-prerender (jika ada)
+```
+
+Untuk deploy, yang perlu kamu kirim ke server cuma tiga hal: folder `build/`, file `package.json`, dan `node_modules` produksi.
+
+```bash
+# Di server tujuan, install HANYA dependency produksi:
+npm ci --omit dev    # lebih cepat & ramping daripada `npm install`
+node build           # jalankan
+```
+
+<Callout type="warning">
+Folder <code>build/</code> <strong>bukan</strong> bundle yang sepenuhnya berdiri sendiri — ia masih butuh <code>node_modules</code> produksi saat runtime. Jadi jangan lupa menyertakan <code>package.json</code> dan menjalankan <code>npm ci --omit dev</code> di server. Kalau kamu mau benar-benar satu file mandiri tanpa <code>node_modules</code>, kamu perlu mem-bundle manual (mis. dengan esbuild) — tapi itu jarang diperlukan.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini butuh proses server, jadi tidak ada live playground. Sebagai gantinya, dua resep yang paling sering kamu pakai di dunia nyata — **Dockerfile** dan **custom server** — dengan anotasi penuh. Salin ke proyek lokalmu dan coba.
+
+### a) Menjalankan di Docker
+
+```dockerfile
+# Dockerfile — multi-stage agar image akhir ramping
+FROM node:22-slim AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci                 # install semua dep (termasuk dev) untuk build
+COPY . .
+RUN npm run build          # -> menghasilkan folder build/
+RUN npm prune --omit=dev   # buang devDependencies, sisakan dep produksi saja
+
+FROM node:22-slim
+WORKDIR /app
+# Salin HANYA yang dibutuhkan runtime: build/, node_modules prod, package.json
+COPY --from=build /app/build ./build
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
+
+ENV NODE_ENV=production
+# adapter-node membaca PORT & HOST dari env (lihat Bagian 6)
+ENV PORT=3000
+EXPOSE 3000
+CMD ["node", "build"]
+```
+
+### b) Custom server (Express / Polka / http)
+
+Kadang kamu butuh menempelkan rute non-SvelteKit (mis. healthcheck, webhook, middleware lama). Caranya: **jangan** jalankan `node build`, melainkan import `handler` dari `build/handler.js` dan pasang sebagai middleware terakhir.
+
+```js
+// my-server.js — custom server pakai Express
+import { handler } from './build/handler.js';
+import express from 'express';
+
+const app = express();
+
+// Rute kustommu HARUS didaftarkan SEBELUM `handler`,
+// karena handler akan menangkap semua request yang tersisa.
+app.get('/healthcheck', (req, res) => {
+	res.end('ok');
+});
+
+// `handler` melayani aset statis + semua rute SvelteKit (SSR/actions/+server).
+// Taruh PALING AKHIR sebagai catch-all.
+app.use(handler);
+
+app.listen(3000, () => {
+	console.log('listening on http://localhost:3000');
+});
+```
+
+<Callout type="tip">
+Kalau kamu pakai custom server dan butuh <strong>kompresi respons</strong>, pakai <a href="https://www.npmjs.com/package/@polka/compression"><code>@polka/compression</code></a>, bukan paket <code>compression</code> yang populer itu — <code>compression</code> tidak mendukung streaming, sementara SvelteKit mengalirkan (stream) respons. Atau lebih sederhana: biarkan reverse proxy (Nginx/Caddy) yang mengurus kompresi.
+</Callout>
+
+## 4. Konfigurasi runtime via environment variables
+
+Inilah jantung `adapter-node`: hampir semua perilaku server diatur lewat **env saat runtime**, bukan saat build. Berikut variabel yang tersedia beserta default-nya.
+
+| Variabel | Default | Fungsi |
+| --- | --- | --- |
+| `PORT` | `3000` | Port yang didengarkan server |
+| `HOST` | `0.0.0.0` | Host/interface yang di-bind |
+| `SOCKET_PATH` | — | Path Unix socket; jika diisi, menggantikan `HOST`/`PORT` |
+| `ORIGIN` | — | URL publik lengkap aplikasi, mis. `https://situs.ku` |
+| `PROTOCOL_HEADER` | — | Header yang menyebut protokol asli, mis. `x-forwarded-proto` |
+| `HOST_HEADER` | — | Header yang menyebut host asli, mis. `x-forwarded-host` |
+| `PORT_HEADER` | — | Header yang menyebut port asli, mis. `x-forwarded-port` |
+| `ADDRESS_HEADER` | — | Header berisi IP klien asli, mis. `True-Client-IP` |
+| `XFF_DEPTH` | `1` | Berapa banyak proxy tepercaya di depan, untuk membaca `X-Forwarded-For` |
+| `BODY_SIZE_LIMIT` | `512K` | Batas ukuran body request (boleh suffix `K`/`M`/`G`, atau `Infinity`) |
+| `SHUTDOWN_TIMEOUT` | `30` | Detik menunggu request berjalan sebelum dimatikan paksa |
+| `IDLE_TIMEOUT` | — | Detik idle sebelum auto-sleep (untuk systemd socket activation) |
+| `KEEP_ALIVE_TIMEOUT` | — | Override `server.keepAliveTimeout` Node (detik) |
+| `HEADERS_TIMEOUT` | — | Override `server.headersTimeout` Node (detik) |
+
+```bash
+# Contoh menjalankan dengan port & host kustom:
+PORT=8080 HOST=127.0.0.1 node build
+
+# Pakai Unix socket (umum saat di belakang Nginx di mesin yang sama):
+SOCKET_PATH=/var/run/myapp.sock node build
+```
+
+### Memuat file `.env` di produksi
+
+Server hasil build **tidak** otomatis membaca `.env` (itu cuma fitur dev Vite). Di produksi muat manual:
+
+```bash
+# Node v20.6+ punya flag bawaan:
+node --env-file=.env build
+
+# Atau pakai dotenv (perlu di-install sebagai dependency):
+node -r dotenv/config build
+```
+
+<Callout type="warning">
+Variabel <code>PUBLIC_*</code> yang kamu akses lewat <code>$env/static/public</code> sudah <strong>dibakukan saat build</strong>, jadi mengubahnya lewat env runtime tidak berpengaruh. Yang bisa diubah saat runtime hanyalah variabel yang dibaca lewat <code>$env/dynamic/*</code> dan variabel khusus adapter di tabel atas (<code>PORT</code>, <code>ORIGIN</code>, dst). Kalau env runtime "tidak ngefek", kemungkinan kamu memakai <code>$env/static</code>.
+</Callout>
+
+## 5. ORIGIN & reverse proxy
+
+Ini bagian yang paling sering bikin orang bingung, jadi pelan-pelan. Saat aplikasimu berjalan **di belakang reverse proxy** (Nginx, Caddy, load balancer cloud), server Node-mu sebenarnya menerima koneksi dari proxy di `http://localhost`, **bukan** dari URL publik `https://situs.ku`. Padahal SvelteKit butuh tahu URL publik asli untuk dua hal penting:
+
+1. **Proteksi CSRF** pada form actions — SvelteKit membandingkan header `Origin` request dengan origin server. Kalau tidak cocok, POST ditolak dengan error `Cross-site POST form submissions are forbidden`.
+2. Menghasilkan URL absolut yang benar (mis. `url.origin` di `load`).
+
+Karena Node tidak bisa menebak URL publikmu, **kamu wajib memberitahunya** lewat `ORIGIN`:
+
+```bash
+# Cara paling sederhana & andal: set ORIGIN ke URL publik lengkap.
+ORIGIN=https://situs.ku node build
+```
+
+### Alternatif: percayai header dari proxy
+
+Kalau host/protokol bisa berubah-ubah (mis. multi-domain), gantinya kamu suruh adapter membaca dari header `X-Forwarded-*` yang dikirim proxy:
+
+```bash
+# Beritahu adapter header mana yang menyimpan protokol & host asli.
+PROTOCOL_HEADER=x-forwarded-proto \
+HOST_HEADER=x-forwarded-host \
+node build
+```
+
+Dan sisi proxy harus benar-benar mengirim header itu. Contoh konfigurasi Nginx:
+
+```nginx
+# /etc/nginx/sites-available/myapp
+server {
+	listen 80;
+	server_name situs.ku;
+
+	location / {
+		proxy_pass http://127.0.0.1:3000;   # teruskan ke server Node
+
+		# Header ini yang dibaca adapter saat PROTOCOL_HEADER/HOST_HEADER diset:
+		proxy_set_header Host              $host;
+		proxy_set_header X-Forwarded-Proto $scheme;
+		proxy_set_header X-Forwarded-Host  $host;
+		proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+	}
+}
+```
+
+<Callout type="pitfall">
+Jangan asal mempercayai <code>X-Forwarded-For</code> untuk membaca IP klien (lewat <code>ADDRESS_HEADER</code>). Header itu bisa <strong>dipalsukan</strong> oleh klien kecuali proxy-mu menimpanya. Setel <code>XFF_DEPTH</code> ke jumlah proxy tepercaya yang benar-benar ada di depan aplikasimu (default <code>1</code>). Kalau salah hitung, kamu bisa membaca IP palsu — masalah keamanan kalau IP dipakai untuk rate-limit atau audit.
+</Callout>
+
+## 6. Custom env prefix
+
+Kadang nama generik seperti `PORT` atau `HOST` bentrok dengan variabel lain di platform hosting (banyak PaaS menyuntik `PORT` sendiri, atau kamu menjalankan beberapa app di satu host). Pakai opsi `envPrefix` untuk memberi awalan unik:
+
+```js
+// svelte.config.js
+adapter({
+	envPrefix: 'MY_CUSTOM_'
+});
+```
+
+```bash
+# Sekarang adapter membaca MY_CUSTOM_PORT, MY_CUSTOM_HOST, dst.
+MY_CUSTOM_PORT=4000 MY_CUSTOM_HOST=127.0.0.1 node build
+```
+
+## 7. Graceful shutdown
+
+Saat container/PaaS mau menghentikan app, ia mengirim sinyal `SIGTERM` (atau `SIGINT` saat kamu tekan Ctrl+C). `adapter-node` menangani ini dengan benar tanpa kamu konfigurasi: menolak request baru, menunggu request yang sedang berjalan selesai, menutup koneksi idle, lalu mematikan paksa sisanya setelah `SHUTDOWN_TIMEOUT` (default 30 detik).
+
+Kalau kamu perlu membersihkan resource sendiri (menutup koneksi DB, flush log), dengarkan event `sveltekit:shutdown`:
+
+```js
+// boleh ditaruh di hooks.server.js atau modul yang ter-import saat startup
+process.on('sveltekit:shutdown', async (reason) => {
+	// reason bernilai 'SIGINT', 'SIGTERM', atau 'IDLE'
+	console.log('mematikan, alasan:', reason);
+	await db.close(); // handler async didukung — server menunggu promise selesai
+});
+```
+
+## 8. Latihan
+
+<Exercise title="Deploy adapter-node di balik Nginx dengan form actions">
+Kamu punya aplikasi SvelteKit dengan halaman login berisi `<form method="POST">`. Kamu deploy pakai `adapter-node` di port 3000, di belakang Nginx yang melayani `https://app.ku`. Saat submit form, kamu dapat error `403 Cross-site POST form submissions are forbidden`.
+
+1. Kenapa error ini muncul, padahal di `localhost` saat dev tidak ada masalah?
+2. Tunjukkan **dua** cara memperbaikinya (lewat `ORIGIN`, atau lewat header proxy), plus potongan konfigurasi Nginx yang relevan.
+
+{#snippet solution()}
+
+  **1. Penyebab.** SvelteKit memproteksi form actions dari CSRF dengan membandingkan header `Origin` request (`https://app.ku`, dikirim browser) dengan origin yang diketahui server. Tapi server Node di belakang proxy "mengira" dirinya berada di `http://localhost:3000` (itu yang dilihatnya dari koneksi Nginx). Origin tidak cocok -> POST ditolak. Di dev tidak terjadi karena browser dan server sama-sama di `localhost`.
+
+  **2a. Cara termudah — set `ORIGIN`:**
+
+  ```bash
+  # beritahu server URL publik aslinya
+  ORIGIN=https://app.ku node build
+  ```
+
+  **2b. Atau percayai header dari Nginx:**
+
+  ```bash
+  PROTOCOL_HEADER=x-forwarded-proto HOST_HEADER=x-forwarded-host node build
+  ```
+
+  ```nginx
+  location / {
+      proxy_pass http://127.0.0.1:3000;
+      proxy_set_header Host              $host;
+      proxy_set_header X-Forwarded-Proto $scheme;   # -> "https"
+      proxy_set_header X-Forwarded-Host  $host;     # -> "app.ku"
+  }
+  ```
+
+  Dengan kedua cara, server akhirnya tahu origin aslinya `https://app.ku`, cocok dengan header `Origin` browser, dan POST diterima. Untuk satu domain tetap, `ORIGIN` paling sederhana & anti-salah.
+
+  {/snippet}</Exercise>
+
+## 9. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa set <code>ORIGIN</code> di belakang proxy.</strong> Ini penyebab nomor satu form actions gagal di produksi dengan error <code>Cross-site POST form submissions are forbidden</code>. Selalu set <code>ORIGIN=https://domain-mu</code> (atau <code>PROTOCOL_HEADER</code>+<code>HOST_HEADER</code>) saat ada reverse proxy. Di <code>localhost</code> tidak kelihatan karena origin-nya kebetulan cocok.
+</Callout>
+
+<Callout type="warning">
+<code>BODY_SIZE_LIMIT</code> default-nya cuma <code>512K</code>. Kalau aplikasimu menerima upload file atau payload JSON besar, request akan ditolak diam-diam dengan <code>413</code>. Naikkan lewat env, mis. <code>BODY_SIZE_LIMIT=10M</code>, atau <code>BODY_SIZE_LIMIT=Infinity</code> kalau kamu mengelola batas di lapisan lain (mis. Nginx <code>client_max_body_size</code>).
+</Callout>
+
+<Callout type="tip">
+Untuk produksi serius, jangan jalankan <code>node build</code> telanjang — bungkus dengan process manager yang me-restart kalau crash dan mengelola log: <strong>systemd</strong> (paling ringan di VPS), <strong>PM2</strong>, atau cukup <code>restart: always</code> di Docker Compose. <code>adapter-node</code> sudah menangani <code>SIGTERM</code> dengan benar, jadi graceful shutdown otomatis terhormati oleh tool-tool itu.
+</Callout>
+
+<Callout type="legacy">
+Di tutorial lama (SvelteKit 1.x / era Sapper) kamu mungkin melihat pola memasang aplikasi sebagai Express <code>middleware</code> secara manual, atau adapter komunitas seperti <code>@sveltejs/adapter-begin</code>. Itu sudah usang. Di SvelteKit 2, jalan resminya cukup <code>node build</code>, dan untuk custom server kamu meng-import <code>&#123; handler &#125;</code> dari <code>build/handler.js</code> (lihat Bagian 3). Selalu rujuk docs adapter versi terbaru — nama paket & opsi berubah antar versi mayor.
+</Callout>
+
+### Ringkasan padanan lama vs modern
+
+<LegacyVsModern rows={[
+	{ legacy: 'app.use(prerendered); app.use(sapper.middleware())', modern: 'node build  (atau import { handler } dari build/handler.js)', note: 'tak perlu rakit middleware manual' },
+	{ legacy: 'set port lewat config build', modern: 'PORT=8080 node build', note: 'port diatur runtime via env, bukan saat build' },
+	{ legacy: 'baca .env otomatis di produksi', modern: 'node --env-file=.env build', note: 'produksi tak auto-load .env' }
+]} />
+
+## 10. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/adapter-node" label="SvelteKit — Node servers (adapter-node)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (gambaran semua adapter)" />

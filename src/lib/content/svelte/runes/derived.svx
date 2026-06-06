@@ -1,0 +1,298 @@
+---
+title: $derived
+product: svelte
+section: runes
+sectionTitle: Runes
+sectionOrder: 2
+order: 3
+status: stable
+description: Membuat nilai turunan yang menghitung ulang otomatis dengan $derived dan $derived.by — dependency dilacak otomatis dan bebas efek samping.
+docs: https://svelte.dev/docs/svelte/$derived
+keywords: [derived, derived.by, computed, reactivity, runes]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sering kali kamu punya nilai yang **bukan disimpan langsung**, melainkan **dihitung dari nilai lain**. Total harga = jumlah barang dikali harga satuan. Nama lengkap = nama depan digabung nama belakang. Daftar tugas yang sudah selesai = hasil filter dari semua tugas. Nilai-nilai semacam ini disebut *derived state* (state turunan).
+
+Di Svelte 5, kamu membuatnya dengan rune `$derived`:
+
+```svelte
+let count = $state(0);
+let double = $derived(count * 2);
+```
+
+`double` tidak pernah kamu set sendiri. Setiap kali `count` berubah, `double` otomatis menghitung ulang. Kamu cukup membaca `double` seolah ia variabel biasa.
+
+### Analogi: papan tulis ajaib yang menghitung ulang sendiri
+
+Bayangkan ada dua papan tulis di dinding.
+
+Papan pertama adalah **papan input** (`$state`). Kamu tulis angka di sana pakai spidol — misalnya `count = 3`. Kalau mau ganti, kamu hapus dan tulis ulang sendiri.
+
+Papan kedua adalah **papan ajaib** (`$derived`). Di papan ini kamu tidak menulis angka, melainkan menulis sebuah *rumus*: "papan ini = papan pertama x 2". Begitu rumus tertulis, papan itu langsung menghitung sendiri dan menampilkan `6`. Yang ajaib: setiap kali kamu mengubah angka di papan pertama jadi `5`, papan ajaib **menghapus dirinya sendiri dan menulis ulang `10`** — tanpa kamu sentuh. Kamu tidak perlu mengingatkannya, tidak perlu menekan tombol "hitung ulang". Ia mengawasi papan pertama terus-menerus.
+
+Dua aturan penting dari papan ajaib ini:
+
+- **Kamu tidak boleh menulis langsung di papan ajaib.** Spidolmu cuma untuk papan input. Papan ajaib hanya boleh diisi rumus, lalu ia mengisi nilainya sendiri.
+- **Rumusnya harus murni perhitungan, bukan perintah.** Rumus yang baik: "papan A + papan B". Rumus yang buruk: "kirim email lalu hitung A + B". Papan ajaib hanya untuk *menghitung dan menghasilkan nilai* — bukan untuk melakukan aksi seperti memanggil API, mengubah state lain, atau menyetel timer. Aksi semacam itu (side effect) urusannya `$effect`, bukan `$derived`.
+
+### Svelte melacak dependency-mu secara otomatis
+
+Inti dari "papan ajaib" tadi: **Svelte tahu sendiri papan input mana yang dibaca oleh rumusmu.** Saat compiler melihat `$derived(count * 2)`, ia mencatat bahwa ekspresi ini membaca `count`, lalu memasang "pengawas" pada `count`. Kalau besok kamu ubah rumusnya jadi `$derived(count * 2 + offset)`, Svelte otomatis ikut mengawasi `offset` juga — kamu tidak perlu mendaftarkan apa pun.
+
+Aturannya sederhana: **apa pun reactive state yang dibaca secara sinkron saat rumus dijalankan akan menjadi dependency.** Tidak ada daftar manual, tidak ada yang bisa lupa kamu daftarkan.
+
+Ini perbedaan besar dengan React. Di sana `useMemo` mengharuskan kamu menulis **dependency array** secara manual: `useMemo(() => count * 2, [count])`. Lupa menaruh sebuah dependency? Nilainya jadi basi (stale) dan bug-nya sunyi. Svelte menghapus seluruh kelas bug ini karena tidak ada array untuk dilupakan. Konsepnya justru sangat mirip `computed` di Vue, yang juga melacak dependency otomatis.
+
+### Bebas efek samping — dan kenapa itu wajib
+
+`$derived` dirancang sebagai fungsi murni: masukan sama menghasilkan keluaran sama, tanpa menyentuh dunia luar. Svelte bahkan **menolak** mutasi state langsung di dalam ekspresi derived (mis. `count++` di dalam rumus) karena itu melanggar kontraknya. Alasannya bukan cuma soal gaya: derived bisa dihitung ulang kapan saja, beberapa kali, atau malah tidak sama sekali (lihat bagian "lazy" di bawah). Kalau rumusmu diam-diam mengirim request atau mengubah state lain, jumlah "aksi" yang terjadi jadi tak bisa ditebak. Maka: derived = menghitung nilai, `$effect` = melakukan aksi.
+
+### Lazy: dihitung ulang saat dibaca, bukan saat berubah
+
+Detail yang sering terlewat dari docs: `$derived` itu **lazy**. Svelte memakai model *push-pull*. Saat dependency berubah, Svelte hanya "push" sebuah penanda *dirty* (kotor) ke derived — ia belum menghitung apa-apa. Perhitungan ulang baru benar-benar terjadi saat nilai derived itu **dibaca** ("pull"), misalnya saat dirender di template. Jadi derived yang tidak sedang dipakai di layar tidak membuang-buang CPU.
+
+Bonus: kalau hasil hitung ulang ternyata **persis sama** (referentially identical) dengan nilai sebelumnya, Svelte berhenti di situ — komponen di bawahnya tidak ikut diperbarui. Ini bikin rantai derived jadi murah.
+
+### Kapan butuh `$derived.by`
+
+`$derived(expr)` cocok untuk satu ekspresi pendek. Tapi kalau perhitunganmu butuh beberapa baris — ada `if`, loop, variabel sementara — kamu tidak bisa menjejalkannya ke dalam satu ekspresi. Untuk itu ada `$derived.by`, yang menerima sebuah **fungsi** dan memakai nilai yang di-`return`:
+
+```svelte
+let total = $derived.by(() => {
+	let sum = 0;
+	for (const item of items) sum += item.price;
+	return sum;
+});
+```
+
+Secara konsep `$derived(x)` dan `$derived.by(() => x)` itu identik — `$derived.by` hanya memberi kamu blok `{ }` untuk menampung logika yang lebih panjang. Pelacakan dependency tetap otomatis: apa pun reactive state yang dibaca di dalam fungsi itu akan diawasi.
+
+## 2. Contoh kode
+
+```svelte
+<script>
+	let firstName = $state('Sherlock');
+	let lastName = $state('Holmes');
+
+	// $derived: satu ekspresi. Svelte otomatis tahu rumus ini membaca
+	// firstName dan lastName, jadi keduanya diawasi tanpa daftar manual.
+	let fullName = $derived(firstName + ' ' + lastName);
+</script>
+
+<input bind:value={firstName} />
+<input bind:value={lastName} />
+<p>Halo, {fullName}!</p>
+```
+
+Untuk logika yang lebih panjang, pakai `$derived.by` dengan blok fungsi:
+
+```svelte
+<script>
+	let numbers = $state([1, 2, 3, 4, 5]);
+
+	// $derived.by: butuh beberapa langkah, jadi pakai fungsi.
+	// Semua state yang dibaca di dalamnya (numbers) tetap dilacak otomatis.
+	let stats = $derived.by(() => {
+		const total = numbers.reduce((a, b) => a + b, 0);
+		const average = total / numbers.length;
+		const max = Math.max(...numbers);
+		// kembalikan objek — derived boleh menghasilkan tipe apa pun
+		return { total, average, max };
+	});
+</script>
+
+<p>Total: {stats.total}, Rata-rata: {stats.average}, Maks: {stats.max}</p>
+<button onclick={() => (numbers = [...numbers, numbers.length + 1])}>
+	Tambah angka
+</button>
+```
+
+### Destructuring sebuah `$derived`
+
+Kamu boleh men-*destructure* hasil `$derived`. Setiap variabel hasil destructuring **tetap reaktif** — sama saja seperti membuat derived terpisah untuk masing-masing properti:
+
+```svelte
+<script>
+	let box = $state({ w: 4, h: 3 });
+
+	// Destructuring derived: area DAN perimeter dua-duanya reaktif.
+	// Ekuivalen dengan:
+	//   let area = $derived(... .area); let perimeter = $derived(... .perimeter);
+	let { area, perimeter } = $derived.by(() => {
+		return { area: box.w * box.h, perimeter: 2 * (box.w + box.h) };
+	});
+</script>
+
+<p>Luas: {area} — Keliling: {perimeter}</p>
+<button onclick={() => box.w++}>Lebarkan</button>
+```
+
+Nilai derived juga boleh **di-override sementara**. Sejak Svelte 5.25 (selama tidak kamu deklarasikan `const`), kamu boleh menulis ulang nilainya secara langsung — berguna untuk optimistic UI — dan ia akan kembali ke hasil perhitungan begitu dependency-nya berubah lagi:
+
+```svelte
+<script>
+	let count = $state(0);
+	let double = $derived(count * 2);
+
+	function optimisticBump() {
+		// Override sementara: tampilkan nilai tebakan lebih dulu...
+		double = 999;
+		// ...lalu begitu count berubah, double dihitung ulang dan
+		// kembali "sinkron" dengan rumus aslinya (count * 2).
+		count++;
+	}
+</script>
+
+<button onclick={optimisticBump}>{double}</button>
+```
+
+## 3. Coba sendiri
+
+Ubah harga atau jumlah barang di bawah. Perhatikan `subtotal`, `pajak`, dan `total` ikut berubah otomatis — tidak ada satu pun yang kita set manual, dan tidak ada dependency array yang perlu diurus.
+
+<Playground code={`<script>
+	let price = $state(50000);
+	let qty = $state(2);
+	let taxRate = $state(0.11);
+
+	// $derived satu ekspresi
+	let subtotal = $derived(price * qty);
+
+	// $derived.by untuk logika beberapa baris, lalu di-destructure.
+	// tax dan total dua-duanya tetap reaktif.
+	let { tax, total } = $derived.by(() => {
+		const t = subtotal * taxRate;
+		return { tax: t, total: subtotal + t };
+	});
+</script>
+
+<label>Harga: <input type='number' bind:value={price} /></label>
+<label>Jumlah: <input type='number' bind:value={qty} /></label>
+<p>Subtotal: {subtotal}</p>
+<p>Pajak: {tax}</p>
+<p>Total: {total}</p>
+<button onclick={() => qty++}>Tambah 1 barang</button>`} />
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Nilai terkomputasi"
+	svelte={`<script>
+	let count = $state(0);
+	// dependency dilacak otomatis
+	let double = $derived(count * 2);
+</script>
+<button onclick={() => count++}>{double}</button>`}
+	react={`import { useState, useMemo } from 'react';
+function Counter() {
+	const [count, setCount] = useState(0);
+	// WAJIB tulis dependency array [count] sendiri;
+	// lupa -> nilai jadi stale
+	const double = useMemo(() => count * 2, [count]);
+	return <button onClick={() => setCount(count + 1)}>{double}</button>;
+}`}
+	vue={`<script setup>
+import { ref, computed } from 'vue';
+const count = ref(0);
+// computed melacak dependency otomatis (mirip $derived)
+const double = computed(() => count.value * 2);
+</script>
+<template>
+	<button @click="count++">{{ double }}</button>
+</template>`}
+	diff={{ react: [7] }}
+	note="useMemo butuh dependency array manual ([count]) dan rawan stale kalau ada yang lupa didaftarkan. Vue computed melacak dependency otomatis, persis seperti $derived — keduanya tak perlu daftar manual. Bedanya Vue computed selalu lewat fungsi, sedangkan Svelte memberi $derived(expr) untuk ekspresi pendek dan $derived.by(fn) untuk logika panjang."
+/>
+
+## 5. Latihan
+
+<Exercise title="Filter tugas yang belum selesai">
+Buat komponen daftar tugas sederhana. Sediakan state `todos` berisi array objek `&#123; text, done &#125;`. Lalu buat dua nilai turunan:
+
+1. `remaining` — jumlah tugas yang `done`-nya `false` (pakai `$derived`).
+2. `summary` — string ringkasan seperti `"2 dari 3 tugas tersisa"` (boleh `$derived` atau `$derived.by`).
+
+Tambahkan tombol untuk menandai satu tugas jadi selesai, dan pastikan `remaining` serta `summary` ikut berubah otomatis — tanpa kamu set manual.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let todos = $state([
+		{ text: 'Belajar $state', done: true },
+		{ text: 'Belajar $derived', done: false },
+		{ text: 'Belajar $effect', done: false }
+	]);
+
+	// $derived: hitung sisa tugas. Svelte melacak todos otomatis.
+	let remaining = $derived(todos.filter((t) => !t.done).length);
+
+	// $derived.by: logika sedikit lebih panjang, pakai blok fungsi.
+	let summary = $derived.by(() => {
+		const total = todos.length;
+		return remaining + ' dari ' + total + ' tugas tersisa';
+	});
+
+	function complete(index) {
+		// Ubah state input; remaining & summary menghitung ulang sendiri.
+		todos[index].done = true;
+	}
+</script>
+
+<ul>
+	{#each todos as todo, i}
+		<li>
+			<input type="checkbox" checked={todo.done} onchange={() => complete(i)} />
+			{todo.text}
+		</li>
+	{/each}
+</ul>
+
+<p>{summary}</p>
+```
+
+Perhatikan `summary` bahkan boleh membaca nilai `remaining` (yang juga derived) — rantai derived seperti ini sah dan tetap dilacak otomatis. Kuncinya: kamu tidak pernah menulis `remaining = ...` atau `summary = ...` secara manual.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menaruh <strong>side effect</strong> di dalam <code>$derived</code> / <code>$derived.by</code>. Memanggil <code>fetch</code>, mengubah state lain, atau menyetel timer di dalam rumus derived itu salah tempat — derived harus murni menghitung dan mengembalikan nilai. Svelte bahkan menolak mutasi state langsung (mis. <code>count++</code>) di dalam ekspresi derived. Untuk aksi yang bereaksi terhadap perubahan, gunakan <code>$effect</code>. Aturan praktis: kalau fungsimu tidak punya <code>return</code>, itu pertanda kamu butuh <code>$effect</code>, bukan <code>$derived.by</code>.
+</Callout>
+
+<Callout type="warning">
+<code>$derived</code> <strong>tidak</strong> membungkus hasil objek/array-nya jadi deep proxy seperti <code>$state</code>. Artinya kalau kamu memutasi properti hasil derived (mis. <code>derivedObj.x = 1</code>), kamu sebenarnya menyentuh objek sumbernya — bukan menyimpan nilai turunan terpisah. Perlakukan keluaran derived sebagai <em>read-only</em>; kalau butuh menampung hasil yang bisa diubah, salin dulu atau pakai <code>$state</code>.
+</Callout>
+
+<Callout type="warning">
+Override nilai derived (<code>double = 999</code>) hanya bertahan <em>sementara</em>. Begitu salah satu dependency berubah, Svelte menghitung ulang dan menimpa nilai override-mu. Jadi pakai fitur ini hanya untuk kasus singkat seperti optimistic UI — jangan andalkan ia untuk menyimpan nilai jangka panjang. (Fitur reassignment ini tersedia sejak Svelte 5.25, dan tidak berlaku kalau derived dideklarasikan dengan <code>const</code>.)
+</Callout>
+
+<Callout type="tip">
+Bingung pilih <code>$derived</code> atau <code>$derived.by</code>? Sederhana: kalau rumusmu muat dalam satu ekspresi, pakai <code>$derived(expr)</code>. Kalau butuh blok <code>&#123; &#125;</code> dengan beberapa baris, <code>if</code>, atau loop, pakai <code>$derived.by(() => &#123; ... &#125;)</code>. Keduanya sama secara perilaku — yang kedua hanya wadah yang lebih lega.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4, nilai turunan ditulis dengan label <code>$: double = count * 2</code>. Sintaks ini <strong>tidak dipakai lagi</strong> di kode runes. Kalau kamu menemukannya, itu materi Svelte 4 yang belum diperbarui — padanan modernnya ada di tabel bawah.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '$: double = count * 2', modern: 'let double = $derived(count * 2)', note: 'Nilai turunan ekspresi tunggal.' },
+	{ legacy: '$: { ...; total = sum; }', modern: 'let total = $derived.by(() => { ...; return sum; })', note: 'Logika turunan multi-baris.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/$derived" label="$derived — dokumentasi resmi Svelte" />

@@ -1,0 +1,363 @@
+---
+title: SEO
+product: kit
+section: best-practices
+sectionTitle: Best practices
+sectionOrder: 5
+order: 6
+status: stable
+description: Bikin halaman SvelteKit-mu ditemukan & ditampilkan benar oleh mesin pencari — lewat SSR, title/meta unik via `<svelte:head>`, sitemap & robots, canonical, dan performa sebagai faktor ranking.
+docs: https://svelte.dev/docs/kit/seo
+keywords: [seo, ssr, svelte:head, sitemap, canonical, performance]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+SEO (Search Engine Optimization) gampang terdengar seperti ilmu gelap penuh trik. Padahal inti teknisnya cuma satu pertanyaan jujur: **ketika sebuah bot (Googlebot, bot WhatsApp pembuat preview, bot Twitter) datang ke URL-mu, apa yang dia terima?** Kalau yang dia terima HTML berisi judul, deskripsi, dan konten asli — kamu menang. Kalau yang dia terima cuma `<div id="app"></div>` kosong yang baru terisi setelah JavaScript jalan — kamu sedang berjudi.
+
+Modul ini bukan tentang "cara curang naik ranking". Konten bagus & backlink tetap raja. Ini tentang **higienitas teknis**: memastikan halaman SvelteKit-mu bisa dibaca, dikenali, dan tidak menembak kaki sendiri. Kabar baiknya, SvelteKit sudah memberi kamu modal terbesarnya secara default — sisanya tinggal kamu rapikan.
+
+### SSR: kenapa ini fondasi, bukan hiasan
+
+Bayangkan crawler sebagai **kurir yang sangat sibuk dan tidak sabaran**. Dia mampir ke jutaan alamat per hari. Di tiap alamat dia mengetuk pintu, mengambil apa pun yang langsung tersaji, lalu pergi. Sebagian kurir (Googlebot modern) memang mau menunggu sebentar sambil "memasak" JavaScript-mu — tapi mereka melakukannya **lebih jarang, lebih lambat, dan tidak untuk semua halaman**. Bot lain (kebanyakan pembuat preview-card sosial) sama sekali **tidak** menjalankan JavaScript; mereka cuma membaca HTML mentah.
+
+Di sinilah SSR menentukan nasib. **SvelteKit merender di server secara default** — server menyusun HTML jadi lengkap dengan judul & konten, lalu mengirimnya. Kurir yang buru-buru tadi langsung dapat hidangan matang. Dokumentasi resmi menyebutnya gamblang: konten yang di-render server "diindeks lebih sering dan lebih andal". Bandingkan dengan SPA murni (CRA, Vite + React Router tanpa Nuxt/Next): server cuma mengirim cangkang kosong, dan crawler harus berharap mau menunggu JS. Itu taruhan yang tidak perlu kamu ambil.
+
+Kalau kamu pernah pakai Next.js atau Nuxt, "SSR demi SEO" pasti sudah jadi mantra. Bedanya di SvelteKit: kamu **tidak perlu opt-in**. SSR menyala sejak menit pertama. Yang justru perlu kamu jaga adalah **jangan tidak sengaja mematikannya** (lewat `export const ssr = false`) di halaman yang ingin ditemukan.
+
+### `<svelte:head>`: menempel papan nama di kepala dokumen
+
+Setiap halaman butuh `<title>` dan `<meta name="description">` yang **unik & deskriptif**. `<title>` adalah teks biru besar di hasil pencarian; `description` adalah cuplikan abu-abu di bawahnya. Dua URL dengan judul "Home" yang sama persis membuat Google bingung membedakan halamanmu.
+
+`<svelte:head>` adalah pintu yang Svelte sediakan untuk menyuntik elemen ke `<head>` dokumen dari mana pun di pohon komponen. Analogikan komponen halamanmu sebagai aktor di panggung, dan `<head>` sebagai papan informasi di depan gedung. `<svelte:head>` adalah **petugas yang berlari ke depan gedung** untuk mengganti papan nama sesuai pertunjukan yang sedang main. Yang penting: karena SvelteKit SSR, petugas ini berlari **di server** — jadi papan sudah benar sebelum HTML dikirim, dan crawler langsung membacanya.
+
+Svelte cukup pintar: kalau dua tempat sama-sama menyetel `<title>`, yang terakhir menang (judul tidak dobel). Jadi pola umumnya: layout root menyetel default, halaman spesifik menimpanya.
+
+### Pola `page.data`: SEO terpusat tapi per-halaman
+
+Menyalin blok `<svelte:head>` panjang (title, description, Open Graph, Twitter card) ke tiap `+page.svelte` itu melelahkan dan rawan lupa. Pola yang direkomendasikan docs: **`load` mengembalikan data SEO, layout root membacanya** lewat `page.data`. Setiap halaman cukup menyetel `title` & `description` dari `load`-nya; satu tempat di layout root yang menyusun semua tag. DRY, dan konsisten.
+
+### Sitemap & robots: peta dan satpam untuk crawler
+
+**`sitemap.xml`** adalah daftar isi situsmu — sebuah file yang berkata "ini lho semua URL penting saya, dan kapan terakhir diperbarui". Untuk situs kecil, Google bisa menemukan semuanya lewat link. Untuk situs besar (ribuan artikel) atau halaman yang jarang ditaut, sitemap membantu crawler memprioritaskan. Di SvelteKit kamu membuatnya sebagai **endpoint** `+server.js` yang mengembalikan XML — bisa dinamis dari database.
+
+**`robots.txt`** adalah satpam di gerbang: memberi tahu bot mana area yang boleh dijelajah dan mana yang tidak (`Disallow: /admin`), plus menunjuk lokasi sitemap. Ini bukan keamanan (bot jahat mengabaikannya), tapi sopan-santun yang dipatuhi bot besar.
+
+### Canonical: satu identitas resmi untuk tiap halaman
+
+Masalah klasik: konten yang sama bisa diakses lewat banyak URL berbeda — dengan/tanpa trailing slash, dengan/tanpa `www`, http vs https, atau dengan query param pelacakan (`?utm_source=...`). Bagi mesin pencari, URL berbeda = halaman berbeda. Akibatnya "kekuatan" satu halaman terpecah ke banyak versi, dan kamu bisa kena penalti **duplicate content**.
+
+`<link rel="canonical" href="...">` adalah cara bilang: "apa pun pintu yang kamu lewati, **alamat resmi** halaman ini cuma yang ini." Ibarat satu orang dengan banyak nomor HP tapi satu KTP — canonical adalah KTP-nya. SvelteKit membantu dari sisi lain: ia **menormalkan trailing slash** secara otomatis (redirect `/about/` ke `/about` atau sebaliknya sesuai konfigurasi `trailingSlash`), sehingga tidak ada dua versi URL yang sama-sama hidup.
+
+### Performa = faktor ranking, bukan cuma UX
+
+Google memakai **Core Web Vitals** (LCP, CLS, INP) sebagai sinyal ranking. Halaman yang lambat atau yang layout-nya "lompat-lompat" saat dimuat dirugikan. SvelteKit punya keunggulan struktural di sini: bundle kecil, code-splitting per-rute otomatis, dan SSR yang membuat konten muncul cepat (LCP bagus). Tugasmu: optimalkan gambar (ukuran eksplisit agar tidak ada layout shift), jangan kirim JS yang tak perlu, dan ukur dengan **Lighthouse** / **PageSpeed Insights**. SEO dan performa, di SvelteKit, adalah dua sisi koin yang sama.
+
+## 2. Contoh kode
+
+Pola inti SEO terpusat: `load` mengisi data SEO, layout root menyusun semua tag dari `page.data`.
+
+```js
+// src/routes/blog/[slug]/+page.js — load mengembalikan data SEO per-halaman
+export async function load({ params, fetch }) {
+	// SvelteKit 2: pakai event.fetch agar request ikut SSR (cookie, dsb).
+	const res = await fetch(`/api/posts/${params.slug}`);
+	const post = await res.json();
+
+	return {
+		post,
+		// Field SEO ini akan dibaca layout root lewat page.data:
+		title: `${post.title} — Blog Saya`,
+		description: post.excerpt
+	};
+}
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — satu tempat menyusun semua tag <head> -->
+<script>
+	// $app/state = API modern (Svelte 5). page bersifat reaktif tanpa "$".
+	import { page } from '$app/state';
+	let { children } = $props();
+
+	const SITE = 'Blog Saya';
+</script>
+
+<svelte:head>
+	<!-- page.data digabung dari semua load aktif. Pakai ?? untuk fallback
+	     supaya halaman yang tak menyetel SEO tetap punya title yang waras. -->
+	<title>{page.data.title ?? SITE}</title>
+	<meta
+		name="description"
+		content={page.data.description ?? 'Tulisan soal Svelte & web.'}
+	/>
+
+	<!-- Canonical: origin tetap (produksi) + pathname; query/hash dibuang.
+	     Jangan pakai page.url.origin mentah (bisa bocor localhost/preview). -->
+	<link rel="canonical" href={`https://blog-saya.com${page.url.pathname}`} />
+</svelte:head>
+
+<!-- Svelte 5: render isi layout dengan {@render}, BUKAN <slot> -->
+{@render children()}
+```
+
+Sitemap & robots dibuat sebagai endpoint. Karena di-render server (atau di-prerender saat build), keduanya selalu sinkron dengan data asli.
+
+```js
+// src/routes/sitemap.xml/+server.js — sitemap dinamis dari sumber data
+import { getAllPosts } from '$lib/server/posts';
+
+const SITE = 'https://blog-saya.com';
+
+// Render sekali saat build kalau sumbernya statis; hapus kalau butuh selalu live.
+export const prerender = true;
+
+export async function GET() {
+	const posts = await getAllPosts();
+
+	const urls = posts
+		.map(
+			(p) => `
+	<url>
+		<loc>${SITE}/blog/${p.slug}</loc>
+		<lastmod>${p.updatedAt}</lastmod>
+		<changefreq>weekly</changefreq>
+	</url>`
+		)
+		.join('');
+
+	// Catatan: schema resmi adalah www.sitemaps.org (pakai "s").
+	const xml = `<?xml version="1.0" encoding="UTF-8" ?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+	<url><loc>${SITE}/</loc></url>${urls}
+</urlset>`;
+
+	return new Response(xml.trim(), {
+		headers: {
+			'Content-Type': 'application/xml',
+			// CDN boleh cache 1 jam; pengunjung tak perlu versi super-segar.
+			'Cache-Control': 'max-age=0, s-maxage=3600'
+		}
+	});
+}
+```
+
+```js
+// src/routes/robots.txt/+server.js — satpam + penunjuk sitemap
+export const prerender = true;
+
+export function GET() {
+	const body = `User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://blog-saya.com/sitemap.xml`;
+
+	return new Response(body, {
+		headers: { 'Content-Type': 'text/plain' }
+	});
+}
+```
+
+<Callout type="tip">
+Untuk situs sederhana, <code>robots.txt</code> cukup ditaruh sebagai file statis di <code>static/robots.txt</code> — tak perlu endpoint. Pakai versi <code>+server.js</code> hanya kalau isinya perlu dinamis (mis. beda per environment: blokir semua di staging, izinkan di produksi).
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini butuh runtime server (endpoint `+server.js`, `load`, SSR), jadi tidak bisa dijalankan di playground. Tapi ada satu pola praktis yang sebaiknya kamu pegang: **bungkus blok SEO jadi komponen reusable** supaya tidak menyalin belasan baris `<meta>` ke tiap halaman.
+
+```svelte
+<!-- src/lib/components/Seo.svelte — komponen SEO pakai-ulang -->
+<script>
+	let {
+		title,
+		description,
+		image = '/og-default.png',
+		canonical
+	} = $props();
+
+	const SITE = 'Blog Saya';
+	// Judul penuh: "Judul Halaman — Blog Saya", atau cuma "Blog Saya" di home.
+	const fullTitle = title ? `${title} — ${SITE}` : SITE;
+</script>
+
+<!-- <svelte:head> dari KOMPONEN pun ikut ter-SSR & masuk <head> dokumen.
+     Kalau ada dua <title>, Svelte memakai yang terakhir (tidak dobel). -->
+<svelte:head>
+	<title>{fullTitle}</title>
+	<meta name="description" content={description} />
+
+	<!-- Open Graph: kartu share di WhatsApp/Facebook/LinkedIn -->
+	<meta property="og:title" content={fullTitle} />
+	<meta property="og:description" content={description} />
+	<meta property="og:image" content={image} />
+	<meta property="og:type" content="website" />
+
+	<!-- Twitter/X card -->
+	<meta name="twitter:card" content="summary_large_image" />
+
+	{#if canonical}
+		<link rel="canonical" href={canonical} />
+	{/if}
+</svelte:head>
+```
+
+```svelte
+<!-- Pemakaian di halaman mana pun: deklaratif, satu baris niat -->
+<script>
+	import Seo from '$lib/components/Seo.svelte';
+	let { data } = $props(); // { post } dari load
+</script>
+
+<Seo
+	title={data.post.title}
+	description={data.post.excerpt}
+	image={data.post.coverUrl}
+	canonical={`https://blog-saya.com/blog/${data.post.slug}`}
+/>
+
+<article>
+	<h1>{data.post.title}</h1>
+	<!-- ...isi artikel... -->
+</article>
+```
+
+**Cara membuktikan SSR-nya benar-benar jalan** (ini bagian "coba sendiri" yang sesungguhnya): jangan percaya devtools Elements (itu DOM setelah JS jalan). Lihat HTML mentah seperti yang crawler lihat. Buka halaman lalu klik kanan > **View Page Source** (atau `Ctrl/Cmd + U`) — `<title>` & `<meta>`-mu harus sudah ada di sana, terisi nilai asli. Cara lain dari terminal:
+
+```bash
+# Ambil HTML mentah (tanpa menjalankan JS) lalu cari title-nya.
+curl -s https://blog-saya.com/blog/halo-svelte | grep -i '<title>'
+# Harus muncul: <title>Halo Svelte — Blog Saya</title>
+# Kalau yang muncul cuma <title>Blog Saya</title> generik -> SEO per-halaman gagal.
+```
+
+## 4. Latihan
+
+<Exercise title="Bangun lapisan SEO lengkap untuk blog">
+Kamu punya blog SvelteKit. Halaman `src/routes/blog/[slug]` memuat satu artikel lewat `load`. Kerjakan empat hal:
+
+1. **Data SEO dari `load`**: kembalikan `title` dan `description` (dari `post.title` & `post.excerpt`) selain data artikelnya.
+2. **Head terpusat**: di `src/routes/+layout.svelte`, susun `<title>`, `<meta name="description">`, dan `<link rel="canonical">` dari `page.data` (pakai `$app/state`), dengan fallback default kalau halaman tak menyetelnya.
+3. **Sitemap**: buat `src/routes/sitemap.xml/+server.js` yang mengembalikan XML berisi semua URL artikel dari `getAllPosts()`.
+4. **Robots**: buat `robots.txt` yang mengizinkan semua, memblokir `/admin`, dan menunjuk ke sitemap.
+
+{#snippet solution()}
+
+  ```js
+  // 1) src/routes/blog/[slug]/+page.js
+  export async function load({ params, fetch }) {
+    const post = await (await fetch(`/api/posts/${params.slug}`)).json();
+    return {
+      post,
+      title: post.title,            // layout akan tambahkan "— Blog Saya"
+      description: post.excerpt
+    };
+  }
+  ```
+
+  ```svelte
+  <!-- 2) src/routes/+layout.svelte -->
+  <script>
+    import { page } from '$app/state';
+    let { children } = $props();
+    const SITE = 'Blog Saya';
+  </script>
+
+  <svelte:head>
+    <title>{page.data.title ? `${page.data.title} — ${SITE}` : SITE}</title>
+    <meta
+      name="description"
+      content={page.data.description ?? 'Tulisan soal Svelte & web.'}
+    />
+    <link rel="canonical" href={`https://blog-saya.com${page.url.pathname}`} />
+  </svelte:head>
+
+  {@render children()}
+  ```
+
+  ```js
+  // 3) src/routes/sitemap.xml/+server.js
+  import { getAllPosts } from '$lib/server/posts';
+
+  const SITE = 'https://blog-saya.com';
+  export const prerender = true;
+
+  export async function GET() {
+    const posts = await getAllPosts();
+    const urls = posts
+      .map((p) => `<url><loc>${SITE}/blog/${p.slug}</loc></url>`)
+      .join('');
+
+    const xml = `<?xml version="1.0" encoding="UTF-8" ?>
+  <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url><loc>${SITE}/</loc></url>${urls}
+  </urlset>`;
+
+    return new Response(xml.trim(), {
+      headers: { 'Content-Type': 'application/xml' }
+    });
+  }
+  ```
+
+  ```js
+  // 4) src/routes/robots.txt/+server.js
+  export const prerender = true;
+
+  export function GET() {
+    const body = `User-agent: *
+  Allow: /
+  Disallow: /admin
+
+  Sitemap: https://blog-saya.com/sitemap.xml`;
+    return new Response(body, { headers: { 'Content-Type': 'text/plain' } });
+  }
+  ```
+
+  Inti: SEO per-halaman lahir dari `load` (`page.data`), dirakit sekali di layout root, dan ditopang sitemap/robots dari endpoint server — semuanya ter-SSR/prerender sehingga crawler menerima HTML yang sudah matang.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Penyebab kebocoran SEO nomor satu: SSR tak sengaja dimatikan. Menaruh <code>export const ssr = false</code> (mode SPA) di <code>+layout.js</code> root membuat server mengirim HTML kosong — <code>&lt;svelte:head&gt;</code> tak ter-render di awal, dan crawler/preview-card melihat halaman hampa. Pertahankan SSR untuk semua halaman yang ingin ditemukan mesin pencari. Matikan SSR hanya untuk area privat (mis. dashboard di balik login) yang memang tak perlu di-index.
+</Callout>
+
+<Callout type="warning">
+Jangan bangun <code>&lt;link rel="canonical"&gt;</code> dari <code>page.url.origin</code> mentah. Saat SSR di server preview/staging, origin bisa jadi <code>http://localhost:5173</code> atau domain Vercel acak — dan kamu malah memberi tahu Google bahwa URL "resmi"-mu ada di localhost. Pakai origin produksi yang tetap (konstanta atau env var publik), lalu sambung dengan <code>page.url.pathname</code>. Buang query string seperti <code>?utm_source=</code> dari canonical agar versi pelacakan tidak dianggap halaman terpisah.
+</Callout>
+
+<Callout type="tip">
+Verifikasi seperti crawler, bukan seperti pengguna. <strong>View Page Source</strong> dan <code>curl</code> menunjukkan HTML mentah sebelum JavaScript jalan — persis yang dibaca bot. Panel <strong>Elements</strong> di devtools menampilkan DOM <strong>setelah</strong> hydration, jadi bisa menyesatkan: title yang kamu set lewat JS akan terlihat benar di Elements meski sebenarnya tak ada di HTML awal. Selalu cek dari sumbernya.
+</Callout>
+
+<Callout type="warning">
+Hati-hati duplicate content dari trailing slash & query param. SvelteKit menormalkan trailing slash otomatis lewat opsi <code>trailingSlash</code> (<code>'never'</code> | <code>'always'</code> | <code>'ignore'</code>) — pilih satu dan konsisten. Tapi normalisasi itu tak mengurus query param: <code>/blog/halo</code> dan <code>/blog/halo?ref=twitter</code> tetap dianggap dua URL oleh Google sampai <code>&lt;link rel="canonical"&gt;</code> menyatukannya. Canonical adalah jaring pengaman terakhirmu.
+</Callout>
+
+<Callout type="legacy">
+Tutorial lama sering pakai <code>import &#123; page &#125; from '$app/stores'</code> lalu <code>$page.data</code> (store dengan prefix <code>$</code>). Di SvelteKit + Svelte 5, padanan modernnya adalah <code>$app/state</code> dengan <code>page.data</code> (tanpa <code>$</code>, karena sudah berbasis rune). Fungsinya sama; yang baru lebih ringkas dan selaras dengan runes.
+</Callout>
+
+<LegacyVsModern rows={[
+  { legacy: "import { page } from '$app/stores'", modern: "import { page } from '$app/state'", note: 'API modern berbasis rune (Svelte 5)' },
+  { legacy: '$page.data.title', modern: 'page.data.title', note: 'Tanpa prefix "$" di $app/state' },
+  { legacy: 'slot untuk isi layout', modern: 'render children() (snippet)', note: 'Svelte 5 pakai snippet, bukan slot' },
+  { legacy: 'meta diset via JS setelah mount', modern: 'meta via svelte:head (ter-SSR)', note: 'Crawler membaca HTML awal, bukan DOM pasca-JS' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/seo" label="SvelteKit — SEO (SSR, title/meta, sitemap, performa)" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-head" label="Svelte — &lt;svelte:head&gt; (menyuntik title & meta)" />
+<DocsLink href="https://svelte.dev/docs/kit/page-options" label="SvelteKit — Page options (ssr, prerender, trailingSlash)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-state" label="SvelteKit — $app/state (page.data, page.url)" />

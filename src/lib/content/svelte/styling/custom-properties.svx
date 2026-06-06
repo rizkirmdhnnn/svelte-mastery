@@ -1,0 +1,299 @@
+---
+title: Custom properties
+product: svelte
+section: styling
+sectionTitle: Styling
+sectionOrder: 4
+order: 3
+status: stable
+description: Mengoper CSS custom properties ke komponen Svelte dan membacanya lewat var() untuk membuat komponen yang gampang di-tema dari luar.
+docs: https://svelte.dev/docs/svelte/custom-properties
+keywords: [custom-properties, css-variables, theming, var, props, styling]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di modul *scoped styles* kita belajar bahwa `<style>` setiap komponen itu **terisolasi** — gaya di dalam `Card.svelte` tidak bocor ke luar, dan gaya dari luar tidak bisa menembus masuk. Bagus untuk mencegah bentrok, tapi menimbulkan satu masalah baru: **kalau dindingnya kedap, bagaimana cara orang luar mengganti warna sebuah tombol di dalam komponen tanpa kita harus membuka semua kelasnya?**
+
+Jawabannya: **CSS custom properties** (alias CSS variables, yang namanya diawali `--`). Inilah "lubang yang sengaja dibuat di dinding" — sebuah API gaya yang terkendali. Komponen memutuskan kenop mana yang boleh diputar dari luar (`--bg`, `--radius`, `--accent`), lalu di dalamnya membaca nilai itu dengan `var(--bg)`. Yang lain tetap kedap.
+
+**Analogi:** bayangkan komponen sebagai sebuah **ruang kedap suara**. Aturan CSS biasa (`color: red`) seperti suara — tidak bisa menembus tembok ke dua arah. Tapi kamu memasang beberapa **stop kontak berlabel** di dinding: `--accent`, `--radius`, `--bg`. Siapa pun di luar boleh "mencolokkan" sebuah nilai ke stop kontak itu, dan rangkaian di dalam ruangan langsung memakai listriknya. Kalau tidak ada yang mencolok, alat di dalam jalan pakai **baterai cadangan** — itulah nilai *fallback* di `var(--accent, biru)`.
+
+**Mengapa custom property bisa menembus tembok scoping, padahal `color: red` tidak?** Karena keduanya bekerja di lapisan yang berbeda. Scoping Svelte cuma menulis ulang **selector** (`.btn` jadi `.btn.svelte-abc123`) supaya aturan hanya menyasar elemen komponen ini. Itu sama sekali tidak menyentuh mekanisme **pewarisan (inheritance)** CSS. Nah, custom property *diwariskan menuruni pohon DOM* persis seperti `color` atau `font-family`. Jadi kalau sebuah `--accent` diset di elemen induk mana pun, nilainya mengalir turun ke semua keturunannya — termasuk ke dalam aturan ber-scope yang berbunyi `var(--accent)`. Scoping mengunci selector; ia tidak pernah berusaha mengunci pewarisan. Itu sebabnya custom property jadi jalan resmi yang "menembus tembok secara terkendali".
+
+Kalau datang dari **React**, kamu biasanya melakukan hal yang sama dengan mengoper objek style berisi CSS variable, mis. `style={{ '--accent': color }}`, atau menyebar tema lewat Context/theme provider. Di **Vue**, kamu mengenal `v-bind()` di dalam `<style>` atau mengoper variabel serupa. Intinya CSS custom property itu **netral framework** — fitur browser, bukan fitur Svelte. Yang Svelte tambahkan hanyalah **gula sintaks**: kamu boleh menulis custom property langsung sebagai atribut komponen, `--accent={warna}`, tanpa harus membungkusnya sendiri dengan `<div style="...">`.
+
+Di balik layar, `<Slider --accent="tomato" />` itu di-*desugar* oleh Svelte menjadi pembungkus tak terlihat:
+
+```svelte
+<svelte-css-wrapper style="display: contents; --accent: tomato">
+	<Slider />
+</svelte-css-wrapper>
+```
+
+`display: contents` artinya elemen pembungkus itu **tidak membuat kotak layout sendiri** — ia tidak menggeser apa pun, hanya hadir untuk "menempelkan" custom property supaya diwariskan ke dalam komponen. (Untuk komponen SVG, Svelte memakai `<g>` sebagai pembungkus, bukan `<svelte-css-wrapper>`.) Pembungkus ini hampir selalu tak terasa, kecuali satu kasus yang dibahas di bagian Pitfalls.
+
+## 2. Contoh kode
+
+**Langkah 1 — komponen menentukan kenopnya** dengan `var(--nama, fallback)`:
+
+```svelte
+<!-- Card.svelte -->
+<script>
+	let { title, children } = $props();
+</script>
+
+<article class="card">
+	<h3>{title}</h3>
+	{@render children?.()}
+</article>
+
+<style>
+	.card {
+		/* baca custom property dari luar; argumen kedua = fallback
+		   yang dipakai kalau induk tidak menyetel apa-apa */
+		background: var(--card-bg, white);
+		color: var(--card-fg, #111);
+		border: 1px solid var(--card-border, #e5e7eb);
+		border-radius: var(--card-radius, 8px);
+		padding: 1rem 1.25rem;
+	}
+	.card h3 {
+		margin: 0 0 0.5rem;
+		/* fallback boleh merujuk custom property lain */
+		color: var(--card-accent, var(--card-fg, #111));
+	}
+</style>
+```
+
+**Langkah 2 — induk "memutar kenop"** lewat sintaks atribut custom property. Nilainya boleh statik (string) atau dinamis (ekspresi `{...}`):
+
+```svelte
+<!-- App.svelte -->
+<script>
+	import Card from './Card.svelte';
+
+	let r = $state(220);
+	let g = $state(40);
+	let b = $state(120);
+</script>
+
+<!-- nilai STATIK -->
+<Card title="Kartu polos" --card-bg="#f8fafc" --card-radius="14px">
+	Tidak ada warna aksen khusus.
+</Card>
+
+<!-- nilai DINAMIS: ekspresi di dalam {} ikut reaktif.
+     Ubah r/g/b dan warna aksen kartu berubah otomatis. -->
+<Card title="Kartu dinamis" --card-accent="rgb({r} {g} {b})">
+	Geser nilai RGB untuk mengganti warna judul.
+</Card>
+
+<input type="range" min="0" max="255" bind:value={r} />
+```
+
+Baris `--card-accent="rgb({r} {g} {b})"` di atas itu persis yang tadi di-*desugar* jadi `<svelte-css-wrapper style="display: contents; --card-accent: rgb(...)">`. Kamu menulis 1 atribut, Svelte yang mengurus pembungkusnya.
+
+**Langkah 3 — theming sekali untuk seluruh aplikasi.** Kamu tidak harus menyetel custom property di tiap komponen. Selama propertinya terdefinisi di **sembarang elemen induk**, komponen bisa membacanya. Pola paling umum: definisikan di `:root` lewat stylesheet global, lalu override per-subtree bila perlu.
+
+```css
+/* app.css (global) — satu sumber kebenaran untuk tema */
+:root {
+	--card-bg: #ffffff;
+	--card-fg: #0f172a;
+	--card-accent: #2563eb;
+	--card-radius: 12px;
+}
+
+/* contoh: mode gelap cukup menimpa variabel yang sama */
+:root[data-theme='dark'] {
+	--card-bg: #1e293b;
+	--card-fg: #e2e8f0;
+	--card-accent: #38bdf8;
+}
+```
+
+```svelte
+<!-- Override hanya untuk satu cabang UI, tanpa menyentuh Card.svelte.
+     style:--x={...} cocok untuk nilai yang dihitung saat runtime. -->
+<section style:--card-accent={panas ? 'tomato' : '#2563eb'}>
+	<Card title="A">...</Card>
+	<Card title="B">...</Card>
+</section>
+```
+
+Perhatikan tiga cara menyetelnya, semuanya valid dan bisa dicampur: (1) langsung di komponen `--card-accent="..."`, (2) global di `:root`, (3) di elemen induk pakai `style:--card-accent={...}` untuk nilai reaktif. Komponen di dalamnya tidak peduli dari mana asalnya — ia cuma membaca `var(--card-accent)`.
+
+## 3. Coba sendiri
+
+Komponen di bawah membaca seluruh tampilannya dari custom property (`--bg`, `--fg`, `--accent`, `--radius`). Slider dan tombol di bawahnya cuma mengubah nilai custom property itu — tidak ada satu pun warna yang ditulis langsung di markup kartu. Inilah inti "komponen yang bisa di-tema dari luar".
+
+<Playground code={`<script>
+	let hue = $state(210);
+	let radius = $state(14);
+	let gelap = $state(false);
+
+	let bg = $derived(gelap ? 'hsl(' + hue + ' 30% 16%)' : 'hsl(' + hue + ' 92% 96%)');
+	let fg = $derived(gelap ? 'hsl(' + hue + ' 80% 88%)' : 'hsl(' + hue + ' 55% 22%)');
+	let accent = $derived('hsl(' + hue + ' 80% 55%)');
+</script>
+
+<div
+	class="card"
+	style:--bg={bg}
+	style:--fg={fg}
+	style:--accent={accent}
+	style:--radius={radius + 'px'}
+>
+	<h3>Kartu bertema</h3>
+	<p>Semua warna di kartu ini dibaca dari var(--bg), var(--fg), dan var(--accent). Tidak ada warna hardcode di markup.</p>
+	<button class="cta">Tombol aksen</button>
+</div>
+
+<div class="controls">
+	<label>Hue: {hue}
+		<input type="range" min="0" max="360" bind:value={hue} />
+	</label>
+	<label>Sudut membulat: {radius}px
+		<input type="range" min="0" max="32" bind:value={radius} />
+	</label>
+	<button class="toggle" onclick={() => gelap = !gelap}>
+		Ganti ke mode {gelap ? 'terang' : 'gelap'}
+	</button>
+</div>
+
+<!----><style>
+	.card {
+		background: var(--bg, white);
+		color: var(--fg, black);
+		border: 1px solid var(--accent, #ccc);
+		border-radius: var(--radius, 8px);
+		padding: 1rem 1.25rem;
+		max-width: 340px;
+		font-family: sans-serif;
+	}
+	.card h3 { margin: 0 0 0.4rem; }
+	.card p { margin: 0 0 0.8rem; font-size: 0.9rem; line-height: 1.5; }
+	.cta {
+		background: var(--accent, gray);
+		color: white;
+		border: none;
+		padding: 0.45rem 0.9rem;
+		border-radius: calc(var(--radius, 8px) / 2);
+		cursor: pointer;
+	}
+	.controls {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		margin-top: 1rem;
+		max-width: 340px;
+		font-family: sans-serif;
+		font-size: 0.85rem;
+	}
+	.controls label { display: flex; flex-direction: column; gap: 0.25rem; }
+	.toggle {
+		align-self: flex-start;
+		padding: 0.4rem 0.8rem;
+		cursor: pointer;
+	}
+</style>`} />
+
+Coba: geser **Hue** dan lihat semua elemen ikut bergeser warnanya dari satu sumber; geser **Sudut membulat** dan perhatikan tombol ikut membulat karena `border-radius`-nya `calc(var(--radius) / 2)` — satu kenop, beberapa pemakaian.
+
+## 4. Latihan
+
+<Exercise title="ProgressBar yang bisa di-tema">
+Buat komponen `ProgressBar` (satu file `.svelte`) yang:
+
+1. Menerima prop `value` (0-100).
+2. Warna isian dibaca dari custom property `--bar-fill`, dengan fallback hijau.
+3. Warna latar track dibaca dari `--bar-track`, dengan fallback abu-abu terang.
+4. Tinggi bar dibaca dari `--bar-height`, fallback `10px`.
+
+Lalu tunjukkan satu induk yang memakai dua `ProgressBar`: satu pakai warna default, satu lagi di-override warnanya lewat sintaks atribut custom property — **dan salah satunya memakai nilai dinamis** (mis. berubah merah saat `value` di bawah 30).
+
+{#snippet solution()}
+
+```svelte
+<!-- ProgressBar.svelte -->
+<script>
+	let { value = 0 } = $props();
+</script>
+
+<div class="track" role="progressbar" aria-valuenow={value}>
+	<!-- lebar isian ditulis lewat style: directive (nilai runtime) -->
+	<div class="fill" style:width={value + '%'}></div>
+</div>
+
+<style>
+	.track {
+		background: var(--bar-track, #e5e7eb);
+		border-radius: 999px;
+		overflow: hidden;
+		height: var(--bar-height, 10px);
+	}
+	.fill {
+		height: 100%;
+		background: var(--bar-fill, #22c55e);
+		transition: width 0.2s ease;
+	}
+</style>
+```
+
+```svelte
+<!-- App.svelte -->
+<script>
+	import ProgressBar from './ProgressBar.svelte';
+
+	let baterai = $state(18);
+</script>
+
+<!-- 1) default: hijau, tinggi 10px -->
+<ProgressBar value={72} />
+
+<!-- 2) di-tema lewat atribut custom property; --bar-fill DINAMIS:
+     merah saat di bawah 30, jingga selebihnya. --bar-height statik. -->
+<ProgressBar
+	value={baterai}
+	--bar-fill={baterai < 30 ? '#ef4444' : '#f59e0b'}
+	--bar-track="#fde68a"
+	--bar-height="16px"
+/>
+
+<input type="range" min="0" max="100" bind:value={baterai} />
+```
+
+Kuncinya: `ProgressBar` sama sekali tidak tahu soal "baterai" atau "merah saat rendah" — semua keputusan tema ada di induk. Komponen cuma menyediakan kenop `--bar-fill`, `--bar-track`, `--bar-height` dan membacanya dengan `var()`.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Pembungkus <code>&lt;svelte-css-wrapper&gt;</code> memakai <code>display: contents</code> sehingga tidak memengaruhi layout — <strong>tapi</strong> ia tetap menjadi sebuah node di DOM. Akibatnya, selector yang memakai <strong>direct child combinator</strong> (<code>&gt;</code>) yang menyasar langsung ke komponen bisa putus. Misalnya <code>.list &gt; .item</code> dari induk tidak lagi cocok kalau <code>.item</code> sebenarnya ada di dalam komponen yang dibungkus, karena kini ada satu node pembungkus di antaranya. Solusi: hindari mengandalkan <code>&gt;</code> menembus batas komponen, atau jangan oper custom property lewat atribut pada komponen yang jadi target selector <code>&gt;</code> tersebut — set di elemen induk biasa saja.
+</Callout>
+
+<Callout type="tip">
+<strong>Selalu beri fallback</strong> di <code>var(--x, nilai-default)</code>. Tanpa fallback, kalau tidak ada yang menyetel <code>--x</code>, propertinya menjadi <em>invalid</em> dan elemen bisa tampil "kosong" (mis. tanpa warna latar sama sekali). Fallback membuat komponenmu tetap tampil rapi saat dipakai sendirian, sekaligus mendokumentasikan nilai bawaan yang kamu maksudkan. Fallback juga boleh bertingkat: <code>var(--judul, var(--teks, #111))</code>.
+</Callout>
+
+<Callout type="warning">
+Nama custom property <strong>case-sensitive</strong> dan wajib diawali dua tanda minus: <code>--Bar-Fill</code> dan <code>--bar-fill</code> adalah dua variabel berbeda. Salah ketik tidak memunculkan error — komponen diam-diam memakai fallback. Sepakati satu konvensi penamaan (mis. selalu <code>kebab-case</code>) dan dokumentasikan kenop publik komponenmu, karena tidak seperti <code>$props()</code>, custom property tidak punya pengecekan tipe atau autocomplete.
+</Callout>
+
+<Callout type="tip">
+Bedakan kapan pakai <strong>prop</strong> dan kapan pakai <strong>custom property</strong>. Pakai <code>$props()</code> untuk <em>data &amp; perilaku</em> (label, value, callback). Pakai custom property untuk <em>urusan presentasi yang murni CSS</em> (warna, radius, spacing) — karena ia otomatis ikut <em>cascade</em>, bisa diset sekali di <code>:root</code> untuk seluruh app, dan tidak memaksa komponen me-render ulang saat temanya berubah (perubahannya murni di lapisan CSS).
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/custom-properties" label="Component custom properties — dokumentasi resmi Svelte" />

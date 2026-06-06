@@ -1,0 +1,255 @@
+---
+title: sv create
+product: cli
+section: commands
+sectionTitle: Perintah
+sectionOrder: 2
+order: 1
+status: stable
+description: Scaffold proyek Svelte/SvelteKit baru dengan sv create — pilih template, type-checking, add-ons, package manager, baik lewat prompt interaktif maupun flag.
+docs: https://svelte.dev/docs/cli/sv-create
+keywords: [sv create, scaffolding, template, add-ons, flags, package manager]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sv create` adalah perintah untuk **membuat proyek Svelte/SvelteKit dari nol**. Kalau kamu datang dari React, ini padanan langsung `npm create vite@latest` atau `npx create-next-app`. Dari Vue, ini saudara `npm create vue@latest`. Bedanya, `sv` (singkatan dari "Svelte") bukan sekadar scaffolder sekali pakai — ia satu CLI yang juga punya `sv add` (menambah integrasi) dan `sv migrate` (otomasi upgrade). Anggap `sv` seperti `ng` di Angular atau `nx` di monorepo: satu pintu untuk bikin proyek **dan** merawatnya.
+
+### Analogi: memesan komputer rakitan
+
+Bayangkan `sv create` itu seperti **toko komputer rakitan**. Kamu tidak beli PC jadi yang isinya sudah dipaksakan vendor; kamu menjawab beberapa pertanyaan dan teknisi merakit sesuai pilihanmu:
+
+- **Casing & motherboard** -> pilih *template* (kerangka proyek).
+- **Mau pasang sistem pengaman tipe data?** -> *type-checking* (TypeScript / JSDoc / tidak sama sekali).
+- **Aksesori tambahan** (pendingin, RGB, software bawaan) -> *add-ons* (Prettier, ESLint, Tailwind, Playwright, dll).
+- **Mau dipasangkan dari toko mana?** -> *package manager* (npm / pnpm / yarn / bun / deno).
+
+Hasilnya satu folder proyek yang langsung bisa `npm run dev`. Tidak ada langkah "download zip lalu hapus file yang tidak perlu" seperti era `degit` dulu.
+
+### Template: Svelte saja vs SvelteKit
+
+Pertanyaan pertama hampir semua pendatang: "Svelte atau SvelteKit?" Bedakan dengan analogi mesin vs mobil:
+
+- **Svelte** adalah *mesin* — compiler komponen. Analog dengan **React (library)**: tahu cara bikin UI reaktif, tapi tidak tahu soal routing/server.
+- **SvelteKit** adalah *mobil utuh* di sekeliling mesin itu — framework aplikasi dengan routing berbasis file, SSR, data loading, form actions, sampai build untuk deploy. Posisinya analog dengan **Next.js** (React) atau **Nuxt** (Vue).
+
+`sv create` menawarkan tiga template:
+
+| Template | Untuk apa | Analog React/Vue |
+|---|---|---|
+| `minimal` | Kerangka SvelteKit kosong, satu halaman `+page.svelte`. Titik awal aplikasi sungguhan. | `create-next-app` minimal |
+| `demo` | SvelteKit + contoh game tebak kata yang tetap jalan tanpa JavaScript — bagus untuk melihat SSR & progressive enhancement bekerja. | template starter dengan contoh |
+| `library` | Proyek **library komponen** memakai `svelte-package`, bukan aplikasi. Outputnya paket npm, bukan situs. | setup `vite --lib` / publishing package |
+
+<Callout type="tip">
+Untuk membuat **aplikasi**, hampir selalu pilih `minimal` (atau `demo` kalau ingin contoh). Pilih `library` hanya kalau kamu sedang menulis paket komponen yang akan dipublish ke npm — di situ tidak ada `src/routes/`, melainkan `src/lib/` sebagai entry yang dibungkus `svelte-package`.
+</Callout>
+
+### Type-checking: TypeScript vs JSDoc vs none
+
+`sv create` menanyakan cara kamu menambahkan tipe. Penting dipahami **kenapa** ada opsi JSDoc, bukan cuma TypeScript:
+
+- **`ts`** — file pakai ekstensi `.ts`, blok `<script lang="ts">`. Cara paling umum dan paling didukung. Ini default yang direkomendasikan.
+- **`jsdoc`** — kode tetap JavaScript murni (`.js`), tapi tipe ditulis lewat komentar JSDoc. Kelebihannya: file bisa dijalankan tanpa langkah kompilasi TS, dan tetap dapat type-check dari editor. Cocok untuk library yang ingin menghindari build step, atau tim yang belum mau adopsi sintaks TS penuh.
+- **`none`** (`--no-types`) — tanpa tipe sama sekali. Jarang disarankan; kamu kehilangan autocomplete & deteksi kesalahan dini.
+
+Catatan untuk yang dari Next.js: di Svelte, type-checking komponen dijalankan oleh `svelte-check` (lewat `npm run check`), bukan `tsc` langsung, karena `tsc` tidak paham isi file `.svelte`.
+
+### Add-ons: rakit sekarang atau nanti
+
+*Add-ons* adalah integrasi siap pakai yang menyuntik konfigurasi + dependensi sekaligus. Yang resmi tersedia saat ini:
+
+`prettier`, `eslint`, `vitest`, `playwright`, `tailwindcss`, `sveltekit-adapter`, `drizzle`, `lucia`/`better-auth`, `mdsvex`, `paraglide`, `storybook`, `mcp`.
+
+Kuncinya: add-on **tidak harus** dipilih saat create. Kamu bisa menambahnya kapan saja lewat `sv add <nama>`. Jadi prinsipnya: pilih yang sudah pasti kamu butuh sekarang (mis. `eslint`, `prettier`), sisanya tambahkan belakangan saat benar-benar perlu — persis seperti memasang aksesori PC setelah unit jadi.
+
+### Interaktif vs flag: dua cara memesan
+
+`sv create` punya dua mode, seperti dua cara memesan kopi:
+
+- **Interaktif** (tanpa flag) — barista (CLI) bertanya satu per satu lewat prompt panah-atas/bawah. Enak untuk eksplorasi & belajar.
+- **Non-interaktif** (pakai flag) — kamu tulis seluruh pesanan di satu baris, mis. `--template minimal --types ts`. Wajib untuk **otomasi/CI**, skrip generator, atau saat kamu sudah hafal maunya apa.
+
+## 2. Contoh kode
+
+Mode interaktif — paling umum untuk pemula:
+
+```bash
+# "my-app" jadi nama folder. Pakai titik (.) untuk scaffold di folder saat ini.
+npx sv create my-app
+
+# CLI akan menuntun lewat prompt (gunakan panah + Enter; spasi untuk multi-pilih):
+#   ? Which template?        -> minimal | demo | library
+#   ? Add type checking?     -> Yes, using TypeScript | Yes, using JSDoc | No
+#   ? What would you like to add?  -> [ ] prettier  [ ] eslint  [ ] vitest
+#                                     [ ] playwright [ ] tailwindcss [ ] drizzle ...
+#   ? Which package manager? -> npm | pnpm | yarn | bun | deno
+
+cd my-app
+npm run dev        # buka URL yang muncul, default http://localhost:5173
+```
+
+Mode non-interaktif — satu baris, ideal untuk CI atau saat sudah tahu maunya:
+
+```bash
+# Semua keputusan ditulis sebagai flag; tidak ada prompt yang muncul.
+npx sv create my-app \
+  --template minimal \      # minimal | demo | library
+  --types ts \              # ts | jsdoc   (atau --no-types untuk tanpa tipe)
+  --add eslint --add prettier --add vitest \   # pilih add-ons di sini
+  --install pnpm            # npm | pnpm | yarn | bun | deno
+
+# Variasi cepat lain:
+npx sv create my-app --template minimal --types ts --no-add-ons --no-install
+#   --no-add-ons  : lewati prompt add-ons (tidak pasang apa pun)
+#   --no-install  : jangan jalankan install dependensi (pasang manual nanti)
+```
+
+Tabel referensi flag lengkap:
+
+| Flag | Nilai | Arti |
+|---|---|---|
+| `[path]` | nama folder atau `.` | Lokasi proyek; `.` = folder saat ini |
+| `--template` | `minimal` \| `demo` \| `library` | Kerangka proyek |
+| `--types` | `ts` \| `jsdoc` | Aktifkan type-checking |
+| `--no-types` | — | Tanpa type-checking (tidak disarankan) |
+| `--add` | nama add-on (boleh diulang) | Pasang add-on saat create |
+| `--no-add-ons` | — | Lewati prompt add-ons |
+| `--install` | `npm` \| `pnpm` \| `yarn` \| `bun` \| `deno` | Pasang dependensi dengan PM ini |
+| `--no-install` | — | Lewati instalasi dependensi |
+| `--no-dir-check` | — | Lewati validasi "folder harus kosong" |
+| `--from-playground` | URL playground | Buat proyek dari URL Svelte Playground (unduh file + deteksi dependensi) |
+
+Struktur folder hasil template `minimal` (bagian penting saja):
+
+```bash
+my-app/
+├─ src/
+│  ├─ routes/              # ROUTING berbasis file. Tiap folder = satu URL.
+│  │  └─ +page.svelte      # UI untuk route "/" (analog app/page.tsx di Next.js)
+│  ├─ lib/                 # kode reusable, di-import via alias "$lib/..."
+│  │  └─ index.ts
+│  ├─ app.html             # template HTML root (placeholder %sveltekit.head% dll)
+│  └─ app.d.ts             # tipe global SvelteKit (App.Locals, dsb.)
+├─ static/                 # aset statis disajikan apa adanya (favicon, gambar)
+├─ svelte.config.js        # konfigurasi Svelte + SvelteKit (preprocessor, adapter)
+├─ vite.config.ts          # konfigurasi Vite (plugin, server)
+├─ tsconfig.json           # muncul kalau pilih --types ts
+└─ package.json            # script: dev, build, preview, check
+```
+
+## 3. Coba sendiri
+
+Scaffolding berjalan di terminal, jadi tidak ada playground live untuk perintahnya. Sebagai gantinya, mari telusuri **satu skenario nyata** beranotasi: kamu mau bikin aplikasi SvelteKit + TypeScript + Tailwind, pakai pnpm.
+
+```bash
+# Langkah 1 — buat proyek dengan keputusan yang sudah dikunci lewat flag.
+# Tidak ada prompt: cocok kalau kamu sudah yakin tumpukannya.
+npx sv create toko-online \
+  --template minimal \
+  --types ts \
+  --add tailwindcss --add eslint --add prettier \
+  --install pnpm
+
+# Langkah 2 — masuk & jalankan. Karena --install pnpm tadi,
+# node_modules sudah terisi; tinggal nyalakan dev server.
+cd toko-online
+pnpm run dev    # http://localhost:5173
+
+# Langkah 3 — butuh testing belakangan? Tidak perlu bikin ulang proyek.
+# Tambahkan add-on kapan saja:
+npx sv add vitest playwright
+```
+
+Setelah scaffolding, isi `src/routes/+page.svelte` hanyalah komponen Svelte 5 biasa — tidak ada yang ajaib:
+
+```svelte
+<script lang="ts">
+	// File ini dihasilkan sebagai titik awal route "/".
+	// Karena tadi pilih --types ts, blok script-nya lang="ts".
+	let nama = $state('dunia');           // state reaktif pakai rune $state
+	let panjang = $derived(nama.length);  // turunan otomatis pakai $derived
+</script>
+
+<h1>Halo, {nama}!</h1>
+<p>Namamu {panjang} huruf.</p>
+<input bind:value={nama} placeholder="ketik namamu" />
+```
+
+<Callout type="tip">
+Mau cek hasil rakitan tanpa repot install? Flag `--from-playground <url>` mengubah sebuah sketsa di Svelte Playground (svelte.dev/playground) menjadi proyek SvelteKit penuh: `sv` mengunduh filenya dan mendeteksi dependensi yang dipakai. Berguna untuk "promote" eksperimen kecil jadi proyek beneran.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Tulis satu perintah create untuk pipeline CI">
+Tim kamu butuh skrip yang membuat proyek SvelteKit **tanpa satu pun prompt interaktif** (karena dijalankan di CI). Spesifikasi:
+
+- nama folder: `app-ci`
+- template aplikasi minimal
+- pakai TypeScript
+- pasang `eslint` dan `prettier`, tapi **jangan** pasang yang lain
+- **jangan** jalankan instalasi dependensi (CI punya langkah cache install sendiri)
+
+Tulis satu perintah `npx sv create ...` lengkap dengan flag yang tepat. Lalu jawab: kenapa mode interaktif tidak boleh dipakai di CI?
+
+{#snippet solution()}
+
+```bash
+npx sv create app-ci \
+  --template minimal \
+  --types ts \
+  --add eslint --add prettier \
+  --no-install
+
+# Kenapa interaktif dilarang di CI:
+# CI tidak punya manusia yang menekan panah/Enter. Prompt interaktif akan
+# menggantung (hang) menunggu input yang tak pernah datang, lalu time out.
+# Semua keputusan WAJIB jadi flag agar perintah berjalan non-interaktif.
+#
+# Catatan: karena --add sudah eksplisit, prompt add-ons otomatis dilewati.
+# Kalau TIDAK ingin add-on apa pun, pakai --no-add-ons agar tetap non-interaktif.
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+Tutorial lama menyuruh `npm create svelte@latest`, `npx degit sveltejs/template`, atau paket `create-svelte`. Itu sudah usang. CLI resmi sekarang `sv`: pakai `npx sv create` untuk scaffold dan `npx sv add` untuk menambah integrasi.
+</Callout>
+
+<Callout type="pitfall">
+`sv create` menolak menimpa folder yang **tidak kosong** demi keamanan. Kalau kamu sengaja ingin scaffold ke folder yang sudah berisi (mis. repo git yang baru di-init dengan README), tambahkan `--no-dir-check`. Tapi hati-hati: flag ini mematikan rambu pengaman, jadi pastikan tidak ada file penting yang bisa tertimpa.
+</Callout>
+
+<Callout type="warning">
+Pilih **satu** package manager lewat `--install` (atau di prompt) dan pakai itu konsisten. Mencampur `npm install` lalu `pnpm install` di proyek yang sama membuat dua lockfile (`package-lock.json` vs `pnpm-lock.yaml`) bertarung, dan bisa memicu bug dependensi yang sulit dilacak.
+</Callout>
+
+<Callout type="tip">
+Bingung mau pasang add-on apa di awal? Pasang yang pasti kepakai (`eslint`, `prettier`), lalu sisanya tambah belakangan dengan `sv add`. `sv create` bukan keputusan sekali-seumur-hidup — proyek tetap bisa "di-upgrade" kapan saja tanpa scaffold ulang.
+</Callout>
+
+Rangkuman cepat perpindahan dari perkakas lama ke `sv`:
+
+<LegacyVsModern legacyLabel="Cara lama" modernLabel="Cara baru (sv)" rows={[
+	{ legacy: 'npm create svelte@latest', modern: 'npx sv create', note: 'CLI resmi disatukan jadi "sv"' },
+	{ legacy: 'npx degit sveltejs/template', modern: 'npx sv create', note: 'degit tidak lagi direkomendasikan' },
+	{ legacy: 'pilih semua opsi via prompt manual', modern: 'flag --template / --types / --add / --install', note: 'bisa non-interaktif untuk CI' },
+	{ legacy: 'setup Tailwind/ESLint manual', modern: 'sv add tailwindcss eslint', note: 'integrasi otomatis kapan saja' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-create" label="sv create — referensi CLI lengkap" />
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-add" label="sv add — daftar add-on resmi" />

@@ -1,0 +1,365 @@
+---
+title: $app/state
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 11
+status: reference
+description: Modul $app/state mengekspos page, navigating, dan updated sebagai objek reaktif berbasis runes — pengganti modern $app/stores yang diakses tanpa tanda $.
+docs: https://svelte.dev/docs/kit/$app-state
+keywords: [app-state, page, navigating, updated, runes, app-stores]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/state` adalah modul **virtual** milik SvelteKit (disuntikkan saat build, bukan file fisik di `node_modules`) yang mengekspos **tiga objek reaktif baca-saja**: `page`, `navigating`, dan `updated`. Tersedia mulai SvelteKit **2.12**. Inilah cara modern membaca "keadaan runtime" aplikasimu di Svelte 5 — menggantikan `$app/stores`.
+
+Perbedaan paling penting yang harus kamu pegang: **`$app/state` BUKAN store**. Ia adalah objek biasa yang reaktivitasnya ditenagai runes (`$state`/`$derived` di balik layar). Konsekuensinya:
+
+- Kamu mengaksesnya **tanpa tanda `$`**: cukup `page.url.pathname`, bukan `$page.url.pathname`.
+- Tidak ada `subscribe`/`unsubscribe`. Tidak ada auto-subscription `$`. Tidak ada overhead store.
+- Karena reaktivitasnya runes, ia **hanya bereaksi di dalam konteks yang dilacak runes** — template Svelte 5, `$derived`, `$effect`. Membacanya di kode JS biasa yang tidak reaktif (mis. di top-level modul) hanya memberi snapshot saat itu, bukan nilai yang ikut berubah.
+
+### Analogi: papan kedatangan bandara vs. langganan SMS
+
+Bayangkan kamu menunggu pesawat.
+
+- **`$app/stores` (cara lama)** itu seperti **langganan SMS notifikasi**. Kamu harus mendaftar (`subscribe`), provider mengirim pesan tiap ada perubahan, dan kamu wajib berhenti langganan agar tidak bocor. Di Svelte, kerja daftar/berhenti itu disembunyikan oleh prefiks `$` — tapi mekanismenya tetap "langganan".
+- **`$app/state` (cara baru)** itu seperti **papan kedatangan raksasa** di tengah bandara. Kamu tinggal **melihat**-nya kapan saja (`page.url`, `navigating.to`); papan itu memperbarui dirinya sendiri. Tidak ada proses daftar/berhenti. Kamu hanya membaca.
+
+Papan kedatangan punya tiga panel:
+
+- **`page`** — "kamu sekarang ada di gate mana": URL, params, route, status, error, data hasil `load`, hasil form, dan page state.
+- **`navigating`** — "panel keberangkatan yang sedang berkedip": berisi info saat ada perpindahan halaman berlangsung, kosong (semua `null`) saat diam.
+- **`updated`** — "lampu pengumuman versi baru": menyala saat SvelteKit mendeteksi ada versi app baru ter-deploy.
+
+### Kenapa pindah dari store ke state?
+
+Di Svelte 4, store (`$page`) adalah satu-satunya cara punya "nilai reaktif lintas komponen". Svelte 5 memperkenalkan runes yang lebih sederhana dan lebih cepat, jadi tim SvelteKit membungkus ulang state framework-nya sebagai objek rune. Hasilnya: API yang lebih ringkas (tanpa `$`), lebih mudah dipahami pendatang dari React/Vue (terasa seperti membaca objek `router`/`route` biasa), dan tidak ada lagi jebakan "lupa `$`" atau "store di luar komponen".
+
+<Callout type="legacy">
+<code>$app/stores</code> (yang mengekspos <code>page</code>, <code>navigating</code>, <code>updated</code> sebagai <strong>store</strong> dan diakses pakai <code>$page</code>) masih ada demi kompatibilitas, tapi statusnya <strong>legacy</strong>. Untuk kode Svelte 5 baru, pakai <code>$app/state</code>. Bedanya cuma cara akses: <code>$page.url</code> menjadi <code>page.url</code>.
+</Callout>
+
+### Catatan penting soal reaktivitas
+
+> "Changes to `page` are available exclusively with runes." — docs resmi.
+
+Artinya: kalau kamu masih memakai sintaks reaktif lama (`$:`), perubahan `page` **tidak akan terdeteksi**. `$app/state` dirancang khusus untuk dunia runes. Selain itu, di **server**, ketiga objek ini hanya bisa dibaca **saat rendering** (mis. di `+layout.svelte`), **bukan** di dalam fungsi `load` — di `load` kamu sudah punya `event.url`, `event.params`, dsb. langsung dari argumen.
+
+## 2. Contoh kode
+
+```svelte
+<!-- src/routes/+layout.svelte — pola paling umum: nav aktif + loading bar + banner versi -->
+<script>
+	// Ketiganya objek reaktif rune. TANPA tanda $.
+	import { page, navigating, updated } from '$app/state';
+
+	let { children } = $props();
+
+	const links = [
+		{ href: '/', label: 'Home' },
+		{ href: '/blog', label: 'Blog' },
+		{ href: '/about', label: 'About' }
+	];
+</script>
+
+<nav>
+	{#each links as link}
+		<!-- page.url.pathname reaktif: aria-current ikut berubah saat pindah halaman -->
+		<a href={link.href} aria-current={page.url.pathname === link.href ? 'page' : undefined}>
+			{link.label}
+		</a>
+	{/each}
+</nav>
+
+<!-- Saat IDLE semua properti navigating bernilai null, jadi cek navigating.to -->
+{#if navigating.to}
+	<div class="loadingbar">Memuat {navigating.to.url.pathname}…</div>
+{/if}
+
+<!-- updated.current = true kalau ada versi app baru ter-deploy (butuh config version.pollInterval) -->
+{#if updated.current}
+	<button onclick={() => location.reload()}>Versi baru tersedia — muat ulang</button>
+{/if}
+
+{@render children()}
+```
+
+```svelte
+<!-- src/routes/blog/[slug]/+page.svelte — membaca params, route.id, status, data, error -->
+<script>
+	import { page } from '$app/state';
+</script>
+
+<!-- params dari segmen rute dinamis: /blog/[slug] -> page.params.slug -->
+<h1>Artikel: {page.params.slug}</h1>
+
+<!-- route.id = pola rute, berguna untuk highlight menu berbasis pola, bukan URL persis -->
+<small>Rute: {page.route.id}</small>
+
+<!-- page.data = GABUNGAN hasil semua load (layout + page) di rantai ini -->
+<article>{page.data.post.body}</article>
+
+<!-- page.status & page.error terisi saat halaman dalam keadaan error -->
+{#if page.error}
+	<p class="err">Error {page.status}: {page.error.message}</p>
+{/if}
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — memanfaatkan navigating.type & navigating.complete -->
+<script>
+	import { navigating } from '$app/state';
+
+	let { children } = $props();
+
+	$effect(() => {
+		// navigating.complete adalah Promise<void> yang resolve saat navigasi rampung.
+		// Berguna untuk logging durasi atau menutup overlay setelah selesai.
+		if (navigating.complete) {
+			const started = performance.now();
+			navigating.complete.then(() => {
+				console.log('Navigasi selesai dalam', performance.now() - started, 'ms');
+			});
+		}
+	});
+</script>
+
+{#if navigating.to}
+	<!-- navigating.type membedakan SUMBER navigasi: 'link' | 'goto' | 'popstate' | 'form' | 'leave' | 'enter' -->
+	<div class="bar" data-type={navigating.type}>Memuat…</div>
+{/if}
+
+{@render children()}
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — updated.check() untuk paksa cek versi manual -->
+<script>
+	import { updated } from '$app/state';
+</script>
+
+<!-- updated.check() mengembalikan Promise<boolean>; jalankan kapan pun kamu mau cek manual -->
+<button onclick={async () => {
+	const adaVersiBaru = await updated.check();
+	if (adaVersiBaru) location.reload();
+}}>
+	Cek pembaruan
+</button>
+```
+
+## 3. Coba sendiri
+
+`$app/state` adalah modul **virtual milik SvelteKit** dan **tidak bisa dijalankan di playground browser** (yang hanya me-resolve paket `svelte/*` via CDN, dan butuh runtime router SvelteKit yang sesungguhnya). Jadi bagian ini berupa contoh nyata beranotasi: sebuah `+layout.svelte` yang memakai ketiga objek sekaligus, plus penjelasan tiap baris.
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script>
+	import { page, navigating, updated } from '$app/state';
+
+	let { children } = $props();
+
+	// page.url adalah objek URL standar Web. Kamu bisa pakai .pathname,
+	// .searchParams.get('q'), .hash, dll. Reaktif: berubah tiap navigasi.
+	let isHome = $derived(page.url.pathname === '/');
+
+	// navigating "diam" = semua propertinya null. Jadi truthiness navigating.to
+	// adalah cara baca "apakah sedang pindah halaman?". Pakai $derived agar reaktif.
+	let pindah = $derived(Boolean(navigating.to));
+</script>
+
+<header class:home={isHome}>
+	<!-- Saat pindah, tampilkan tujuannya. navigating.to.url adalah URL tujuan. -->
+	{#if pindah}
+		<span class="status">→ menuju {navigating.to.url.pathname}</span>
+	{:else}
+		<span class="status">di {page.url.pathname}</span>
+	{/if}
+
+	<!-- Banner versi: hanya muncul kalau SvelteKit deteksi build baru.
+	     Supaya updated.current bisa otomatis true, set kit.version.pollInterval di svelte.config.js -->
+	{#if updated.current}
+		<a href={page.url.pathname} data-sveltekit-reload>App baru tersedia, klik untuk muat ulang</a>
+	{/if}
+</header>
+
+{@render children()}
+
+<style>
+	header.home { font-weight: 700; }
+	.status { font-family: monospace; }
+</style>
+```
+
+Hal yang patut diperhatikan:
+
+- **`$derived` membungkus pembacaan** `page`/`navigating` supaya nilai turunannya (`isHome`, `pindah`) ikut diperbarui. Di dalam template Svelte 5, membacanya langsung juga reaktif.
+- **`navigating` tidak pernah `null`** di `$app/state`; saat idle ia objek dengan semua properti `null`. Ini beda dari store lama `$navigating` yang memang `null` saat idle — makanya cek `navigating.to`, bukan `navigating === null`.
+- **`data-sveltekit-reload`** memaksa navigasi full-reload (bukan client-side) sehingga app betul-betul memuat versi baru.
+
+## 4. Ringkasan API
+
+Modul: `import { page, navigating, updated } from '$app/state'` (SvelteKit ≥ 2.12). Ketiganya **read-only** dan **reaktif via runes**.
+
+### Daftar export
+
+| Export | Tipe | Sifat | Ringkas |
+|---|---|---|---|
+| `page` | `import('@sveltejs/kit').Page` | read-only, reaktif | Info halaman aktif |
+| `navigating` | `Navigation` atau objek ber-properti `null` | read-only, reaktif | Navigasi yang sedang berlangsung |
+| `updated` | `{ get current(): boolean; check(): Promise<boolean> }` | read-only, reaktif | Deteksi versi app baru |
+
+### `page` — properti
+
+| Properti | Tipe | Arti |
+|---|---|---|
+| `page.url` | `URL` | URL halaman aktif (`.pathname`, `.searchParams`, `.hash`, …) |
+| `page.params` | `Record<string, string>` | Parameter rute dinamis, mis. `params.slug` untuk `/blog/[slug]` |
+| `page.route` | `{ id: string \| null }` | `route.id` = pola rute, mis. `/blog/[slug]` (bukan URL nyata) |
+| `page.status` | `number` | Status HTTP halaman saat ini |
+| `page.error` | `App.Error \| null` | Objek error bila halaman dalam keadaan error (lihat `+error.svelte`) |
+| `page.data` | `App.PageData & Record<string, any>` | Gabungan hasil semua `load` (layout + page) di rantai aktif |
+| `page.form` | `any` | Hasil form action terakhir (sama dengan prop `form`) |
+| `page.state` | `App.PageState` | State dari `goto`/`pushState`/`replaceState` (shallow routing) |
+
+### `navigating` — properti
+
+Saat **tidak ada** navigasi, semua properti bernilai `null`. Saat ada navigasi, properti terisi sesuai tipe `Navigation`.
+
+| Properti | Tipe | Arti |
+|---|---|---|
+| `navigating.from` | `NavigationTarget \| null` | Lokasi asal navigasi |
+| `navigating.to` | `NavigationTarget \| null` | Lokasi tujuan navigasi |
+| `navigating.type` | `'link' \| 'goto' \| 'popstate' \| 'form' \| 'leave' \| 'enter'` | Pemicu navigasi |
+| `navigating.delta` | `number` (hanya saat `type === 'popstate'`) | Jumlah langkah maju/mundur di history |
+| `navigating.willUnload` | `boolean` | `true` bila navigasi akan keluar dari app (full unload, mis. tutup tab) |
+| `navigating.complete` | `Promise<void>` | Resolve saat navigasi rampung, reject bila gagal atau dibatalkan |
+
+`NavigationTarget` (bentuk `from`/`to`):
+
+| Properti | Tipe | Arti |
+|---|---|---|
+| `params` | `Record<string, string> \| null` | Parameter rute target |
+| `route` | `{ id: string \| null }` | `route.id` target |
+| `url` | `URL` | URL target |
+
+### `updated` — anggota
+
+| Anggota | Tanda tangan | Arti |
+|---|---|---|
+| `updated.current` | `boolean` | Awalnya `false`; jadi `true` saat versi app baru terdeteksi. Auto-polling aktif bila `kit.version.pollInterval` di-set di `svelte.config.js` |
+| `updated.check()` | `() => Promise<boolean>` | Paksa cek versi sekarang juga; resolve `true` bila ada versi baru |
+
+
+<Callout type="tip">
+<code>page.data</code> adalah "context hasil load" yang reaktif: bila sebuah komponen anak butuh data dari <code>load</code> milik layout induk tanpa oper prop berlapis, baca <code>page.data.namaField</code>. Ia gabungan hasil semua <code>load</code> di rantai layout + page aktif.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Loading bar global + banner versi baru tanpa store">
+Buat `src/routes/+layout.svelte` yang:
+
+1. Menampilkan **loading bar** tipis di atas saat navigasi sedang berlangsung (pakai `navigating`), lengkap dengan teks tujuan.
+2. Menandai link menu yang **aktif** berdasarkan `page.url.pathname`.
+3. Menampilkan **banner** "versi baru tersedia" saat `updated.current` menjadi `true`, dengan tombol untuk full-reload.
+
+Semua harus memakai `$app/state` (bukan `$app/stores`) dan sintaks Svelte 5 runes.
+
+{#snippet solution()}
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script>
+	import { page, navigating, updated } from '$app/state';
+
+	let { children } = $props();
+
+	const menu = [
+		{ href: '/', label: 'Home' },
+		{ href: '/produk', label: 'Produk' },
+		{ href: '/kontak', label: 'Kontak' }
+	];
+
+	// $derived agar nilai turunan ikut reaktif terhadap perubahan navigating/page.
+	let sedangPindah = $derived(Boolean(navigating.to));
+</script>
+
+<!-- Loading bar global: muncul hanya saat ada navigasi -->
+{#if sedangPindah}
+	<div class="progress" role="status">
+		Memuat {navigating.to.url.pathname}…
+	</div>
+{/if}
+
+<nav>
+	{#each menu as item}
+		<a
+			href={item.href}
+			aria-current={page.url.pathname === item.href ? 'page' : undefined}
+		>
+			{item.label}
+		</a>
+	{/each}
+</nav>
+
+<!-- Banner versi baru: updated.current jadi true saat ada build baru ter-deploy -->
+{#if updated.current}
+	<aside class="banner">
+		Ada versi baru aplikasi.
+		<button onclick={() => location.reload()}>Muat ulang</button>
+	</aside>
+{/if}
+
+{@render children()}
+
+<style>
+	.progress { position: sticky; top: 0; padding: 4px 8px; background: gold; }
+	nav a[aria-current='page'] { font-weight: 700; text-decoration: underline; }
+	.banner { padding: 8px; background: #eef; }
+</style>
+```
+
+Kunci: ketiga objek diakses **tanpa `$`**; `navigating.to` dipakai sebagai indikator "sedang pindah" (karena saat idle propertinya `null`, bukan objek-nya yang `null`); `page.url.pathname` menyetir `aria-current`; `updated.current` mengontrol banner. Agar `updated.current` otomatis menyala, set `kit.version.pollInterval` di `svelte.config.js`.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan campur <code>$app/state</code> dan <code>$app/stores</code> tanpa sadar. <code>$app/state</code> diakses TANPA <code>$</code> (mis. <code>page.url</code>); <code>$app/stores</code> diakses DENGAN <code>$</code> (mis. <code>$page.url</code>). Bug halus klasik: meng-import <code>page</code> dari <code>$app/state</code> tapi tetap menulis <code>$page</code> — Svelte akan mengira <code>page</code> sebuah store dan error. Untuk kode Svelte 5 baru, konsisten pakai <code>$app/state</code> saja.
+</Callout>
+
+<Callout type="pitfall">
+<code>navigating</code> dari <code>$app/state</code> <strong>tidak pernah</strong> bernilai <code>null</code> — saat idle ia objek dengan semua properti <code>null</code>. Jadi cek <code>navigating.to</code> (atau <code>navigating.from</code>), <strong>bukan</strong> <code>navigating === null</code>. Ini berbeda dari store lama <code>$navigating</code> yang memang <code>null</code> saat idle.
+</Callout>
+
+<Callout type="warning">
+Reaktivitas <code>$app/state</code> <strong>hanya</strong> bekerja lewat runes. Membacanya dengan sintaks reaktif lama (<code>$:</code>) tidak akan menangkap perubahan. Di komponen, baca langsung di template atau bungkus dengan <code>$derived</code>/<code>$effect</code>. Di server, ketiganya hanya terbaca saat rendering komponen — <strong>bukan</strong> di dalam fungsi <code>load</code> (di sana pakai <code>event.url</code>, <code>event.params</code>, dst.).
+</Callout>
+
+<Callout type="tip">
+<code>updated.current</code> tidak otomatis menyala kalau kamu belum mengaktifkan polling versi. Set <code>kit.version.pollInterval</code> (mis. <code>60000</code> ms) di <code>svelte.config.js</code> agar SvelteKit rutin mengecek <code>_app/version.json</code>. Untuk cek seketika tanpa menunggu interval, panggil <code>await updated.check()</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "import { page } from '$app/stores'; $page.url", modern: "import { page } from '$app/state'; page.url", note: 'state = objek rune reaktif, tanpa $' },
+	{ legacy: "$navigating === null", modern: "!navigating.to (dari $app/state)", note: 'idle = properti null, bukan objek null' },
+	{ legacy: "$updated", modern: "updated.current (dari $app/state)", note: 'cek .current; check() untuk paksa cek' },
+	{ legacy: "$page.data.user (store)", modern: "page.data.user (state)", note: 'akses gabungan hasil load tanpa subscribe' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-state" label="SvelteKit — $app/state (page, navigating, updated)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-stores" label="SvelteKit — $app/stores (versi legacy berbasis store)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-navigation" label="SvelteKit — $app/navigation (goto, invalidate, preloadData)" />

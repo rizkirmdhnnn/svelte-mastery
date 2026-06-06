@@ -1,0 +1,246 @@
+---
+title: $env/static/private
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 16
+status: reference
+description: Modul untuk membaca environment variable privat yang di-inline saat build, hanya boleh dipakai di server, dan bisa di-tree-shake.
+docs: https://svelte.dev/docs/kit/$env-static-private
+keywords: [env, static, private, secret, build-time, tree-shaking]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`$env/static/private` adalah satu dari empat modul environment SvelteKit. Posisinya bisa kamu baca langsung dari namanya: **static** (dibaca saat *build*, lalu nilainya dibakar ke kode) dan **private** (hanya boleh hidup di server, tak pernah ikut ke browser). Ini modul yang kamu pakai untuk **secret server yang jarang berubah** — database password, `STRIPE_SECRET_KEY`, signing key — dan kamu ingin nilainya hilang sempurna dari bundle klien sekaligus bisa di-*tree-shake* habis.
+
+Kalau kamu datang dari Next.js, ini kira-kira padanan `process.env.FOO` yang dibaca di server *plus* jaminan dari compiler bahwa nilai itu tidak akan pernah bocor ke klien. Bedanya, SvelteKit tidak menyuruhmu mengingat konvensi penamaan untuk yang rahasia — justru sebaliknya: **apa pun yang TIDAK diawali `PUBLIC_` otomatis dianggap private** dan dilarang masuk ke browser.
+
+### Apa arti "static" di sini
+
+"Static" berarti nilainya **dibaca oleh Vite saat build**, dari file `.env` dan dari `process.env` proses build, lalu **disuntikkan sebagai string literal** ke dalam kode. Setelah build, tidak ada lagi "pembacaan environment" — yang tersisa hanyalah teks yang sudah dibakar. Karena itu compiler bisa melakukan **dead-code elimination / tree-shaking**: cabang `if` yang bergantung pada nilai konstan bisa dibuang total.
+
+Konsekuensinya penting dan sering bikin kaget: nilainya **beku per build**. Walau kamu meng-`set` nilai berbeda saat runtime (mis. lewat dashboard hosting atau `docker run -e`), `$env/static/private` **tetap memakai nilai saat build** — karena di kode jadi sudah berupa string mati, bukan pembacaan `process.env`. Kalau kamu butuh nilai yang bisa berganti tanpa rebuild, itu wilayah `$env/dynamic/private`, bukan modul ini.
+
+### Apa arti "private" di sini
+
+"Private" berarti **modul ini tidak bisa diimpor ke kode klien**. Kalau sebuah file yang berakhir di bundle browser (mis. `+page.svelte`, `+page.js` universal, atau modul yang diimpor keduanya) menyentuh `$env/static/private`, **build gagal** dengan error eksplisit. Itu fitur keamanan, bukan gangguan: satpam di pintu yang menjegal dokumen rahasia sebelum keluar gedung.
+
+Variabel mana yang masuk ke modul ini ditentukan murni dari **nama**:
+
+- Nama yang **tidak** diawali `config.kit.env.publicPrefix` (default `PUBLIC_`), **dan**
+- Nama yang **diawali** `config.kit.env.privatePrefix` (default string kosong `''`, artinya semua nama lolos syarat ini).
+
+Jadi dengan konfigurasi default, semua variabel yang namanya tidak diawali `PUBLIC_` otomatis tersedia lewat `$env/static/private`.
+
+### Analogi: brankas yang dilas saat pabrik
+
+Bayangkan secret-mu sebagai catatan yang **dilas ke dinding brankas pas pabrik memproduksinya** (build). Sekali tertanam, catatan itu jadi bagian permanen dari benda — cepat dibaca, dan kalau ada bagian kode yang ternyata tak butuh catatan tertentu, bagian itu bisa dibuang utuh karena nilainya sudah pasti (tree-shaking). Tapi karena dilas, kamu **tak bisa menggantinya tanpa membuat brankas baru** (rebuild). Dan brankas ini **dibaut di lantai kantor pusat** — tidak akan pernah dikirim ke tamu (browser). Itulah static + private: cepat, beku, dan aman secara struktural.
+
+### Tabel referensi
+
+| Aspek | Perilaku |
+| --- | --- |
+| Cara impor | Named import: `import { FOO } from '$env/static/private'` |
+| Yang diekspor | Tiap environment variable privat sebagai named export bertipe `string` |
+| Kapan dibaca | Saat **build**, oleh Vite |
+| Sumber nilai | File `.env*` + `process.env` proses build |
+| Bentuk hasil | String literal yang di-inline (statically replaced) ke kode |
+| Tree-shaking / DCE | Ya — nilai konstan saat build |
+| Boleh diimpor di klien? | **Tidak** — build error jika file bisa berakhir di browser |
+| Variabel yang termasuk | Nama **tanpa** prefix `PUBLIC_` (publicPrefix) **dan** diawali privatePrefix (jika diset) |
+| Ganti nilai tanpa rebuild? | **Tidak** — nilai beku per build |
+| Impor nama `PUBLIC_*` dari sini | **Build error** (publik & privat saling eksklusif lewat prefix) |
+
+Untuk orientasi cepat, inilah posisi modul ini di antara tiga saudaranya:
+
+| Modul | Visibilitas | Waktu baca | Gaya impor |
+| --- | --- | --- | --- |
+| **`$env/static/private`** | Server saja | Build-time (inlined) | `import { FOO } from ...` |
+| `$env/static/public` | Server + Browser | Build-time (inlined) | `import { PUBLIC_FOO } from ...` |
+| `$env/dynamic/private` | Server saja | Runtime | `import { env } from ...` |
+| `$env/dynamic/public` | Server + Browser | Runtime | `import { env } from ...` |
+
+## 2. Contoh kode
+
+Pola dasar: **named import** langsung. Nama variabelnya diketahui saat build, jadi kamu mengimpornya by-name (bukan mengakses properti objek seperti pada modul `dynamic`).
+
+```js
+// src/lib/server/db.js  (folder src/lib/server = DIJAMIN server-only)
+// Named import. DATABASE_URL & API_SECRET dibaca dari .env saat BUILD,
+// lalu di-"bakar" (inlined) sebagai string literal ke dalam bundle server.
+import { DATABASE_URL, API_SECRET } from '$env/static/private';
+
+export function connect() {
+	// Aman: file di src/lib/server tak akan pernah ikut ke bundle browser.
+	return createPool(DATABASE_URL, { secret: API_SECRET });
+}
+```
+
+```bash
+# .env  (di root project; JANGAN di-commit kalau berisi secret asli)
+DATABASE_URL="postgres://localhost:5432/app"   # private (tanpa prefix PUBLIC_)
+API_SECRET="sk_live_xxx"                        # private
+ENVIRONMENT="production"                         # private
+```
+
+Karena nilainya konstan saat build, compiler bisa **menghapus cabang mati**. Ini keunggulan utama mode static yang tidak dimiliki `dynamic`:
+
+```js
+// src/lib/server/logger.js
+import { ENVIRONMENT } from '$env/static/private';
+
+// Saat build, ENVIRONMENT sudah jadi string "production".
+// Maka kondisi di bawah dievaluasi compiler -> blok debug DIBUANG TOTAL
+// dari bundle production (dead-code elimination).
+export function log(msg) {
+	if (ENVIRONMENT !== 'production') {
+		// Tidak ikut ter-bundle saat ENVIRONMENT === 'production'.
+		console.debug('[debug]', msg, new Error().stack);
+	}
+	send(msg);
+}
+```
+
+Hal yang **akan menggagalkan build** — penting dipahami supaya tahu bentuk errornya:
+
+```ts
+// ❌ Mengimpor nama ber-prefix PUBLIC_ dari modul PRIVATE.
+// Publik & privat saling eksklusif: PUBLIC_BASE_URL bukan milik modul ini.
+import { ENVIRONMENT, PUBLIC_BASE_URL } from '$env/static/private';
+
+console.log(ENVIRONMENT);    // => "production"  (oke)
+console.log(PUBLIC_BASE_URL); // => throws error during build
+```
+
+```svelte
+<!-- ❌ src/routes/+page.svelte  (komponen ini berakhir di browser) -->
+<script>
+	// Build GAGAL: $env/static/private dilarang diimpor ke kode klien.
+	// Pindahkan akses secret ke +page.server.js atau src/lib/server/**.
+	import { API_SECRET } from '$env/static/private';
+</script>
+```
+
+## 3. Coba sendiri
+
+Modul `$env` butuh proses build/server SvelteKit, jadi tidak bisa dijalankan di playground browser. Tapi inti yang perlu kamu *rasakan* adalah **apa yang terjadi pada kodemu sebelum vs sesudah build**. Berikut peraga konseptualnya — perhatikan bagaimana import berubah jadi string literal dan cabang mati lenyap.
+
+```js
+// ───── SEBELUM build (yang kamu tulis) ─────────────────────────
+import { ENVIRONMENT, API_SECRET } from '$env/static/private';
+
+export function init() {
+	if (ENVIRONMENT === 'development') {
+		console.log('mode dev');         // cabang dev
+	}
+	return authorize(API_SECRET);
+}
+```
+
+```js
+// ───── SESUDAH build, dengan ENVIRONMENT="production" ──────────
+// 1) import dihapus; nama diganti string literal hasil build.
+// 2) cabang "development" dievaluasi -> false -> DIBUANG (tree-shaking).
+// 3) API_SECRET ikut di-inline (tetap aman: ini bundle SERVER, bukan klien).
+
+export function init() {
+	return authorize('sk_live_xxx');
+}
+```
+
+Yang ingin ditegaskan peraga ini: setelah build, **tidak ada lagi pembacaan environment** di kode — yang tersisa cuma teks mati. Itulah kenapa mengubah `ENVIRONMENT` di runtime tidak berpengaruh pada modul static, dan kenapa cabang `development` benar-benar hilang dari output.
+
+## 4. Latihan
+
+<Exercise title="Susun .env, impor, dan jelaskan satu jebakan">
+Kamu membangun modul pembayaran server. Ada tiga nilai:
+
+1. `STRIPE_SECRET_KEY` — secret memanggil Stripe dari server. Jarang berubah, ingin di-tree-shake, **tidak boleh** ke browser.
+2. `ENVIRONMENT` — bernilai `"production"` saat build production; dipakai untuk membuang kode debug.
+3. `PUBLIC_STRIPE_KEY` — publishable key untuk komponen klien.
+
+Tugas:
+
+- Tulis baris `.env` untuk ketiganya (perhatikan mana yang butuh prefix `PUBLIC_`).
+- Tulis `import` yang benar untuk (1) dan (2) di file server. Yang mana yang **tidak boleh** diimpor dari `$env/static/private`, dan kenapa?
+- Jelaskan singkat: kalau platform meng-`set` `STRIPE_SECRET_KEY` berbeda saat runtime tanpa rebuild, apa yang dibaca aplikasi?
+
+{#snippet solution()}
+
+  ```bash
+  # .env
+  # (1) private + jarang berubah -> cocok untuk $env/static/private. Tanpa prefix.
+  STRIPE_SECRET_KEY="sk_live_xxx"
+  # (2) private, dipakai untuk dead-code elimination. Tanpa prefix.
+  ENVIRONMENT="production"
+  # (3) WAJIB prefix PUBLIC_ -> ini milik $env/static/public, BUKAN /private.
+  PUBLIC_STRIPE_KEY="pk_live_xxx"
+  ```
+
+  ```js
+  // src/lib/server/payments.js  (server-only)
+  // (1) & (2): named import dari modul private. Keduanya di-inline saat build.
+  import { STRIPE_SECRET_KEY, ENVIRONMENT } from '$env/static/private';
+
+  export function charge(amount) {
+  	if (ENVIRONMENT !== 'production') console.debug('charging', amount);
+  	return stripe(STRIPE_SECRET_KEY).charge(amount);
+  }
+  ```
+
+  - `PUBLIC_STRIPE_KEY` **tidak boleh** diimpor dari `$env/static/private` — namanya berawalan `PUBLIC_`, sehingga itu milik modul `public`. Mengimpornya dari modul private memicu **build error**.
+  - Karena static di-inline saat build, aplikasi tetap memakai **nilai `STRIPE_SECRET_KEY` saat build**, bukan nilai runtime baru. Untuk mengganti tanpa rebuild, perlu `$env/dynamic/private`.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan impor <code>$env/static/private</code> ke kode yang bisa berakhir di browser</strong> — termasuk <code>+page.svelte</code>, <code>+page.js</code> universal, atau modul biasa yang diimpor oleh keduanya. Build akan gagal dengan error eksplisit. Taruh akses secret di <code>+page.server.js</code>, <code>+server.js</code>, <code>hooks.server.js</code>, atau <code>src/lib/server/**</code> agar pemisahannya terjamin oleh tooling, bukan oleh disiplin.
+</Callout>
+
+<Callout type="warning">
+<strong>Nilai static beku per build.</strong> Apa pun yang kamu <code>set</code> saat runtime (dashboard hosting, <code>docker run -e</code>) <strong>diabaikan</strong> oleh modul ini, karena di kode sudah jadi string literal hasil build. Pola "satu image Docker untuk staging &amp; prod" tidak cocok dengan static/private — pakai <code>$env/dynamic/private</code> untuk kasus itu.
+</Callout>
+
+<Callout type="warning">
+Mengimpor nama ber-prefix <code>PUBLIC_</code> (mis. <code>PUBLIC_BASE_URL</code>) dari <code>$env/static/private</code> <strong>melempar error saat build</strong>. Publik dan privat saling eksklusif lewat prefix: yang ber-<code>PUBLIC_</code> hanya tersedia di modul <code>public</code>, sisanya di modul <code>private</code>.
+</Callout>
+
+<Callout type="tip">
+Keunggulan khas static yang tak dimiliki <code>dynamic</code>: karena nilainya konstan saat build, compiler bisa <strong>tree-shaking / dead-code elimination</strong>. Manfaatkan untuk membuang kode debug/feature-flag dari bundle production (mis. <code>if (ENVIRONMENT !== 'production') ...</code>). Pilih <strong>static</strong> sebagai default; pindah ke <strong>dynamic</strong> hanya saat benar-benar butuh mengganti nilai tanpa rebuild.
+</Callout>
+
+<Callout type="tip">
+Prefix bisa dikonfigurasi lewat <code>config.kit.env</code>: <code>publicPrefix</code> (default <code>PUBLIC_</code>) dan <code>privatePrefix</code> (default string kosong). Jika kamu set <code>privatePrefix: 'SECRET_'</code>, maka hanya variabel berawalan <code>SECRET_</code> (dan tanpa <code>PUBLIC_</code>) yang muncul di <code>$env/static/private</code> — berguna untuk memfilter agar variabel sistem yang tak relevan tidak ikut.
+</Callout>
+
+<Callout type="legacy">
+Pendekatan lama yang sebaiknya ditinggalkan di SvelteKit: mengakses <code>process.env.FOO</code> langsung (tidak portabel ke semua adapter, tanpa proteksi public/private, dan tidak bisa di-tree-shake), atau <code>import.meta.env.VITE_FOO</code> ala Vite mentah (mengekspos ke klien — bahaya untuk secret). Untuk secret server yang beku per build, gunakan <code>$env/static/private</code>.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Cara lama / lintas-framework"
+	modernLabel="$env/static/private"
+	rows={[
+		{ legacy: "process.env.DATABASE_URL", modern: "import { DATABASE_URL } from '$env/static/private'", note: 'server-only terjamin + di-inline saat build' },
+		{ legacy: "import.meta.env.VITE_SECRET", modern: "import { SECRET } from '$env/static/private'", note: 'VITE_ ikut ke klien (bocor); $env/static/private tidak' },
+		{ legacy: "if (process.env.NODE_ENV !== 'production')", modern: "if (ENVIRONMENT !== 'production') // dari $env/static/private", note: 'nilai konstan -> bisa tree-shaking' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$env-static-private" label="SvelteKit — $env/static/private" />
+<DocsLink href="https://svelte.dev/docs/kit/$env-static-public" label="SvelteKit — $env/static/public (padanan public)" />
+<DocsLink href="https://svelte.dev/docs/kit/$env-dynamic-private" label="SvelteKit — $env/dynamic/private (versi runtime)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration" label="SvelteKit — config.kit.env (publicPrefix / privatePrefix)" />

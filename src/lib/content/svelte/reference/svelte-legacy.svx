@@ -1,0 +1,322 @@
+---
+title: svelte/legacy
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 8
+status: reference
+description: Modul jembatan berisi padanan runtime untuk fitur Svelte 4 (event modifier, event forwarding, instansiasi class) yang dipakai migration script saat memodernkan kode.
+docs: https://svelte.dev/docs/svelte/svelte-legacy
+keywords: [legacy, migrasi, event-modifier, createBubbler, asClassComponent, run]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Modul `svelte/legacy` adalah **kotak perkakas jembatan**. Ia berisi fungsi-fungsi yang menghidupkan kembali perilaku Svelte 4 yang sengaja *dihapus* dari Svelte 5 — bukan agar kamu menulis kode baru dengannya, tapi agar **migration script** (`npx sv migrate svelte-5`) bisa memodernkan kodemu tanpa mengubah perilaku yang sudah berjalan.
+
+Kuncinya: Svelte 5 membuang beberapa fitur lama yang sintaksnya khusus, lalu menyediakan padanan berupa **fungsi/aksi biasa** di modul ini. Jadi `on:click|preventDefault` (modifier dengan tanda `|`) tidak lagi dikenal compiler, tapi `onclick={preventDefault(handler)}` tetap bisa karena `preventDefault` cuma fungsi pembungkus.
+
+### Analogi: perancah saat renovasi
+
+Bayangkan kamu merenovasi gedung sambil tetap dipakai. Kamu memasang **perancah (scaffolding)** sementara: ia menahan langit-langit dan jadi jalan kerja agar penghuni masih bisa beraktivitas selama tembok asli diganti. Perancah itu **bukan bagian permanen** dari gedung — begitu struktur baru berdiri, ia dibongkar.
+
+`svelte/legacy` adalah perancah itu. Migration script memasangnya otomatis supaya kode lamamu tetap "berdiri" setelah dipindah ke runes. Tugas akhirmu: satu per satu **membongkar perancah** ini dan menggantinya dengan padanan modern (`$derived`, `$effect`, handler inline, callback prop, `mount()`). Kalau kamu datang dari React/Vue: anggap ini seperti shim atau polyfill yang dipasang codemod — berguna sementara, tapi bukan API yang ingin kamu lihat di review.
+
+### Tiga keluarga isi modul ini
+
+Semua ekspor jatuh ke tiga kelompok. Pahami untuk apa tiap kelompok, dan kamu sudah paham 90% modul ini:
+
+1. **Pengganti event modifier** — Svelte 4 punya `on:click|preventDefault|once|self`. Svelte 5 menghapus sintaks `|modifier`. Modul ini menyediakan fungsi pembungkus (`preventDefault`, `stopPropagation`, `stopImmediatePropagation`, `self`, `trusted`, `once`) plus dua aksi (`passive`, `nonpassive`) dan satu penggabung (`handlers`).
+
+2. **Pengganti event forwarding** — Di Svelte 4, menulis `on:click` *tanpa handler* di sebuah elemen otomatis meneruskan event itu ke parent. Svelte 5 tidak punya forwarding otomatis (event antar-komponen kini lewat callback prop). `createBubbler` meniru perilaku lama itu.
+
+3. **Pengganti reaktivitas & instansiasi lama** — `run` adalah penampung sementara untuk label `$:` yang belum jelas mau jadi `$derived` atau `$effect`. `asClassComponent` dan `createClassComponent` membuat komponen Svelte 5 (yang kini berupa *fungsi*) bisa di-instansiasi dengan API class gaya Svelte 4 (`new App({ target })`, `$set`, `$destroy`).
+
+## 2. Daftar lengkap API
+
+### Pengganti event modifier (pembungkus handler)
+
+Semua fungsi di bawah menerima sebuah handler dan mengembalikan handler baru yang sudah dibungkus. Tanda tangan seragam:
+
+```ts
+function preventDefault(
+	fn: (event: Event, ...args: Array<unknown>) => void
+): (event: Event, ...args: unknown[]) => void;
+```
+
+| Fungsi | Modifier lama yang digantikan | Yang dilakukan pembungkus |
+| --- | --- | --- |
+| `preventDefault(fn)` | `preventDefault` | jalankan `event.preventDefault()` lalu `fn` |
+| `stopPropagation(fn)` | `stopPropagation` | jalankan `event.stopPropagation()` lalu `fn` |
+| `stopImmediatePropagation(fn)` | `stopImmediatePropagation` | jalankan `event.stopImmediatePropagation()` lalu `fn` |
+| `self(fn)` | `self` | jalankan `fn` hanya jika `event.target === event.currentTarget` |
+| `trusted(fn)` | `trusted` | jalankan `fn` hanya jika `event.isTrusted` bernilai true |
+| `once(fn)` | `once` | jalankan `fn` paling banyak sekali |
+
+### Aksi & penggabung listener
+
+| Ekspor | Bentuk | Tanda tangan (ringkas) | Menggantikan |
+| --- | --- | --- | --- |
+| `passive` | aksi (`use:`) | `passive(node, [event, handler])` | modifier `passive` |
+| `nonpassive` | aksi (`use:`) | `nonpassive(node, [event, handler])` | modifier `nonpassive` |
+| `handlers` | fungsi | `handlers(...handlers: EventListener[]): EventListener` | beberapa `on:click` pada elemen yang sama |
+| `createBubbler` | fungsi | `createBubbler(): (type: string) => (event: Event) => boolean` | `on:click` tanpa handler (event forwarding) |
+
+Catatan: untuk `passive`/`nonpassive`, parameter kedua adalah tuple `[namaEvent, getterHandler]` di mana `getterHandler` adalah fungsi yang *mengembalikan* listener (`() => handler`), bukan listener langsung. Tanda tangan lengkapnya:
+
+```ts
+function passive(
+	node: HTMLElement,
+	[event, handler]: [event: string, handler: () => EventListener]
+): void;
+```
+
+### Reaktivitas & instansiasi gaya class
+
+| Ekspor | Tanda tangan (ringkas) | Untuk apa |
+| --- | --- | --- |
+| `run` | `run(fn): void` | jembatan label `$:` yang belum dipastikan derived atau effect; `fn` boleh mengembalikan fungsi cleanup |
+| `asClassComponent` | `asClassComponent(component): ComponentType` | bungkus komponen Svelte 5 (fungsi) jadi konstruktor gaya Svelte 4 |
+| `createClassComponent` | `createClassComponent(options): instance` | buat instance gaya-lama langsung dari objek `{ component, target, props }` |
+
+`run` punya perilaku khusus: **jalan sekali langsung di server**, dan **berperilaku seperti `$effect.pre` di client** (jalan sebelum DOM di-update, dan re-run saat dependensinya berubah).
+
+### Tipe
+
+| Tipe | Kegunaan |
+| --- | --- |
+| `LegacyComponentType` | tipe yang mendukung komponen dipakai sebagai *class* (`new C(opts)`) sekaligus sebagai *fungsi*, selama masa transisi Svelte 4 → 5 |
+
+## 3. Contoh kode
+
+```svelte
+<!-- Pengganti event modifier — semua dipakai di mode runes Svelte 5 -->
+<script>
+	import { preventDefault, once, self } from 'svelte/legacy';
+
+	function simpan(e) { /* ... */ }
+	function tutupModal(e) { /* ... */ }
+</script>
+
+<!-- DULU (Svelte 4): <form on:submit|preventDefault={simpan}> -->
+<!-- preventDefault membungkus handler: e.preventDefault() lalu simpan(e) -->
+<form onsubmit={preventDefault(simpan)}>
+	<button>Simpan</button>
+</form>
+
+<!-- DULU: <button on:click|once={...}> -->
+<button onclick={once(() => alert('cuma sekali'))}>Klik</button>
+
+<!-- DULU: <div on:click|self={tutupModal}> (hanya saat klik overlay sendiri) -->
+<div class="overlay" onclick={self(tutupModal)}>...</div>
+```
+
+```svelte
+<!-- passive/nonpassive bukan pembungkus handler, tapi AKSI (use:) -->
+<script>
+	import { passive, nonpassive } from 'svelte/legacy';
+
+	function onScroll() { /* ... */ }
+</script>
+
+<!-- DULU: <div on:scroll|passive={onScroll}> -->
+<!-- argumen: [namaEvent, () => handler] — handler dibungkus getter -->
+<div use:passive={['scroll', () => onScroll]}>...</div>
+```
+
+```svelte
+<!-- handlers: gabungkan beberapa listener untuk SATU event -->
+<script>
+	import { handlers } from 'svelte/legacy';
+
+	function log(e) { /* ... */ }
+	function lacak(e) { /* ... */ }
+</script>
+
+<!-- DULU bisa: <button on:click={log} on:click={lacak}> -->
+<!-- Di Svelte 5 atribut onclick kedua akan menimpa yang pertama,
+     jadi gabungkan keduanya dengan handlers() -->
+<button onclick={handlers(log, lacak)}>Klik</button>
+```
+
+```svelte
+<!-- createBubbler: meniru event forwarding otomatis Svelte 4 -->
+<!-- IconButton.svelte (komponen anak) -->
+<script>
+	import { createBubbler } from 'svelte/legacy';
+	const bubble = createBubbler();
+
+	let { children, ...rest } = $props();
+</script>
+
+<!-- DULU: <button on:click> tanpa handler = teruskan click ke parent -->
+<!-- bubble('click') menghasilkan handler yang meneruskan event itu -->
+<button {...rest} onclick={bubble('click')}>
+	{@render children?.()}
+</button>
+```
+
+```js
+// asClassComponent & createClassComponent — untuk kode yang masih
+// meng-instansiasi komponen dengan API class gaya Svelte 4.
+// Di Svelte 5, komponen adalah FUNGSI, jadi `new App(...)` langsung tak jalan.
+
+import App from './App.svelte';
+
+// --- Opsi A: bungkus jadi konstruktor gaya-lama ---
+import { asClassComponent } from 'svelte/legacy';
+
+const AppClass = asClassComponent(App);
+const app = new AppClass({ target: document.body, props: { nama: 'dunia' } });
+app.$set({ nama: 'baru' }); // API lama masih tersedia
+app.$destroy();
+
+// --- Opsi B: langsung buat instance dari options ---
+import { createClassComponent } from 'svelte/legacy';
+
+const app2 = createClassComponent({
+	component: App,
+	target: document.body,
+	props: { nama: 'dunia' }
+});
+```
+
+## 4. Coba sendiri
+
+Karena modul ini berupa referensi runtime (dan beberapa contoh menyentuh instansiasi di luar komponen), tidak ada live playground di sini. Sebagai gantinya, telusuri **satu komponen utuh** yang menggabungkan beberapa perancah sekaligus — persis bentuk yang biasa dimuntahkan migration script. Bacalah komentarnya baris demi baris, lalu di bawahnya ada versi "perancah dibongkar".
+
+```svelte
+<!-- HASIL MIGRASI OTOMATIS — Modal.svelte (masih bersandar ke svelte/legacy) -->
+<script>
+	import { preventDefault, self, createBubbler } from 'svelte/legacy';
+	const bubble = createBubbler();
+
+	let { judul, onsubmit, children, ...rest } = $props();
+</script>
+
+<!-- self: tutup hanya jika overlay sendiri yang diklik (bukan isi di dalamnya).
+     bubble('click'): teruskan click overlay ke parent juga (forwarding lama). -->
+<div class="overlay" onclick={self(bubble('click'))} {...rest}>
+	<form onsubmit={preventDefault(onsubmit)}>
+		<h2>{judul}</h2>
+		{@render children?.()}
+		<button>Kirim</button>
+	</form>
+</div>
+```
+
+```svelte
+<!-- PERANCAH DIBONGKAR — Modal.svelte versi modern Svelte 5 idiomatik -->
+<script>
+	// Tidak ada import dari svelte/legacy lagi.
+	// Event forwarding diganti callback prop eksplisit: onoverlayclick.
+	let { judul, onsubmit, onoverlayclick, children, ...rest } = $props();
+
+	function tanganiOverlay(e) {
+		// padanan modifier 'self': abaikan klik dari anak elemen
+		if (e.target !== e.currentTarget) return;
+		onoverlayclick?.(e);
+	}
+
+	function tanganiSubmit(e) {
+		// padanan modifier 'preventDefault': tangani manual & eksplisit
+		e.preventDefault();
+		onsubmit?.(e);
+	}
+</script>
+
+<div class="overlay" onclick={tanganiOverlay} {...rest}>
+	<form onsubmit={tanganiSubmit}>
+		<h2>{judul}</h2>
+		{@render children?.()}
+		<button>Kirim</button>
+	</form>
+</div>
+```
+
+Perhatikan: versi modern **lebih panjang sedikit**, tapi tidak ada lagi "sihir" tersembunyi — siapa pun yang membaca tahu persis apa yang terjadi saat overlay diklik atau form di-submit, dan tidak perlu menghafal arti `|self` atau perilaku forwarding implisit.
+
+## 5. Latihan
+
+<Exercise title="Bongkar perancah event modifier">
+
+Migration script menghasilkan tombol berikut dari kode Svelte 4 `<button on:click|once|preventDefault={kirim}>`:
+
+```svelte
+<script>
+	import { once, preventDefault } from 'svelte/legacy';
+	function kirim(e) { console.log('terkirim'); }
+</script>
+
+<button onclick={once(preventDefault(kirim))}>Kirim sekali</button>
+```
+
+Tugasmu: tulis ulang tombol ini **tanpa** `svelte/legacy` sama sekali, dengan satu handler inline yang setara — submit hanya boleh diproses **sekali**, dan harus memanggil `e.preventDefault()`. Gunakan rune yang sesuai untuk menyimpan status "sudah pernah".
+
+{#snippet solution()}
+
+```svelte
+<script>
+	// state lokal untuk meniru efek modifier 'once'
+	let sudah = $state(false);
+
+	function kirim(e) {
+		e.preventDefault();   // padanan |preventDefault
+		console.log('terkirim');
+	}
+
+	function tangani(e) {
+		if (sudah) return;    // padanan |once
+		sudah = true;
+		kirim(e);
+	}
+</script>
+
+<button onclick={tangani} disabled={sudah}>Kirim sekali</button>
+```
+
+Catatan penting soal urutan komposisi: pada versi lama `once(preventDefault(kirim))`, `preventDefault` adalah yang **terdalam** sehingga ikut terbungkus oleh `once` — artinya `preventDefault` pun cuma jalan pada klik pertama. Kalau kamu balik urutannya jadi `preventDefault(once(kirim))`, maka `preventDefault` akan tetap jalan setiap klik (hanya `kirim` yang dibatasi sekali). Versi inline di atas membuat urutan itu eksplisit dan tak perlu ditebak. Bonus: `disabled={sudah}` membuat niat "sekali saja" terlihat di UI.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="legacy">
+Semua isi <code>svelte/legacy</code> adalah <strong>jembatan, bukan tujuan</strong>. Migration script memasangnya agar kode lama tetap berperilaku sama; jangan menulis komponen <em>baru</em> dengan API ini. Targetnya selalu membongkarnya: modifier → handler inline, <code>createBubbler</code> → callback prop, <code>run</code> → <code>$derived</code>/<code>$effect</code>, <code>asClassComponent</code> → <code>mount()</code> dari <code>'svelte'</code>. Cara cepat menemukan sisa perancah: cari di proyekmu dengan <code>grep -rn "svelte/legacy"</code>.
+</Callout>
+
+<Callout type="pitfall">
+Jangan tertukar bentuknya. <code>preventDefault</code>, <code>stopPropagation</code>, <code>self</code>, <code>once</code>, <code>trusted</code> adalah <strong>pembungkus handler</strong> — dipakai di dalam atribut: <code>onclick=&#123;self(fn)&#125;</code>. Sebaliknya <code>passive</code> dan <code>nonpassive</code> adalah <strong>aksi</strong> — dipakai dengan <code>use:</code> dan menerima tuple <code>[event, () =&gt; handler]</code>. Memakai <code>passive</code> seperti pembungkus handler (atau <code>self</code> seperti aksi) akan langsung error.
+</Callout>
+
+<Callout type="warning">
+<code>run()</code> adalah perancah paling rawan. Ia <strong>bukan</strong> salinan persis label <code>$:</code> lama — di client ia berperilaku seperti <code>$effect.pre</code>, sehingga sebuah <code>run()</code> yang menulis ke <code>$state</code> lain bisa memicu loop yang tak kamu sadari. Begitu melihat <code>run()</code> (atau komentar <code>@migration-task</code> di dekatnya), prioritaskan menggantinya: kalau bloknya <em>menghitung sebuah nilai</em> pakai <code>$derived</code>; kalau ia <em>melakukan sesuatu</em> (fetch, log, set timer) pakai <code>$effect</code>.
+</Callout>
+
+<Callout type="tip">
+Untuk meng-instansiasi komponen Svelte 5 secara imperatif di kode <em>baru</em>, pakai <code>mount(App, &#123; target, props &#125;)</code> dari <code>'svelte'</code>, bukan <code>asClassComponent</code>/<code>createClassComponent</code>. Gunakan helper class itu <strong>hanya</strong> ketika ada kode pihak ketiga yang sudah terlanjur memanggil API lama (<code>new App(...)</code>, <code>$set</code>, <code>$destroy</code>) dan belum bisa kamu ubah. Begitu kode pemanggilnya ikut dimodernkan, lepaskan helper-nya.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'on:click|preventDefault={fn}', modern: 'onclick={(e) => { e.preventDefault(); fn(e); }}', note: 'Bridge migrasi: onclick={preventDefault(fn)}.' },
+	{ legacy: 'on:click|once={fn}', modern: 'pakai flag $state lalu return lebih awal', note: 'Bridge migrasi: onclick={once(fn)}.' },
+	{ legacy: 'on:click|self={fn}', modern: 'if (e.target !== e.currentTarget) return;', note: 'Bridge migrasi: onclick={self(fn)}.' },
+	{ legacy: 'on:scroll|passive={fn}', modern: 'use:passive={["scroll", () => fn]}', note: 'passive/nonpassive jadi aksi, bukan pembungkus.' },
+	{ legacy: 'on:click={a} on:click={b}', modern: 'onclick={handlers(a, b)}', note: 'Atribut kedua menimpa; gabungkan dengan handlers().' },
+	{ legacy: 'on:click (forwarding, tanpa handler)', modern: 'onclick={onclick} dari let { onclick } = $props()', note: 'Bridge migrasi: createBubbler() + bubble("click").' },
+	{ legacy: '$: hasil = olah(x)', modern: 'let hasil = $derived(olah(x))', note: 'Bridge migrasi: run(() => { hasil = olah(x); }).' },
+	{ legacy: 'new App({ target, props })', modern: 'mount(App, { target, props })', note: 'Bridge migrasi: asClassComponent / createClassComponent.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-legacy" label="svelte/legacy — referensi API resmi" />
+<DocsLink href="https://svelte.dev/docs/svelte/v5-migration-guide" label="Svelte 5 Migration Guide — konteks kapan perancah ini dipasang" />

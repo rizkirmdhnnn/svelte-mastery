@@ -1,0 +1,260 @@
+---
+title: $bindable
+product: svelte
+section: runes
+sectionTitle: Runes
+sectionOrder: 2
+order: 6
+status: stable
+description: Membuka two-way binding antar komponen secara opt-in dengan let { value = $bindable() } = $props(), lengkap dengan kapan ia layak dipakai.
+docs: https://svelte.dev/docs/svelte/$bindable
+keywords: [bindable, two-way binding, props, bind, defineModel, runes]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Secara default, props di Svelte mengalir **satu arah**: dari parent turun ke child. Child boleh membaca prop, tapi kalau ia mengubah nilainya, perubahan itu tidak naik balik ke parent. Ini filosofi yang sama persis dengan React — aliran data yang mudah dilacak karena hanya satu pihak (parent) yang jadi "sumber kebenaran".
+
+Tapi ada satu kelas komponen yang terasa kaku kalau dipaksa satu arah: **komponen yang berperan seperti elemen form** — input teks kustom, slider, color picker, toggle, date picker. Untuk komponen-komponen itu, kita ingin parent bisa menulis `bind:value` dan langsung dapat dua arah, tanpa repot menulis pasangan `value` + `onChange` di setiap pemakaian.
+
+`$bindable()` adalah rune yang membuka pintu itu — secara **opt-in**. Kamu menandai satu prop tertentu sebagai "boleh di-bind dua arah":
+
+```svelte
+<script>
+	let { value = $bindable() } = $props();
+</script>
+```
+
+Kata kuncinya **opt-in**, dan ini penting. Sebuah prop hanya menjadi dua arah kalau **dua syarat** terpenuhi sekaligus:
+
+1. Child menandai prop itu dengan `$bindable()`.
+2. Parent benar-benar menulis `bind:value={...}` (bukan `value={...}` biasa).
+
+Kalau child sudah menandai `$bindable()` tapi parent cuma mengirim `value={x}` biasa, prop itu tetap berperilaku satu arah — dan itu tidak apa-apa, komponen tetap jalan. Sebaliknya, parent **tidak boleh** menulis `bind:` ke prop yang tidak ditandai `$bindable()`; Svelte akan error. Jadi dua arah selalu butuh persetujuan dari kedua sisi.
+
+### Analogi: fotokopi vs Google Docs
+
+Bayangkan parent punya sebuah dokumen.
+
+Prop **biasa** (satu arah) itu seperti parent memberi child sebuah **fotokopi**. Child boleh mencoret-coret fotokopinya, tapi dokumen asli di tangan parent tidak ikut berubah. Kalau child mau menyampaikan revisi, ia harus "mengirim balik" lewat callback — seperti menelepon parent dan mendiktekan perubahannya.
+
+Prop **bindable** (dua arah, lewat `bind:`) itu seperti parent dan child membuka **dokumen Google Docs yang sama**. Keduanya menatap satu sumber yang identik; kalau child mengetik, parent langsung melihat perubahannya, dan sebaliknya. Tidak ada acara "kirim balik" — mereka berbagi satu nilai yang sama.
+
+`$bindable()` adalah child berkata: *"Prop `value` ini boleh kamu jadikan Google Docs bersama, kalau kamu mau."* Dan `bind:value` di sisi parent adalah parent menerima tawaran itu. Tanpa salah satunya, mereka kembali ke mode fotokopi.
+
+### Default = nilai cadangan, bukan nilai awal milik parent
+
+Argumen di dalam `$bindable()` adalah **fallback** (nilai cadangan), bukan "nilai awal yang dipaksakan":
+
+```svelte
+<script>
+	let { value = $bindable('hello') } = $props();
+</script>
+```
+
+Fallback `'hello'` hanya dipakai kalau parent **tidak mengirim** prop `value` sama sekali (nilainya `undefined`). Berkat ini, komponenmu bisa dipakai dua cara: parent yang butuh dua arah menulis `bind:value={pesan}`, sementara parent yang cuma butuh tampilan sekali pakai boleh memakai komponen tanpa prop apa-apa — dan child tetap punya nilai cadangan yang masuk akal. Jadi `$bindable()` tidak memaksa siapa pun memakai `bind:`; ia hanya membuat opsi itu tersedia.
+
+### Kenapa harus opt-in? (mengapa, bukan cuma bagaimana)
+
+Pertanyaan wajar: kenapa Svelte tidak membuat semua prop bisa di-`bind` saja, biar fleksibel? Karena two-way binding yang ada di mana-mana membuat aliran data **sulit ditelusuri**. Saat sebuah nilai bisa diubah dari banyak arah sekaligus, menjawab "siapa yang mengubah ini?" jadi mahal — pelajaran yang sudah lama dipetik komunitas React (yang akhirnya memilih satu arah sebagai default). Dengan menjadikan dua arah sebagai sesuatu yang harus **diminta dari kedua sisi**, Svelte memberi kamu fleksibilitas saat dibutuhkan tanpa menjadikannya jalur default yang tak sengaja terpakai di mana-mana.
+
+## 2. Contoh kode
+
+Komponen input kustom adalah contoh paling pas untuk `$bindable()`:
+
+```svelte
+<!-- FancyInput.svelte -->
+<script>
+	// value ditandai bindable, dengan fallback string kosong.
+	// ...props menampung sisa atribut (placeholder, class, dll).
+	let { value = $bindable(''), ...props } = $props();
+</script>
+
+<!-- bind:value di SINI menjembatani <input> bawaan ↔ prop value.
+     Karena value bindable, perubahan input mengalir balik ke parent. -->
+<input bind:value {...props} />
+```
+
+```svelte
+<!-- App.svelte -->
+<script>
+	import FancyInput from './FancyInput.svelte';
+
+	// 'message' adalah sumber kebenaran di parent.
+	let message = $state('halo');
+</script>
+
+<!-- bind:value WAJIB ada di sisi parent agar dua arah aktif.
+     Ketik di FancyInput → 'message' berubah; ubah 'message' → input ikut. -->
+<FancyInput bind:value={message} placeholder="Ketik di sini" />
+<p>Pesan parent: {message}</p>
+```
+
+Komponen yang sama tetap boleh dipakai **tanpa** `bind:` — fallback yang menyelamatkan:
+
+```svelte
+<!-- Pemakaian tanpa binding: child jatuh ke fallback '' dan tetap berfungsi
+     sebagai input lokal. Tidak ada nilai yang mengalir balik ke parent. -->
+<FancyInput placeholder="Sekali pakai, tanpa bind" />
+```
+
+Dengan TypeScript, prop bindable diberi tipe seperti prop biasa — yang dibungkus `$bindable()` cukup ditandai opsional bila punya fallback:
+
+```svelte
+<!-- Toggle.svelte (lang="ts") -->
+<script lang="ts">
+	interface Props {
+		// checked opsional karena ada fallback di $bindable.
+		checked?: boolean;
+	}
+
+	let { checked = $bindable(false) }: Props = $props();
+</script>
+
+<button onclick={() => (checked = !checked)}>
+	{checked ? 'ON' : 'OFF'}
+</button>
+```
+
+<Callout type="tip">
+Di dalam child, prop bindable boleh kamu ubah langsung (mis. <code>checked = !checked</code> atau lewat <code>bind:value</code> ke elemen di dalamnya). Itulah inti "dua arah": menulis ke prop bindable bukan cuma sah, tapi memang cara perubahan mengalir balik ke parent.
+</Callout>
+
+## 3. Coba sendiri
+
+`$bindable()` butuh dua komponen (parent + child), sedangkan playground ini satu komponen mandiri. Maka di sini kita tunjukkan **sisi parent**-nya: `bind:value` ke `<input>` bawaan — secara konseptual identik dengan mem-`bind` ke komponen bindable. Ketik di kotak, lalu klik tombol untuk mengubah nilai dari "luar"; perhatikan input ikut berubah. Itulah dua arah.
+
+<Playground code={`<script>
+	let pesan = $state('Svelte');
+	let huruf = $derived(pesan.length);
+</script>
+
+<label>
+	Pesan:
+	<input bind:value={pesan} />
+</label>
+
+<p>Isi: {pesan}</p>
+<p>Jumlah huruf: {huruf}</p>
+
+<button onclick={() => (pesan = 'Halo dunia')}>Set dari luar</button>
+<button onclick={() => (pesan = '')}>Kosongkan</button>`} />
+
+<Callout type="tip">
+Di sini <code>bind:value</code> menempel ke <code>&lt;input&gt;</code> bawaan, yang prop <code>value</code>-nya memang sudah bindable dari sananya. Saat kamu membungkusnya dalam komponen sendiri, prop <code>value</code> komponen itu harus kamu tandai <code>$bindable()</code> dulu agar parent boleh menulis <code>bind:value</code> ke komponen tersebut.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Two-way binding prop"
+	svelte={`<!-- Field.svelte -->
+<script>
+  let { value = $bindable('') } = $props();
+</script>
+<input bind:value />
+
+<!-- Parent -->
+<Field bind:value={nama} />`}
+	react={`// Field.tsx — props selalu satu arah
+function Field({ value, onChange }) {
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+// Parent: 'balik ke atas' diurus manual
+<Field value={nama} onChange={setNama} />`}
+	vue={`<!-- Field.vue -->
+<script setup>
+const value = defineModel()
+</script>
+<template>
+  <input v-model="value" />
+</template>
+
+<!-- Parent: v-model dua arah -->
+<Field v-model="nama" />`}
+	diff={{ react: [9], vue: [3] }}
+	note="React: tidak ada two-way bawaan — child terima value + callback (onChange), parent yang menyimpan state. Eksplisit tapi verbose. Vue: two-way jadi jalur utama lewat v-model/defineModel; ringkas, tapi default-nya memang mengundang dua arah. Svelte: satu arah secara default; dua arah bersifat opt-in — child menandai $bindable() DAN parent menulis bind: agar aktif. Posisinya di tengah: seringkas Vue saat dibutuhkan, tapi seaman React karena tidak terpasang diam-diam."
+/>
+
+## 5. Latihan
+
+<Exercise title="Buat Counter yang bindable">
+Buat komponen `Counter.svelte` dengan satu prop `count` yang **bindable** (fallback `0`): tampilkan nilainya dan punya tombol `+`. Lalu buat parent yang memakainya dengan `bind:count`, menampilkan `count` parent, dan punya tombol "Reset" yang menyetel `count` parent kembali ke `0`. Pastikan perubahan dari child terlihat di parent, dan perubahan dari parent terlihat di child (benar-benar dua arah).
+
+{#snippet solution()}
+
+```svelte
+<!-- Counter.svelte -->
+<script>
+	// count bindable: tombol + di child mengalir balik ke parent.
+	let { count = $bindable(0) } = $props();
+</script>
+
+<button onclick={() => count++}>+ ({count})</button>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Counter from './Counter.svelte';
+	let count = $state(0);
+</script>
+
+<!-- bind:count membuka jalur dua arah -->
+<Counter bind:count />
+<p>Total di parent: {count}</p>
+
+<!-- Parent menulis ke count → child ikut ter-update -->
+<button onclick={() => (count = 0)}>Reset</button>
+```
+
+Kuncinya ada di **dua sisi**: child menandai `count = $bindable(0)`, dan parent menulis `bind:count`. Hilangkan salah satunya dan jalur dua arah ikut hilang — tombol `+` tak akan terlihat di parent, atau "Reset" tak akan menyentuh child.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Two-way butuh <strong>kedua sisi</strong>. <code>$bindable()</code> di child saja tidak cukup; parent juga harus menulis <code>bind:value</code>. Kalau parent hanya mengirim <code>value=&#123;...&#125;</code> biasa, prop itu tetap satu arah meski sudah ditandai bindable (child malah jatuh ke nilai yang dikirim, tanpa mengalir balik).
+</Callout>
+
+<Callout type="warning">
+Jangan menulis <code>bind:</code> ke prop yang <strong>tidak</strong> ditandai <code>$bindable()</code> — Svelte akan melempar error. <code>bind:</code> hanya sah untuk prop yang sudah secara eksplisit dibuka oleh child.
+</Callout>
+
+<Callout type="pitfall">
+Untuk prop biasa (non-bindable), jangan <strong>memutasi</strong> nilainya di child. Menulis ulang prop biasa memicu peringatan dan tidak mengalir balik ke parent. Kalau butuh nilai turunan yang bisa diubah lokal, buat state baru: <code>let lokal = $state(prop)</code>. Kalau perubahan memang harus sampai ke parent, jadikan prop itu <code>$bindable()</code>.
+</Callout>
+
+<Callout type="tip">
+Pakai prop satu arah <strong>secara default</strong>. Naikkan ke <code>$bindable()</code> hanya kalau komponenmu benar-benar berperan seperti elemen form (input, slider, toggle, picker) yang wajar di-<code>bind</code>. Kutipan dari docs resmi: two-way binding sebaiknya dipakai "sparingly and carefully" — terlalu banyak membuat aliran data sulit diprediksi dan komponen sulit dirawat.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4, two-way binding ke komponen tidak butuh penanda apa pun: prop apa saja bisa di-<code>bind</code> selama dideklarasikan dengan <code>export let</code>. Svelte 5 mengubahnya jadi <strong>opt-in</strong> lewat <code>$bindable()</code> agar lebih disengaja dan aman. Kalau kamu memindahkan kode lama, prop yang tadinya di-<code>bind</code> parent kini harus ditandai <code>$bindable()</code> di child.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'export let value', modern: 'let { value = $bindable() } = $props()', note: 'Bindable kini opt-in & eksplisit, bukan otomatis.' },
+	{ legacy: 'export let value = 0', modern: 'let { value = $bindable(0) } = $props()', note: 'Nilai default jadi argumen fallback $bindable().' },
+	{ legacy: 'createEventDispatcher + dispatch("change")', modern: 'let { value = $bindable() } = $props()', note: 'Pola "input kustom" cukup pakai bindable, tanpa event manual.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/$bindable" label="$bindable — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/$props" label="$props — props & destructuring" />

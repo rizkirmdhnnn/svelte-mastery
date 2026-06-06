@@ -1,0 +1,249 @@
+---
+title: Zero-config deployments
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 3
+status: stable
+description: Bagaimana @sveltejs/adapter-auto mendeteksi platform deploy-mu otomatis, dan kapan sebaiknya kamu ganti ke adapter spesifik.
+docs: https://svelte.dev/docs/kit/adapter-auto
+keywords: [adapter-auto, deployment, zero-config, vercel, netlify, cloudflare]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Saat kamu menjalankan `vite build` di proyek SvelteKit, terjadi dua tahap. Tahap pertama murni urusan Vite & SvelteKit: meng-compile komponen, mem-bundle JS/CSS, code-splitting, dan menghasilkan representasi aplikasimu yang **netral platform** — sekumpulan modul plus "handler" yang tahu cara mengubah HTTP request jadi HTTP response. Tahap kedua adalah giliran **adapter**: ia membungkus hasil netral itu jadi bentuk yang bisa dijalankan platform tujuanmu — server Node, fungsi serverless Vercel, Cloudflare Worker, atau cuma tumpukan file statis.
+
+Masalahnya: di proyek baru, kamu belum tentu tahu mau deploy ke mana. Kamu cuma ingin `git push` dan situsnya hidup. Di sinilah `@sveltejs/adapter-auto` masuk. Ia adalah adapter yang terpasang secara **default** di setiap proyek `sv create` baru, dan tugasnya cuma satu: **menebak** platform tempat kamu sedang build, lalu memanggil adapter spesifik yang sesuai untuk platform itu — tanpa kamu konfigurasi apa pun.
+
+### Analogi: resepsionis hotel yang tahu colokan negara tamunya
+
+Bayangkan aplikasimu adalah laptop. Laptop butuh listrik 220V — kebutuhan universal yang sama di mana pun. Tapi bentuk **stop kontak** beda-beda tiap negara: Indonesia bulat dua kaki, Inggris tiga kaki kotak, Amerika dua kaki pipih. Laptopmu tidak perlu diubah; kamu cuma butuh **adaptor travel** yang cocok.
+
+Adapter spesifik (`adapter-node`, `adapter-vercel`, dst.) adalah adaptor travel itu. Nah, `adapter-auto` ibarat **resepsionis hotel** yang, begitu melihat paspormu saat check-in, langsung menyodorkan adaptor travel yang benar tanpa kamu minta. Kamu tidak perlu tahu nama colokannya; resepsionis yang menebak dari "negara asal"-mu. Dalam dunia deploy, "negara asal" itu adalah **environment CI/CD** tempat build berjalan.
+
+### Bagaimana cara ia menebak?
+
+Saat Vercel, Netlify, atau Cloudflare menjalankan build-mu di server mereka, mereka menyisipkan **environment variable khas** ke dalam proses build (mis. Vercel menyetel `VERCEL`, Netlify menyetel `NETLIFY`, dan seterusnya). `adapter-auto` mengintip env var ini, mencocokkannya dengan tabel internal, lalu memuat dan menjalankan adapter yang tepat untuk platform tersebut. Itu sebabnya ia "ajaib" di CI tapi **tidak melakukan apa-apa yang berguna di laptopmu** — di mesinmu, env var platform itu tidak ada, jadi tidak ada yang bisa ia deteksi.
+
+Per dokumentasi resmi, `adapter-auto` mengenali enam target berikut secara bawaan:
+
+| Platform terdeteksi | Adapter yang dipakai di baliknya |
+| --- | --- |
+| Cloudflare Pages | `@sveltejs/adapter-cloudflare` |
+| Netlify | `@sveltejs/adapter-netlify` |
+| Vercel | `@sveltejs/adapter-vercel` |
+| Azure Static Web Apps | `svelte-adapter-azure-swa` |
+| AWS via SST | `svelte-kit-sst` |
+| Google Cloud Run | `@sveltejs/adapter-node` |
+
+Perhatikan: `adapter-auto` sendiri tidak meng-_install_ paket-paket ini ke `package.json`-mu. Ia bergantung pada paket adapter yang bisa di-resolve saat build di CI. Untuk enam target di atas, SvelteKit sudah mengurus instalasi on-the-fly di lingkungan CI yang dikenali — tapi inilah justru sumber kelambatan dan kerapuhan yang akan kita bahas di bawah.
+
+### Mengapa cuma cocok untuk fase awal
+
+`adapter-auto` punya dua batasan struktural yang penting kamu pahami sejak awal:
+
+1. **Tidak menerima opsi apa pun.** Kutipan langsung dari docs: _"adapter-auto does not take any options"_. Artinya kamu tidak bisa menyetel `runtime: 'edge'`, `regions`, `out`, `precompress`, ISR, dan teman-temannya. Begitu butuh fitur spesifik platform, `adapter-auto` jadi tembok buntu.
+2. **Tidak berguna secara lokal.** Karena ia bergantung pada deteksi env CI, kamu tidak bisa menjalankan output-nya sebagai server di mesinmu (`node build` tidak ada). Kamu juga tidak bisa mereproduksi build produksi secara lokal dengan andal.
+
+Karena itu docs menyarankan: **begitu kamu mantap dengan target deploy, install adapter spesifiknya ke `devDependencies`** dan ganti `svelte.config.js`. Ini mempercepat waktu install di CI (tidak perlu resolve adapter saat runtime build) dan **mengunci versi** adapter yang kamu pakai — dua hal yang penting untuk proyek serius.
+
+## 2. Contoh kode
+
+`adapter-auto` adalah isi default `svelte.config.js` proyek baru. Tidak ada yang perlu kamu sentuh — itulah poinnya.
+
+```js
+// svelte.config.js — kondisi DEFAULT proyek `sv create` baru
+import adapter from '@sveltejs/adapter-auto';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(),
+	kit: {
+		// Tidak ada argumen. adapter-auto MEMANG tidak menerima opsi apa pun.
+		// Saat `vite build` jalan di CI Vercel/Netlify/Cloudflare/dst.,
+		// ia mendeteksi platform dari env var lalu memanggil adapter yang pas.
+		adapter: adapter()
+	}
+};
+```
+
+Begitu kamu memutuskan target — misalnya Vercel — langkahnya cuma dua: install paket adapter spesifik, lalu tukar import-nya.
+
+```bash
+# 1) Install adapter spesifik ke devDependencies (hapus adapter-auto bila mau)
+npm i -D @sveltejs/adapter-vercel
+npm un @sveltejs/adapter-auto   # opsional: copot yang tak lagi dipakai
+```
+
+```js
+// svelte.config.js — setelah "settle" di Vercel
+// import adapter from '@sveltejs/adapter-auto';   // <- yang lama, dihapus
+import adapter from '@sveltejs/adapter-vercel';     // <- adapter spesifik
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(),
+	kit: {
+		// Sekarang kamu BISA memberi opsi yang sebelumnya mustahil di adapter-auto:
+		adapter: adapter({
+			runtime: 'nodejs22.x' // atau 'edge'; bisa juga regions, isr per-rute, dst.
+		})
+	}
+};
+```
+
+Hasil akhirnya identik dengan yang akan dipilih `adapter-auto` di Vercel — bedanya sekarang versinya terkunci, install CI lebih cepat, dan kamu punya akses penuh ke opsi konfigurasi.
+
+## 3. Coba sendiri
+
+Karena `adapter-auto` bekerja di tahap **build & deploy** (output-nya server/file yang dijalankan platform, bukan komponen yang bisa dirender di browser), tidak ada live preview. Latih intuisimu lewat dua hal: membaca alur deteksi, lalu memetakan kapan harus pindah ke adapter spesifik.
+
+```text
+ALUR adapter-auto SAAT `vite build`
+───────────────────────────────────
+        ┌─────────────────────────┐
+        │   vite build berjalan   │
+        └────────────┬────────────┘
+                     │
+        adapter-auto mengintip env var proses
+                     │
+   ┌─────────────────┼──────────────────┐
+   │                 │                  │
+ env VERCEL?      env NETLIFY?     env CF Pages?   ...dst
+   │                 │                  │
+ pakai            pakai            pakai
+ adapter-vercel   adapter-netlify  adapter-cloudflare
+   │                 │                  │
+   └─────────────────┴──────────────────┘
+                     │
+        TIDAK ada env yang cocok (mis. di laptopmu / VPS)
+                     │
+        => build "berhasil" tapi output TAK bisa dijalankan
+           sebagai server lokal. Inilah sinyal untuk
+           PINDAH ke adapter spesifik.
+```
+
+```text
+KAPAN tetap pakai adapter-auto vs PINDAH
+────────────────────────────────────────
+Masih eksperimen / demo / prototipe, deploy via Git ke
+Vercel/Netlify/CF Pages, belum butuh opsi apa pun
+   -> BIARKAN adapter-auto (zero-config, paling cepat mulai)
+
+Sudah mantap target deploy-nya
+   -> PINDAH ke adapter spesifik (kunci versi + install CI lebih cepat)
+
+Butuh opsi: runtime 'edge', regions, ISR, out, precompress
+   -> WAJIB pindah; adapter-auto tidak menerima opsi sama sekali
+
+Mau build & jalankan server-nya secara lokal / di Docker / VPS
+   -> WAJIB pindah (mis. adapter-node: `node build`)
+
+Target platform di LUAR enam yang dikenali adapter-auto
+   -> Pasang adapter komunitas yang sesuai secara eksplisit
+```
+
+```jsonc
+// package.json — seperti apa "settle" terlihat setelah kamu pindah.
+// adapter spesifik ada di devDependencies => versinya TERKUNCI,
+// CI tak perlu resolve adapter on-the-fly saat build.
+{
+  "devDependencies": {
+    "@sveltejs/adapter-vercel": "^5.0.0", // <- terkunci, eksplisit
+    "@sveltejs/kit": "^2.0.0",
+    "@sveltejs/vite-plugin-svelte": "^4.0.0"
+  }
+}
+```
+
+## 4. Latihan
+
+<Exercise title="Tentukan: tetap adapter-auto atau pindah?">
+Untuk tiap skenario, putuskan apakah `adapter-auto` masih cukup atau kamu harus pindah ke adapter spesifik. Jika pindah, sebutkan paket adapter-nya dan tulis potongan `svelte.config.js`-nya beserta alasan singkat.
+
+1. Kamu baru `sv create` sebuah prototipe dan mau cepat memamerkannya lewat preview deploy Vercel dari setiap push.
+2. Aplikasi sudah produksi di Vercel dan tim ingin sebagian rute jalan di **edge runtime** demi latency rendah global.
+3. Aplikasi akan dijalankan sebagai server Node di dalam **container Docker** di infrastruktur sendiri, dan CI build-nya berjalan di runner generik (bukan Vercel/Netlify/Cloudflare).
+
+{#snippet solution()}
+
+  ```js
+  // 1) TETAP adapter-auto. Masih fase eksperimen, deploy via Git ke Vercel,
+  //    belum butuh opsi apa pun -> zero-config adalah pilihan paling cepat.
+  // svelte.config.js (default, tak perlu diubah)
+  import adapter from '@sveltejs/adapter-auto';
+  export default { kit: { adapter: adapter() } };
+  ```
+
+  ```js
+  // 2) PINDAH ke @sveltejs/adapter-vercel. Alasan: butuh opsi `runtime: 'edge'`,
+  //    sedangkan adapter-auto TIDAK menerima opsi apa pun.
+  // npm i -D @sveltejs/adapter-vercel
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-vercel';
+  export default {
+    kit: { adapter: adapter({ runtime: 'edge' }) }
+  };
+  // (Bisa juga di-set per-rute lewat `export const config` di +page.server.js.)
+  ```
+
+  ```js
+  // 3) PINDAH ke @sveltejs/adapter-node. Alasan: butuh server Node mandiri yang
+  //    bisa di-`node build` di dalam Docker; CI generik tak akan terdeteksi
+  //    adapter-auto, jadi auto-detect tak akan menghasilkan output yang benar.
+  // npm i -D @sveltejs/adapter-node
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-node';
+  export default {
+    kit: { adapter: adapter({ out: 'build', precompress: true }) }
+  };
+  // Deploy: `npm run build` lalu `node build` di dalam container.
+  ```
+
+  Intinya: adapter-auto enak untuk fase awal di platform yang dikenali; begitu butuh OPSI, butuh jalan LOKAL/Docker, atau target di luar enam platform yang dikenali — pindah ke adapter spesifik.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan membiarkan <code>adapter-auto</code> di proyek produksi yang serius. Ia <strong>tidak menerima opsi apa pun</strong> (tak ada <code>runtime</code>, <code>regions</code>, <code>out</code>, ISR, dll.) dan kamu tidak bisa menjalankan output-nya sebagai server lokal/Docker. Anggap ia "pemilih otomatis" untuk fase awal, bukan adapter sungguhan. Begitu target jelas, <code>npm i -D</code> adapter spesifik lalu tukar import-nya.
+</Callout>
+
+<Callout type="warning">
+<code>adapter-auto</code> bergantung pada <strong>deteksi environment CI</strong>. Kalau build-mu berjalan di tempat yang tidak ia kenali (runner CI generik, VPS, mesin lokal), deteksi gagal dan output-nya tidak akan jalan di platform yang kamu harapkan. Untuk pipeline yang kamu kontrol sendiri, selalu pakai adapter spesifik yang eksplisit — jangan menggantungkan nasib deploy pada tebakan.
+</Callout>
+
+<Callout type="tip">
+Menggantungkan resolusi adapter ke runtime CI membuat <strong>install lebih lambat</strong> dan versi adapter <strong>tidak terkunci</strong>. Memindahkan adapter spesifik ke <code>devDependencies</code> menyelesaikan keduanya sekaligus: CI tak perlu menebak/menarik adapter saat build, dan kamu mengunci versi yang sudah teruji. Ini alasan teknis di balik rekomendasi docs untuk "settle" ke adapter spesifik.
+</Callout>
+
+<Callout type="tip">
+Butuh platform <strong>di luar</strong> enam yang dikenali (mis. Azure SWA pakai <code>svelte-adapter-azure-swa</code>, AWS via SST pakai <code>svelte-kit-sst</code>)? Sebagian besar memang sudah didukung zero-config oleh <code>adapter-auto</code>, tapi untuk kontrol penuh — apalagi target yang sama sekali tak ada di tabel — pasang adapter komunitas yang sesuai secara eksplisit di <code>svelte.config.js</code>, persis seperti memindah ke adapter resmi.
+</Callout>
+
+### Dari "auto" ke "eksplisit"
+
+<LegacyVsModern rows={[
+  { legacy: "adapter-auto (tebak dari env CI)", modern: "adapter spesifik di devDependencies", note: 'versi terkunci + install CI lebih cepat' },
+  { legacy: "adapter: adapter()  (tanpa opsi)", modern: "adapter({ runtime, regions, ... })", note: 'akses penuh opsi platform' },
+  { legacy: "tak bisa jalan lokal", modern: "node build (adapter-node)", note: 'reproduksi build & jalankan di Docker/VPS' }
+]} />
+
+<Callout type="legacy">
+Ini bukan "API lama vs baru" — <code>adapter-auto</code> tetap valid dan didukung di SvelteKit 2. Tabel di atas hanya menggambarkan <strong>jalur kematangan</strong>: dari "auto" yang praktis untuk memulai, menuju adapter "eksplisit" yang kamu butuhkan saat proyek serius. Keduanya API Svelte 5 / SvelteKit 2 yang sah.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/adapter-auto" label="SvelteKit — Zero-config deployments (adapter-auto)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (gambaran semua adapter resmi)" />

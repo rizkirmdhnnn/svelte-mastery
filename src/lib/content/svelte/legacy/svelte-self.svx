@@ -1,0 +1,264 @@
+---
+title: <svelte:self>
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 11
+status: legacy
+description: Elemen khusus Svelte 4 untuk membuat komponen merekursi dirinya sendiri — kini digantikan dengan mengimpor komponen lewat nama filenya sendiri.
+docs: https://svelte.dev/docs/svelte/legacy-svelte-self
+keywords: [svelte:self, rekursi, legacy, self-import, komponen]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`<svelte:self>` adalah elemen khusus dari era **Svelte 4** yang membiarkan sebuah komponen **memanggil dirinya sendiri** di dalam markup-nya — alias **rekursi**. Kamu pakai ini ketika strukturnya bercabang tak tentu kedalamannya: pohon folder, thread komentar bersarang, menu dropdown bertingkat, atau struktur tree apa pun.
+
+Pertanyaan yang lebih penting: **mengapa elemen ini sampai harus ada?** Jawabannya soal sejarah, bukan soal fitur. Di JavaScript biasa, fungsi bisa memanggil namanya sendiri tanpa drama — itulah rekursi. Tapi di Svelte 4, sebuah file komponen tidak punya cara yang mudah untuk "menyebut dirinya sendiri" di dalam template: nama komponennya berasal dari *cara file itu di-import oleh file lain*, bukan dari dalam file itu sendiri. Jadi di dalam `Tree.svelte`, tidak ada variabel bernama `Tree` yang bisa kamu tulis sebagai `<Tree />`. Svelte menambal lubang ini dengan elemen sintaksis khusus: `<svelte:self>` yang artinya "render ulang komponen ini, apa pun namanya".
+
+Di **Svelte 5**, tambalan itu tidak diperlukan lagi. Sebuah file komponen kini boleh **mengimpor dirinya sendiri** lewat nama filenya — `import Tree from './Tree.svelte'` di dalam `Tree.svelte` — dan bundler modern menanganinya tanpa masalah. Karena itu docs resmi menyebut `<svelte:self>` **obsolete**: "This concept is obsolete, as components can import themselves."
+
+### Analogi: dua cermin yang berhadapan
+
+Bayangkan kamu berdiri di antara dua cermin yang saling berhadapan. Pantulanmu muncul di cermin depan, lalu pantulan itu dipantulkan lagi, lalu lagi, lalu lagi — terowongan bayangan yang seolah tak berujung. Itulah komponen yang merekursi dirinya sendiri: ia menggambar versi dirinya, yang menggambar versi dirinya, dan seterusnya.
+
+Masalahnya, dua cermin sungguhan menghasilkan **loop tak hingga** — dan browser-mu akan ikut hang kalau rekursinya tak pernah berhenti. Maka kamu butuh sebuah **dinding** yang menghentikan pantulan: sebuah *base case*. Di Svelte, "dinding" itu wajib berupa blok `{#if}` atau `{#each}` yang pada suatu titik berhenti merender dirinya lagi. Itu sebabnya docs menegaskan: `<svelte:self>` **tidak boleh** berada di level teratas markup; ia harus berada di dalam `{#if}`/`{#each}` (atau dioper ke slot komponen lain), supaya selalu ada syarat berhenti.
+
+### Kaitan ke React & Vue
+
+Buat kamu yang datang dari React atau Vue, "elemen khusus untuk rekursi" mungkin terdengar aneh — karena di sana rekursi tidak pernah butuh sintaks spesial:
+
+- **React** — komponen adalah fungsi/variabel JavaScript yang namanya ada di scope. Di dalam `function Tree()` kamu cukup menulis `<Tree />` lagi. Selesai. Tidak ada `<react:self>`.
+- **Vue** — Single File Component bisa mereferensikan dirinya lewat nama (opsi `name`, atau otomatis dari nama file pada `<script setup>`), jadi `<Tree />` di dalam `Tree.vue` jalan.
+
+Jadi `<svelte:self>` sebenarnya adalah Svelte **menambal keterbatasan** yang tidak dimiliki React/Vue. Svelte 5 akhirnya menutup celah itu: kini pola self-import membuat Svelte setara — komponen sekadar nilai biasa yang bisa kamu impor, termasuk mengimpor dirinya sendiri.
+
+## 2. Contoh kode
+
+Contoh klasik dari docs: hitung mundur yang berhenti di nol. Perhatikan `<svelte:self>` ada **di dalam** `{#if}` — itulah dinding penghenti loop-nya.
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — Countdown.svelte -->
+<script>
+	// 'export let' = terima prop dari parent (idiom Svelte 4)
+	export let count;
+</script>
+
+{#if count > 0}
+	<p>menghitung mundur... {count}</p>
+	<!-- <svelte:self> = render ulang Countdown.svelte ini sendiri.
+	     WAJIB di dalam {#if}/{#each} agar tidak loop tak hingga. -->
+	<svelte:self count={count - 1} />
+{:else}
+	<p>lift-off! 🚀</p>
+{/if}
+```
+
+Versi modern Svelte 5: hapus elemen khusus, **impor diri sendiri** lewat nama file, lalu render seperti komponen biasa.
+
+```svelte
+<!-- ✅ GAYA BARU (Svelte 5 runes) — Countdown.svelte -->
+<script>
+	// Impor file ini sendiri. Nama 'Countdown' bebas, konvensi: samakan
+	// dengan nama file (atau 'Self'). Bundler modern OK dengan self-import.
+	import Countdown from './Countdown.svelte';
+
+	// props lewat $props(), bukan 'export let'
+	let { count } = $props();
+</script>
+
+{#if count > 0}
+	<p>menghitung mundur... {count}</p>
+	<!-- Render diri sendiri sebagai komponen biasa. Tetap di dalam {#if}. -->
+	<Countdown count={count - 1} />
+{:else}
+	<p>lift-off! 🚀</p>
+{/if}
+```
+
+Contoh dunia-nyata: **thread komentar bersarang** (komentar bisa punya balasan, balasan bisa punya balasan lagi). Di sinilah rekursi benar-benar berguna.
+
+```svelte
+<!-- ✅ Comment.svelte (Svelte 5) — komentar yang bisa bersarang tanpa batas -->
+<script>
+	// Self-import: Comment merender Comment di dalam dirinya.
+	import Comment from './Comment.svelte';
+
+	// comment: { teks: string, balasan: Array<comment> }
+	let { comment } = $props();
+</script>
+
+<li>
+	<p>{comment.teks}</p>
+
+	<!-- Base case otomatis: kalau 'balasan' kosong, {#each} tidak merender
+	     apa pun, sehingga rekursi berhenti dengan sendirinya. -->
+	{#if comment.balasan?.length}
+		<ul>
+			{#each comment.balasan as balasan}
+				<!-- oper 'balasan' (data yang MENYUSUT), bukan 'comment' induk -->
+				<Comment comment={balasan} />
+			{/each}
+		</ul>
+	{/if}
+</li>
+```
+
+## 3. Coba sendiri
+
+Modul ini bagian **legacy/referensi**, jadi tidak ada live playground — pelajari contoh statis ber-anotasi berikut. Ini komponen **pohon folder** rekursif gaya Svelte 5; bandingkan di kepalamu dengan versi `<svelte:self>` yang setara.
+
+```svelte
+<!-- FileTree.svelte (Svelte 5) — render folder & isinya secara rekursif -->
+<script>
+	// Self-import: FileTree memanggil FileTree untuk tiap sub-folder.
+	import FileTree from './FileTree.svelte';
+
+	// node: { nama: string, anak?: Array<node> }
+	// 'anak' ada -> ini folder; 'anak' tidak ada -> ini file (daun/leaf).
+	let { node } = $props();
+</script>
+
+<li>
+	{#if node.anak}
+		<!-- Cabang folder -->
+		<details open>
+			<summary>📁 {node.nama}</summary>
+			<ul>
+				{#each node.anak as anak}
+					<!-- REKURSI: tiap anak digambar oleh FileTree lagi.
+					     Daun (file tanpa 'anak') jadi base case yang menghentikan
+					     rekursi karena {#if node.anak} bernilai false di sana. -->
+					<FileTree node={anak} />
+				{/each}
+			</ul>
+		</details>
+	{:else}
+		<!-- Daun: file biasa, tidak merekursi lebih dalam -->
+		📄 {node.nama}
+	{/if}
+</li>
+```
+
+```svelte
+<!-- Pemakaian di parent -->
+<script>
+	import FileTree from './FileTree.svelte';
+
+	const root = {
+		nama: 'src',
+		anak: [
+			{ nama: 'app.css' },
+			{
+				nama: 'lib',
+				anak: [{ nama: 'utils.ts' }, { nama: 'api.ts' }]
+			},
+			{ nama: 'main.ts' }
+		]
+	};
+</script>
+
+<ul>
+	<FileTree node={root} />
+</ul>
+```
+
+Yang perlu dicatat: satu-satunya perbedaan struktural dengan versi Svelte 4 adalah (1) baris `import FileTree from './FileTree.svelte'` dan (2) tag `<FileTree ... />` menggantikan `<svelte:self ... />`. Logika base case (`{#if node.anak}`) identik.
+
+## 4. Latihan
+
+<Exercise title="Migrasikan komponen rekursif dari <svelte:self> ke self-import">
+
+Di bawah ini komponen `<NestedList>` gaya **Svelte 4** yang merender list bersarang memakai `<svelte:self>`. Tulis ulang ke **Svelte 5 (runes)**. Yang harus kamu ubah:
+
+- `export let` → `$props()`
+- tambahkan baris **self-import** (`import NestedList from './NestedList.svelte'`)
+- `<svelte:self ... />` → `<NestedList ... />`
+- pastikan base case (`{#if}`/`{#each}`) tetap ada agar tidak loop tak hingga
+
+```svelte
+<!-- ❌ NestedList.svelte (Svelte 4) -->
+<script>
+	export let items;
+</script>
+
+<ul>
+	{#each items as item}
+		<li>
+			{item.label}
+			{#if item.children}
+				<svelte:self items={item.children} />
+			{/if}
+		</li>
+	{/each}
+</ul>
+```
+
+{#snippet solution()}
+
+```svelte
+<!-- ✅ NestedList.svelte (Svelte 5 runes) -->
+<script>
+	// 1) Self-import: komponen ini mengimpor dirinya sendiri lewat nama file.
+	import NestedList from './NestedList.svelte';
+
+	// 2) 'export let items' → destructuring dari $props()
+	let { items } = $props();
+</script>
+
+<ul>
+	{#each items as item}
+		<li>
+			{item.label}
+			<!-- 3) Base case tetap dijaga oleh {#if item.children}:
+			     item tanpa 'children' berhenti merekursi. -->
+			{#if item.children}
+				<!-- 4) <svelte:self> → <NestedList> -->
+				<NestedList items={item.children} />
+			{/if}
+		</li>
+	{/each}
+</ul>
+```
+
+Catatan: nama import bebas — `NestedList` di sini sengaja disamakan dengan nama file agar mudah dibaca. Beberapa orang memilih nama generik seperti `Self`. Keduanya valid; konsistenlah dalam proyekmu.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>&lt;svelte:self&gt;</code> adalah <strong>API lama (Svelte 4)</strong> dan dinyatakan <em>obsolete</em> oleh docs resmi. Compiler Svelte 5 masih menerimanya demi kompatibilitas, tapi <strong>jangan</strong> menulis kode baru dengan elemen ini. Padanan modernnya: <strong>impor komponen lewat nama filenya sendiri</strong> lalu render seperti komponen biasa. Ingat juga aturan "tanpa campur" Svelte 5: begitu kamu memakai satu rune (mis. <code>$props</code>) di file ini, seluruh komponen wajib gaya runes.
+</Callout>
+
+<Callout type="warning">
+Apa pun gayanya (lama atau baru), rekursi <strong>wajib punya base case</strong>. <code>&lt;svelte:self&gt;</code> bahkan <em>menolak</em> berada di level teratas markup justru untuk memaksamu membungkusnya dalam <code>&#123;#if&#125;</code>/<code>&#123;#each&#125;</code>. Versi self-import tidak memberi pagar pengaman ini — kamu bebas menulis <code>&lt;Self /&gt;</code> di mana saja. Jadi tanggung jawab mencegah loop tak hingga (komponen yang merender dirinya tanpa syarat berhenti → tab browser hang) sekarang sepenuhnya ada di tanganmu.
+</Callout>
+
+<Callout type="pitfall">
+Beberapa konfigurasi linter lama (mis. aturan <code>import/no-self-import</code>) bisa salah menandai self-import sebagai error. Itu <em>false positive</em> — self-import komponen Svelte sepenuhnya sah dan didukung bundler modern. Kalau muncul peringatan, nonaktifkan aturan itu untuk baris tersebut, bukan menghindari pola-nya.
+</Callout>
+
+<Callout type="tip">
+Bedakan <strong>rekursi struktur</strong> (komponen merender dirinya untuk data bercabang seperti tree/komentar) dari <strong>loop tak sengaja</strong>. Pola self-import sehat selama setiap level menyusutkan datanya (anak lebih sedikit dari induk) sehingga pasti mencapai daun. Kalau kamu mengoper data yang <em>sama</em> ke level berikutnya tanpa menyusut, itu bukan rekursi—itu bug.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '<svelte:self />', modern: "import Self from './Self.svelte' lalu <Self />", note: 'Komponen kini bisa mengimpor dirinya sendiri.' },
+	{ legacy: '<svelte:self count={n - 1} />', modern: '<Countdown count={n - 1} />', note: 'Render seperti komponen biasa; prop sama saja.' },
+	{ legacy: 'export let items', modern: 'let { items } = $props()', note: 'Props jadi destructuring objek biasa.' },
+	{ legacy: 'wajib di dalam {#if}/{#each}', modern: 'tetap butuh base case (manual)', note: 'Self-import tak memaksa pagar pengaman; jaga sendiri.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-svelte-self" label="<svelte:self> — dokumentasi legacy resmi" />
+<DocsLink href="https://svelte.dev/docs/svelte/v5-migration-guide" label="Svelte 5 Migration Guide — peta lengkap API lama → runes" />

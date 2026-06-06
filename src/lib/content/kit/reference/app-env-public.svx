@@ -1,0 +1,334 @@
+---
+title: $app/env/public
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 20
+status: reference
+description: Modul environment publik eksplisit & type-safe SvelteKit (2.62+) — deklarasikan variabel sekali di src/env.ts dengan defineEnvVars, lalu impor yang aman ke klien dari $app/env/public.
+docs: https://svelte.dev/docs/kit/$app-env-public
+keywords: [env, explicit, $app/env/public, public, type-safe, defineEnvVars]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/env/public` adalah wajah modern dari environment variables di SvelteKit. Diperkenalkan di **SvelteKit 2.62** sebagai bagian dari fitur **explicit environment variables** (masih di balik flag eksperimen), modul ini memberi kamu satu pintu impor untuk semua variabel yang **aman dilihat browser** — tapi dengan tiga hal yang tidak dimiliki sistem `$env/*` lama: **deklarasi terpusat**, **validasi**, dan **type-safety sejati**.
+
+Sebelum memahami "bagaimana"-nya, pahami dulu **kenapa fitur ini ada**. Sistem `$env/*` klasik (lihat modul `$env/static/public`, `$env/dynamic/public`, dst.) bekerja dengan **konvensi prefix**: variabel yang namanya diawali `PUBLIC_` dianggap aman ke klien, sisanya private. Praktis, tapi punya empat luka kecil yang menumpuk:
+
+1. **Gampang lupa prefix.** Lupa menulis `PUBLIC_` = impor gagal atau, lebih buruk, kamu memindahkan variabel ke modul yang salah.
+2. **Semuanya `string`.** `import.meta`, `.env`, dan `$env/*` hanya tahu string. Mau boolean atau number? Kamu parse manual di setiap tempat, dan tidak ada yang menjamin nilainya valid.
+3. **Tidak ada validasi.** Salah ketik nilai di dashboard hosting baru ketahuan saat runtime — sering di production.
+4. **Empat modul terpisah.** public/private dan static/dynamic dipecah jadi empat path impor (`$env/static/public`, `$env/dynamic/public`, ...). Memilih yang benar butuh menghafal matriks.
+
+Explicit env menjawab semuanya dengan satu ide: **deklarasikan setiap variabel sekali, di satu file** — `src/env.ts` (atau `src/env.js`) — memakai helper `defineEnvVars`. Di sana, untuk tiap variabel kamu menulis "KTP"-nya: apakah ia `public`, apakah ia `static`, bagaimana cara `validate`-nya, dan `description` untuk dokumentasi. Setelah itu SvelteKit menghasilkan dua modul virtual:
+
+- **`$app/env/public`** — berisi semua variabel yang kamu tandai `public: true`. Aman diimpor di server **dan** browser.
+- **`$app/env/private`** — sisanya (default private). Server-only; mengimpornya ke kode klien menggagalkan build.
+
+Yang penting: dua sumbu lama — *public/private* dan *static/dynamic* — **tidak hilang**, tapi berubah peran. Sumbu public/private menentukan **modul mana** yang mengekspor variabel itu (`$app/env/public` vs `$app/env/private`). Sumbu static/dynamic turun jadi **flag per-variabel** (`static: true` atau tidak), bukan lagi path impor terpisah. Jadi alih-alih memilih antara `$env/static/public` dan `$env/dynamic/public` di **setiap import site**, kamu memutuskannya **sekali** di `src/env.ts`, dan semua tempat cukup `import { NAMA } from '$app/env/public'`.
+
+### Analogi: dari stiker tempel ke formulir bea cukai
+
+Sistem `$env/*` lama itu seperti **menempel stiker pada tiap koper di bandara**. Stiker `PUBLIC_` berarti "boleh masuk kabin" (browser); tanpa stiker berarti "harus masuk bagasi terkunci" (server). Cepat, tapi rapuh: stiker bisa lupa ditempel, isi koper tidak diperiksa, dan jenis barang (string/angka/boolean) tidak pernah dicatat.
+
+`$app/env/public` mengganti stiker dengan **satu formulir bea cukai resmi** (`src/env.ts`). Di formulir itu, setiap barang punya satu baris dengan kolom-kolom: *boleh ke kabin?* (`public`), *sudah dicetak permanen di tiket atau diisi saat check-in?* (`static`), *seperti apa bentuk yang sah?* (`validate`), dan *catatan untuk petugas* (`description`). Sebelum pesawat (build/app) boleh berangkat, **petugas memeriksa setiap barang cocok dengan deklarasinya** — kalau ada yang tidak valid, penerbangan dibatalkan (build/start gagal). `$app/env/public` adalah **jendela loket** tempat penumpang (kode klien) hanya bisa mengambil barang yang sudah dicap "boleh ke kabin".
+
+### Type-safety yang nyata, bukan sekadar `string`
+
+Inilah keuntungan terbesar yang membedakan modul ini dari `$env/*`. Karena `validate` memakai **Standard Schema** (Zod, Valibot, ArkType, dst.), tipe **output** validator itulah yang menjadi **tipe nilai yang kamu impor**. Kalau validator-mu mengubah `"1"` jadi `true`, maka `import { SHOW_DEBUG } from '$app/env/public'` benar-benar bertipe `boolean` di editor — bukan `string` yang harus kamu `=== 'true'` manual. Salah satu nilai tidak lolos schema? App tidak akan start atau build. "Petugas bea cukai" tadi sungguh memeriksa isi, bukan cuma membaca stiker.
+
+## 2. Ringkasan API
+
+Modul `$app/env/public` tidak punya daftar export tetap — **export-nya adalah variabel `public: true` milik project-mu**, jadi isinya beda tiap aplikasi. Yang tetap adalah cara mendeklarasikannya dan kontraknya.
+
+### `defineEnvVars(schema)`
+
+Helper untuk mendeklarasikan semua environment variable. Diimpor dari `@sveltejs/kit/hooks`, dipakai di `src/env.ts` (atau `src/env.js`), dan hasilnya diekspor sebagai `variables`.
+
+| Aspek | Detail |
+| --- | --- |
+| Import | `import { defineEnvVars } from '@sveltejs/kit/hooks'` |
+| Tanda tangan | `defineEnvVars(schema: Record<string, EnvVarOptions>)` |
+| Dipakai di | `src/env.ts` / `src/env.js` |
+| Bentuk export | `export const variables = defineEnvVars({ ... })` (nama `variables` wajib) |
+| Hasil | SvelteKit memakai deklarasi ini untuk menghasilkan modul `$app/env/public` & `$app/env/private` yang type-safe |
+
+### Opsi per variabel (`EnvVarOptions`)
+
+Setiap key di dalam `defineEnvVars({ ... })` adalah **nama variabel**, dan nilainya adalah objek opsi berikut. Semua opsi bersifat opsional — `{}` kosong pun sah (artinya: private, dynamic, tanpa validasi).
+
+| Opsi | Tipe | Default | Arti |
+| --- | --- | --- | --- |
+| `public` | `boolean` | `false` | `true` = aman ke browser, diekspor dari **`$app/env/public`**. `false` = private, hanya dari `$app/env/private` (server-only). |
+| `static` | `boolean` | `false` | `true` = nilai **di-inline saat build** (bisa di-*tree-shake*, **tersedia saat prerender**). `false` = dibaca **saat runtime** (bisa diganti tanpa rebuild, tapi tak ada saat prerender). |
+| `validate` | Standard Schema | — | Validator (Zod / Valibot / ArkType / dll.). **Tipe output-nya menjadi tipe nilai yang diimpor.** Gagal validasi = app/build berhenti. |
+| `description` | `string` | — | Dokumentasi yang muncul saat hover variabel di IDE. |
+
+### Cara mengonsumsi
+
+| Sumber | Isi | Boleh dipakai di |
+| --- | --- | --- |
+| `import { NAMA } from '$app/env/public'` | variabel `public: true` | server **dan** browser (named import) |
+| `import { NAMA } from '$app/env/private'` | variabel private (default) | **server saja** — impor di klien = build gagal |
+| `%sveltekit.env.NAMA%` di `src/app.html` | variabel `public: true` | template HTML (mis. inject script Analytics) |
+
+<Callout type="tip">
+Perhatikan: <strong>impor selalu <em>named</em></strong> — <code>import &#123; GA_ID &#125; from '$app/env/public'</code> — baik untuk variabel static maupun dynamic. Ini perbaikan ergonomi dibanding <code>$env/dynamic/*</code> lama yang memaksa pola objek <code>env.GA_ID</code>. Di sistem eksplisit, "static atau dynamic" sudah diputuskan di <code>src/env.ts</code>, jadi <em>import site</em> kamu tampak identik di mana pun.
+</Callout>
+
+### Mengaktifkan fitur
+
+| Opsi config | Default | Arti |
+| --- | --- | --- |
+| `kit.experimental.explicitEnvironmentVariables` | `false` | Set `true` di `svelte.config.js` untuk mengaktifkan `src/env.ts`, `$app/env/public`, dan `$app/env/private`. |
+
+```js
+// svelte.config.js
+export default {
+	kit: {
+		experimental: {
+			// Aktifkan explicit environment variables (SvelteKit 2.62+).
+			explicitEnvironmentVariables: true
+		}
+	}
+};
+```
+
+## 3. Contoh kode
+
+Mulai dari deklarasinya. Satu file `src/env.ts` jadi sumber kebenaran untuk **semua** variabel — public maupun private — lengkap dengan validasi.
+
+```ts
+// src/env.ts  — sumber kebenaran tunggal untuk semua env var
+import { defineEnvVars } from '@sveltejs/kit/hooks';
+import * as v from 'valibot'; // Standard Schema: bisa juga Zod / ArkType
+
+export const variables = defineEnvVars({
+	// PUBLIC + DYNAMIC: aman ke browser, dibaca saat runtime.
+	// Tervalidasi formatnya. Tipe impor = string (output schema).
+	GOOGLE_ANALYTICS_ID: {
+		public: true,
+		validate: v.pipe(v.string(), v.regex(/G-[A-Z0-9]+/)),
+		description: 'Measurement ID Google Analytics (format G-XXXX)'
+	},
+
+	// PUBLIC + STATIC: di-inline saat build, bisa di-tree-shake,
+	// dan TERSEDIA saat prerender. Schema meng-coerce ke boolean.
+	SHOW_DEBUG_OVERLAY: {
+		public: true,
+		static: true,
+		validate: v.pipe(
+			v.optional(v.string(), ''),
+			v.transform((str) => str !== '') // "" -> false, selain itu -> true
+		)
+	},
+
+	// PRIVATE (default): server-only, tak pernah masuk bundle klien.
+	STRIPE_SECRET_KEY: {
+		validate: v.pipe(v.string(), v.startsWith('sk_')),
+		description: 'Secret key Stripe — JANGAN sampai ke browser'
+	}
+});
+```
+
+Lalu di sisi konsumen. Variabel public diimpor **by-name** dari `$app/env/public`, dan tipe-nya mengikuti hasil validasi — `SHOW_DEBUG_OVERLAY` benar-benar `boolean`, bukan string.
+
+```svelte
+<!-- src/routes/+page.svelte (SSR lalu hidup di browser) -->
+<script>
+	// Named import dari modul publik. Aman di klien.
+	import { GOOGLE_ANALYTICS_ID, SHOW_DEBUG_OVERLAY } from '$app/env/public';
+	// GOOGLE_ANALYTICS_ID: string  | SHOW_DEBUG_OVERLAY: boolean (sudah di-coerce)
+</script>
+
+<p>GA: {GOOGLE_ANALYTICS_ID}</p>
+
+{#if SHOW_DEBUG_OVERLAY}
+	<!-- Karena static, blok ini di-tree-shake bila nilainya false saat build. -->
+	<aside class="debug">Mode debug aktif</aside>
+{/if}
+```
+
+Variabel **public juga bisa langsung masuk `app.html`** lewat token `%sveltekit.env.NAMA%` — berguna untuk menyisipkan script pihak ketiga seperti Analytics tanpa hidrasi komponen.
+
+```html
+<!-- src/app.html -->
+<head>
+	%sveltekit.head%
+	<!-- Token diganti dengan nilai GOOGLE_ANALYTICS_ID. -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=%sveltekit.env.GOOGLE_ANALYTICS_ID%"></script>
+</head>
+```
+
+Sebagai kontras, secret diimpor dari modul **private** — dan hanya boleh di file server.
+
+```js
+// src/lib/server/payments.js  (server-only)
+import { STRIPE_SECRET_KEY } from '$app/env/private';
+// Mengimpor ini ke +page.svelte/+page.js universal => build GAGAL (server-only).
+```
+
+## 4. Coba sendiri
+
+Modul `$app/env/*` butuh build/server SvelteKit, jadi **tidak bisa** dijalankan di live playground (yang hanya mengeksekusi satu komponen Svelte murni di browser). Sebagai gantinya, telusuri alur lengkap "deklarasi -> konsumsi" lewat contoh statis beranotasi berikut, lalu perhatikan bagaimana satu flag mengubah perilaku.
+
+```ts
+// ── 1) DEKLARASI: src/env.ts ──────────────────────────────────────
+import { defineEnvVars } from '@sveltejs/kit/hooks';
+import * as v from 'valibot';
+
+export const variables = defineEnvVars({
+	// (a) public + dynamic  -> $app/env/public, dibaca runtime
+	PUBLIC_API_BASE: { public: true, validate: v.pipe(v.string(), v.url()) },
+
+	// (b) public + static   -> $app/env/public, di-inline saat build
+	BRAND_NAME: { public: true, static: true, validate: v.string() },
+
+	// (c) private (default) -> $app/env/private, server-only
+	DATABASE_URL: { validate: v.pipe(v.string(), v.startsWith('postgres://')) }
+});
+
+// ── 2) KONSUMSI publik (server ATAU browser) ──────────────────────
+// Semua named import, terlepas dari static/dynamic-nya.
+import { PUBLIC_API_BASE, BRAND_NAME } from '$app/env/public';
+// PUBLIC_API_BASE -> string URL, dibaca tiap runtime (ganti tanpa rebuild)
+// BRAND_NAME      -> string literal yang dibakar ke bundle (tree-shakeable)
+
+// ── 3) KONSUMSI privat (server SAJA) ──────────────────────────────
+import { DATABASE_URL } from '$app/env/private';
+// Taruh di src/lib/server/** atau *.server.js. Di klien => build gagal.
+```
+
+Pohon keputusan singkat saat menambah satu variabel ke `src/env.ts`:
+
+```text
+Apakah nilai ini boleh dilihat publik (browser)?
+ ├─ TIDAK (secret) ........... biarkan default (private) -> $app/env/private
+ └─ YA (publishable / URL publik) -> public: true -> $app/env/public
+      └─ Apakah nilainya sudah pasti saat build / dipakai di halaman PRERENDER?
+           ├─ YA ............ tambahkan static: true   (inlined, tree-shakeable)
+           └─ TIDAK ......... biarkan dynamic (default) (dibaca runtime)
+      lalu: butuh bentuk selain string (boolean/number) atau jaminan valid?
+           └─ tambahkan validate: <schema>  (tipe output = tipe impor)
+```
+
+## 5. Latihan
+
+<Exercise title="Susun src/env.ts untuk halaman checkout + landing">
+Aplikasimu memakai explicit environment variables (`experimental.explicitEnvironmentVariables: true`). Ada lima nilai:
+
+1. `STRIPE_SECRET_KEY` — secret server untuk memanggil Stripe. **Tidak boleh** ke browser. Harus diawali `sk_`.
+2. `PUBLIC_STRIPE_KEY` — publishable key untuk form pembayaran di komponen klien. Dibaca saat runtime, harus diawali `pk_`.
+3. `BRAND_NAME` — nama brand yang dipakai di **landing page yang di-prerender**. Ditentukan per-build.
+4. `ENABLE_BETA_BANNER` — flag fitur publik; nilainya `"1"`/`""` di env, tapi kamu ingin memakainya sebagai **boolean** di komponen. Dipakai di halaman prerender.
+5. `DATABASE_URL` — koneksi DB, server saja, harus diawali `postgres://`.
+
+Tugas: tulis `src/env.ts` lengkap dengan `defineEnvVars`, pilih `public`/`static` yang tepat, beri `validate` (pakai Valibot), lalu tunjukkan baris `import` yang benar untuk masing-masing.
+
+{#snippet solution()}
+
+  ```ts
+  // src/env.ts
+  import { defineEnvVars } from '@sveltejs/kit/hooks';
+  import * as v from 'valibot';
+
+  export const variables = defineEnvVars({
+    // (1) secret -> default private; server-only
+    STRIPE_SECRET_KEY: {
+      validate: v.pipe(v.string(), v.startsWith('sk_')),
+      description: 'Secret key Stripe (server saja)'
+    },
+    // (2) publishable + runtime -> public, dynamic (default static:false)
+    PUBLIC_STRIPE_KEY: {
+      public: true,
+      validate: v.pipe(v.string(), v.startsWith('pk_'))
+    },
+    // (3) public + dipakai di halaman PRERENDER -> wajib static
+    BRAND_NAME: {
+      public: true,
+      static: true,
+      validate: v.string()
+    },
+    // (4) public + prerender + ingin boolean -> static + transform
+    ENABLE_BETA_BANNER: {
+      public: true,
+      static: true,
+      validate: v.pipe(
+        v.optional(v.string(), ''),
+        v.transform((s) => s !== '') // "" -> false, "1" -> true
+      )
+    },
+    // (5) secret DB -> default private
+    DATABASE_URL: {
+      validate: v.pipe(v.string(), v.startsWith('postgres://'))
+    }
+  });
+  ```
+
+  ```svelte
+  <!-- Komponen klien (checkout / landing) -->
+  <script>
+    // public: named import dari $app/env/public
+    import { PUBLIC_STRIPE_KEY, BRAND_NAME, ENABLE_BETA_BANNER } from '$app/env/public';
+    // ENABLE_BETA_BANNER bertipe boolean, bukan string.
+  </script>
+  ```
+
+  ```js
+  // src/lib/server/db.js (server-only)
+  // private: named import dari $app/env/private
+  import { DATABASE_URL, STRIPE_SECRET_KEY } from '$app/env/private';
+  ```
+
+  Poin kunci: variabel yang dipakai di halaman **prerender** (`BRAND_NAME`, `ENABLE_BETA_BANNER`) **wajib** `static: true`, karena nilai dynamic tidak tersedia saat prerender (tak ada request runtime). Dan karena `validate` memakai `transform`, `ENABLE_BETA_BANNER` jadi `boolean` type-safe.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="warning">
+<strong>Ini fitur eksperimental.</strong> <code>$app/env/public</code> dan <code>$app/env/private</code> hanya hidup ketika <code>kit.experimental.explicitEnvironmentVariables</code> bernilai <code>true</code> (sejak SvelteKit 2.62). Karena masih di balik flag eksperimen, detail API bisa berubah sebelum stabil. Untuk project produksi yang konservatif, <code>$env/*</code> tetap pilihan stabil — tapi ini arah masa depan.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Public tetap berarti benar-benar publik.</strong> Apa pun yang kamu tandai <code>public: true</code> akan <strong>terlihat</strong> di bundle JavaScript atau HTML yang dikirim ke browser. Jangan menandai secret sebagai public hanya supaya bisa diimpor di klien — letakkan secret sebagai private (default) dan impor dari <code>$app/env/private</code> di file server saja.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Variabel public non-static tidak tersedia saat prerender.</strong> Sama seperti <code>$env/dynamic/public</code>, nilai dynamic dibaca dari request runtime — yang tidak ada saat prerendering. Kalau sebuah variabel publik dipakai di halaman yang di-prerender, tandai <code>static: true</code> di <code>src/env.ts</code> agar nilainya di-inline saat build.
+</Callout>
+
+<Callout type="tip">
+<strong>Manfaatkan <code>validate</code> untuk dapat tipe selain string.</strong> Karena tipe output schema menjadi tipe nilai yang diimpor, kamu bisa meng-<em>coerce</em> ke <code>boolean</code> atau <code>number</code> (lewat <code>v.transform</code> / <code>z.coerce</code>) sekali di <code>src/env.ts</code>, dan menikmati type-safety di semua tempat — alih-alih menulis <code>=== 'true'</code> atau <code>Number(...)</code> berulang kali seperti di <code>$env/*</code>.
+</Callout>
+
+<Callout type="legacy">
+<strong>Hubungan dengan <code>$env/*</code> lama.</strong> Modul <code>$env/static/public</code>, <code>$env/dynamic/public</code>, dan saudaranya masih <strong>didukung dan stabil</strong> — jangan buru-buru memigrasi semuanya. Rencananya, explicit environment variables akan menjadi <strong>default di SvelteKit 3</strong> dan <code>$env/*</code> akan dihapus. Tabel di bawah memetakan pola lama ke padanan eksplisitnya.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="$env/* (prefix PUBLIC_)"
+	modernLabel="$app/env/public (src/env.ts)"
+	rows={[
+		{ legacy: "import { PUBLIC_X } from '$env/static/public'", modern: "import { X } from '$app/env/public'  // X: { public: true, static: true }", note: 'tanpa prefix PUBLIC_; static jadi flag, bukan path' },
+		{ legacy: "import { env } from '$env/dynamic/public'; env.PUBLIC_X", modern: "import { X } from '$app/env/public'  // X: { public: true }", note: 'named import meski dynamic; tak perlu objek env' },
+		{ legacy: "prefix nama PUBLIC_ menandai public", modern: "public: true di src/env.ts", note: 'eksplisit, tak gampang lupa, tervalidasi' },
+		{ legacy: "nilai selalu string", modern: "validate: <schema> -> tipe output jadi tipe impor", note: 'boolean/number type-safe via transform/coerce' }
+	]}
+/>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-env-public" label="SvelteKit — $app/env/public" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-env-private" label="SvelteKit — $app/env/private (sibling private)" />
+<DocsLink href="https://svelte.dev/docs/kit/environment-variables" label="SvelteKit — Environment variables (explicit env)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration#experimental" label="SvelteKit — config.kit.experimental" />

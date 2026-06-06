@@ -1,0 +1,404 @@
+---
+title: <slot> (legacy)
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 7
+status: legacy
+description: Memahami API <slot> lama Svelte 4 (default, named, slot props, fallback) dan padanannya di Svelte 5 dengan snippet & {@render}.
+docs: https://svelte.dev/docs/svelte/legacy-slots
+keywords: [slot, named slot, slot props, legacy, snippet, render]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+<Callout type="legacy">
+Halaman ini sengaja menampilkan <strong>sintaks lama Svelte 4</strong> agar kamu bisa membaca dan memigrasikan kode warisan. Untuk proyek baru, <strong>jangan</strong> pakai <code>&lt;slot&gt;</code> — pakai snippet (<code>&#123;#snippet&#125;</code>) dan render tag (<code>&#123;@render&#125;</code>). Tiap bagian di bawah selalu menunjukkan padanan modernnya.
+</Callout>
+
+## 1. Konsep
+
+Sebelum runes, cara komponen Svelte menerima markup dari luar adalah lewat **slot**. Sebuah `<slot>` di dalam komponen anak adalah sebuah "lubang": tempat di mana konten yang dititipkan parent akan dituangkan. Konsepnya identik dengan `props.children` di React atau `<slot>` di Vue — anak menyediakan kerangka, parent mengisi bagian dalamnya.
+
+### Analogi: bingkai foto
+
+Bayangkan komponen anak sebagai **bingkai foto**. Bingkainya punya bentuk tetap (border, mat, kaca), tapi ada lubang kosong di tengah. `<slot>` adalah lubang itu. Parent yang menentukan foto mana yang dipasang. Bingkai yang sama bisa memuat foto apa pun — itulah kenapa slot membuat komponen jadi fleksibel: anak mengurus "tampilan luar", parent mengurus "isi".
+
+Ada empat varian yang perlu kamu kenali, dan semuanya punya padanan di Svelte 5:
+
+1. **Default slot** — satu lubang utama. Padanannya: prop `children`.
+2. **Named slot** — beberapa lubang berlabel (mis. `header`, `footer`). Padanannya: snippet sebagai prop bernama.
+3. **Slot props (`let:`)** — anak mengoper data **balik** ke markup parent (mirip scoped slot Vue / render prop React). Padanannya: argumen snippet.
+4. **Fallback content** — markup default kalau parent tidak mengisi. Padanannya: `{#if children}...{:else}...{/if}`.
+
+### Kenapa Svelte 5 mengganti slot dengan snippet?
+
+Slot itu "ajaib": ada elemen `<slot>` khusus, ada direktif `let:` khusus, ada variabel `$$slots` khusus untuk mengecek slot mana yang terisi. Tiga mekanisme berbeda untuk satu ide. Masalahnya, semuanya pakai aturan sendiri yang tidak konsisten dengan sisa bahasa.
+
+Snippet menyatukan semua itu jadi **satu konsep yang sudah kamu kenal**: sebuah nilai yang bisa dioper sebagai prop dan dipanggil seperti fungsi. Default slot? Itu prop `children`. Named slot? Itu prop berisi snippet. Slot props? Itu argumen yang kamu kirim saat memanggil snippet. Cek keberadaan slot? Itu cek prop biasa pakai `{#if}`. Tidak ada sintaks khusus lagi — slot "dijinakkan" jadi data biasa.
+
+### Aturan penting slot (Svelte 4) yang sering bikin bingung
+
+- Slot **tidak reaktif penuh** terhadap perubahan struktur seperti snippet, dan data mengalir lewat atribut pada elemen `<slot>` (slot props), bukan lewat panggilan fungsi yang eksplisit.
+- Untuk mengirim konten ke **named slot**, parent menaruh atribut `slot="nama"` pada sebuah elemen pembungkus. Ini sering memaksa kamu membuat `<div slot="...">` ekstra hanya sebagai wadah.
+- `let:` hanya bisa dipakai pada elemen/komponen yang **menerima** slot props, dan scope-nya terbatas pada markup di slot tersebut.
+
+## 2. Contoh kode
+
+Default slot dan fallback — bentuk paling dasar:
+
+```svelte
+<!-- Modal.svelte — API LAMA (Svelte 4) -->
+<div class="modal">
+	<!-- <slot> adalah "lubang" tempat konten parent dituang.
+	     Teks di dalamnya jadi fallback bila parent tak mengisi apa-apa. -->
+	<slot>Tidak ada konten</slot>
+</div>
+
+<!-- Parent (Svelte 4) -->
+<Modal>Ini konten yang disisipkan</Modal>
+```
+
+```svelte
+<!-- Modal.svelte — PADANAN MODERN (Svelte 5 runes) -->
+<script>
+	// Konten implisit dari parent kini masuk sebagai prop 'children',
+	// yaitu sebuah snippet. Tidak ada elemen <slot> lagi.
+	let { children } = $props();
+</script>
+
+<div class="modal">
+	<!-- {#if} menggantikan fallback content -->
+	{#if children}
+		{@render children()}
+	{:else}
+		Tidak ada konten
+	{/if}
+</div>
+
+<!-- Parent (Svelte 5) — pemakaiannya identik -->
+<Modal>Ini konten yang disisipkan</Modal>
+```
+
+Named slots — beberapa "lubang" berlabel:
+
+```svelte
+<!-- Card.svelte — API LAMA (Svelte 4) -->
+<div class="card">
+	<header>
+		<!-- slot bernama "header" -->
+		<slot name="header">Judul default</slot>
+	</header>
+
+	<!-- slot tanpa nama = default slot, untuk konten utama -->
+	<slot></slot>
+
+	<footer>
+		<slot name="footer" />
+	</footer>
+</div>
+
+<!-- Parent (Svelte 4): kirim konten dengan atribut slot="..." -->
+<Card>
+	<h2 slot="header">Judul Kartu</h2>
+	<p>Isi utama kartu.</p>
+	<small slot="footer">Footer kartu</small>
+</Card>
+```
+
+```svelte
+<!-- Card.svelte — PADANAN MODERN (Svelte 5 runes) -->
+<script>
+	// Tiap named slot jadi sebuah snippet prop bernama.
+	let { header, children, footer } = $props();
+</script>
+
+<div class="card">
+	<header>
+		{#if header}{@render header()}{:else}Judul default{/if}
+	</header>
+
+	{@render children()}
+
+	<footer>
+		{@render footer?.()}
+	</footer>
+</div>
+
+<!-- Parent (Svelte 5): kirim {#snippet nama}...{/snippet} bernama -->
+<Card>
+	{#snippet header()}
+		<h2>Judul Kartu</h2>
+	{/snippet}
+
+	<p>Isi utama kartu.</p>
+
+	{#snippet footer()}
+		<small>Footer kartu</small>
+	{/snippet}
+</Card>
+```
+
+Slot props (`let:`) — anak mengoper data **balik** ke parent. Ini padanan scoped slot Vue / render prop React:
+
+```svelte
+<!-- FancyList.svelte — API LAMA (Svelte 4) -->
+<script>
+	export let items;        // <-- export let: cara lama mendeklarasikan prop
+</script>
+
+<ul>
+	{#each items as data}
+		<li>
+			<!-- anak menaruh data di atribut elemen <slot>;
+			     parent menerimanya lewat let: -->
+			<slot item={data.processed}>{data.text}</slot>
+		</li>
+	{/each}
+</ul>
+
+<!-- Parent (Svelte 4): let:item mengambil data yang dioper anak -->
+<FancyList {items} let:item={olahan}>
+	<span>{olahan}</span>
+</FancyList>
+```
+
+```svelte
+<!-- FancyList.svelte — PADANAN MODERN (Svelte 5 runes) -->
+<script>
+	// 'children' jadi snippet yang MENERIMA argumen.
+	let { items, children } = $props();
+</script>
+
+<ul>
+	{#each items as data}
+		<li>
+			<!-- kirim data balik ke markup parent lewat argumen snippet -->
+			{@render children(data.processed)}
+		</li>
+	{/each}
+</ul>
+
+<!-- Parent (Svelte 5): snippet implisit menangkap argumen 'olahan' -->
+<FancyList {items}>
+	{#snippet children(olahan)}
+		<span>{olahan}</span>
+	{/snippet}
+</FancyList>
+```
+
+Mengecek slot mana yang terisi — `$$slots` vs cek prop biasa:
+
+```svelte
+<!-- API LAMA (Svelte 4): $$slots berisi nama slot yang diisi parent -->
+{#if $$slots.footer}
+	<footer><slot name="footer" /></footer>
+{/if}
+```
+
+```svelte
+<!-- PADANAN MODERN (Svelte 5): cukup cek apakah prop snippet ada -->
+<script>
+	let { footer } = $props();
+</script>
+
+{#if footer}
+	<footer>{@render footer()}</footer>
+{/if}
+```
+
+## 3. Coba sendiri
+
+Karena slot adalah API komponen multi-file (butuh pasangan anak + parent), tidak ada live playground di sini. Sebagai gantinya, pelajari migrasi lengkap berikut: satu komponen `Panel` yang memakai **ketiga** fitur slot sekaligus (default, named, dan slot props), lalu rewrite-nya ke snippet. Bandingkan baris per baris.
+
+```svelte
+<!-- Panel.svelte — VERSI LAMA (Svelte 4) -->
+<script>
+	export let rows;
+</script>
+
+<section class="panel">
+	<!-- 1) named slot "title" dengan fallback -->
+	<header>
+		<slot name="title">Tanpa Judul</slot>
+	</header>
+
+	<!-- 2) default slot untuk deskripsi -->
+	<p class="desc"><slot /></p>
+
+	<!-- 3) named slot "row" + slot props: kirim 'row' balik ke parent -->
+	<ul>
+		{#each rows as r}
+			<li><slot name="row" row={r}>{r.label}</slot></li>
+		{/each}
+	</ul>
+
+	<!-- 4) cek keberadaan slot pakai $$slots -->
+	{#if $$slots.footer}
+		<footer><slot name="footer" /></footer>
+	{/if}
+</section>
+
+<!-- Parent (Svelte 4) -->
+<Panel {rows}>
+	<h3 slot="title">Daftar Tugas</h3>
+	Tugas yang harus dikerjakan minggu ini.
+	<span slot="row" let:row>• {row.label} ({row.done ? 'selesai' : 'belum'})</span>
+	<small slot="footer">Total: {rows.length}</small>
+</Panel>
+```
+
+```svelte
+<!-- Panel.svelte — VERSI MODERN (Svelte 5 runes) -->
+<script>
+	// Tiap slot jadi prop biasa: named slot -> snippet bernama,
+	// default slot -> children, slot props -> argumen snippet.
+	let { rows, title, children, row, footer } = $props();
+</script>
+
+<section class="panel">
+	<!-- 1) named slot "title" -> snippet 'title' + fallback via {#if} -->
+	<header>
+		{#if title}{@render title()}{:else}Tanpa Judul{/if}
+	</header>
+
+	<!-- 2) default slot -> children -->
+	<p class="desc">{@render children()}</p>
+
+	<!-- 3) "row" + slot props -> snippet 'row' yang menerima argumen r -->
+	<ul>
+		{#each rows as r}
+			<li>{@render row(r)}</li>
+		{/each}
+	</ul>
+
+	<!-- 4) $$slots.footer -> cek prop snippet biasa, render aman ?.() -->
+	{#if footer}
+		<footer>{@render footer()}</footer>
+	{/if}
+</section>
+
+<!-- Parent (Svelte 5) -->
+<Panel {rows}>
+	{#snippet title()}
+		<h3>Daftar Tugas</h3>
+	{/snippet}
+
+	Tugas yang harus dikerjakan minggu ini.
+
+	{#snippet row(r)}
+		<span>• {r.label} ({r.done ? 'selesai' : 'belum'})</span>
+	{/snippet}
+
+	{#snippet footer()}
+		<small>Total: {rows.length}</small>
+	{/snippet}
+</Panel>
+```
+
+Perhatikan polanya: setiap konsep slot punya terjemahan langsung. `slot="title"` jadi `{#snippet title()}`, atribut `row={r}` jadi argumen `row(r)`, `let:row` jadi parameter `{#snippet row(r)}`, dan `$$slots.footer` jadi `{#if footer}`. Sekali kamu hafal pemetaan ini, migrasi jadi pekerjaan mekanis.
+
+## 4. Latihan
+
+<Exercise title="Migrasikan komponen slot Svelte 4 ke snippet Svelte 5">
+Diberikan komponen `Daftar.svelte` versi lama berikut. Ia memakai `export let`, named slot `header`, default slot sebagai fallback, dan **slot props** untuk mengoper tiap `item` balik ke parent. Tulis ulang menjadi Svelte 5 runes (pakai `$props()`, snippet, dan `&#123;@render&#125;`), lalu tulis juga parent yang memakainya untuk menampilkan daftar `[&#123; nama &#125;]`.
+
+```svelte
+<!-- Daftar.svelte — versi lama yang harus kamu migrasikan -->
+<script>
+	export let data;
+</script>
+
+<slot name="header">Daftar</slot>
+<ul>
+	{#each data as d}
+		<li><slot name="item" item={d}>{d.nama}</slot></li>
+	{/each}
+</ul>
+```
+
+{#snippet solution()}
+
+```svelte
+<!-- Daftar.svelte — versi modern (Svelte 5 runes) -->
+<script>
+	// export let data        -> let { data } = $props()
+	// slot name="header"      -> snippet prop 'header'
+	// slot name="item" item={d} + let:item -> snippet 'item' berargumen
+	let { data, header, item } = $props();
+</script>
+
+<!-- named slot "header" + fallback -->
+{#if header}{@render header()}{:else}Daftar{/if}
+
+<ul>
+	{#each data as d}
+		<!-- kirim 'd' balik ke snippet milik parent (pengganti slot props) -->
+		<li>{@render item(d)}</li>
+	{/each}
+</ul>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Daftar from './Daftar.svelte';
+
+	let orang = $state([{ nama: 'Ani' }, { nama: 'Budi' }]);
+</script>
+
+<Daftar data={orang}>
+	<!-- slot="header" -> {#snippet header()} -->
+	{#snippet header()}
+		<h2>Daftar Orang</h2>
+	{/snippet}
+
+	<!-- slot="item" + let:item -> {#snippet item(o)} -->
+	{#snippet item(o)}
+		<strong>{o.nama}</strong>
+	{/snippet}
+</Daftar>
+```
+
+Inti migrasinya: nama slot jadi nama prop snippet, atribut pada `<slot>` (slot props) jadi argumen yang kamu kirim lewat `{@render item(d)}`, dan `let:item` di parent jadi parameter `{#snippet item(o)}`. Fallback `<slot>Daftar</slot>` jadi `{#if header}...{:else}Daftar{/if}`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+Jika kamu melihat <code>&lt;slot&gt;</code>, <code>&lt;slot name="x"&gt;</code>, direktif <code>let:item</code>, atau <code>$$slots</code> di sebuah codebase atau tutorial, itu <strong>API Svelte 4</strong>. Semuanya masih jalan di Svelte 5 untuk kompatibilitas, tetapi <strong>tidak bisa dicampur</strong> dengan snippet dalam komponen yang sama. Pilih salah satu gaya per komponen.
+</Callout>
+
+<Callout type="pitfall">
+Jangan mencampur `&lt;slot&gt;` (gaya lama) dan `&#123;@render&#125;`/`&#123;#snippet&#125;` (gaya baru) di dalam <strong>satu komponen</strong>. Svelte akan menolak meng-compile. Saat memigrasikan, ubah seluruh komponen sekaligus, bukan setengah-setengah.
+</Callout>
+
+<Callout type="warning">
+Di gaya lama, untuk mengirim konten ke named slot kamu wajib menaruh atribut `slot="nama"` pada sebuah <strong>elemen pembungkus</strong> (mis. `&lt;div slot="footer"&gt;`). Ini sering memaksa lahirnya `&lt;div&gt;` ekstra yang tak diinginkan di DOM. Snippet tidak punya masalah ini — `&#123;#snippet footer()&#125;` tidak menambah elemen pembungkus apa pun.
+</Callout>
+
+<Callout type="tip">
+Saat menerima snippet hasil migrasi named slot, render dengan optional chaining `&#123;@render footer?.()&#125;` bila slot itu dulunya opsional. Memanggil snippet yang `undefined` memunculkan error runtime — sama bahayanya seperti memanggil `&lt;slot name="footer"&gt;` yang tak pernah diisi tanpa fallback.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '<slot />', modern: '{@render children()}', note: 'Default slot jadi snippet children.' },
+	{ legacy: '<slot>fallback</slot>', modern: '{#if children}{@render children()}{:else}fallback{/if}', note: 'Fallback jadi cabang {:else}.' },
+	{ legacy: '<slot name="header" />', modern: '{@render header()} + {#snippet header()}', note: 'Named slot jadi snippet prop bernama.' },
+	{ legacy: '<slot name="row" {item} /> + let:item', modern: '{@render row(item)} + {#snippet row(item)}', note: 'Slot props jadi argumen snippet.' },
+	{ legacy: '$$slots.footer', modern: '{#if footer}...{/if}', note: 'Cek slot terisi = cek prop snippet biasa.' },
+	{ legacy: 'export let items', modern: 'let { items } = $props()', note: 'Sekalian: prop deklarasi pakai $props().' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-slots" label="Legacy <slot> — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/snippet" label={`{#snippet} — padanan modern di Svelte 5`} />
+<DocsLink href="https://svelte.dev/docs/svelte/@render" label={`{@render} — render tag Svelte 5`} />

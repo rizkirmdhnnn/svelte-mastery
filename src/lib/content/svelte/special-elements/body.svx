@@ -1,0 +1,247 @@
+---
+title: <svelte:body>
+product: svelte
+section: special-elements
+sectionTitle: Special elements
+sectionOrder: 5
+order: 4
+status: stable
+description: Menempelkan event listener (terutama mouseenter/mouseleave) dan action/attachment ke document.body secara deklaratif, tanpa addEventListener manual — pas untuk deteksi kursor keluar-masuk halaman dan exit-intent.
+docs: https://svelte.dev/docs/svelte/svelte-body
+keywords: [svelte-body, mouseenter, mouseleave, exit-intent, special-elements]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Sebagian besar markup yang kamu tulis di Svelte memetakan ke elemen DOM nyata — `<div>`, `<button>`, `<input>`. Tapi `document.body` itu bukan elemen yang kamu render; ia sudah ada sejak halaman dibuka, dibuat oleh browser, bukan oleh komponenmu. Kamu tidak bisa "membuat" `<body>`, yang bisa kamu lakukan hanyalah **menempel listener** dan **memasang action** padanya. `&lt;svelte:body&gt;` adalah cara deklaratif untuk melakukan itu.
+
+Kalau kamu datang dari React, naluri pertamamu pasti: `useEffect(() => { document.body.addEventListener('mouseleave', fn); return () => document.body.removeEventListener('mouseleave', fn); }, [])`. Di Vue kira-kira `onMounted`/`onUnmounted`, atau langsung `@vueuse/core`. Pola itu benar, tapi penuh ritual: kamu wajib ingat membersihkan listener di cleanup, dan kalau lupa, listener menumpuk tiap komponen mount ulang. `&lt;svelte:body&gt;` menghapus seluruh ritual itu — kamu cukup *mendeklarasikan* niatmu di markup, dan Svelte yang memasang listener saat komponen mount lalu mencopotnya saat unmount.
+
+### Analogi: keset dan lampu sensor di pintu ruangan
+
+Ingat analogi gedung kos dari modul sebelumnya. `window` itu **gerbang depan gedung** (viewport, scroll halaman, resize). `document` itu **papan pengumuman di lobi** (fokus, seleksi teks, visibilitas tab). Lalu `body` itu **lantai utama / ruang tamu tempat orang lalu-lalang** — area konten yang benar-benar kamu lihat di layar.
+
+`&lt;svelte:body&gt;` paling sering dipakai seperti **lampu sensor gerak di ambang pintu ruangan**: ia menyala saat ada yang melangkah masuk ke ruangan (kursor masuk ke area halaman) dan padam saat orang terakhir keluar (kursor keluar dari halaman, mis. menuju toolbar browser atau tombol close tab). Kamu tidak boleh membongkar lantainya, tapi kamu boleh memasang sensor di ambang pintunya. Saat kamu pindah kos (komponen unmount), Svelte otomatis mencopot sensornya — tidak ada sampah listener yang tertinggal.
+
+### Kenapa butuh `&lt;svelte:body&gt;` kalau sudah ada `&lt;svelte:window&gt;`?
+
+Pertanyaan yang sehat — dan jawabannya spesifik. Event **`mouseenter`** dan **`mouseleave`** itu **tidak fire di `window`**. Mereka adalah event "non-bubbling" yang dirancang melekat ke satu elemen konkret. Kalau kamu pasang `onmouseleave` di `&lt;svelte:window&gt;`, handler-mu tidak akan pernah terpanggil dengan cara yang kamu harapkan. Untuk mendeteksi "kursor keluar dari seluruh halaman", target yang tepat adalah `document.body` — dan satu-satunya cara deklaratif menempelkannya di Svelte adalah lewat `&lt;svelte:body&gt;`.
+
+Inilah daftar kegunaan paling umum:
+
+- **`mouseleave` halaman → exit-intent.** Saat kursor bergerak keluar lewat sisi atas (menuju address bar / tombol close), banyak situs memunculkan popup "tunggu, ada diskon!". Ini kasus penggunaan klasik nomor satu.
+- **`mouseenter` halaman → resume.** Lanjutkan animasi berat / efek partikel saat user kembali "hadir" di area halaman, dan jeda saat kursor pergi (hemat CPU/baterai).
+- **Action / attachment di `<body>`.** Memasang sesuatu yang sifatnya global ke `<body>`: mengunci scroll saat modal terbuka (`overflow: hidden`), menambah/menghapus class tema, atau setup imperatif lain yang mengikuti daur hidup komponen.
+
+### Bedanya dengan `window`/`document`: tidak ada binding
+
+Ini perbedaan penting. `&lt;svelte:window&gt;` punya `bind:scrollY` (dua arah), `&lt;svelte:document&gt;` punya `bind:activeElement` dkk (readonly). Tapi **`&lt;svelte:body&gt;` tidak punya binding sama sekali.** Ia murni untuk *event listener* dan *action/attachment*. Jadi jangan cari `bind:` di sini — memang tidak ada. Anggap `&lt;svelte:body&gt;` sebagai versi paling "ramping" dari keluarga elemen ini: satu pekerjaan, dikerjakan dengan baik.
+
+## 2. Contoh kode
+
+Pola dasar — `mouseenter`/`mouseleave` untuk melacak apakah kursor sedang berada di dalam halaman. Sintaksnya sama persis seperti `onclick` di elemen biasa, hanya targetnya `document.body`:
+
+```svelte
+<script>
+	let kursorDiDalam = $state(true);
+
+	// listener ini menempel ke document.body, bukan ke satu div.
+	// mouseenter/mouseleave TIDAK fire di window — itu sebabnya kita pakai svelte:body.
+	function masuk() {
+		kursorDiDalam = true;
+	}
+	function keluar() {
+		kursorDiDalam = false;
+	}
+</script>
+
+<!-- otomatis dipasang saat mount, dilepas saat unmount.
+     Tidak ada addEventListener / removeEventListener yang perlu kamu tulis. -->
+<svelte:body onmouseenter={masuk} onmouseleave={keluar} />
+
+<p>{kursorDiDalam ? 'Kursor ada di halaman' : 'Kursor keluar dari halaman'}</p>
+```
+
+Exit-intent popup — kunci-nya: event `mouseleave` tetap membawa `clientY`. Kalau kursor keluar lewat **atas** (`clientY <= 0`), kemungkinan besar user menuju tab/tombol close, jadi itu momen tepat menampilkan tawaran:
+
+```svelte
+<script>
+	let tampilkanPenawaran = $state(false);
+	let sudahDitutup = $state(false);
+
+	function handleLeave(event) {
+		// hanya tampilkan sekali; setelah ditutup, jangan ganggu lagi
+		if (sudahDitutup) return;
+
+		// clientY <= 0 berarti kursor keluar lewat sisi ATAS layar
+		// (menuju address bar / tombol close), bukan ke samping.
+		if (event.clientY <= 0) {
+			tampilkanPenawaran = true;
+		}
+	}
+</script>
+
+<svelte:body onmouseleave={handleLeave} />
+
+{#if tampilkanPenawaran}
+	<div class="popup">
+		<p>Eh, mau ke mana? Diskon 20% khusus hari ini!</p>
+		<button onclick={() => { tampilkanPenawaran = false; sudahDitutup = true; }}>
+			Tutup
+		</button>
+	</div>
+{/if}
+```
+
+Action/attachment di `<body>` — `&lt;svelte:body&gt;` juga menerima `&#123;@attach ...&#125;` (attachment Svelte 5). Berguna untuk efek global seperti mengunci scroll body saat modal terbuka. Fungsi attachment menerima node (`document.body`) dan boleh mengembalikan fungsi cleanup; ia otomatis jalan ulang saat `$state` yang dibacanya berubah:
+
+```svelte
+<script>
+	let modalTerbuka = $state(false);
+
+	// node adalah document.body. Attachment ini berjalan di dalam effect,
+	// jadi ia otomatis re-run setiap kali 'modalTerbuka' berubah.
+	function kunciScroll(node) {
+		node.style.overflow = modalTerbuka ? 'hidden' : '';
+		// cleanup: pulihkan saat komponen unmount / sebelum re-run
+		return () => {
+			node.style.overflow = '';
+		};
+	}
+</script>
+
+<svelte:body {@attach kunciScroll} />
+
+<button onclick={() => (modalTerbuka = true)}>Buka modal</button>
+
+{#if modalTerbuka}
+	<div role="dialog">
+		<p>Coba scroll halaman di belakang — terkunci.</p>
+		<button onclick={() => (modalTerbuka = false)}>Tutup</button>
+	</div>
+{/if}
+```
+
+<Callout type="tip">
+Selain `&#123;@attach ...&#125;`, `&lt;svelte:body&gt;` juga menerima <strong>action</strong> lawas lewat `use:namaAction` — dan ini memang bentuk yang dipakai di contoh dokumentasi resmi: `&lt;svelte:body use:someAction /&gt;`. Keduanya valid di Svelte 5. Untuk kode baru, `&#123;@attach&#125;` umumnya lebih enak karena otomatis reaktif terhadap `$state` tanpa perlu fungsi `update` manual.
+</Callout>
+
+## 3. Coba sendiri
+
+Komponen di bawah memakai `&lt;svelte:body&gt;` untuk mendeteksi kursor keluar-masuk **area preview**. Gerakkan kursormu keluar dari kotak preview lalu masuk lagi — perhatikan status dan penghitungnya berubah. Tidak ada satu pun `addEventListener` yang kamu tulis; semuanya dideklarasikan di markup.
+
+<Playground code={`<script>
+	let diDalam = $state(true);
+	let jumlahKeluar = $state(0);
+	let tampilBanner = $state(false);
+
+	function masuk() {
+		diDalam = true;
+		tampilBanner = false;
+	}
+
+	function keluar() {
+		diDalam = false;
+		jumlahKeluar += 1;
+		tampilBanner = true;
+	}
+</script>
+
+<svelte:body onmouseenter={masuk} onmouseleave={keluar} />
+
+<div style="font-family: sans-serif; padding: 16px;">
+	<h3>Demo svelte:body</h3>
+	<p>Gerakkan kursor KELUAR dari area preview ini, lalu masuk lagi.</p>
+	<p>Status kursor:
+		<strong style="color: {diDalam ? 'green' : 'crimson'};">
+			{diDalam ? 'di dalam halaman' : 'di luar halaman'}
+		</strong>
+	</p>
+	<p>Kursor meninggalkan halaman sebanyak: <strong>{jumlahKeluar}</strong> kali</p>
+
+	{#if tampilBanner}
+		<div style="margin-top: 12px; padding: 10px 12px; background: #fff3cd; border: 1px solid #ffe69c; border-radius: 8px; font-size: 14px;">
+			Eh, mau ke mana? Diskon 20% khusus hari ini!
+		</div>
+	{/if}
+</div>`} />
+
+## 4. Latihan
+
+<Exercise title="Exit-intent popup yang muncul sekali">
+Buat "exit-intent popup" ala situs e-commerce dalam satu komponen `App.svelte`. Targetnya: saat kursor user bergerak keluar halaman **lewat sisi atas** (menuju tab/tombol close), munculkan tawaran berlangganan newsletter — tapi **hanya sekali** (kalau sudah ditutup, jangan ganggu lagi).
+
+1. Simpan dua state: `tampil` (`$state(false)`) dan `sudahTutup` (`$state(false)`).
+2. Pakai `&lt;svelte:body&gt;` dengan `onmouseleave`. Di handler: kalau `sudahTutup` sudah `true`, langsung `return`. Kalau `event.clientY <= 0` (kursor keluar lewat atas), set `tampil = true`.
+3. Render popup hanya saat `tampil`. Beri tombol "Tidak, terima kasih" yang menyetel `tampil = false` dan `sudahTutup = true`.
+
+Petunjuk: `mouseleave` tetap membawa koordinat `event.clientY`; nilai `<= 0` menandai kursor menyeberang batas atas viewport.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let tampil = $state(false);
+	let sudahTutup = $state(false);
+
+	function handleLeave(event) {
+		// kalau user sudah pernah menutup, jangan pernah munculkan lagi
+		if (sudahTutup) return;
+
+		// keluar lewat ATAS layar -> kemungkinan menuju address bar / close
+		if (event.clientY <= 0) {
+			tampil = true;
+		}
+	}
+</script>
+
+<!-- listener body otomatis dipasang/dilepas; tak perlu cleanup manual.
+     mouseleave dipilih karena event ini tidak fire di window. -->
+<svelte:body onmouseleave={handleLeave} />
+
+<h1>Toko Sepatu</h1>
+<p>Arahkan kursor ke luar halaman lewat atas untuk memicu popup.</p>
+
+{#if tampil}
+	<div role="dialog" style="border: 1px solid #888; padding: 1rem; margin-top: 1rem; max-width: 320px;">
+		<h2>Tunggu dulu!</h2>
+		<p>Daftar newsletter dan dapatkan diskon 20% untuk pesanan pertama.</p>
+		<button onclick={() => { tampil = false; sudahTutup = true; }}>
+			Tidak, terima kasih
+		</button>
+	</div>
+{/if}
+```
+
+Inti jawabannya: `onmouseleave` di `&lt;svelte:body&gt;` menggantikan seluruh pola `useEffect` + `addEventListener('mouseleave')` + cleanup. Pengecekan `event.clientY <= 0` membedakan "keluar lewat atas" (sinyal exit-intent) dari sekadar kursor lewat samping, dan flag `sudahTutup` memastikan popup tidak mengganggu berulang kali.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+`&lt;svelte:body&gt;` harus berada di <strong>top-level</strong> komponen — tidak boleh dibungkus di dalam blok `&#123;#if&#125;`, `&#123;#each&#125;`, atau di dalam elemen lain. Kalau kamu butuh listener yang kondisional, jangan bungkus tag-nya; pasang selalu `&lt;svelte:body onmouseleave=&#123;handler&#125; /&gt;` lalu beri logika kondisi <em>di dalam</em> handler (mis. `if (sudahTutup) return`). Membungkusnya akan memicu error compile.
+</Callout>
+
+<Callout type="warning">
+Jangan salah target. <strong>`mouseenter` dan `mouseleave` tidak fire di `window`</strong> — mereka event non-bubbling yang butuh elemen konkret, dan untuk "seluruh halaman" elemen itu adalah `document.body`. Kalau kamu memasangnya di `&lt;svelte:window&gt;`, handler tidak akan berperilaku seperti yang kamu harapkan. Sebaliknya, untuk scroll/resize halaman tetap pakai `&lt;svelte:window&gt;`. Aturan praktisnya: kursor keluar-masuk area halaman = `body`; viewport & scroll = `window`.
+</Callout>
+
+<Callout type="warning">
+Berbeda dari saudaranya, `&lt;svelte:body&gt;` <strong>tidak punya binding</strong> sama sekali — tidak ada `bind:scrollY` (itu milik `window`) maupun `bind:activeElement` (itu milik `document`). Ia khusus untuk event listener dan action/attachment. Jangan buang waktu mencari `bind:` di sini.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4, event ditulis dengan sintaks directive `on:` — mis. `&lt;svelte:body on:mouseenter=&#123;fn&#125; /&gt;`. Di Svelte 5 ini menjadi atribut event biasa: `&lt;svelte:body onmouseenter=&#123;fn&#125; /&gt;` (tanpa titik dua). Sintaks `on:` sudah usang; gunakan bentuk `onevent` di semua kode baru.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-body" label="<svelte:body> — dokumentasi resmi Svelte" />

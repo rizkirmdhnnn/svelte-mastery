@@ -1,0 +1,335 @@
+---
+title: svelte/motion
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 9
+status: reference
+description: Referensi lengkap svelte/motion — class Spring & Tween berbasis runes, fungsi lama spring()/tweened(), dan prefersReducedMotion untuk aksesibilitas.
+docs: https://svelte.dev/docs/svelte/svelte-motion
+keywords: [motion, spring, tween, prefers-reduced-motion, animasi]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`svelte/motion` menjawab satu pertanyaan sederhana: **bagaimana caranya membuat sebuah angka pindah dari A ke B secara halus, bukan teleport?** Kalau kamu set langsung `lebar = 100`, elemen melompat. `svelte/motion` memberi kamu "wadah nilai" yang akan **mengejar** target sedikit demi sedikit di tiap frame, lalu kamu cukup membaca nilai sekarangnya untuk dipakai di template.
+
+Analoginya seperti GPS di mobil. Tujuanmu (alamat) sudah pasti, tapi ikon mobil tidak langsung lompat ke sana — ia bergerak menyusuri jalan menuju tujuan. Di `svelte/motion`, **tujuan** itu disebut `target`, dan **posisi ikon mobil sekarang** disebut `current`. Kamu mengubah `target`, dan `current` bertugas mengejarnya.
+
+Svelte 5 punya dua "kelas" untuk ini — `Tween` dan `Spring` (huruf besar, ini class sungguhan, dipakai dengan `new`). Bedanya pada *watak* gerakannya:
+
+- **`Tween`** = animasi berdurasi pasti. Kamu bilang "tempuh dalam 400ms dengan kurva `cubicOut`". Cocok untuk progress bar, angka counter, hal yang butuh durasi terkontrol dan berhenti tepat di target. Analoginya **eskalator**: kecepatan dan waktu sampai sudah ditentukan dari awal.
+- **`Spring`** = animasi berbasis fisika pegas. Kamu **tidak** menentukan durasi; kamu menentukan `stiffness` (kekakuan pegas) dan `damping` (redaman/gesekan). Nilai akan "memantul" mendekati target secara alami, dan kecepatannya menyesuaikan seberapa jauh ia dari target. Cocok untuk hal yang mengikuti pointer/drag, di mana target bisa berubah kapan saja. Analoginya **karet gelang** yang ditarik lalu dilepas.
+
+Kenapa dua-duanya ada? Karena keduanya menyelesaikan masalah berbeda. `Tween` unggul saat kamu butuh **kepastian waktu** ("loading harus penuh dalam 0.8 detik"). `Spring` unggul saat **target terus berubah** dan kamu butuh transisi yang tetap mulus tanpa "patah" walau target dilempar-lempar (mis. kotak yang mengejar kursor). Coba ubah target Tween di tengah animasi — ia akan mulai animasi baru; ubah target Spring di tengah jalan — ia membawa serta momentumnya dan tetap terasa organik.
+
+> Buat pengguna React/Vue: ini kira-kira `react-spring` / Framer Motion `useSpring` (untuk `Spring`) dan `useTransition` berbasis durasi (untuk `Tween`) — bedanya **sudah di dalam kotak**, tanpa dependency tambahan, dan menyatu dengan reaktivitas runes. `spring.current` itu reaktif persis seperti `$state`, jadi cukup taruh di template dan Svelte mengurus re-render-nya.
+
+### `current` vs `target` — pisahkan tampilan dari logika
+
+Ini inti yang sering bikin keliru. `current` adalah **angka yang sedang merayap** (untuk dipajang ke layar). `target` adalah **tujuan yang sudah pasti** (untuk logika programmu). Kalau kamu butuh mendeteksi "apakah skor sudah lewat 100?", baca `target` — bukan `current` yang mungkin masih di 87 dan belum sampai. Salah pilih di sini bikin bug halus: event terlewat atau terpicu berkali-kali.
+
+### `prefersReducedMotion` — animasi yang sopan
+
+Sebagian orang menyetel sistem operasinya ke "kurangi gerakan" (karena mabuk gerak/vestibular, atau preferensi). `svelte/motion` mengekspor `prefersReducedMotion`, sebuah `MediaQuery` reaktif yang `.current`-nya `true` bila pengguna minta gerakan dikurangi. Anggap ini **"saklar hormat"**: bila menyala, langsung lompat ke target (durasi 0 / instan) ketimbang menganimasikan. Menghormatinya itu bagian dari aksesibilitas, bukan opsional.
+
+### Fungsi lama: `spring()` & `tweened()`
+
+Sebelum class baru, ada `spring()` dan `tweened()` (huruf kecil) yang mengembalikan **store**. Kamu membacanya dengan prefix `$` (mis. `$size`) dan mengubahnya lewat `.set()` / `.update()`. Keduanya kini **deprecated** demi `Spring`/`Tween` yang lebih ringkas dan tidak perlu `$`. Masih jalan untuk kode lama, tapi untuk kode baru pakai class.
+
+## 2. Ringkasan API
+
+Karena ini modul referensi, berikut tabel lengkap setiap export `svelte/motion` beserta tanda tangannya. Semua tipe generik `T` artinya wadah ini bisa membungkus angka, objek angka, array angka, `Date`, dan tipe lain (untuk tipe non-standar, sediakan `interpolate`).
+
+### `Spring<T>` (class — modern)
+
+| Anggota | Tanda tangan | Keterangan |
+| --- | --- | --- |
+| Konstruktor | `new Spring<T>(value: T, options?: SpringOptions)` | `value` = nilai awal. |
+| `.current` | `readonly current: T` | Nilai animasi sekarang (reaktif, baca di template). |
+| `.target` | `target: T` | Tujuan. Ubah ini untuk memicu pegas mengejar. |
+| `.stiffness` | `stiffness: number` | Kekakuan pegas `0..1` (default `0.15`). Makin besar makin cepat & "snappy". |
+| `.damping` | `damping: number` | Redaman `0..1` (default `0.8`). Makin kecil makin banyak pantulan. |
+| `.precision` | `precision: number` | Ambang "dianggap selesai" lalu berhenti (default `0.01`). |
+| `.set()` | `set(value: T, options?: SpringUpdateOptions): Promise<void>` | Set target; `Promise` resolve saat `current` sampai. |
+| `Spring.of()` | `static of<U>(fn: () => U, options?: SpringOptions): Spring<U>` | Pegas yang otomatis mengikuti nilai balik `fn` (harus di dalam effect/komponen). |
+
+`SpringUpdateOptions` (opsi `.set()`):
+
+| Opsi | Tipe | Arti |
+| --- | --- | --- |
+| `instant` | `boolean` | Langsung samakan `current` ke `target` tanpa animasi. |
+| `preserveMomentum` | `number` | Pertahankan kecepatan saat ini selama N ms — untuk gerakan "lempar"/fling. |
+
+### `Tween<T>` (class — modern)
+
+| Anggota | Tanda tangan | Keterangan |
+| --- | --- | --- |
+| Konstruktor | `new Tween<T>(value: T, options?: TweenOptions<T>)` | `value` = nilai awal. |
+| `.current` | `readonly current: T` | Nilai animasi sekarang (reaktif). |
+| `.target` | `target: T` | Tujuan. Ubah ini untuk memulai animasi berdurasi. |
+| `.set()` | `set(value: T, options?: TweenOptions<T>): Promise<void>` | Set target dengan opsi sekali-pakai; `Promise` resolve saat animasi tuntas. |
+| `Tween.of()` | `static of<U>(fn: () => U, options?: TweenOptions<U>): Tween<U>` | Tween yang mengikuti nilai balik `fn` (di dalam effect/komponen). |
+
+`TweenOptions<T>`:
+
+| Opsi | Tipe | Arti |
+| --- | --- | --- |
+| `duration` | `number \| ((from: T, to: T) => number)` | Lama animasi ms (default `400`). Boleh fungsi agar durasi bergantung jarak. |
+| `easing` | `(t: number) => number` | Kurva dari `svelte/easing` (default `linear`). |
+| `delay` | `number` | Jeda ms sebelum mulai (default `0`). |
+| `interpolate` | `(a: T, b: T) => (t: number) => T` | Cara menginterpolasi tipe non-standar (mis. warna/string). |
+
+### Fungsi lama (deprecated)
+
+| Export | Tanda tangan | Pengganti modern |
+| --- | --- | --- |
+| `spring()` | `spring<T>(value?: T, opts?: SpringOpts): Spring` (store) | `new Spring(value, opts)` |
+| `tweened()` | `tweened<T>(value?: T, defaults?: TweenedOptions<T>): Tweened<T>` (store) | `new Tween(value, opts)` |
+
+### Aksesibilitas
+
+| Export | Tipe | Keterangan |
+| --- | --- | --- |
+| `prefersReducedMotion` | `MediaQuery` | `.current` bernilai `true` bila pengguna minta gerakan dikurangi. |
+
+## 3. Contoh kode
+
+```svelte
+<!-- spring-vs-tween.svelte — dua watak gerakan (Svelte 5, class baru) -->
+<script>
+	import { Tween, Spring } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
+
+	// Tween: durasi pasti + kurva easing. Bagus untuk progress/counter.
+	const progress = new Tween(0, { duration: 400, easing: cubicOut });
+
+	// Spring: fisika pegas, tanpa durasi. Bagus untuk mengejar target dinamis.
+	const koin = new Spring(0, { stiffness: 0.1, damping: 0.25 });
+
+	function naik() {
+		progress.target = 100; // ubah .target untuk memicu animasi
+		koin.target = 50;
+	}
+</script>
+
+<!-- baca .current (reaktif) untuk nilai yang sedang dianimasikan -->
+<progress value={progress.current} max="100"></progress>
+<p>Koin: {Math.round(koin.current)}</p>
+<button onclick={naik}>Animasikan</button>
+```
+
+```svelte
+<!-- accessible.svelte — hormati prefersReducedMotion + await .set() -->
+<script>
+	import { Tween, prefersReducedMotion } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
+
+	const bar = new Tween(0, { duration: 800, easing: cubicOut });
+	let status = $state('siap');
+
+	async function muat() {
+		status = 'memuat...';
+
+		// Bila pengguna minta gerakan dikurangi, lompat instan (duration 0).
+		// .set() mengembalikan Promise yang resolve saat animasi selesai —
+		// jadi kita bisa await sebelum lanjut ke langkah berikutnya.
+		await bar.set(100, {
+			duration: prefersReducedMotion.current ? 0 : 800
+		});
+
+		status = 'selesai';
+	}
+</script>
+
+<progress value={bar.current} max="100"></progress>
+<button onclick={muat}>Muat ({status})</button>
+```
+
+```svelte
+<!-- fling.svelte — gerakan "lempar" dengan preserveMomentum & instant -->
+<script>
+	import { Spring } from 'svelte/motion';
+
+	const x = new Spring(0, { stiffness: 0.1, damping: 0.4 });
+
+	function lempar() {
+		// preserveMomentum: lanjutkan lintasan ~300ms seolah dilempar.
+		x.set(300, { preserveMomentum: 300 });
+	}
+
+	function reset() {
+		// instant: balik ke 0 tanpa animasi (mis. saat ganti layar).
+		x.set(0, { instant: true });
+	}
+</script>
+
+<div style="transform: translateX({x.current}px); width: 40px; height: 40px; background: teal;"></div>
+<button onclick={lempar}>Lempar</button>
+<button onclick={reset}>Reset (instant)</button>
+```
+
+<Callout type="legacy">
+Cara <strong>lama</strong> (Svelte 4 / awal Svelte 5) memakai fungsi huruf kecil yang mengembalikan <em>store</em> dan dibaca dengan prefix <code>$</code>. Ini masih jalan tapi <strong>deprecated</strong> — tunjukkan hanya untuk mengenali kode lama, jangan ditulis baru.
+
+```svelte
+<!-- API LAMA (Svelte 4) — JANGAN dipakai di kode baru -->
+<script>
+	import { tweened, spring } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
+
+	const progress = tweened(0, { duration: 400, easing: cubicOut }); // store
+	const koin = spring(0, { stiffness: 0.1, damping: 0.25 });        // store
+
+	function naik() {
+		progress.set(100); // ubah lewat .set()/.update()
+		koin.set(50);
+	}
+</script>
+
+<!-- dibaca dengan $-prefix store, bukan .current -->
+<progress value={$progress} max="100"></progress>
+<p>Koin: {Math.round($koin)}</p>
+```
+
+</Callout>
+
+## 4. Coba sendiri
+
+Playground ini memajang `Spring` dan `Tween` berdampingan supaya watak keduanya terasa. Klik "acak ukuran" beberapa kali cepat-cepat: kotak Spring tetap mulus dan membawa momentum (tak pernah patah), sedangkan "isi/kosongkan" Tween selalu menempuh durasi yang sama. Coba juga tombol "lempar" untuk merasakan `preserveMomentum`. Perhatikan `current` (nilai yang dipajang) berbeda dari `target` (tujuan yang sudah pasti).
+
+<Playground code={`<script>
+	import { Spring, Tween } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
+
+	// Spring: fisika pegas — kejar target tanpa durasi tetap
+	const ukuran = new Spring(80, { stiffness: 0.1, damping: 0.4 });
+
+	// Tween: durasi pasti + kurva easing
+	const progres = new Tween(0, { duration: 700, easing: cubicOut });
+
+	function acak() {
+		ukuran.target = 40 + Math.floor(Math.random() * 160);
+	}
+
+	function lempar() {
+		// preserveMomentum: lanjutkan lintasan seperti gerakan fling
+		ukuran.set(220, { preserveMomentum: 300 });
+	}
+
+	function isiPenuh() {
+		progres.target = progres.target >= 100 ? 0 : 100;
+	}
+</script>
+
+<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+	<button onclick={acak}>Spring: acak ukuran</button>
+	<button onclick={lempar}>Spring: lempar (momentum)</button>
+	<button onclick={isiPenuh}>Tween: isi/kosongkan</button>
+</div>
+
+<div
+	style="width: {ukuran.current}px; height: {ukuran.current}px; background: teal; border-radius: 10px;"
+></div>
+<p>Spring.current: {Math.round(ukuran.current)}px  (target {Math.round(ukuran.target)}px)</p>
+
+<progress value={progres.current} max="100"></progress>
+<p>Tween.current: {Math.round(progres.current)}%  (target {progres.target}%)</p>`} />
+
+<Callout type="tip">
+Mainkan <code>stiffness</code> dan <code>damping</code> di kepala: naikkan <code>stiffness</code> agar kotak menyentak lebih cepat; turunkan <code>damping</code> (mis. ke <code>0.1</code>) agar memantul-mantul sebelum diam. Karena Spring berbasis fisika, mengubah <code>.target</code> berkali-kali dengan cepat tetap menghasilkan gerakan mulus tanpa "patah" — inilah alasan utama memilih <code>Spring</code> untuk nilai yang mengikuti input pengguna real-time (drag, pointer).
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Gauge yang menghormati prefersReducedMotion">
+Buat satu komponen `.svelte` mandiri yang menggabungkan ketiga konsep modul ini:
+
+1. **`Tween`** untuk progress bar "memuat" 0 → 100 dengan durasi `800ms` dan easing `cubicOut` dari `svelte/easing`.
+2. **`Spring`** untuk angka besar (mis. "skor") yang mengejar nilai acak `0..1000` setiap tombol diklik.
+3. **`prefersReducedMotion`**: bila pengguna minta gerakan dikurangi, kedua nilai harus **lompat instan** ke target (gunakan `duration: 0` untuk Tween dan opsi `{ instant: true }` untuk Spring).
+
+Petunjuk: baca nilai animasi lewat `.current`, dan untuk Spring set instan pakai `spring.set(target, { instant: true })`. Untuk Tween, `tween.set(100, { duration: ... })`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { Tween, Spring, prefersReducedMotion } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
+
+	// Tween: progress bar berdurasi pasti
+	const bar = new Tween(0, { duration: 800, easing: cubicOut });
+
+	// Spring: angka skor yang mengejar target acak
+	const skor = new Spring(0, { stiffness: 0.1, damping: 0.4 });
+
+	function jalankan() {
+		const target = Math.floor(Math.random() * 1000);
+		const reduce = prefersReducedMotion.current;
+
+		// Tween: durasi 0 = instan saat reduce-motion menyala
+		bar.set(bar.target >= 100 ? 0 : 100, { duration: reduce ? 0 : 800 });
+
+		// Spring: opsi instant untuk lompat tanpa animasi
+		skor.set(target, { instant: reduce });
+	}
+</script>
+
+<progress value={bar.current} max="100"></progress>
+<h2>Skor: {Math.round(skor.current)}</h2>
+<button onclick={jalankan}>Jalankan</button>
+
+<p style="opacity: 0.7;">
+	reduce-motion: {prefersReducedMotion.current ? 'ya (instan)' : 'tidak (animasi)'}
+</p>
+```
+
+Kuncinya ada di dua hal. Pertama, **`.set()` menerima opsi sekali-pakai** — jadi kamu bisa menentukan instan/tidak per pemanggilan tanpa mengubah konfigurasi awal. Kedua, `prefersReducedMotion.current` itu **reaktif**: kalau pengguna mengubah setelan OS-nya saat aplikasi berjalan, nilai ini ikut berubah tanpa kamu memasang listener apa pun. Kamu memajang `bar.current`/`skor.current` (yang merayap), sementara keputusan logika memakai `prefersReducedMotion.current` dan `target`.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="warning">
+<code>Tween</code> dan <code>Spring</code> adalah <strong>class</strong> (huruf besar) — selalu <code>new Tween(...)</code> / <code>new Spring(...)</code>, dan baca nilainya lewat properti <code>.current</code> (bukan prefix <code>$</code>). Jangan tertukar dengan <code>tweened()</code>/<code>spring()</code> lama (huruf kecil, store) yang dibaca pakai <code>$nama</code> dan kini deprecated.
+</Callout>
+
+<Callout type="pitfall">
+Memakai <code>.current</code> untuk <strong>logika</strong>, bukan cuma tampilan. <code>.current</code> masih merayap menuju tujuan, jadi mendeteksi "sudah sampai 100?" dengan <code>if (tween.current >= 100)</code> bisa terlewat atau terpicu berkali-kali. Untuk keputusan program, baca <code>.target</code> (nilai pasti). Kalau perlu tahu animasi benar-benar selesai, <code>await tween.set(...)</code> / <code>await spring.set(...)</code> — keduanya mengembalikan <code>Promise</code> yang resolve saat <code>current</code> sampai di <code>target</code>.
+</Callout>
+
+<Callout type="pitfall">
+Transition directive (<code>fly</code>, <code>fade</code>, dst. dari <code>svelte/transition</code>) hanya jalan saat elemen <strong>masuk/keluar DOM</strong> (di dalam <code>&#123;#if&#125;</code>/<code>&#123;#each&#125;</code>). Untuk menganimasikan elemen yang <strong>tetap ada</strong> tapi nilainya berubah (ukuran, posisi, angka), itulah tugas <code>Spring</code>/<code>Tween</code> — jangan salah pakai transition di sini.
+</Callout>
+
+<Callout type="tip">
+Selalu hormati <code>prefersReducedMotion</code> di animasi yang mencolok. Pola termudah: simpan satu durasi terpilih, mis. <code>const d = prefersReducedMotion.current ? 0 : 400</code>, lalu pakai di <code>.set(value, &#123; duration: d &#125;)</code>. Untuk <code>Spring</code> pakai opsi <code>&#123; instant: prefersReducedMotion.current &#125;</code>. Murah dilakukan, besar dampaknya bagi sebagian pengguna.
+</Callout>
+
+<Callout type="legacy">
+Migrasi dari API lama: <code>tweened(v, opts)</code> → <code>new Tween(v, opts)</code>, <code>spring(v, opts)</code> → <code>new Spring(v, opts)</code>. Ganti pembacaan <code>$nama</code> menjadi <code>nama.current</code>, dan ganti <code>nama.set(x)</code> store menjadi <code>nama.target = x</code> (atau tetap <code>nama.set(x, opts)</code> bila butuh opsi sekali-pakai). <code>.update(fn)</code> store digantikan dengan membaca lalu menulis <code>.target</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "import { spring } from 'svelte/motion'", modern: "import { Spring } from 'svelte/motion'", note: 'Class baru berbasis runes.' },
+	{ legacy: "import { tweened } from 'svelte/motion'", modern: "import { Tween } from 'svelte/motion'", note: 'Durasi + easing, .current & .target.' },
+	{ legacy: 'const s = spring(0)', modern: 'const s = new Spring(0)', note: 'Pakai new (ini class, bukan factory).' },
+	{ legacy: '$s (baca store)', modern: 's.current (baca properti)', note: 'Tak perlu $-prefix lagi.' },
+	{ legacy: 's.set(50) lalu $s berubah', modern: 's.target = 50 (atau s.set(50, opts))', note: 'Ubah .target untuk memicu animasi.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-motion" label="svelte/motion — Spring, Tween & prefersReducedMotion" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-easing" label="svelte/easing — kurva easing untuk opsi easing Tween" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-transition" label="svelte/transition — animasi masuk/keluar elemen (pelengkap)" />

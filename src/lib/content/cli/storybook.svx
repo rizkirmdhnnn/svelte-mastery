@@ -1,0 +1,293 @@
+---
+title: storybook
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 9
+status: stable
+description: Add-on storybook untuk sv — pasang Storybook sebagai katalog komponen terisolasi, tulis stories untuk komponen Svelte (Svelte CSF), lalu jalankan & build katalognya.
+docs: https://svelte.dev/docs/cli/storybook
+keywords: [storybook, sv add, katalog komponen, stories, svelte csf, autodocs]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sv add storybook` adalah add-on yang **memasang dan mengonfigurasi [Storybook](https://storybook.js.org)** ke dalam proyekmu. Di balik layar ia menjalankan `npx storybook init`, mendeteksi apakah kamu memakai SvelteKit atau Svelte + Vite, memasang framework yang cocok (`@storybook/sveltekit` atau `@storybook/svelte-vite`), membuat folder `.storybook/`, dan menambahkan beberapa file `*.stories.*` contoh. Hasil akhirnya: sebuah **katalog komponen** — aplikasi mini terpisah tempat kamu mengembangkan, mendokumentasikan, dan menguji komponen UI **satu per satu, terlepas dari aplikasi utama**.
+
+Kalau kamu datang dari React atau Vue, Storybook bukan barang baru: ini **tool yang sama persis** yang dipakai di ekosistem Next.js maupun Nuxt. Storybook itu **framework-agnostic** — intinya (UI explorer, panel controls, addon docs, port 6006) identik di mana-mana. Yang benar-benar khas Svelte hanya **format penulisan story** (ada dialek "Svelte CSF" yang ditulis sebagai komponen `.svelte`) dan **integrasi SvelteKit** yang ditambahkan add-on ini. Jadi sebagian besar intuisi Storybook-mu yang lama langsung terbawa.
+
+### Analogi: showroom & manekin etalase
+
+Aplikasi nyata itu seperti **jalan raya yang ramai**: sebuah komponen tombol muncul di tengah halaman checkout, dikelilingi state global, data dari server, dan komponen lain. Kalau kamu mau memeriksa "apakah tombol ini tampil benar saat `loading`, saat `disabled`, saat labelnya sangat panjang?", kamu harus menyetir seluruh aplikasi sampai ke kondisi itu dulu — melelahkan dan rapuh.
+
+Storybook adalah **showroom dengan etalase manekin**. Tiap komponen dikeluarkan dari keramaian jalan dan dipajang sendirian di ruangan terang. Tiap manekin memakai **satu "outfit"** — satu kombinasi props/state tertentu. Manekin satu memakai varian `primary`, yang lain `disabled`, yang lain lagi "label kepanjangan". Kamu bisa berjalan keliling showroom dan memeriksa setiap variasi tanpa harus menjalankan toko sungguhan. **Satu manekin = satu story.**
+
+### Apa itu "story" sebenarnya
+
+Sebuah **story** adalah **satu state spesifik dari satu komponen yang sudah di-render**. Komponen `Button` bisa punya banyak story: `Primary`, `Secondary`, `Disabled`, `Loading`. Masing-masing hanyalah komponen yang sama dengan **props (`args`) berbeda**. Konsep ini disebut **CSF (Component Story Format)** dan sama lintas-framework: kamu menyebut komponennya, menyebut argumen default-nya, lalu mengekspor tiap variasi.
+
+Kenapa repot-repot menulis story, padahal komponennya sudah jalan di app? Empat alasan yang saling menumpuk:
+
+1. **Develop terisolasi** — bikin komponen baru tanpa harus menyiapkan seluruh halaman + data dulu. Lebih cepat dan fokus.
+2. **Dokumentasi hidup** — story jadi etalase untuk desainer, QA, dan rekan tim: "begini lho semua varian Button kita". Dengan tag `autodocs`, Storybook bahkan menghasilkan halaman dokumentasi otomatis dari `args` & tipe props.
+3. **Tangkap edge case** — kamu *dipaksa* memikirkan state aneh (kosong, error, teks panjang) karena tiap state ditulis eksplisit sebagai story.
+4. **Fondasi visual/interaction testing** — story yang sama bisa dipakai ulang oleh test runner (Vitest + Playwright) untuk snapshot/interaction test. Jadi menulis story = sekalian menyiapkan bahan test.
+
+### Kenapa pakai `sv add storybook`, bukan `storybook init` langsung
+
+Kamu *bisa* menjalankan `npx storybook init` sendiri, tapi add-on `sv` menambahkan lapisan khusus SvelteKit yang krusial. Komponen di proyek SvelteKit sering mengimpor modul virtual seperti `$app/stores`, `$app/state`, `$app/navigation`, atau `$app/environment`. Di luar konteks SvelteKit (dan Storybook **bukan** server SvelteKit), impor itu **tidak ada** dan story-mu langsung error. Add-on ini menyiapkan **mocking modul `$app/*`** sehingga komponen yang memakainya tetap bisa di-render di showroom, plus penanganan otomatis untuk tautan (`<a>`) agar navigasi di dalam story tidak melempar kamu keluar. Inilah nilai tambah yang bikin add-on resmi lebih hemat pusing daripada setup manual.
+
+## 2. Contoh kode
+
+Memasang add-on cukup satu perintah:
+
+```bash
+# Interaktif — sv menjalankan "storybook init", mendeteksi SvelteKit/Svelte,
+# memasang framework yang cocok, dan menyiapkan mocking $app/* + link handling.
+npx sv add storybook
+```
+
+Setelah selesai, struktur proyek kira-kira bertambah seperti ini:
+
+```bash
+my-app/
+├─ .storybook/
+│  ├─ main.ts          # config inti: framework, glob "stories", daftar addon
+│  └─ preview.ts       # config global tiap story: decorator, parameter, global args
+├─ src/
+│  └─ stories/         # beberapa story contoh bawaan (Button, Header, Page)
+└─ package.json        # +script "storybook" & "build-storybook", +devDeps Storybook
+```
+
+File `.storybook/main.ts` adalah otaknya — di sinilah Storybook tahu **di mana mencari story** dan **framework apa** yang dipakai:
+
+```ts
+// .storybook/main.ts
+import type { StorybookConfig } from '@storybook/sveltekit';
+
+const config: StorybookConfig = {
+	// Glob: SEMUA file yang cocok pola ini dianggap story dan muncul di sidebar.
+	// Inilah yang menentukan "file apa yang jadi katalog".
+	stories: ['../src/**/*.stories.@(js|ts|svelte)'],
+
+	addons: ['@storybook/addon-docs'],
+
+	// Framework SvelteKit: inilah yang dipasang sv & yang menyetel
+	// mocking $app/* + integrasi Vite milik SvelteKit.
+	framework: { name: '@storybook/sveltekit', options: {} }
+};
+
+export default config;
+```
+
+Sekarang **stories untuk komponen Svelte**. Cara paling natural di Svelte adalah **Svelte CSF**: menulis story sebagai komponen `.svelte` (`*.stories.svelte`) lewat addon `@storybook/addon-svelte-csf`. Perhatikan `<script module>` — story didefinisikan di **module scope** (Svelte 5), bukan di instance script:
+
+```svelte
+<!-- src/lib/Button.stories.svelte -->
+<script module>
+	// defineMeta = "metadata showroom" untuk komponen ini.
+	import { defineMeta } from '@storybook/addon-svelte-csf';
+	import Button from './Button.svelte';
+
+	// Story = komponen yang kita pakai di bawah untuk mendeklarasikan tiap varian.
+	// args di sini = props DEFAULT yang dipakai semua story (bisa di-override).
+	const { Story } = defineMeta({
+		title: 'UI/Button',          // posisi di sidebar: folder "UI" > "Button"
+		component: Button,
+		tags: ['autodocs'],          // auto-generate halaman docs dari props
+		args: { label: 'Klik aku' }, // nilai default untuk semua story
+		argTypes: {
+			// "control" = widget di panel Controls agar bisa diutak-atik live
+			variant: { control: 'select', options: ['primary', 'secondary'] },
+			disabled: { control: 'boolean' }
+		}
+	});
+</script>
+
+<!-- Story sederhana: cukup oper args yang berbeda dari default. -->
+<Story name="Primary" args={{ variant: 'primary' }} />
+
+<Story name="Secondary" args={{ variant: 'secondary' }} />
+
+<Story name="Disabled" args={{ disabled: true }} />
+
+<!-- Butuh render kustom (mis. isi slot/children)? pakai snippet `children`.
+     args otomatis ter-pass & ter-tipe — ini keunggulan Svelte CSF. -->
+<Story name="Dengan Ikon">
+	{#snippet children(args)}
+		<Button {...args}>🚀 {args.label}</Button>
+	{/snippet}
+</Story>
+```
+
+Alternatifnya, format **CSF biasa** (`*.stories.ts`) — identik dengan yang kamu kenal di React. Berguna kalau kamu mau story tanpa file `.svelte`, atau seragam dengan konvensi tim lintas-framework:
+
+```ts
+// src/lib/Button.stories.ts
+import type { Meta, StoryObj } from '@storybook/sveltekit';
+import Button from './Button.svelte';
+
+// meta = setara defineMeta di atas, tapi sebagai objek TS.
+const meta = {
+	title: 'UI/Button',
+	component: Button,
+	tags: ['autodocs'],
+	args: { label: 'Klik aku' }
+} satisfies Meta<typeof Button>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+// Tiap export bernama = satu story. `args` = props varian itu.
+export const Primary: Story = { args: { variant: 'primary' } };
+export const Secondary: Story = { args: { variant: 'secondary' } };
+export const Disabled: Story = { args: { disabled: true } };
+```
+
+<Callout type="tip">
+Dua format itu boleh hidup berdampingan di proyek yang sama (lihat glob <code>stories</code> di <code>main.ts</code> yang mencakup <code>svelte</code> maupun <code>ts</code>). Rekomendasi praktis: pakai <strong>Svelte CSF</strong> (<code>.stories.svelte</code>) saat butuh render kustom dengan markup/snippet/slot, karena di sana kamu menulis Svelte beneran; pakai <strong>CSF biasa</strong> (<code>.stories.ts</code>) untuk varian yang murni beda <code>args</code> tanpa markup tambahan.
+</Callout>
+
+## 3. Coba sendiri
+
+Storybook adalah **aplikasi terpisah** yang butuh dev server-nya sendiri (port `6006`), jadi tidak bisa dijalankan di live preview halaman ini. Berikut **alur kerja end-to-end** beranotasi yang bisa kamu ikuti di proyek lokal — dari komponen yang dikatalogkan sampai mem-build katalog statis.
+
+Pertama, ini **komponen yang akan kita pajang** di showroom — `Button` sederhana dengan beberapa varian:
+
+```svelte
+<!-- src/lib/Button.svelte — komponen target yang akan dibuatkan stories -->
+<script>
+	// Props Svelte 5: variant & disabled jadi "tuas" yang divariasikan tiap story.
+	let { variant = 'primary', disabled = false, label = 'Tombol', children } = $props();
+</script>
+
+<button class="btn {variant}" {disabled}>
+	{#if children}{@render children()}{:else}{label}{/if}
+</button>
+
+<style>
+	.btn { padding: 0.5rem 1rem; border-radius: 8px; border: none; cursor: pointer; }
+	.primary { background: #ff6b3d; color: white; }
+	.secondary { background: #eee; color: #333; }
+	.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>
+```
+
+Lalu jalankan dan kelola katalognya:
+
+```bash
+# 1) Nyalakan Storybook (dev server, default di http://localhost:6006).
+#    Hot-reload: ubah komponen/story -> showroom langsung update.
+npm run storybook
+
+# 2) Build katalog STATIS ke folder storybook-static/ (HTML/JS/CSS biasa).
+#    Hasilnya bisa di-deploy ke hosting statis apa pun (Vercel, Netlify, Pages)
+#    sebagai "design system docs" yang bisa dibagikan ke tim/desainer.
+npm run build-storybook
+
+# 3) Pratinjau hasil build statis secara lokal (mis. pakai http-server):
+npx http-server ./storybook-static
+```
+
+Anatomi sebuah story, supaya kamu paham tiap potongannya:
+
+| Bagian | Contoh | Peran |
+|---|---|---|
+| `title` | `'UI/Button'` | Posisi & pengelompokan di sidebar (pakai `/` untuk folder bertingkat). |
+| `component` | `component: Button` | Komponen yang dikatalogkan; sumber tipe props untuk Controls & autodocs. |
+| `args` | `args={{ variant: 'primary' }}` | Props untuk varian itu — ini "outfit" sang manekin. |
+| `argTypes` / Controls | `control: 'select'` | Widget di panel agar props bisa diutak-atik **live** di UI. |
+| `tags: ['autodocs']` | di `defineMeta`/`meta` | Auto-generate halaman dokumentasi dari komponen + story. |
+| Story name | `name="Disabled"` | Label varian di sidebar; satu nama = satu manekin. |
+
+Konsep yang paling sering bikin pendatang baru tersandung: **`args` itu cuma props**. Jangan menganggap story sebagai "test" yang rumit. Sebuah story hanyalah komponenmu yang dipanggil dengan satu set props tertentu, lalu Storybook merendernya dan memberi panel untuk mengubah props itu secara interaktif. Kalau kamu paham `$props()`, kamu sudah paham 90% dari story.
+
+## 4. Latihan
+
+<Exercise title="Tulis stories untuk komponen <Badge> dengan beberapa varian">
+Kamu punya komponen `Badge.svelte` (Svelte 5) yang menerima props: `text` (string), `color` (`'green' | 'red' | 'gray'`, default `'gray'`), dan `pill` (boolean, default `false`, kalau true sudutnya membulat penuh). Tugas:
+
+1. Tulis file **Svelte CSF** `Badge.stories.svelte` dengan `defineMeta`: judul `'UI/Badge'`, aktifkan `autodocs`, beri `args` default `text: 'Baru'`, dan beri `argTypes` agar `color` muncul sebagai control `select` dan `pill` sebagai `boolean`.
+2. Buat tiga story: `Default`, `Success` (warna hijau), dan `Pill` (bentuk pill + warna merah).
+3. Jelaskan singkat (komentar): kenapa story ditulis di `<script module>` dan bukan di instance `<script>` biasa?
+
+{#snippet solution()}
+
+  ```svelte
+  <!-- src/lib/Badge.stories.svelte -->
+  <script module>
+    import { defineMeta } from '@storybook/addon-svelte-csf';
+    import Badge from './Badge.svelte';
+
+    // defineMeta dipanggil di MODULE SCOPE karena metadata story (title,
+    // component, args) bersifat "satu kali per file" — bukan per instance.
+    // Di Svelte 5, kode level-modul ditulis di <script module>
+    // (pengganti <script context="module"> gaya Svelte 4).
+    const { Story } = defineMeta({
+      title: 'UI/Badge',
+      component: Badge,
+      tags: ['autodocs'],
+      args: { text: 'Baru' },        // default untuk semua story
+      argTypes: {
+        color: { control: 'select', options: ['green', 'red', 'gray'] },
+        pill: { control: 'boolean' }
+      }
+    });
+  </script>
+
+  <!-- Cukup oper args yang berbeda dari default. -->
+  <Story name="Default" />
+
+  <Story name="Success" args={{ color: 'green', text: 'Sukses' }} />
+
+  <Story name="Pill" args={{ pill: true, color: 'red', text: 'Penting' }} />
+  ```
+
+  Kenapa `<script module>`: `defineMeta` mendeklarasikan metadata yang berlaku **untuk seluruh file story sekali saja** (judul sidebar, komponen target, args default). Itu bukan state per-render, jadi tempatnya di scope modul — dijalankan satu kali saat modul dimuat, bukan tiap kali komponen di-instansiasi. Di Svelte 5, scope itu adalah `<script module>`. Menulisnya di instance `<script>` biasa salah secara semantik dan addon Svelte CSF tidak akan menemukannya.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>File story tak muncul karena tak cocok glob <code>stories</code>.</strong> Storybook hanya memuat file yang cocok pola di <code>.storybook/main.ts</code> (mis. <code>../src/**/*.stories.@(js|ts|svelte)</code>). Kalau kamu menamai file <code>Button.story.svelte</code> (kurang "s", harusnya <code>stories</code>) atau menaruhnya di luar folder yang dicakup glob, ia <strong>diam-diam tidak muncul</strong> tanpa error. Cek dulu pola glob & lokasi file sebelum bingung "kenapa kosong".
+</Callout>
+
+<Callout type="pitfall">
+<strong>Lupa <code>&lt;script module&gt;</code> untuk Svelte CSF.</strong> <code>defineMeta</code> WAJIB dipanggil di module scope. Menaruhnya di instance <code>&lt;script&gt;</code> biasa membuat addon tidak menemukan metadata dan story tak ter-render. Catatan: ini <strong>bukan</strong> <code>&lt;script context="module"&gt;</code> gaya Svelte 4 — di Svelte 5 sintaks barunya adalah <code>&lt;script module&gt;</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Komponen yang memakai <code>$app/*</code> bisa error tanpa setup mocking.</strong> Story untuk komponen yang mengimpor <code>$app/stores</code>, <code>$app/state</code>, atau <code>$app/navigation</code> berjalan di luar runtime SvelteKit. Inilah alasan memakai <code>sv add storybook</code> (yang menyiapkan mocking <code>$app/*</code>) ketimbang <code>storybook init</code> mentah. Kalau tetap error, mock store/fungsi yang dipakai komponen lewat decorator di <code>.storybook/preview.ts</code>, atau (lebih baik) refactor agar data masuk lewat <strong>props</strong> sehingga komponen tidak bergantung langsung ke modul SvelteKit — komponen yang "dumb" (digerakkan props) jauh lebih mudah dipajang di showroom.
+</Callout>
+
+<Callout type="tip">
+<strong>Aktifkan <code>tags: ['autodocs']</code> sejak awal.</strong> Dengan satu tag itu, Storybook meng-generate halaman dokumentasi otomatis dari komponen + daftar props + story-mu — gratis "design system docs" tanpa menulis markdown manual. Tambahkan deskripsi via JSDoc/komentar di props komponen agar tabel docs makin informatif.
+</Callout>
+
+<Callout type="tip">
+<strong>Pisahkan komponen "presentational" agar mudah dikatalogkan.</strong> Komponen yang digerakkan murni oleh <code>$props()</code> (tanpa fetch sendiri, tanpa akses store global) adalah yang paling enak dibuatkan story: cukup oper <code>args</code> dan selesai. Pola ini juga membuat komponen lebih mudah diuji dan dipakai ulang — Storybook seolah "memaksa" arsitektur yang lebih bersih.
+</Callout>
+
+Bagi yang berpindah dari Storybook di ekosistem lain, peta padanannya singkat — konsep inti sama, hanya format story & framework package yang khas Svelte:
+
+<LegacyVsModern legacyLabel="React / Vue" modernLabel="SvelteKit" rows={[
+	{ legacy: '@storybook/react / @storybook/vue3', modern: '@storybook/sveltekit', note: 'framework package yang dipasang sv add storybook' },
+	{ legacy: 'Button.stories.tsx + render JSX', modern: 'Button.stories.svelte (Svelte CSF) atau .stories.ts', note: 'CSF biasa identik; Svelte CSF render markup Svelte asli' },
+	{ legacy: 'context="module" / setup script', modern: '<script module>', note: 'tempat defineMeta di Svelte 5' },
+	{ legacy: 'export const Primary = { args }', modern: '<Story name="Primary" args={...} /> atau export const', note: 'konsep args = props identik' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/storybook" label="sv — Add-on storybook (apa yang dipasang & integrasi SvelteKit)" />
+
+<DocsLink href="https://storybook.js.org/docs/get-started/frameworks/sveltekit" label="Storybook — panduan resmi untuk SvelteKit (stories, autodocs, addon)" />

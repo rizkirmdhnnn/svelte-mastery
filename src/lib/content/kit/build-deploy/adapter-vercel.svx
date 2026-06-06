@@ -1,0 +1,315 @@
+---
+title: Vercel
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 10
+status: stable
+description: Deploy SvelteKit ke Vercel dengan adapter-vercel — pilih serverless vs edge, aktifkan ISR & image optimization, dan atur konfigurasi per-rute.
+docs: https://svelte.dev/docs/kit/adapter-vercel
+keywords: [adapter-vercel, serverless, edge, ISR, image optimization, deployment]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Saat kamu menjalankan `vite build` di proyek SvelteKit, hasilnya adalah representasi aplikasimu yang **netral platform** — sekumpulan modul plus sebuah "handler" yang tahu cara mengubah HTTP request jadi HTTP response. Tapi Vercel tidak bisa menjalankan output netral itu apa adanya. Vercel butuh bentuk yang sangat spesifik: folder `.vercel/output/` dengan struktur fungsi, manifest routing, dan metadata tertentu (yang Vercel sebut **Build Output API**). Tugas `@sveltejs/adapter-vercel` adalah menjadi penerjemah terakhir: ia mengambil output universal SvelteKit dan membungkusnya ulang jadi "dialek Vercel".
+
+Kalau kamu datang dari Next.js: di sana deploy ke Vercel terasa "ajaib" karena Next dan Vercel dibuat perusahaan yang sama — SSR, ISR, dan image optimization tinggal jalan tanpa konfigurasi. Di SvelteKit, keajaiban yang sama dijembatani secara **eksplisit** oleh adapter ini. Bedanya bukan soal kemampuan (semua fitur Vercel yang penting tersedia), melainkan soal di mana keajaiban itu tinggal: di paket adapter yang bisa kamu lihat dan konfigurasi, bukan di dalam framework yang tertutup.
+
+### Dua "rasa" fungsi: Serverless vs Edge
+
+Ini keputusan paling fundamental saat deploy ke Vercel, jadi pahami dulu intuisinya.
+
+**Serverless Function** berjalan di runtime **Node.js penuh**. Bayangkan ia seperti **dapur restoran lengkap**: ada kompor, oven, kulkas, semua alat. Kamu bisa masak apa saja — baca file system (lewat helper khusus), pakai library Node berat, koneksi database panjang. Tapi dapur ini ada di **satu gudang regional** (defaultnya `iad1`, Washington D.C., AS). Saat tidak ada pesanan, dapurnya "tidur"; pesanan pertama harus menunggu dapur "menyala" dulu — inilah **cold start**. Cocok untuk logika berat, akses DB, atau apa pun yang butuh Node API lengkap.
+
+**Edge Function** berjalan di runtime yang **lebih ringan** (berbasis V8/Web API, mirip Cloudflare Workers — bukan Node penuh). Bayangkan ia seperti **gerobak kopi** yang ditaruh di **ratusan sudut jalan** di seluruh dunia. Pelanggan di Jakarta dilayani gerobak Jakarta, pelanggan di London dilayani gerobak London — jaraknya dekat, jadi latency sangat rendah dan nyaris tanpa cold start. Tapi gerobak ini cuma punya alat terbatas: **tidak ada modul `fs`, tidak ada banyak Node API**, ukuran bundle dibatasi. Cocok untuk redirect cepat, personalisasi ringan, A/B testing, atau response yang sederhana tapi harus cepat secara global.
+
+Analogi singkatnya: serverless = **kualitas & kelengkapan**, edge = **kedekatan & kecepatan**. Tidak ada yang "lebih benar"; pilih sesuai beban kerja tiap rute. Dan karena adapter ini bisa dikonfigurasi **per-rute**, kamu boleh mencampur keduanya dalam satu aplikasi.
+
+### ISR — kompromi antara statis dan dinamis
+
+**Incremental Static Regeneration (ISR)** adalah cara menyajikan halaman seolah-olah statis (cepat, di-cache di CDN) tapi tetap bisa **diperbarui berkala** tanpa rebuild seluruh situs.
+
+Analogi: bayangkan toko roti yang **memanggang satu loyang roti sekali**, lalu menjual irisan yang sama ke semua pembeli selama satu jam. Setelah satu jam, permintaan pertama yang masuk memicu pemanggangan loyang baru di belakang, sementara pembeli itu tetap dilayani roti lama (supaya tidak menunggu). Pembeli berikutnya dapat roti baru. Jadi pengunjung selalu dapat halaman cepat (dari cache), tapi isinya tidak pernah basi lebih dari `expiration` detik. Ini jalan tengah antara `adapter-static` (super cepat tapi isinya beku sampai rebuild) dan SSR penuh (selalu fresh tapi tiap request kerja keras).
+
+### Image optimization
+
+Vercel punya layanan optimasi gambar bawaan: kamu kirim satu gambar sumber, lalu Vercel otomatis meresize, mengonversi ke format modern (`avif`/`webp`), dan menyajikan versi yang pas dengan lebar layar pengunjung — lalu menyimpannya di cache. Lewat opsi `images` di adapter, kamu memberi tahu Vercel ukuran & format apa yang boleh dihasilkan dan dari domain mana gambar boleh diambil.
+
+### Mengapa pemisahan adapter ini berguna
+
+Karena adapter dipasang di lapisan paling akhir, kode aplikasimu (`load`, form actions, `+server.js`, hooks) **tidak perlu tahu** ia berjalan di Vercel. Kalau besok kamu pindah ke VPS, cukup ganti ke `adapter-node` dan build ulang — logika bisnis tidak disentuh. Trade-off-nya: fitur khas Vercel (ISR, edge, regions, image optimization) diakses lewat opsi adapter ini, jadi sedikit "mengikat" ke Vercel di level konfigurasi, bukan di level kode.
+
+## 2. Contoh kode
+
+Adapter dipasang di `svelte.config.js`. Opsi yang kamu set di sini jadi **default untuk semua rute**, dan bisa ditimpa per-rute (lihat bagian berikut).
+
+```js
+// svelte.config.js — konfigurasi global adapter-vercel
+import adapter from '@sveltejs/adapter-vercel';
+
+const config = {
+	kit: {
+		adapter: adapter({
+			// 'edge' = Edge Function (ringan, global, tanpa Node penuh).
+			// Tanpa runtime: 'edge' -> default Serverless Function (Node.js penuh).
+			// Catatan: versi Node untuk serverless kini diatur di dashboard Vercel.
+			runtime: 'edge',
+
+			// Region edge yang dipakai. 'all' = sebar ke semua region (khusus edge).
+			// Untuk serverless defaultnya ['iad1']; banyak region butuh paket Enterprise.
+			regions: ['all']
+		})
+	}
+};
+
+export default config;
+```
+
+```js
+// svelte.config.js — preset SERVERLESS dengan opsi memory & durasi
+import adapter from '@sveltejs/adapter-vercel';
+
+const config = {
+	kit: {
+		adapter: adapter({
+			// (tanpa runtime: 'edge' -> ini Serverless Function / Node.js)
+			memory: 1024, // 128–3008 MB, kelipatan 64. Default 1024.
+			maxDuration: 60, // detik. Batas paket: Hobby 10s, Pro 15s, Enterprise 900s.
+			split: false // true -> tiap rute jadi fungsi terpisah (lihat catatan)
+		})
+	}
+};
+
+export default config;
+```
+
+Opsi adapter juga bisa diatur **per-rute** lewat `export const config` di `+server.js`, `+page.server.js`, `+page.js`, atau `+layout(.server).js`. Inilah cara mencampur serverless & edge dalam satu app.
+
+```js
+// src/routes/(marketing)/+layout.js
+// Semua rute di bawah grup ini berjalan sebagai Edge Function...
+/** @type {import('@sveltejs/adapter-vercel').Config} */
+export const config = {
+	runtime: 'edge'
+};
+```
+
+```js
+// src/routes/(marketing)/dashboard/+page.server.js
+// ...kecuali dashboard ini, yang butuh Node penuh -> kembali ke serverless.
+// Konfigurasi yang lebih granular MENIMPA konfigurasi layout di atasnya.
+/** @type {import('@sveltejs/adapter-vercel').Config} */
+export const config = {
+	runtime: 'nodejs22.x',
+	maxDuration: 30
+};
+
+export async function load() {
+	// ...query DB / pekerjaan berat yang butuh Node API
+	return { ok: true };
+}
+```
+
+### Mengaktifkan ISR
+
+ISR diatur per-rute lewat objek `isr` di `export const config`:
+
+```js
+// src/routes/blog/[slug]/+page.server.js
+import { BYPASS_TOKEN } from '$env/static/private';
+
+/** @type {import('@sveltejs/adapter-vercel').Config} */
+export const config = {
+	isr: {
+		// WAJIB: berapa detik sebelum cache di-regenerasi.
+		// false = tidak pernah kedaluwarsa (regenerasi hanya saat deploy baru).
+		expiration: 60,
+
+		// OPSIONAL: token >= 32 karakter untuk memaksa invalidasi cache
+		// lewat header `x-prerender-revalidate` atau cookie `__prerender_bypass`.
+		bypassToken: BYPASS_TOKEN,
+
+		// OPSIONAL: query param mana yang ikut jadi bagian "kunci cache".
+		// Di sini hanya ?search yang membedakan cache; query lain diabaikan.
+		allowQuery: ['search']
+	}
+};
+
+export async function load({ params }) {
+	// ...ambil artikel berdasar params.slug
+	return { slug: params.slug };
+}
+```
+
+### Image optimization
+
+```js
+// svelte.config.js — izinkan ukuran, format, dan domain sumber gambar
+import adapter from '@sveltejs/adapter-vercel';
+
+const config = {
+	kit: {
+		adapter: adapter({
+			images: {
+				// Lebar (px) yang boleh dihasilkan Vercel saat meresize.
+				sizes: [640, 828, 1200, 1920, 3840],
+				// Format keluaran modern; Vercel pilih yang didukung browser.
+				formats: ['image/avif', 'image/webp'],
+				// Cache minimal (detik) sebelum gambar dioptimasi ulang.
+				minimumCacheTTL: 300,
+				// Domain eksternal yang boleh jadi sumber gambar (whitelist).
+				domains: ['example-app.vercel.app']
+			}
+		})
+	}
+};
+
+export default config;
+```
+
+## 3. Coba sendiri
+
+Adapter bekerja di tahap **build & deploy** — outputnya server/fungsi yang dijalankan Vercel, bukan komponen yang bisa dirender di playground browser. Jadi alih-alih live preview, ikuti alur deploy nyata di bawah dan amati output build-nya.
+
+```bash
+# 1) Pasang adapter (di proyek SvelteKit-mu)
+npm i -D @sveltejs/adapter-vercel
+
+# 2) Ganti import adapter di svelte.config.js jadi @sveltejs/adapter-vercel
+#    (lihat Bagian 2).
+
+# 3) Build lokal — adapter menulis output bergaya Vercel ke .vercel/output/
+npm run build
+
+# 4) (Opsional) Uji lokal persis seperti di Vercel pakai Vercel CLI:
+npm i -g vercel
+vercel build      # menghasilkan .vercel/output mengikuti Build Output API
+vercel deploy --prebuilt   # deploy hasil build tadi (atau cukup `vercel`)
+```
+
+Saat aplikasimu di-deploy via integrasi Git Vercel, kamu tidak perlu menjalankan apa pun: Vercel menjalankan `npm run build`, dan karena adapter-vercel (atau `adapter-auto` yang mendeteksi Vercel) menghasilkan `.vercel/output/`, Vercel langsung memahaminya.
+
+Berikut peta keputusan singkat untuk memilih runtime per-rute:
+
+```text
+PETA KEPUTUSAN: rute ini sebaiknya Serverless atau Edge?
+────────────────────────────────────────────────────────
+
+Butuh modul `fs`, library Node berat, koneksi DB panjang, atau
+operasi > beberapa detik
+   -> Serverless (default; atau runtime: 'nodejs22.x' eksplisit)
+
+Cuma redirect/rewrite, personalisasi ringan (geo, cookie A/B),
+response sederhana yang harus cepat secara GLOBAL
+   -> Edge (runtime: 'edge')
+
+Konten yang sama untuk semua orang & jarang berubah, tapi tetap
+ingin bisa update tanpa rebuild penuh
+   -> Serverless + isr: { expiration: N }
+
+Konten benar-benar statis & tak pernah berubah sampai deploy
+   -> mending prerender (export const prerender = true) — bukan ISR
+```
+
+<Callout type="tip">
+Untuk mengakses file (mis. baca template, font, atau data) di Vercel, <strong>jangan pakai modul <code>fs</code> langsung</strong> — di edge ia tidak ada, dan di serverless file sumbermu tidak ikut tersalin ke deployment. Pakai helper <code>read()</code> dari <code>$app/server</code>, yang bekerja di kedua runtime: <code>import &#123; read &#125; from '$app/server'</code>.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Rancang konfigurasi Vercel untuk aplikasi campuran">
+Sebuah aplikasi punya tiga kelompok rute. Tentukan runtime/opsi yang tepat untuk masing-masing **dan** tulis potongan konfigurasinya (`svelte.config.js` dan/atau `export const config` per-rute), beserta alasan singkat.
+
+1. Landing page marketing & halaman harga — sama untuk semua orang, harus cepat di seluruh dunia, isinya jarang berubah.
+2. Blog `/blog/[slug]` — konten dari CMS, boleh agak basi hingga 5 menit, tapi tidak mau rebuild tiap kali editor menerbitkan tulisan.
+3. `/dashboard` — butuh query database berat lewat library Node, kadang prosesnya sampai 20 detik.
+
+{#snippet solution()}
+
+  ```js
+  // Default global: serverless Node penuh (aman untuk mayoritas rute berat).
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-vercel';
+  const config = {
+    kit: { adapter: adapter({ runtime: 'nodejs22.x' }) }
+  };
+  export default config;
+  ```
+
+  ```js
+  // 1) Marketing: cepat & global -> Edge Function.
+  //    Alasan: response ringan, latency rendah di mana saja, nyaris tanpa cold start.
+  // src/routes/(marketing)/+layout.js
+  /** @type {import('@sveltejs/adapter-vercel').Config} */
+  export const config = { runtime: 'edge', regions: ['all'] };
+  ```
+
+  ```js
+  // 2) Blog: cepat seperti statis tapi auto-segar -> ISR.
+  //    Alasan: di-cache di CDN, regenerasi maksimal tiap 5 menit, tanpa rebuild penuh.
+  // src/routes/blog/[slug]/+page.server.js
+  /** @type {import('@sveltejs/adapter-vercel').Config} */
+  export const config = {
+    isr: { expiration: 300 } // 300 detik = 5 menit
+  };
+  export async function load({ params }) {
+    // ...fetch artikel dari CMS berdasar params.slug
+    return { slug: params.slug };
+  }
+  ```
+
+  ```js
+  // 3) Dashboard: query DB berat + butuh Node + bisa 20 detik -> Serverless eksplisit.
+  //    Alasan: edge tak punya Node API & batas durasinya ketat; serverless cocok.
+  // src/routes/dashboard/+page.server.js
+  /** @type {import('@sveltejs/adapter-vercel').Config} */
+  export const config = {
+    runtime: 'nodejs22.x',
+    maxDuration: 30, // > 20s; pastikan paket Vercel-mu mengizinkan (Pro/Enterprise)
+    memory: 2048     // naikkan jika query rakus memori
+  };
+  export async function load() {
+    // ...query DB berat di sini
+    return { ok: true };
+  }
+  ```
+
+  Inti: konten ringan + global -> edge; konten "sama-untuk-semua tapi update berkala" -> ISR; pekerjaan berat yang butuh Node & durasi panjang -> serverless dengan `maxDuration`/`memory` dinaikkan. Konfigurasi per-rute menimpa default global di `svelte.config.js`.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Edge bukan Node.</strong> Runtime <code>'edge'</code> berbasis Web API, jadi <code>fs</code>, banyak <code>crypto</code> gaya Node, dan modul native <em>tidak tersedia</em>. Kode yang mulus di serverless bisa langsung <em>crash</em> saat kamu set <code>runtime: 'edge'</code>. Sebelum memindah sebuah rute ke edge, pastikan semua dependensinya kompatibel Web/edge — dan untuk baca file, pakai <code>read()</code> dari <code>$app/server</code>, bukan <code>fs</code>.
+</Callout>
+
+<Callout type="warning">
+<code>maxDuration</code> dibatasi paket Vercel: Hobby maksimal 10 detik, Pro 15 detik (bisa dinaikkan), Enterprise hingga 900 detik. Menulis <code>maxDuration: 60</code> di paket Hobby tidak akan memberimu 60 detik — fungsi tetap di-cut sesuai batas paket. Begitu juga <code>regions</code> dengan banyak region untuk serverless umumnya butuh Enterprise. Selalu cek batas paketmu sebelum mengandalkan angka besar.
+</Callout>
+
+<Callout type="warning">
+<strong>ISR diabaikan pada rute yang di-prerender.</strong> Kalau sebuah halaman sudah punya <code>export const prerender = true</code>, ia jadi file statis murni saat build — config <code>isr</code> di rute itu tidak berefek. Pilih salah satu: <code>prerender</code> (beku sampai deploy berikutnya) ATAU <code>isr</code> (statis tapi regenerasi berkala). Jangan harap keduanya bekerja bersamaan di rute yang sama.
+</Callout>
+
+<Callout type="tip">
+Variabel lingkungan khas Vercel seperti <code>VERCEL_COMMIT_REF</code> (nama branch) atau <code>VERCEL_ENV</code> tersedia lewat <code>$env/static/private</code>. Karena nilainya sama antara build-time dan run-time saat build di Vercel, dokumen resmi menyarankan <code>$env/static/private</code> (di-inline saat build, lebih cepat) ketimbang <code>$env/dynamic/private</code>. Berguna untuk menampilkan info deploy atau membedakan perilaku preview vs production.
+</Callout>
+
+<Callout type="tip">
+Opsi <code>split: true</code> men-deploy tiap rute sebagai fungsi terpisah. Plusnya: tiap rute bisa punya runtime/memory/region sendiri dan cold start lebih kecil per fungsi. Minusnya: jumlah fungsi bisa meledak dan kena <em>batas jumlah fungsi</em> Vercel pada app besar. Biarkan default (gabung) dulu; aktifkan <code>split</code> hanya saat kamu memang butuh isolasi per-rute.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/adapter-vercel" label="SvelteKit — adapter-vercel (serverless, edge, ISR, image optimization)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (ringkasan semua adapter resmi)" />
+<DocsLink href="https://svelte.dev/docs/kit/page-options" label="SvelteKit — Page options (prerender, ssr, dan export const config)" />

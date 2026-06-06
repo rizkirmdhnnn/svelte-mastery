@@ -1,0 +1,273 @@
+---
+title: playwright
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 7
+status: stable
+description: Add-on playwright untuk sv — pasang Playwright untuk E2E testing di SvelteKit, lengkap dengan config, folder e2e, demo test, cara menjalankan, dan integrasi CI.
+docs: https://svelte.dev/docs/cli/playwright
+keywords: [playwright, e2e, testing, sv add, ci, browser]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sv add playwright` adalah add-on yang **memasang dan mengonfigurasi [Playwright](https://playwright.dev)** ke dalam proyek SvelteKit-mu untuk **E2E testing** (end-to-end). Satu perintah ini menyuntik beberapa hal sekaligus: dependensi `@playwright/test`, sebuah file `playwright.config.ts`, folder `e2e/` berisi satu demo test, sebuah script di `package.json` untuk menjalankan tes, dan tambahan pada `.gitignore` agar artefak hasil tes (laporan, screenshot, video) tidak ikut ter-commit. Tujuannya menghapus pekerjaan setup yang biasanya bikin pusing di hari pertama: "config browser-nya bagaimana, gimana caranya Playwright tahu harus build & menyalakan server SvelteKit dulu sebelum tes jalan, dan di port berapa."
+
+Kalau kamu datang dari React atau Vue, posisi Playwright gampang dipahami: ia **framework-agnostic**. Persis seperti di Next.js atau Nuxt, Playwright tidak peduli kamu pakai Svelte, React, atau Vue — ia mengendalikan **browser sungguhan** dari luar, sama seperti yang dilakukan **Cypress**. Jadi pengetahuan E2E-mu yang lama hampir 100% terbawa; yang ditata oleh add-on cuma jembatan ke SvelteKit (build + preview server + port).
+
+### Analogi: tiga level inspeksi pabrik mobil
+
+Bayangkan kamu memeriksa kualitas pabrik mobil. Ada tiga level inspeksi, dan E2E adalah yang paling atas:
+
+- **Unit test** = menguji satu baut di meja kerja. Cepat, murah, ribuan kali sehari. Kamu tidak merakit seluruh mobil hanya untuk tahu apakah satu baut sesuai spesifikasi. (Di Svelte: Vitest menguji logika di file `.svelte.ts`.)
+- **Component test** = menguji satu modul rakitan, misalnya pintu lengkap dengan engsel dan kaca — tapi belum dipasang ke mobil utuh. (Di Svelte: `@testing-library/svelte`.)
+- **E2E test** = **menyetir mobil utuh di sirkuit**. Lambat dan mahal, tapi inilah satu-satunya cara membuktikan "kalau pelanggan benar-benar pakai, semua bekerja bersama". **Inilah yang dipasang Playwright.**
+
+Aturan piramidanya: **banyak unit, sedikit component, sangat sedikit E2E**. Bukan karena E2E jelek, tapi karena ia lambat dan rapuh; kamu menyimpannya untuk alur kritis (login, checkout) bukan untuk memverifikasi setiap tombol. Playwright menjalankan aplikasimu di **browser asli** (Chromium, Firefox, WebKit), menavigasi halaman, mengklik, mengetik, dan memverifikasi alur lengkap — termasuk **routing SvelteKit, server, dan jaringan** yang tidak tersentuh oleh unit/component test.
+
+### Mengapa add-on ini menyuntik `webServer` (bagian terpenting)
+
+Inti yang membuat add-on ini berharga ada di satu blok kecil di `playwright.config.ts`: `webServer`. E2E test butuh aplikasi yang **benar-benar menyala** di sebuah URL untuk dikunjungi browser. Tanpa bantuan, kamu harus ingat menjalankan server manual di terminal lain sebelum tiap kali menjalankan tes. Add-on mengotomatiskan ini: ia memberi tahu Playwright "sebelum tes dimulai, **build** dulu lalu **preview** aplikasinya di port tertentu; tunggu sampai port itu hidup; baru jalankan tes". Setelah tes selesai, server dimatikan otomatis.
+
+Mengapa `build && preview`, bukan `dev`? Karena E2E sebaiknya menguji **versi produksi** aplikasimu — yang sudah di-bundle, di-minify, dan berperilaku seperti yang user akan terima. Mode `dev` punya HMR dan optimasi-on-demand yang bisa menyembunyikan bug yang baru muncul di build produksi. Inilah kenapa default-nya `npm run build && npm run preview` di port `4173` (port preview default Vite), bukan `5173` (port dev).
+
+## 2. Contoh kode
+
+Memasang add-on:
+
+```bash
+# Interaktif — sv memasang Playwright dan menanyakan konfirmasi seperlunya.
+npx sv add playwright
+
+# Non-interaktif (berguna untuk skrip/CI) — kunci pilihan langsung:
+npx sv add playwright --no-interactive
+```
+
+Setelah selesai, add-on menambahkan kira-kira struktur ini:
+
+```bash
+my-app/
+├─ e2e/
+│  └─ demo.test.ts      # demo test bawaan — titik awal kamu menulis tes
+├─ playwright.config.ts  # config Playwright: webServer, testDir, dll.
+├─ .gitignore            # +ignore: /test-results, /playwright-report, dll.
+└─ package.json          # +script: "test:e2e": "playwright test" & devDep @playwright/test
+```
+
+**File config** — jantung integrasi SvelteKit. Perhatikan blok `webServer` yang dijelaskan di Bagian 1:
+
+```ts
+// playwright.config.ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+	// Sebelum tes jalan: build app lalu preview-kan (versi produksi).
+	// Playwright menunggu port ini hidup, baru mulai tes; lalu mematikannya.
+	webServer: {
+		command: 'npm run build && npm run preview',
+		port: 4173                // port preview default Vite (bukan 5173 = dev)
+	},
+
+	// Di mana file tes berada. Add-on memisahkannya ke folder e2e/
+	// agar tidak tercampur dengan unit test Vitest (yang biasanya di src/).
+	testDir: 'e2e'
+});
+```
+
+**Demo test bawaan** — sengaja minimal supaya kamu paham polanya:
+
+```ts
+// e2e/demo.test.ts
+import { expect, test } from '@playwright/test';
+
+// `test` mendefinisikan satu skenario. `{ page }` adalah "fixture":
+// objek halaman browser yang sudah disiapkan Playwright untukmu.
+test('home page has expected h1', async ({ page }) => {
+	await page.goto('/');                          // kunjungi route '/' (relatif ke webServer)
+	await expect(page.locator('h1')).toBeVisible(); // tunggu & pastikan <h1> tampak
+});
+```
+
+Tes nyata yang lebih representatif — sebuah alur **login** lintas-route, yang memang jadi domain E2E (bukan unit test):
+
+```ts
+// e2e/login.test.ts
+import { expect, test } from '@playwright/test';
+
+test('user bisa login dan diarahkan ke dashboard', async ({ page }) => {
+	await page.goto('/login');
+
+	// Berinteraksi seperti manusia: cari field via LABEL/ROLE, ketik, klik.
+	// getByLabel/getByRole = query yang stabil terhadap perubahan internal,
+	// sama filosofinya dengan Testing Library.
+	await page.getByLabel('Email').fill('budi@contoh.id');
+	await page.getByLabel('Password').fill('rahasia123');
+	await page.getByRole('button', { name: 'Masuk' }).click();
+
+	// Verifikasi alur LENGKAP: routing SvelteKit benar-benar pindah halaman,
+	// dan server/jaringan ikut teruji — ini yang tak bisa dilihat unit test.
+	await expect(page).toHaveURL('/dashboard');
+	await expect(page.getByRole('heading', { name: /selamat datang/i })).toBeVisible();
+});
+```
+
+<Callout type="tip">
+Saat membuat proyek baru dengan <code>npx sv create</code>, wizard sudah menawarkan opsi menambahkan Playwright langsung di awal — itu setara dengan menjalankan <code>sv add playwright</code> setelahnya. Kalau proyekmu juga punya Vitest, kombinasi yang umum: unit/component test (<code>.test.ts</code>) hidup di <code>src/</code> di-handle Vitest, sedangkan E2E (<code>e2e/*.test.ts</code>) di-handle Playwright. Pemisahan <code>testDir: 'e2e'</code> itulah yang menjaga keduanya tidak saling menabrak.
+</Callout>
+
+## 3. Coba sendiri
+
+Playwright menjalankan **browser asli** dan butuh server SvelteKit yang menyala, jadi tidak bisa dijalankan di live preview di halaman ini. Berikut **alur kerja end-to-end** beranotasi yang bisa kamu ikuti di proyek lokal — dari pasang add-on sampai membaca laporannya.
+
+```bash
+# 1) Punya proyek SvelteKit dulu (kalau belum):
+npx sv create my-app --template minimal --types ts --install npm
+cd my-app
+
+# 2) Pasang add-on Playwright:
+npx sv add playwright
+
+# 3) Pertama kali, Playwright perlu MENGUNDUH browser-nya (Chromium dkk).
+#    Add-on biasanya menjalankan ini otomatis; kalau belum, jalankan:
+npx playwright install
+
+# 4) Jalankan SEMUA tes (headless = tanpa jendela browser terlihat).
+#    Script ini otomatis: build app -> preview di :4173 -> jalankan tes -> matikan server.
+npm run test:e2e
+
+# 5) Mode UI interaktif: jendela Playwright yang bisa step-through tiap aksi,
+#    melihat snapshot DOM tiap langkah, dan men-debug pelan-pelan. Sangat membantu.
+npm run test:e2e -- --ui
+
+# 6) Jalankan SATU file atau SATU tes saja (lebih cepat saat fokus):
+npm run test:e2e -- e2e/login.test.ts
+npm run test:e2e -- -g "login"          # -g = filter by judul tes (grep)
+
+# 7) Lihat browser benar-benar bergerak (headed) sambil debug:
+npm run test:e2e -- --headed --debug
+
+# 8) Buka laporan HTML hasil tes terakhir (berguna saat ada yang gagal):
+npx playwright show-report
+```
+
+Anatomi sebuah file tes Playwright, supaya kamu paham tiap potongannya:
+
+| Bagian | Contoh | Peran |
+|---|---|---|
+| `test(judul, fn)` | `test('login', async ({ page }) => {...})` | Mendefinisikan satu skenario. Judul dipakai untuk filter (`-g`) & laporan. |
+| Fixture `{ page }` | `async ({ page }) => ` | Tab browser baru yang bersih & terisolasi per tes — Playwright yang menyiapkan & membersihkan. |
+| Aksi | `await page.getByRole(...).click()` | Mensimulasikan user. Hampir semua mengembalikan Promise -> **wajib `await`**. |
+| Locator | `page.getByLabel('Email')` | "Penunjuk malas" ke elemen; dievaluasi ulang saat dipakai, bukan saat dibuat. |
+| Assertion | `await expect(page).toHaveURL('/x')` | `expect` dari `@playwright/test` punya **auto-retry**: ia menunggu kondisi terpenuhi sampai timeout. |
+
+Konsep yang paling sering bikin pendatang baru tersandung: **auto-waiting**. Tidak seperti unit test yang sinkron, di Playwright `expect(...).toBeVisible()` **tidak langsung** memeriksa sekali lalu gagal. Ia akan **mencoba berulang** sampai elemen muncul atau timeout habis. Inilah kenapa kamu jarang butuh `sleep` manual: Playwright sudah menunggu navigasi, animasi, dan respons jaringan untukmu — asal kamu `await` assertion-nya.
+
+## 4. Latihan
+
+<Exercise title="Tulis E2E test untuk alur 'tambah todo' + integrasikan ke CI">
+Kamu punya proyek SvelteKit dengan add-on Playwright terpasang. Halaman `/todos` punya: sebuah `<input>` dengan label "Tugas baru", tombol ber-teks "Tambah", dan daftar `<li>` untuk tiap todo. Tugas:
+
+1. Tulis file `e2e/todos.test.ts` yang: membuka `/todos`, mengetik "Belajar Playwright" di input, mengklik "Tambah", lalu memverifikasi item itu muncul di daftar.
+2. Buat workflow GitHub Actions (`.github/workflows/e2e.yml`) yang menjalankan tes ini di CI setiap push. Ingat dua langkah krusial yang sering terlupa: **install dependensi** dan **install browser Playwright**.
+3. Jelaskan singkat: mengapa di config kita pakai `npm run build && npm run preview` dan bukan `npm run dev`?
+
+{#snippet solution()}
+
+  ```ts
+  // e2e/todos.test.ts
+  import { expect, test } from '@playwright/test';
+
+  test('user bisa menambah todo baru', async ({ page }) => {
+    await page.goto('/todos');
+
+    // Cari input via LABEL (stabil terhadap perubahan class/struktur internal).
+    await page.getByLabel('Tugas baru').fill('Belajar Playwright');
+    await page.getByRole('button', { name: 'Tambah' }).click();
+
+    // expect Playwright auto-retry: menunggu item muncul tanpa sleep manual.
+    // getByRole('listitem') = elemen <li>.
+    await expect(
+      page.getByRole('listitem', { name: 'Belajar Playwright' })
+    ).toBeVisible();
+  });
+  ```
+
+  ```yaml
+  # .github/workflows/e2e.yml
+  name: E2E
+  on: [push, pull_request]
+
+  jobs:
+    test:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with:
+            node-version: 20
+        # 1) install dependensi proyek (termasuk @playwright/test)
+        - run: npm ci
+        # 2) install browser-nya — TANPA ini, Playwright error "browser not found".
+        #    --with-deps sekalian memasang library OS yang dibutuhkan di Linux CI.
+        - run: npx playwright install --with-deps
+        # 3) jalankan tes. Script test:e2e otomatis build + preview + jalankan tes.
+        - run: npm run test:e2e
+        # 4) (opsional) simpan laporan HTML sebagai artifact kalau ada yang gagal
+        - uses: actions/upload-artifact@v4
+          if: ${{ !cancelled() }}
+          with:
+            name: playwright-report
+            path: playwright-report/
+            retention-days: 7
+  ```
+
+  Mengapa `build && preview`, bukan `dev`: E2E sebaiknya menguji **versi produksi** aplikasi — yang sudah di-bundle & di-minify, persis seperti yang akan diterima user. Mode `dev` memakai HMR dan transformasi on-demand yang bisa **menyembunyikan** bug yang hanya muncul di build produksi (mis. masalah tree-shaking, env var, atau pre-rendering). Karena itu config menjalankan `build` lalu `preview` di port `4173`, bukan server `dev` di `5173`.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa <code>npx playwright install</code> (terutama di CI).</strong> <code>@playwright/test</code> hanyalah library JavaScript-nya; <strong>binary browser-nya terpisah</strong> dan harus diunduh. Di laptop, add-on biasanya menjalankannya untukmu, tapi di runner CI yang bersih ia belum ada — gejalanya error "Executable doesn't exist / browser not found". Di CI Linux pakai <code>npx playwright install --with-deps</code> agar sekalian memasang dependensi sistem OS yang dibutuhkan headless browser.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Lupa <code>await</code> pada aksi & assertion.</strong> Hampir semua method Playwright (<code>.click()</code>, <code>.fill()</code>, <code>expect(...).toBeVisible()</code>) mengembalikan Promise. Kalau tidak di-<code>await</code>, tes bisa <strong>lolos palsu</strong> (hijau padahal belum sempat diperiksa) atau gagal dengan error timing yang membingungkan. Aturan aman: di depan tiap interaksi <code>page.*</code> dan tiap <code>expect</code> async, selalu ada <code>await</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Jangan tambahkan <code>sleep</code>/timeout manual untuk "menunggu" UI.</strong> Pendatang dari E2E lawas sering refleks menulis jeda tetap. Di Playwright itu antipola: <code>expect</code> sudah <strong>auto-retry</strong> sampai kondisi terpenuhi, dan aksi menunggu elemen siap (visible, enabled) sebelum bertindak. Jeda manual hanya membuat tes lambat dan tetap rapuh. Kalau perlu menunggu sesuatu yang spesifik, pakai assertion yang tepat (<code>toBeVisible</code>, <code>toHaveURL</code>, <code>toHaveText</code>) — bukan <code>waitForTimeout</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Pisahkan E2E dari unit test, dan cari elemen lewat role/teks.</strong> File tes Playwright berada di <code>e2e/</code> (lihat <code>testDir</code>), sementara unit/component test Vitest di <code>src/</code> — keduanya runner berbeda, jangan dicampur dalam satu folder. Dan seperti Testing Library, utamakan <code>getByRole</code>/<code>getByLabel</code>/<code>getByText</code> ketimbang selektor CSS internal, agar tes tetap hijau saat kamu merefactor markup.
+</Callout>
+
+<Callout type="tip">
+<strong>E2E itu mahal — pilih skenario dengan hemat.</strong> Tulis E2E hanya untuk <strong>alur kritis utuh</strong>: login, checkout, submit form penting yang melintasi beberapa route + server. Kalau sebuah bug bisa ditangkap unit/component test yang jauh lebih cepat, tulis di sana. Satu-dua "happy path" plus satu error penting per alur sudah cukup; jangan duplikasi semua kasus yang sudah ditutup lapis bawah. Saat debugging, <code>--ui</code> dan <code>--headed --debug</code> adalah temanmu.
+</Callout>
+
+Padanan istilah kalau kamu pindah dari **Cypress** (E2E runner populer di dunia React/Vue):
+
+<LegacyVsModern legacyLabel="Cypress" modernLabel="Playwright" rows={[
+	{ legacy: 'cy.visit("/")', modern: 'await page.goto("/")', note: 'Playwright async/await, bukan command-chaining' },
+	{ legacy: 'cy.get("[data-test=x]")', modern: 'page.getByRole/getByLabel/getByTestId', note: 'utamakan role/label; getByTestId tersedia juga' },
+	{ legacy: 'cy.contains("Masuk").click()', modern: 'await page.getByText("Masuk").click()', note: 'wajib await' },
+	{ legacy: 'cypress run / open', modern: 'playwright test / --ui', note: 'headless vs mode UI interaktif' },
+	{ legacy: 'config baseUrl + start server manual', modern: 'webServer { command, port }', note: 'Playwright build+preview & matikan server otomatis' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/playwright" label="sv — Add-on playwright (config, e2e, demo test)" />
+
+<DocsLink href="https://playwright.dev/docs/intro" label="Playwright — dokumentasi resmi (writing tests, locators, CI)" />

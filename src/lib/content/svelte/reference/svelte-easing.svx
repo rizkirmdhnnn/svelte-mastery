@@ -1,0 +1,300 @@
+---
+title: svelte/easing
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 6
+status: reference
+description: Katalog 31 fungsi kurva easing Svelte (cubicOut, elasticOut, bounceOut, dll.) untuk mengatur "rasa" percepatan animasi pada transition, Tween, dan animate.
+docs: https://svelte.dev/docs/svelte/svelte-easing
+keywords: [easing, cubicOut, elasticOut, transition, Tween, kurva]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Animasi yang bagus jarang soal "dari mana ke mana" — itu cuma titik awal dan titik akhir. Yang membuat sebuah gerak terasa **mahal, hidup, atau murahan** adalah _bagaimana waktu didistribusikan di antara kedua titik itu_. Apakah ia melaju konstan seperti robot? Berangkat pelan lalu ngebut? Sampai di tujuan sambil mengerem halus? Atau melewati target sedikit lalu balik seperti per yang dilepas? Itulah pekerjaan **easing**.
+
+Modul `svelte/easing` adalah sekumpulan **fungsi kurva** murni. Tanda tangannya seragam dan sederhana:
+
+```ts
+type EasingFunction = (t: number) => number;
+```
+
+Ia menerima `t` = progres ternormalisasi (biasanya `0` di awal sampai `1` di akhir) dan mengembalikan progres yang sudah "dibengkokkan". `linear` mengembalikan `t` apa adanya (garis lurus). `cubicOut(0.5)` mengembalikan sekitar `0.875` — artinya saat waktu baru jalan setengah, geraknya sudah hampir selesai, lalu sisanya melambat. Fungsi ini **tidak tahu apa-apa** soal pixel, detik, opacity, atau warna. Tugasnya satu: memetakan "berapa persen waktu berlalu" menjadi "berapa persen jarak yang ditempuh". Mesin animasi (transition directive atau `Tween` dari `svelte/motion`) yang memanggilnya tiap frame, lalu memakai hasilnya untuk meng-interpolasi nilai sebenarnya.
+
+### Analogi: gaya menyetir, bukan tujuan
+
+Bayangkan kamu menyetir dari rumah ke kantor (jarak tetap, `0` → `1`). Easing adalah **gaya menyetir** kamu:
+
+- **`linear`** — cruise control: kecepatan persis sama dari berangkat sampai tiba. Terasa mekanis, tidak manusiawi.
+- **`...Out`** (mis. `cubicOut`) — berangkat cepat lalu **mengerem halus** saat mendekat. Inilah gerak paling alami untuk benda yang _datang dan berhenti_.
+- **`...In`** (mis. `cubicIn`) — **pelan dulu** (seperti baru lepas dari lampu merah) lalu makin ngebut. Cocok untuk benda yang _pergi meninggalkan layar_.
+- **`...InOut`** (mis. `cubicInOut`) — pelan di kedua ujung, cepat di tengah. Gerak yang "berangkat dan tiba" sekaligus, paling enak untuk perpindahan A→B.
+
+### Membaca nama: keluarga + arah
+
+Nama tiap fungsi punya pola tetap: **`<keluarga><Arah>`**.
+
+- **Keluarga** menentukan _seberapa tajam_ kurvanya. `sine` paling lembut; lalu makin curam: `quad` (`t²`) → `cubic` (`t³`) → `quart` (`t⁴`) → `quint` (`t⁵`) → `expo` (eksponensial, paling ekstrem). `circ` berbasis lingkaran (tarikan kuat di ujung). Tiga keluarga "spesial" tidak cuma mempercepat tapi **melewati target**: `back` (overshoot sedikit lalu balik, efek _anticipation_), `elastic` (berosilasi seperti karet/per), dan `bounce` (memantul seperti bola jatuh).
+- **Arah** ada tiga: `In` (akselerasi — pelan lalu cepat), `Out` (deselerasi — cepat lalu pelan), `InOut` (gabungan, simetris).
+
+Jadi `elasticOut` = keluarga pegas, deselerasi → benda meluncur masuk lalu bergetar berhenti. `bounceIn` = memantul di awal sebelum melaju pergi. Sekali kamu hafal pola ini, ke-31 nama itu bukan lagi daftar yang harus dihafal, tapi kombinasi yang bisa kamu baca.
+
+### Untuk yang datang dari React/Vue/CSS
+
+Di CSS kamu punya `ease`, `ease-in`, `ease-out`, `ease-in-out`, dan `cubic-bezier(...)`. `svelte/easing` adalah versi **JavaScript** dari ide itu, tapi lebih kaya: `cubic-bezier` CSS hanya bisa kurva mulus satu segmen, sehingga **tidak bisa** membuat `bounce` atau `elastic` (yang butuh banyak pantulan/osilasi). Easing JS bisa, karena ia fungsi penuh. Trade-off-nya: easing JS dievaluasi tiap frame di main thread (sama seperti react-spring/Framer Motion), sedangkan `transition: ... ease-out` murni CSS bisa berjalan di compositor. Untuk animasi sederhana pada banyak elemen, CSS kadang lebih murah; untuk efek bounce/elastic atau nilai yang mengikuti input, easing JS lewat `Tween`/transition adalah jawabannya. Anggap `svelte/easing` seperti `easings.net` yang sudah dijadikan modul resmi dan terintegrasi.
+
+## 2. Contoh kode
+
+```svelte
+<!-- transition.svelte — easing dipasang lewat opsi `easing` pada directive transisi -->
+<script>
+	import { fly, scale } from 'svelte/transition';
+	import { backOut, quintInOut } from 'svelte/easing';
+
+	let tampil = $state(true);
+</script>
+
+<button onclick={() => (tampil = !tampil)}>Toggle</button>
+
+{#if tampil}
+	<!-- Masuk: terbang naik dengan 'pop' (backOut overshoot sedikit lalu pas).
+	     Keluar: mengecil dengan quintInOut (tajam tapi mulus di ujung). -->
+	<div
+		in:fly={{ y: 30, duration: 400, easing: backOut }}
+		out:scale={{ duration: 250, easing: quintInOut }}
+	>
+		Halo, aku muncul dengan gaya.
+	</div>
+{/if}
+```
+
+```svelte
+<!-- tween.svelte — easing yang sama dipakai ulang oleh Tween dari svelte/motion -->
+<script>
+	import { Tween } from 'svelte/motion';
+	import { cubicOut, elasticOut } from 'svelte/easing';
+
+	// easing menentukan 'rasa' gerak; duration menentukan lamanya.
+	const x = new Tween(0, { duration: 600, easing: cubicOut });
+
+	function pindah() {
+		// .set() boleh meng-override easing/duration per-panggilan.
+		x.set(x.current > 0.5 ? 0 : 1, { duration: 800, easing: elasticOut });
+	}
+</script>
+
+<!-- .current adalah nilai animasi reaktif (0..1) -->
+<div style="transform: translateX({x.current * 200}px)">●</div>
+<button onclick={pindah}>Pindah (elasticOut)</button>
+```
+
+```js
+// easing-itu-fungsi-biasa.js — memahami tanda tangan & menulis sendiri
+import { cubicIn, cubicOut, cubicInOut } from 'svelte/easing';
+
+// Semua easing: (t: number) => number, dengan t biasanya 0..1.
+cubicOut(0); //   -> 0       (titik awal)
+cubicOut(0.5); // -> ~0.875  (sudah jauh di depan, lalu melambat)
+cubicOut(1); //   -> 1       (titik akhir)
+
+// Pedoman arah (akurat untuk UX umum):
+//   'In'    = pelan -> cepat  (akselerasi)  -> cocok untuk elemen KELUAR/pergi
+//   'Out'   = cepat -> pelan  (deselerasi)  -> cocok untuk elemen MASUK/datang
+//   'InOut' = pelan di kedua ujung          -> cocok untuk perpindahan A->B
+
+// Karena cuma fungsi matematika murni, kamu boleh bikin sendiri lalu
+// memberikannya ke `easing:` mana pun — tidak harus dari svelte/easing.
+const easeInQuad = (t) => t * t;
+```
+
+## 3. Coba sendiri
+
+Easing itu paling jelas kalau **dirasakan**, bukan dibaca. Playground di bawah menggambar kurva fungsi terpilih sebagai grafik (sumbu X = waktu `0→1`, sumbu Y = progres `0→1`), lalu menjalankan sebuah bola horizontal dengan `Tween` memakai easing itu. Klik nama easing untuk berganti, lalu tekan "Jalankan" dan perhatikan: untuk `...Out` bola masuk lalu mengerem; untuk `elasticOut`/`backOut` kurvanya **menembus** garis atas (overshoot) dan bolanya ikut melewati lalu balik; untuk `bounceOut` kurvanya bergerigi memantul.
+
+<Playground code={`<script>
+	import { Tween } from 'svelte/motion';
+	import {
+		linear, sineInOut, cubicOut, quintInOut,
+		expoOut, circOut, backOut, elasticOut, bounceOut
+	} from 'svelte/easing';
+
+	// Peta nama -> fungsi, supaya bisa dipilih lewat tombol.
+	const kurva = {
+		linear, sineInOut, cubicOut, quintInOut,
+		expoOut, circOut, backOut, elasticOut, bounceOut
+	};
+
+	let pilihan = $state('cubicOut');
+	const x = new Tween(0, { duration: 1000, easing: cubicOut });
+
+	function jalankan() {
+		const tujuan = x.current > 0.5 ? 0 : 1;
+		// override easing sesuai pilihan saat ini
+		x.set(tujuan, { duration: 1000, easing: kurva[pilihan] });
+	}
+
+	// Sampel kurva jadi titik polyline SVG (40 segmen).
+	// viewBox dibuat lega agar overshoot (back/elastic) tetap kelihatan.
+	let titik = $derived.by(() => {
+		const f = kurva[pilihan];
+		let arr = [];
+		for (let i = 0; i <= 40; i++) {
+			const t = i / 40;
+			arr.push((t * 100) + ',' + ((1 - f(t)) * 100));
+		}
+		return arr.join(' ');
+	});
+</script>
+
+<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
+	{#each Object.keys(kurva) as nama}
+		<button
+			onclick={() => (pilihan = nama)}
+			style="font-weight: {pilihan === nama ? 'bold' : 'normal'};"
+		>
+			{nama}
+		</button>
+	{/each}
+</div>
+
+<svg viewBox="-12 -45 124 190" width="220" height="180" style="border:1px solid #ccc;">
+	<!-- kotak referensi 0..1 -->
+	<rect x="0" y="0" width="100" height="100" fill="none" stroke="#eee" />
+	<line x1="0" y1="100" x2="100" y2="100" stroke="#ddd" />
+	<line x1="0" y1="0" x2="100" y2="0" stroke="#ddd" />
+	<!-- kurva easing terpilih -->
+	<polyline points={titik} fill="none" stroke="teal" stroke-width="2" />
+	<!-- penanda progres saat ini di sumbu X -->
+	<circle cx={x.current * 100} cy={(1 - x.current) * 100} r="3" fill="crimson" />
+</svg>
+
+<div style="margin-top:8px; height:24px; background:#f3f3f3; border-radius:6px; position:relative;">
+	<div style="position:absolute; left:{x.current * 90}%; width:24px; height:24px; background:crimson; border-radius:50%;"></div>
+</div>
+
+<p>Easing: <strong>{pilihan}</strong> — progres: {x.current.toFixed(3)}</p>
+<button onclick={jalankan}>Jalankan</button>`} />
+
+<Callout type="tip">
+Perhatikan bahwa <code>linear</code> menggambar garis lurus diagonal — progres selalu sama dengan waktu, itu sebabnya terasa kaku. Bandingkan dengan <code>expoOut</code>: kurvanya melesat ke atas di awal lalu nyaris datar — bola "sampai" secara visual jauh sebelum waktunya habis. Kurva yang menembus batas atas/bawah kotak (<code>backOut</code>, <code>elasticOut</code>) adalah easing yang <em>overshoot</em>: nilainya sempat melebihi 1, itulah yang memberi kesan "hidup".
+</Callout>
+
+## 4. Ringkasan API
+
+Semua ekspor punya tanda tangan identik: `(t: number) => number`. Totalnya **31 fungsi** — 10 keluarga × 3 arah (`In` / `Out` / `InOut`), ditambah `linear`. Tidak ada parameter konfigurasi: untuk mengubah lama/kekuatan animasi, kamu atur `duration` di sisi transisi/`Tween`, bukan di easing-nya.
+
+| Keluarga | Fungsi (In / Out / InOut) | Karakter kurva | Cocok untuk |
+| --- | --- | --- | --- |
+| `linear` | `linear` (hanya satu) | Kecepatan konstan, tanpa percepatan | Loading bar netral, gerak mekanis, baseline pembanding |
+| `sine` | `sineIn` `sineOut` `sineInOut` | Paling **lembut** dari yang berbasis kurva (turunan sinus) | Fade halus, hover, gerak kecil yang tidak mau menarik perhatian |
+| `quad` | `quadIn` `quadOut` `quadInOut` | `t²` — percepatan ringan | Transisi umum yang sedikit lebih hidup dari linear |
+| `cubic` | `cubicIn` `cubicOut` `cubicInOut` | `t³` — terasa "natural", mirip `ease` di CSS | **Default serba guna** untuk kebanyakan UI |
+| `quart` | `quartIn` `quartOut` `quartInOut` | `t⁴` — lebih tajam dari cubic | Penekanan sedang, modal/panel masuk |
+| `quint` | `quintIn` `quintOut` `quintInOut` | `t⁵` — sangat tajam | Gerak dramatis, slide besar antar halaman |
+| `expo` | `expoIn` `expoOut` `expoInOut` | Eksponensial — **paling ekstrem** di antara yang mulus | "Pop" instan lalu diam; menghilang cepat |
+| `circ` | `circIn` `circOut` `circInOut` | Berbasis lingkaran (`√`) — tarikan kuat di ujung | Gerak yang terasa "berbobot"/momentum |
+| `back` | `backIn` `backOut` `backInOut` | **Overshoot** kecil — melewati target lalu balik (_anticipation_) | Efek snap/pop tombol, kartu, badge |
+| `elastic` | `elasticIn` `elasticOut` `elasticInOut` | **Berosilasi** seperti pegas/karet, getar mengecil | Efek playful, menarik perhatian, notifikasi |
+| `bounce` | `bounceIn` `bounceOut` `bounceInOut` | **Memantul** seperti bola jatuh ke lantai | Animasi ceria, ikon, ilustrasi gamifikasi |
+
+Beberapa catatan referensi penting:
+
+- **Rentang keluaran.** Sebagian besar memetakan `[0,1] → [0,1]`. **`back` dan `elastic` sengaja keluar dari `[0,1]`** (overshoot di bawah 0 dan/atau di atas 1). `bounce` tetap dalam `[0,1]` walau bergerigi. Ini penting saat easing dipakai untuk nilai yang punya batas (lihat Pitfalls).
+- **Titik tetap.** Semua menjamin `f(0) === 0` dan `f(1) === 1` (kecuali pembulatan floating point yang sangat kecil) — jadi animasi selalu mulai dan berakhir tepat.
+- **Di mana dipakai.** Sebagai opsi `easing` pada directive `transition:` / `in:` / `out:` (`svelte/transition`), pada `Tween` (`svelte/motion`), dan pada fungsi animasi `flip` (`svelte/animate`). **Tidak** dipakai oleh `Spring` — spring berbasis fisika (`stiffness`/`damping`), bukan kurva durasi-tetap.
+
+```js
+// Contoh praktis tiap "arah", dengan keluarga yang sama (cubic) agar adil:
+import { cubicIn, cubicOut, cubicInOut } from 'svelte/easing';
+import { fly } from 'svelte/transition';
+
+// elemen yang DATANG dan berhenti -> Out (mengerem)
+// <div in:fly={{ y: 20, easing: cubicOut }}>
+
+// elemen yang PERGI/keluar layar -> In (makin cepat menghilang)
+// <div out:fly={{ y: 20, easing: cubicIn }}>
+
+// elemen yang BERGESER A->B -> InOut (mulus di kedua ujung)
+// <div transition:fly={{ x: 100, easing: cubicInOut }}>
+```
+
+## 5. Latihan
+
+<Exercise title="Bandingkan dua easing berdampingan">
+Buat satu komponen `.svelte` yang menampilkan **dua bola** dalam dua lajur. Sebuah tombol "Jalankan" menggeser keduanya dari kiri ke kanan (atau balik) **secara bersamaan**, tapi:
+
+1. Bola atas memakai `cubicOut` (rem halus, "natural").
+2. Bola bawah memakai `elasticOut` (overshoot + getar).
+
+Pakai `Tween` dari `svelte/motion`, dan import kedua easing dari `svelte/easing`. Tampilkan juga nilai `.current` masing-masing supaya kamu lihat bola bawah sempat melewati `1` sebelum balik. Durasi `900ms`.
+
+Petunjuk: cukup satu fungsi `jalankan()` yang memanggil `.set(tujuan, { ... })` pada kedua `Tween`. Hitung `tujuan` dari salah satu `.current` agar keduanya sinkron.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { Tween } from 'svelte/motion';
+	import { cubicOut, elasticOut } from 'svelte/easing';
+
+	// Dua Tween terpisah, easing berbeda, durasi sama.
+	const a = new Tween(0, { duration: 900, easing: cubicOut });
+	const b = new Tween(0, { duration: 900, easing: elasticOut });
+
+	function jalankan() {
+		// arah ditentukan dari posisi salah satu bola agar keduanya sinkron
+		const tujuan = a.current > 0.5 ? 0 : 1;
+		a.set(tujuan, { duration: 900, easing: cubicOut });
+		b.set(tujuan, { duration: 900, easing: elasticOut });
+	}
+</script>
+
+<div style="height: 30px; background: #f3f3f3; border-radius: 6px; position: relative;">
+	<div style="position: absolute; left: {a.current * 90}%; width: 24px; height: 24px; background: teal; border-radius: 50%;"></div>
+</div>
+<p>cubicOut: {a.current.toFixed(3)}</p>
+
+<div style="height: 30px; background: #f3f3f3; border-radius: 6px; position: relative;">
+	<div style="position: absolute; left: {b.current * 90}%; width: 24px; height: 24px; background: crimson; border-radius: 50%;"></div>
+</div>
+<p>elasticOut: {b.current.toFixed(3)}</p>
+
+<button onclick={jalankan}>Jalankan</button>
+```
+
+Kunci pelajarannya: easing yang berbeda **dengan durasi yang persis sama** menghasilkan "rasa" yang sama sekali beda. Bola `cubicOut` melaju mulus dan berhenti pas di `1.000`. Bola `elasticOut` akan kamu lihat menembus `1` (mis. `1.0xx`) lalu bergetar turun-naik sebelum mendarat di `1.000` — itulah overshoot yang membuat `back`/`elastic` terasa hidup, dan alasan kamu tidak boleh memakainya untuk nilai yang tak boleh melebihi batas (lihat Pitfalls).
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Salah arah: <code>In</code> bukan berarti "masuk" dan <code>Out</code> bukan "keluar". <code>In</code> = <strong>mulai pelan</strong> (akselerasi), <code>Out</code> = <strong>berakhir pelan</strong> (deselerasi). Untuk elemen yang <em>masuk</em> ke layar dan berhenti, kamu hampir selalu mau <code>...Out</code> (mengerem ke posisi diam terasa natural). Untuk elemen yang <em>pergi</em>, pakai <code>...In</code> (makin cepat lalu lenyap). Memakai <code>fly</code> masuk dengan easing <code>...In</code> adalah kesalahan klasik — elemen seperti "tersedot" masuk dengan canggung.
+</Callout>
+
+<Callout type="warning">
+<code>backOut</code>, <code>elasticOut</code>, dan kerabatnya <strong>overshoot</strong> — keluarannya bisa di bawah 0 atau di atas 1. Aman untuk posisi/translate. <strong>Berbahaya</strong> untuk nilai yang punya batas keras: <code>opacity</code> &gt; 1 atau &lt; 0 akan di-clamp (terlihat "menggantung"), progress bar bisa melebihi 100%, atau warna/skala jadi aneh. Untuk nilai terbatas, pakai easing yang tetap di <code>[0,1]</code> seperti <code>cubicOut</code>, <code>quintOut</code>, atau <code>expoOut</code>.
+</Callout>
+
+<Callout type="tip">
+Easing hanyalah <code>(t: number) =&gt; number</code> — kamu <strong>tidak wajib</strong> memakai yang dari <code>svelte/easing</code>. Butuh kurva khusus dari desainer (mis. nilai <code>cubic-bezier</code> Figma)? Tulis fungsinya sendiri, atau pakai library kecil, lalu oper ke <code>easing:</code>. Mulailah dari yang paling sederhana yang sudah enak: <code>cubicOut</code> untuk hampir semua hal, naik ke <code>quintOut</code>/<code>expoOut</code> kalau butuh lebih tegas.
+</Callout>
+
+<Callout type="warning">
+Easing JS dievaluasi per frame di main thread (sama seperti react-spring). Untuk animasi <strong>sangat banyak elemen sekaligus</strong> (mis. ratusan item), CSS transition murni (<code>transition: transform 300ms ease-out</code>) sering lebih hemat karena bisa berjalan di compositor. Pakai <code>svelte/easing</code> + <code>Tween</code>/transition saat kamu butuh efek yang CSS tak bisa (bounce/elastic) atau nilai yang reaktif terhadap input — bukan sebagai pengganti buta untuk semua CSS transition.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-easing" label="svelte/easing — daftar lengkap fungsi easing" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-transition" label="svelte/transition — tempat easing paling sering dipakai" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-motion" label="svelte/motion — Tween (pakai easing) & Spring (tidak)" />

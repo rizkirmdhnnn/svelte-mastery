@@ -1,0 +1,328 @@
+---
+title: Context
+product: svelte
+section: runtime
+sectionTitle: Runtime
+sectionOrder: 6
+order: 2
+status: stable
+description: Berbagi data lintas kedalaman komponen lewat setContext/getContext/hasContext/getAllContexts tanpa prop drilling, termasuk cara menyimpan state reaktif dan batasan timing-nya.
+docs: https://svelte.dev/docs/svelte/context
+keywords: [setContext, getContext, hasContext, createContext, prop drilling]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+### Masalahnya dulu: prop drilling
+
+Bayangkan kamu punya `App` → `Layout` → `Sidebar` → `MenuItem` → `Avatar`. Hanya `Avatar` yang butuh data `user`, tapi `user` lahir di `App`. Tanpa context, kamu terpaksa mengoper `user` sebagai prop lewat `Layout`, `Sidebar`, dan `MenuItem` — padahal tiga komponen itu tidak peduli sama sekali soal `user`, mereka cuma jadi "kurir". Penyakit ini namanya **prop drilling**: data dioper turun lewat banyak lapisan perantara hanya supaya sampai ke satu komponen jauh di bawah. Tiap lapisan jadi berisik, dan menambah satu field baru berarti menyentuh setiap file di rantai itu.
+
+### Analogi: titip pesan lewat keluarga
+
+Bayangkan kamu seorang nenek yang mau menitipkan pesan ke cucu yang tinggal jauh. Kamu **tidak** perlu memanggil anakmu, lalu anakmu memanggil keponakannya, lalu keponakannya memanggil cucumu — operan tangan ke tangan yang melelahkan. Sebagai gantinya, kamu "menaruh" pesan itu di **silsilah keluarga**: siapa pun keturunanmu, sedalam apa pun, bisa langsung mengambilnya kapan saja. Yang bukan keturunanmu (tetangga, misalnya) tidak bisa melihat pesan itu.
+
+Itulah Context. `setContext(key, value)` di komponen induk adalah "menaruh pesan di silsilah". `getContext(key)` di komponen mana pun di bawahnya adalah "mengambil pesan dari silsilah". Anak, cucu, cicit — semua bisa, tanpa harus mengoper lewat prop di tiap lapisan. Para perantara (`Layout`, `Sidebar`, `MenuItem` tadi) tidak perlu tahu apa-apa.
+
+### Aturan main yang membentuk "wujud" Context
+
+Beberapa aturan ini menentukan kapan context cocok dipakai dan kapan justru menjebak:
+
+- **Hanya mengalir ke bawah.** Context mengalir dari induk ke keturunan, tidak pernah ke samping (komponen saudara) atau ke atas. Dua komponen di sub-pohon berbeda tidak akan saling melihat context. Jadi context itu **per-pohon**, terikat pada posisi komponen di hierarki — bukan variabel global.
+- **Wajib dipanggil saat inisialisasi komponen.** `setContext`/`getContext` harus dipanggil secara sinkron di top-level `<script>`, saat komponen sedang di-setup. **Bukan** di dalam event handler, `setTimeout`, callback async, atau `onMount`. Alasannya teknis: Svelte mengaitkan context ke "komponen yang sedang diinisialisasi sekarang", dan informasi itu hanya tersedia selama fase setup. Begitu setup selesai, Svelte tidak tahu lagi komponen mana yang kamu maksud.
+- **`getContext` mengambil nilai sekali, saat init.** Yang diambil adalah **referensi** ke apa pun yang dititipkan, di-snapshot satu kali. Pemanggilan `getContext` sendiri bukan operasi reaktif — ia tidak "memantau" perubahan. Maka kalau kamu menitipkan angka mentah lalu nilainya berubah, keturunan tidak akan tahu.
+
+### Menyimpan state reaktif di context
+
+Karena `getContext` cuma menyalin referensi sekali, kuncinya: **titipkan sesuatu yang memang reaktif**, lalu jaga referensinya. Pola paling umum adalah menitipkan **objek `$state`**:
+
+```js
+let counter = $state({ count: 0 });
+setContext('counter', counter); // yang dititipkan: referensi ke objek reaktif
+```
+
+Keturunan yang membaca `getContext('counter').count` akan ikut bereaksi setiap kali `count` berubah, karena mereka membaca properti dari objek reaktif yang **sama**. Tapi ada jebakan halus: kamu harus **mengubah properti** (`counter.count += 1`), **bukan menimpa variabelnya** (`counter = { count: 0 }`). Kalau kamu menimpa, variabel `counter` lokalmu menunjuk objek baru, sedangkan context masih memegang referensi ke objek lama — keturunan tetap melihat yang lama. Svelte akan memberi peringatan kalau kamu salah di sini. Untuk **nilai primitif** (angka, string) yang ingin reaktif, titipkan sebuah **fungsi getter** alih-alih nilai mentahnya.
+
+### Pola provider
+
+Karena context terikat ke posisi di pohon, idiom yang rapi adalah membuat **komponen provider**: satu komponen yang tugasnya memanggil `setContext` lalu merender anak-anaknya lewat `{@render children()}`. Komponen apa pun yang dibungkus provider ini otomatis bisa membaca context-nya. Yang lebih bersih lagi: bungkus pasangan set/get di **modul helper** sendiri, jadi key dan tipenya hanya ditulis sekali dan tidak gampang salah ketik.
+
+### `createContext` (Svelte 5.40+) — versi type-safe
+
+Sejak Svelte 5.40, ada `createContext()` yang **lebih disarankan** untuk proyek TypeScript. Ia mengembalikan pasangan `[get, set]` yang sudah ber-tipe, sehingga kamu tidak perlu mengelola string key sama sekali:
+
+```ts
+export const [getUserContext, setUserContext] = createContext<User>();
+```
+
+Bonusnya: `get` akan **melempar error** kalau tidak ada induk yang pernah memanggil `set` — jadi bug "lupa pasang provider" ketahuan langsung, bukan jadi `undefined` yang misterius.
+
+### Helper lain: `hasContext` & `getAllContexts`
+
+- **`hasContext(key)`** → `boolean`. Mengecek apakah `key` tersedia di rantai induk. Berguna untuk komponen yang bisa hidup dengan atau tanpa provider (misalnya pakai default kalau context belum ada).
+- **`getAllContexts()`** → mengembalikan seluruh `Map` context milik komponen saat ini. Paling sering dipakai saat kamu **memasang komponen secara imperatif** (`mount`) dan ingin meneruskan semua context dari komponen pemanggil ke komponen baru.
+
+<Callout type="tip">
+Bonus tak terduga: context juga membuat data <strong>aman saat SSR</strong>. Kalau kamu menyimpan state per-pengguna di variabel level-modul (global), request dari user A dan user B di server yang sama bisa saling bocor. Context terikat ke pohon render satu request, jadi tiap request punya context-nya sendiri — tidak ada kebocoran antar-request.
+</Callout>
+
+## 2. Contoh kode
+
+Pola provider: induk menitipkan objek reaktif, cucu yang jauh mengambilnya tanpa satu pun prop dioper di perantara.
+
+```svelte
+<!-- Toko.svelte (provider) -->
+<script>
+	import { setContext } from 'svelte';
+	import Sidebar from './Sidebar.svelte';
+
+	// Titip OBJEK $state (reaktif), bukan angka mentah,
+	// supaya keturunan ikut update saat .jumlah berubah.
+	let keranjang = $state({ jumlah: 0 });
+	setContext('keranjang', keranjang);
+</script>
+
+<h3>Total item: {keranjang.jumlah}</h3>
+<Sidebar />
+```
+
+```svelte
+<!-- Sidebar.svelte: perantara, TIDAK tahu apa-apa soal keranjang -->
+<script>
+	import TombolBeli from './TombolBeli.svelte';
+</script>
+
+<!-- tidak ada prop keranjang yang dioper di sini -->
+<TombolBeli />
+```
+
+```svelte
+<!-- TombolBeli.svelte: ambil langsung dari "silsilah", sedalam apa pun -->
+<script>
+	import { getContext } from 'svelte';
+
+	// referensi yang SAMA dengan objek yang dititipkan Toko
+	const keranjang = getContext('keranjang');
+</script>
+
+<!-- mengubah PROPERTI (bukan menimpa variabel) -> Toko ikut update -->
+<button onclick={() => (keranjang.jumlah += 1)}>Beli (+1)</button>
+```
+
+Versi `createContext` (Svelte 5.40+): hilangkan string key, dapat tipe penuh. Definisikan pasangan get/set sekali di satu file, impor di mana pun.
+
+```ts
+// context.ts
+import { createContext } from 'svelte';
+
+interface User {
+	nama: string;
+}
+
+// urutannya [get, set]
+export const [getUserContext, setUserContext] = createContext<User>();
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import { setUserContext } from './context';
+	let { children } = $props();
+
+	setUserContext({ nama: 'Ani' }); // ter-tipe sebagai User
+</script>
+
+{@render children()}
+```
+
+```svelte
+<!-- Child.svelte -->
+<script>
+	import { getUserContext } from './context';
+
+	// otomatis ber-tipe User; melempar error kalau provider lupa dipasang
+	const user = getUserContext();
+</script>
+
+<h1>Halo {user.nama}</h1>
+```
+
+Mengecek keberadaan context dengan `hasContext` (komponen yang bisa jalan tanpa provider):
+
+```svelte
+<script>
+	import { getContext, hasContext } from 'svelte';
+
+	// pakai tema dari context kalau ada, kalau tidak pakai default
+	const tema = hasContext('tema') ? getContext('tema') : { warna: 'terang' };
+</script>
+
+<p>Warna tema: {tema.warna}</p>
+```
+
+## 3. Coba sendiri
+
+Playground ini cuma boleh satu komponen, padahal context normalnya menghubungkan **induk dan keturunan**. Jadi kita pakai trik kecil: `setContext` lalu `getContext` di komponen yang sama, hanya untuk membuktikan inti idenya — **`getContext` mengembalikan referensi yang sama persis** dengan yang dititipkan. Karena yang dititipkan objek `$state`, menekan tombol akan mengubah `.jumlah` lewat referensi dari context, dan UI tetap bereaksi. Di proyek nyata, baris `getContext` itu akan berada di komponen cucu yang jauh di bawah. Coba ganti `dariContext.jumlah++` jadi `dariContext.jumlah += 5` dan lihat efeknya.
+
+<Playground code={`<script>
+	import { setContext, getContext, hasContext } from 'svelte';
+
+	// Titip OBJEK $state (bukan angka mentah) ke context.
+	let keranjang = $state({ jumlah: 0 });
+	setContext('keranjang', keranjang);
+
+	// Normalnya getContext dipanggil di komponen KETURUNAN.
+	// Di sini kita ambil di tempat yang sama hanya untuk membuktikan:
+	// yang diambil adalah REFERENSI yang sama dengan yang dititipkan.
+	const dariContext = getContext('keranjang');
+	const ada = hasContext('keranjang');
+</script>
+
+<h3>Item di keranjang: {dariContext.jumlah}</h3>
+<p>hasContext('keranjang') = {ada ? 'true' : 'false'}</p>
+<button onclick={() => dariContext.jumlah++}>Beli (+1)</button>
+<p style='color: gray'>
+	Karena yang dititipkan objek $state, mengubah .jumlah lewat
+	referensi dari context tetap memicu update UI.
+</p>`} />
+
+<Callout type="tip">
+Perhatikan: kita mengubah <code>dariContext.jumlah</code> (properti objek), bukan menimpa <code>keranjang = ...</code>. Ini sengaja — inilah aturan emas context reaktif: <strong>mutate, jangan reassign</strong>. Kalau kamu menimpa variabel aslinya, context masih memegang objek lama dan keturunan tak akan lihat perubahannya.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Berbagi data lintas kedalaman"
+	svelte={`<!-- Provider.svelte -->
+<script>
+  import { setContext } from 'svelte';
+  let user = $state({ nama: 'Ani' });
+  setContext('user', user); // titip ke silsilah
+</script>
+<!-- Cucu.svelte (sedalam apa pun) -->
+<script>
+  import { getContext } from 'svelte';
+  const user = getContext('user'); // ambil tanpa prop drilling
+</script>
+<p>{user.nama}</p>`}
+	react={`// Buat Context + Provider
+const UserCtx = createContext(null);
+function Provider({ children }) {
+  const [user, setUser] = useState({ nama: 'Ani' });
+  return (
+    <UserCtx.Provider value={user}>
+      {children}
+    </UserCtx.Provider>
+  );
+}
+// Konsumen (sedalam apa pun)
+function Cucu() {
+  const user = useContext(UserCtx);
+  return <p>{user.nama}</p>;
+}`}
+	vue={`<!-- Provider.vue -->
+<script setup>
+import { provide, ref } from 'vue';
+const user = ref({ nama: 'Ani' });
+provide('user', user); // sediakan ke keturunan
+</script>
+<!-- Cucu.vue (sedalam apa pun) -->
+<script setup>
+import { inject } from 'vue';
+const user = inject('user'); // ambil tanpa prop drilling
+</script>
+<template><p>{{ user.nama }}</p></template>`}
+	diff={{ svelte: [5, 10], react: [5, 11], vue: [5, 10] }}
+	note="React: createContext + <Provider value> membungkus pohon secara eksplisit, konsumen pakai useContext; reaktivitas datang otomatis dari re-render React saat value berubah. Vue: provide/inject; provide nilai reaktif (ref) agar konsumen ikut update. Svelte: setContext/getContext tanpa komponen Provider wajib — cukup panggil setContext di induk mana pun. Bedanya yang penting: di Svelte context tidak otomatis reaktif; reaktivitas berasal dari NILAI yang dititipkan (objek $state / getter), bukan dari mekanisme context-nya. Plus-minus: Svelte lebih ringkas (tak perlu komponen Provider), tapi kamu yang bertanggung jawab menitipkan sesuatu yang reaktif."
+/>
+
+## 5. Latihan
+
+<Exercise title="Provider tema + konsumen lintas lapisan">
+Buat komponen `App.svelte` yang menitipkan objek tema reaktif lewat `setContext('tema', ...)`. Objek tema punya properti `mode` (string, mulai dari `'terang'`) dan sebuah tombol di `App` untuk men-toggle `mode` antara `'terang'` dan `'gelap'`. Di bawah `App`, render `Panel.svelte` (lapisan perantara yang **tidak** menyentuh tema sama sekali), dan di dalamnya `Badge.svelte` yang mengambil tema lewat `getContext` dan menampilkan `mode` saat ini. Pastikan saat tombol di `App` ditekan, `Badge` ikut berubah — tanpa satu pun prop dioper lewat `Panel`.
+
+{#snippet solution()}
+
+```svelte
+<!-- App.svelte -->
+<script>
+	import { setContext } from 'svelte';
+	import Panel from './Panel.svelte';
+
+	// objek $state -> reaktif -> keturunan ikut update saat berubah
+	let tema = $state({ mode: 'terang' });
+	setContext('tema', tema);
+</script>
+
+<button onclick={() => (tema.mode = tema.mode === 'terang' ? 'gelap' : 'terang')}>
+	Toggle tema
+</button>
+
+<Panel />
+```
+
+```svelte
+<!-- Panel.svelte: perantara murni, tidak tahu apa-apa soal tema -->
+<script>
+	import Badge from './Badge.svelte';
+</script>
+
+<!-- tidak ada prop tema yang dioper -->
+<Badge />
+```
+
+```svelte
+<!-- Badge.svelte: ambil langsung dari silsilah -->
+<script>
+	import { getContext } from 'svelte';
+
+	// referensi yang sama dengan objek yang dititipkan App
+	const tema = getContext('tema');
+</script>
+
+<span>Mode sekarang: {tema.mode}</span>
+```
+
+Kuncinya: yang dititipkan adalah **objek `$state`**, bukan string mentah. Karena `getContext` mengambil referensi ke objek yang **sama**, saat `App` mengubah `tema.mode`, `Badge` yang membaca properti yang sama ikut bereaksi — meski `Panel` di tengah tidak tahu apa-apa dan tidak mengoper prop apa pun. Catatan: `App` meng-**ubah** `tema.mode`, bukan menimpa `tema = {...}`, supaya referensi yang dipegang context tetap valid.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>setContext</code> dan <code>getContext</code> <strong>wajib dipanggil saat inisialisasi komponen</strong> — di top-level <code>&lt;script&gt;</code>. Memanggilnya di dalam event handler, <code>setTimeout</code>, callback async, atau bahkan <code>onMount</code> akan gagal, karena saat itu Svelte tidak tahu lagi "komponen mana yang sedang di-setup". Kalau butuh nilai context di dalam handler, ambil dulu lewat <code>getContext</code> di top-level, simpan ke variabel, baru pakai variabel itu di handler.
+</Callout>
+
+<Callout type="warning">
+Context <strong>tidak otomatis reaktif</strong>. <code>getContext</code> menyalin referensi sekali saat init. Kalau kamu menitipkan nilai mentah (<code>setContext('n', 5)</code>) lalu nilainya berubah, keturunan tidak akan tahu. Titipkan objek <code>$state</code> (lalu <strong>mutate propertinya</strong>, jangan menimpa variabelnya) atau sebuah fungsi getter agar perubahan mengalir ke bawah.
+</Callout>
+
+<Callout type="warning">
+Context itu <strong>per-pohon, bukan global</strong>. Ia hanya mengalir ke keturunan komponen yang memanggil <code>setContext</code> — tidak ke komponen saudara, tidak ke atas. Jangan pakai context sebagai pengganti store global untuk state yang harus diakses dari mana saja lintas-pohon; untuk itu pakai modul <code>.svelte.js</code> berisi <code>$state</code> (shared state) yang bisa diimpor langsung.
+</Callout>
+
+<Callout type="tip">
+Bungkus context jadi <strong>modul helper</strong> agar key dan tipe ditulis sekali. Untuk proyek TypeScript, langsung pakai <code>createContext()</code> (Svelte 5.40+) yang sudah type-safe dan tidak butuh string key sama sekali. Untuk proyek non-TS, pakai <code>Symbol()</code> sebagai key alih-alih string biasa untuk mencegah tabrakan key tak sengaja antar-library.
+</Callout>
+
+Konteks histori: cara berbagi data reaktif lintas kedalaman juga berevolusi dari Svelte 4 ke Svelte 5.
+
+<LegacyVsModern rows={[
+	{ legacy: "setContext('x', writable(0))", modern: "setContext('x', $state({ v: 0 }))", note: 'Dulu titip store agar reaktif; kini cukup objek $state.' },
+	{ legacy: '$storeDariContext (auto-subscribe)', modern: 'baca properti objek $state langsung', note: 'Tak perlu prefiks $ untuk store di konsumen.' },
+	{ legacy: 'key string manual + tipe terpisah', modern: 'createContext<T>() (Svelte 5.40+)', note: 'Type-safe, tanpa string key.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/context" label="Context — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte#setContext" label="API: setContext / getContext / hasContext / getAllContexts / createContext" />

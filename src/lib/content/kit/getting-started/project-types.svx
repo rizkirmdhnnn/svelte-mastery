@@ -1,0 +1,272 @@
+---
+title: Project types
+product: kit
+section: getting-started
+sectionTitle: Getting started
+sectionOrder: 1
+order: 3
+status: stable
+description: Empat cara membangun aplikasi dengan SvelteKit — SSR, SSG/prerender, SPA, dan library — beserta kapan masing-masing cocok dan cara mengaturnya lewat adapter & page options.
+docs: https://svelte.dev/docs/kit/project-types
+keywords: [ssr, ssg, prerender, spa, library, adapter]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Salah satu hal yang paling sering bikin orang baru SvelteKit bingung: "SvelteKit itu untuk SSR atau static atau SPA?" Jawabannya — **keempatnya**. SvelteKit bukan framework yang memaksa satu gaya rendering. Ia satu codebase yang bisa kamu *arahkan* jadi tipe aplikasi mana pun, bahkan mencampurnya per halaman. Yang berubah hanya dua tuas: **adapter** (di `svelte.config.js`, menentukan target deploy) dan **page options** (`export const prerender/ssr/csr` di file rute, menentukan kapan & di mana HTML dirakit).
+
+Kalau kamu datang dari Next.js, ini mirip perbedaan `getServerSideProps` vs `getStaticProps` vs `output: 'export'` — bedanya di SvelteKit semuanya satu mental model yang konsisten, bukan tiga API terpisah. Dari Nuxt, ini setara `nuxt.config` dengan `ssr: true/false` plus `nitro.prerender` dan `routeRules`.
+
+Ada empat tipe yang perlu kamu kenal: **SSR**, **SSG (prerender)**, **SPA**, dan **library**. Tiga yang pertama adalah cara membangun *aplikasi* (siapa yang merakit HTML, dan kapan). Yang keempat beda kategori sama sekali: kamu tidak membangun aplikasi, kamu membungkus komponen agar dipakai aplikasi lain.
+
+### Analogi: restoran, katering, food truck, dan penjual bumbu
+
+Bayangkan kamu menyajikan "halaman" seperti menyajikan "makanan":
+
+- **SSR = restoran à la carte.** Setiap kali tamu (request) datang, koki di **dapur (server)** memasak hidangan **saat itu juga**, segar, bisa disesuaikan ("tanpa bawang, ya"). Datanya selalu terkini dan bisa personal (mis. "Halo, Rizki" + isi keranjang belanjamu). Harganya: dapur harus selalu menyala — kamu butuh server yang hidup tiap ada pengunjung.
+
+- **SSG / prerender = katering meal-prep.** Semua hidangan dimasak **sekali, di awal (build time)**, lalu disimpan rapi. Saat tamu datang, tinggal disajikan instan dari rak. Super murah dan tahan ribuan tamu sekaligus (tinggal taruh di CDN). Tapi menunya sama untuk semua orang, dan kalau mau ganti resep kamu harus **masak ulang seluruhnya (rebuild)**.
+
+- **SPA = food truck self-service.** Server cuma melempar satu **paket bahan + kompor portabel** (bundle JavaScript) yang identik ke semua orang. Tamu memasak sendiri di mejanya (di browser). Server jadi sangat sederhana — bahkan tidak perlu "dapur" sama sekali — tapi tamu harus menunggu kompornya panas dulu (JS di-download & dijalankan) sebelum lihat makanan apa pun.
+
+- **Library = penjual bumbu & resep.** Kamu tidak menyajikan makanan ke pengunjung sama sekali. Kamu meracik **bumbu (komponen)** dan menjualnya ke **dapur lain (aplikasi/tim lain)** lewat npm. Outputnya bukan situs, melainkan paket.
+
+### Tuas pertama: SSR vs CSR vs prerender (kapan HTML dirakit)
+
+Default SvelteKit adalah **hybrid yang cerdas**: halaman pertama yang kamu buka di-**SSR** (dirakit jadi HTML di server → cepat tampil & ramah SEO), lalu "dihidupkan" (hydration) jadi interaktif, dan setelah itu navigasi antar halaman dilakukan **di klien (CSR)** sehingga terasa instan seperti SPA. Jadi by default kamu sudah dapat yang terbaik dari dua dunia.
+
+Tiga page options mengontrol perilaku ini per-halaman (atau global lewat `+layout`):
+
+- `prerender` — kalau `true`, HTML dirakit **saat build** (sekali untuk semua), bukan per-request. Ini mengubah halaman itu jadi SSG.
+- `ssr` — kalau `false`, server **tidak** merakit HTML; klien yang merakit semuanya. Ini mengubah halaman jadi SPA.
+- `csr` — kalau `false`, **tidak ada JavaScript** dikirim ke klien; halaman jadi HTML murni statis tanpa interaktivitas.
+
+### Tuas kedua: adapter (ke mana hasilnya dideploy)
+
+Page options menentukan *cara* merakit; **adapter** menentukan *ke mana* hasilnya dipasang:
+
+- `adapter-auto` — default; mendeteksi platform (Vercel/Netlify/Cloudflare) otomatis. Cocok untuk SSR/hybrid.
+- `adapter-node` — server Node sendiri (VPS, container, Docker). Untuk SSR yang kamu kelola sendiri.
+- `adapter-static` — output 100% file statis. Ini yang dipakai untuk **SSG** (semua di-prerender) **atau SPA** (satu fallback page).
+- `adapter-vercel` / `adapter-netlify` / `adapter-cloudflare` — platform serverless/edge spesifik.
+
+Kombinasi dua tuas inilah yang menghasilkan tipe aplikasimu. Mari lihat persisnya di bagian kode.
+
+## 2. Contoh kode
+
+Inti dari modul ini: **tiga tipe aplikasi = tiga kombinasi adapter + page options.** Perhatikan betapa kecil perubahannya.
+
+```js
+// svelte.config.js — SSR/HYBRID (default hasil `npx sv create`)
+// Tidak ada page option khusus: SvelteKit SSR halaman pertama,
+// lalu CSR untuk navigasi berikutnya. Cocok 90% kasus.
+import adapter from '@sveltejs/adapter-auto'; // atau adapter-node untuk server sendiri
+
+export default {
+	kit: {
+		adapter: adapter()
+	}
+};
+```
+
+```js
+// === SSG (Static Site Generation) ===
+// 1) Pakai adapter-static  → output file statis murni.
+// svelte.config.js
+import adapter from '@sveltejs/adapter-static';
+
+export default {
+	kit: {
+		adapter: adapter()
+	}
+};
+```
+
+```js
+// 2) Nyalakan prerender untuk SELURUH situs lewat layout root.
+// src/routes/+layout.js
+export const prerender = true; // semua halaman dirakit jadi HTML saat build
+// (opsional) export const trailingSlash = 'always'; // kontrol bentuk URL statis
+```
+
+```js
+// === SPA (Single-Page App) ===
+// 1) adapter-static dengan FALLBACK page: satu shell HTML
+//    yang router klien pakai untuk semua URL.
+// svelte.config.js
+import adapter from '@sveltejs/adapter-static';
+
+export default {
+	kit: {
+		adapter: adapter({
+			fallback: '200.html' // shell tunggal; nama bisa index.html/200.html
+		})
+	}
+};
+```
+
+```js
+// 2) Matikan SSR di layout root → klien merakit semua HTML.
+// src/routes/+layout.js
+export const ssr = false; // tidak ada render di server; murni CSR
+```
+
+Mencampur tipe juga sah dan sering dipakai: situs SSR/hybrid, tapi beberapa halaman tertentu (mis. blog, dokumen, halaman marketing yang isinya sama untuk semua) di-prerender agar instan dan murah.
+
+```js
+// src/routes/blog/[slug]/+page.js
+// Halaman ini saja yang di-prerender; sisa situs tetap SSR.
+export const prerender = true;
+```
+
+Untuk **library**, mindset-nya berbeda — bukan deploy aplikasi, melainkan menerbitkan paket:
+
+```jsonc
+// package.json (proyek library, dibuat via `npx sv create` → opsi "library")
+{
+  "name": "akun-design-system",
+  "scripts": {
+    // svelte-package: kompilasi src/lib → dist + generate tipe (.d.ts)
+    "package": "svelte-package"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js" // entry yang dibaca bundler aplikasi konsumen
+    }
+  }
+}
+```
+
+<Callout type="tip">
+Aturan praktis memilih tuas: butuh data <strong>segar & personal per pengguna</strong> (keranjang, dashboard ber-login)? <code>ssr</code> default. Isinya <strong>sama untuk semua orang</strong> dan jarang berubah (blog, docs, landing)? <code>prerender = true</code>. Tidak punya/boleh server sama sekali, atau backend kamu terpisah (API sendiri)? SPA dengan <code>ssr = false</code> + fallback.
+</Callout>
+
+## 3. Coba sendiri
+
+Karena tipe aplikasi menyangkut **server & proses build**, ini tidak bisa dicoba di live playground browser — kamu mencobanya dengan mengubah dua file lalu menjalankan `npm run build`. Berikut "resep" lengkap untuk mengubah satu proyek `npx sv create` yang sama menjadi tiga tipe berbeda. Coba ketiganya pada proyek kosong dan amati isi folder `build/`.
+
+```js
+// RESEP A — SSG penuh (situs statis, deploy ke CDN/GitHub Pages/static host)
+//
+// svelte.config.js
+import adapter from '@sveltejs/adapter-static';
+export default { kit: { adapter: adapter() } };
+//
+// src/routes/+layout.js   ← buat file ini
+export const prerender = true;
+//
+// Lalu: npm run build  →  folder build/ berisi index.html, about/index.html, dst.
+// Tiap rute jadi satu file .html nyata. Buka langsung tanpa server pun jalan.
+```
+
+```js
+// RESEP B — SPA (cocok bila backend kamu terpisah / tak ada server render)
+//
+// svelte.config.js
+import adapter from '@sveltejs/adapter-static';
+export default { kit: { adapter: adapter({ fallback: '200.html' }) } };
+//
+// src/routes/+layout.js   ← buat file ini
+export const ssr = false;
+//
+// Lalu: npm run build  →  build/ berisi SATU 200.html (shell).
+// Semua URL melayani shell itu; router klien yang memutuskan isi.
+// View-source halaman akan tampak "kosong" → itu normal untuk SPA.
+```
+
+```js
+// RESEP C — Hybrid (default; tak perlu ubah apa pun)
+//
+// svelte.config.js  → biarkan adapter-auto / adapter-node.
+// Tidak ada +layout.js page option.
+//
+// npm run build  →  output berisi fungsi server + aset.
+// Halaman pertama di-SSR (cek view-source: HTML-nya sudah terisi),
+// navigasi berikutnya CSR (instan).
+```
+
+Cara membuktikan perbedaannya dengan mata sendiri: setelah `npm run build && npm run preview`, buka **View Source** (Ctrl/Cmd+U) di tiap varian. Pada **SSG & SSR** kamu akan melihat HTML konten sudah terisi penuh di source (bagus untuk SEO). Pada **SPA** kamu hanya melihat shell hampir kosong dengan tag `<script>` — konten baru muncul setelah JS jalan. Itulah trade-off SEO yang dibahas di Tips.
+
+<Callout type="warning">
+Saat <code>prerender = true</code>, halaman harus menghasilkan output yang <strong>sama untuk semua orang</strong>. Kamu tidak bisa membaca data per-request seperti <code>url.searchParams</code> di sini, dan <strong>form actions tidak akan berfungsi</strong> di halaman prerender (tidak ada server saat runtime untuk memprosesnya). Kalau butuh itu, jangan prerender halaman tersebut.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Pilih tipe yang tepat untuk tiap proyek">
+Untuk tiap skenario, tentukan tipe SvelteKit yang paling pas (**SSR/hybrid**, **SSG/prerender**, **SPA**, atau **library**), sebutkan adapter + page option yang dipakai, dan beri satu alasan inti.
+
+1. Blog pribadi berisi ~80 artikel markdown. Isinya sama untuk semua pembaca, harus muncul cepat di Google, dan kamu ingin hosting semurah mungkin.
+2. Dashboard internal di balik login yang menampilkan data real-time per-user. SEO tidak relevan. Backend REST API sudah ada dan dikelola tim lain.
+3. Toko online: halaman produk harus ramah SEO & datanya bisa berubah (stok, harga), keranjang bersifat personal per pengguna.
+4. Satu set komponen tombol/form ber-tema yang ingin dipakai ulang di tiga aplikasi internal perusahaan.
+
+{#snippet solution()}
+
+```text
+Jawaban acuan
+─────────────
+
+1. Blog 80 artikel, isi sama, SEO, murah  →  SSG (prerender).
+   adapter-static + `export const prerender = true` di +layout.js.
+   Inti: konten identik untuk semua + jarang berubah → rakit sekali
+   saat build, sajikan dari CDN. Tercepat & termurah. (Padanan:
+   Next `output: export`, Nuxt `nitro.prerender`.)
+
+2. Dashboard ber-login, real-time, backend terpisah, no SEO  →  SPA.
+   adapter-static + fallback:'200.html' + `export const ssr = false`.
+   Inti: tak butuh render server (data diambil klien dari API yang
+   sudah ada), SEO tak penting → kirim shell + biar browser merakit.
+
+3. Toko online: produk SEO + stok berubah + keranjang personal  →  SSR/hybrid.
+   adapter-auto/-node, default (ssr aktif). Opsional prerender halaman
+   statis seperti /tentang, /kebijakan.
+   Inti: butuh HTML segar per-request (SEO + data berubah + personal).
+   Prerender tak cocok karena isinya tidak sama untuk semua orang.
+
+4. Komponen reusable lintas aplikasi  →  Library.
+   `npx sv create` opsi library + svelte-package; terbitkan ke npm
+   (atau registry internal). Inti: ini bukan aplikasi yang dideploy,
+   melainkan paket yang di-import aplikasi lain.
+
+Pola: isi sama+statis → SSG | personal/segar+SEO → SSR |
+      no server/no SEO → SPA | dipakai app lain → library.
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>ssr = false</code> (SPA) <strong>tidak sama dengan</strong> <code>prerender = true</code> (SSG), walau keduanya bisa pakai <code>adapter-static</code>. SSG = HTML konten dirakit penuh saat build (source terisi, SEO bagus). SPA = HTML kosong dikirim, browser merakit saat runtime (source kosong, SEO buruk). Salah memilih = blog yang tak terindeks Google, atau dashboard personal yang isinya "beku" untuk semua orang.
+</Callout>
+
+<Callout type="warning">
+Untuk SPA dengan <code>adapter-static</code>, opsi <code>fallback</code> itu <strong>wajib</strong>. Tanpa fallback, build akan gagal karena adapter mencoba prerender setiap rute padahal <code>ssr = false</code> membuatnya tak punya HTML. Fallback adalah satu shell HTML yang melayani semua URL sehingga router klien bisa mengambil alih (deep-link seperti <code>/produk/123</code> tetap jalan saat di-refresh).
+</Callout>
+
+<Callout type="pitfall">
+Prerender menemukan halaman dengan <strong>menelusuri link</strong> dari halaman entry. Rute yang tidak pernah ditaut dari mana pun (mis. <code>/rahasia</code> yang hanya diakses via tombol JS) <strong>tidak akan ikut ter-prerender</strong> dan akan 404. Daftarkan manual lewat <code>kit.prerender.entries</code> di <code>svelte.config.js</code>, atau ekspor <code>entries</code> dari <code>+page.js</code> untuk rute dinamis seperti <code>[slug]</code>.
+</Callout>
+
+<Callout type="tip">
+Tidak harus all-or-nothing. Setel SSR sebagai default, lalu <code>prerender = true</code> hanya pada halaman yang isinya sama untuk semua (landing, /tentang, artikel blog). Kamu dapat performa & biaya statis untuk halaman yang bisa, sambil tetap punya kemampuan server untuk halaman yang butuh data segar/personal. Ini "hybrid" yang sesungguhnya — dan ini default mindset SvelteKit.
+</Callout>
+
+<Callout type="warning">
+Memilih SPA hanya karena "lebih sederhana" sering jadi penyesalan: SPA punya <strong>SEO & waktu tampil awal (FCP) yang lebih buruk</strong> — pengguna lihat layar kosong sampai bundle JS selesai diunduh & dijalankan. Pakai SPA kalau memang SEO tak relevan (app di balik login) atau kamu benar-benar tak bisa menjalankan render server. Untuk situs publik, default SSR/hybrid hampir selalu pilihan lebih baik.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/project-types" label="SvelteKit — Project types (SSR, SSG, SPA, library)" />
+<DocsLink href="https://svelte.dev/docs/kit/page-options" label="SvelteKit — Page options (prerender, ssr, csr, entries)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapter-static" label="SvelteKit — adapter-static (SSG & SPA fallback)" />

@@ -1,0 +1,398 @@
+---
+title: 'transition:'
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 15
+status: stable
+description: Animasikan elemen saat masuk dan keluar dari DOM dengan satu directive bawaan — fade, fly, slide, scale, modifier local/global, event lifecycle, plus custom transition.
+docs: https://svelte.dev/docs/svelte/transition
+keywords: [transition, fade, fly, slide, custom-transition, local-global]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di React dan Vue kamu hidup dengan satu kenyataan yang sering bikin frustrasi: **menambah elemen ke DOM itu gampang, tapi menghapusnya dengan mulus itu susah.** Begitu kamu set sebuah `{#if}` jadi `false`, elemennya hilang **seketika** — tidak ada jeda untuk fade-out atau slide-out. Karena pada saat framework ingin melepas elemen itu, elemennya sudah dijadwalkan lenyap. Itu sebabnya React butuh library seperti Framer Motion (`AnimatePresence`) hanya untuk menganimasikan elemen yang *keluar*.
+
+Svelte menyelesaikan ini di level compiler. Kamu tempelkan satu directive `transition:` pada elemen, dan Svelte mengurus **dua sisi sekaligus**: animasi **masuk** saat elemen ditambahkan, dan animasi **keluar** saat elemen dihapus. Kuncinya: Svelte **menahan** elemen yang sedang keluar di DOM sampai animasinya selesai, baru benar-benar melepasnya. Tanpa library tambahan.
+
+### Analogi: saklar lampu vs. pintu geser otomatis
+
+Bayangkan `{#if}` biasa itu seperti **saklar lampu**: klik, langsung nyala; klik lagi, langsung mati. Tidak ada peralihan.
+
+`transition:` mengubah saklar itu jadi **pintu geser otomatis di mall**. Saat ada orang mau masuk (elemen ditambahkan), pintu membuka perlahan. Saat orang mau keluar (elemen dihapus), pintu **tidak langsung dikunci** — ia menunggu orangnya benar-benar lewat dulu, baru menutup perlahan. Mekanisme penjadwalan tunggu itu yang Svelte urus, bukan kamu. Kamu cuma bilang "pasang pintu otomatis di sini".
+
+### `transition:` vs `in:` / `out:`
+
+Ada tiga bentuk directive yang erat hubungannya:
+
+- **`transition:fn`** — satu directive untuk dua arah. Animasi masuk = kebalikan dari animasi keluar. Sifat khusus: kalau elemen di-toggle **di tengah** animasi, ia *reversible* — animasi keluar bisa berbalik mulus jadi masuk lagi tanpa lompatan, melanjutkan dari posisi `t` saat itu.
+- **`in:fn`** dan **`out:fn`** — pakai ini kalau masuk dan keluar mau **berbeda** (mis. *fly* saat masuk, *fade* saat keluar). Bedanya dengan `transition:`, keduanya **tidak reversible** — masing-masing selalu berjalan sampai tuntas walau di-interupsi.
+
+Modul ini fokus ke `transition:`. Anggap `in:`/`out:` sebagai "`transition:` yang dipecah dua" ketika kamu butuh arah yang asimetris.
+
+### Fungsi transition bawaan & parameternya
+
+Dari `svelte/transition` kamu dapat fungsi siap pakai. Empat yang paling sering dipakai:
+
+| Fungsi | Efek | Parameter khas |
+| --- | --- | --- |
+| `fade` | opacity 0 → 1 | `delay`, `duration`, `easing` |
+| `fly` | geser dari offset + opacity | `x`, `y`, `opacity`, `delay`, `duration`, `easing` |
+| `slide` | buka/tutup tinggi (atau lebar) seperti accordion | `axis` (`'y'` default \| `'x'`), `delay`, `duration`, `easing` |
+| `scale` | zoom + opacity | `start` (skala awal), `opacity`, `delay`, `duration`, `easing` |
+
+Plus `blur` (`amount`, `opacity`, ...) dan `draw` (untuk path SVG). Semua menerima `duration` (ms), `delay` (ms), dan `easing` (fungsi dari `svelte/easing`).
+
+### `|local` vs `|global` — modifier yang sering disalahpahami
+
+Secara default, transition di Svelte 5 itu **`local`**. Artinya: animasi hanya jalan kalau **blok pembungkus langsung** (`{#if}`/`{#each}` tempat elemen itu berada) yang dibuat atau dihancurkan. Kalau yang ditambah/dihapus adalah blok di **atasnya** (parent), elemen di dalam **tidak ikut** beranimasi — supaya saat satu seksi besar muncul/hilang, kamu tidak kebanjiran ratusan animasi serentak.
+
+Modifier `|global` membalik ini: animasi tetap jalan walau yang berubah adalah blok di atasnya. Pakai `transition:fade|global` kalau kamu memang ingin elemen beranimasi setiap kali ia *benar-benar* masuk/keluar DOM, apa pun penyebabnya.
+
+<Callout type="legacy">
+Perilaku default ini <strong>terbalik</strong> dibanding Svelte 3/4. Dulu default-nya <code>global</code> dan kamu menulis <code>|local</code> untuk membatasi. Di Svelte 5 default-nya <code>local</code> dan kamu menulis <code>|global</code> untuk melebarkan. Kalau kamu memindah kode lama dan transisi "tiba-tiba tidak jalan saat pindah halaman", ini biasanya penyebabnya.
+</Callout>
+
+### Event lifecycle: introstart / introend / outrostart / outroend
+
+Elemen ber-transition memancarkan empat event yang bisa kamu dengarkan dengan handler camelCase:
+
+- `onintrostart` — animasi **masuk** mulai
+- `onintroend` — animasi **masuk** selesai
+- `onoutrostart` — animasi **keluar** mulai
+- `onoutroend` — animasi **keluar** selesai (tepat sebelum elemen dilepas)
+
+Berguna untuk hal seperti: memutar suara saat toast muncul, atau menandai item "sudah benar-benar hilang" setelah animasi keluar tuntas.
+
+## 2. Contoh kode
+
+Contoh paling dasar — satu directive mengurus masuk dan keluar:
+
+```svelte
+<script>
+	// fade diimpor dari modul bawaan Svelte
+	import { fade } from 'svelte/transition';
+
+	let visible = $state(true);
+</script>
+
+<button onclick={() => (visible = !visible)}>Toggle</button>
+
+{#if visible}
+	<!-- satu directive = animasi masuk DAN keluar.
+	     fade jalan 300ms; saat visible jadi false, Svelte menahan
+	     elemen ini di DOM sampai fade-out selesai, baru dilepas. -->
+	<p transition:fade={{ duration: 300 }}>Halo, aku fade!</p>
+{/if}
+```
+
+Empat built-in dengan parameternya masing-masing:
+
+```svelte
+<script>
+	import { fade, fly, slide, scale } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
+
+	let show = $state(true);
+</script>
+
+{#if show}
+	<!-- opacity saja -->
+	<div transition:fade={{ duration: 300 }}>fade</div>
+
+	<!-- meluncur 40px dari bawah sambil memudar -->
+	<div transition:fly={{ y: 40, duration: 400, easing: quintOut }}>fly</div>
+
+	<!-- buka/tutup tinggi seperti accordion; axis: 'x' untuk lebar -->
+	<div transition:slide={{ axis: 'y', duration: 400 }}>slide</div>
+
+	<!-- zoom dari 50% ukuran + memudar -->
+	<div transition:scale={{ start: 0.5, opacity: 0, duration: 400 }}>scale</div>
+{/if}
+```
+
+Mendengarkan event lifecycle:
+
+```svelte
+<script>
+	import { fly } from 'svelte/transition';
+
+	let visible = $state(true);
+	let status = $state('idle');
+</script>
+
+<p>status: {status}</p>
+
+{#if visible}
+	<!-- onintrostart/onoutroend dsb. dipanggil oleh Svelte di titik
+	     yang tepat dalam siklus animasi -->
+	<div
+		transition:fly={{ y: 20, duration: 400 }}
+		onintrostart={() => (status = 'mulai masuk')}
+		onintroend={() => (status = 'selesai masuk')}
+		onoutrostart={() => (status = 'mulai keluar')}
+		onoutroend={() => (status = 'sudah lepas')}
+	>
+		Perhatikan teks status di atas saat aku muncul/hilang.
+	</div>
+{/if}
+```
+
+### Custom transition
+
+Fungsi transition hanyalah fungsi yang menerima `(node, params)` dan mengembalikan objek opsi plus salah satu dari `css` atau `tick`. Bentuknya:
+
+```js
+function namaTransition(node, params) {
+	return {
+		delay: 0,        // ms sebelum mulai
+		duration: 400,   // ms total
+		easing: (t) => t, // fungsi easing
+		// PILIH SALAH SATU:
+		// css dijalankan sekali di awal untuk membangun keyframes (GPU, halus)
+		css: (t, u) => 'opacity: ' + t,
+		// tick dipanggil tiap frame di main thread (untuk efek non-CSS)
+		tick: (t, u) => {}
+	};
+}
+```
+
+Yang penting soal `t` dan `u`:
+
+- `t` bergerak dari `0` (tersembunyi) ke `1` (tampil penuh) **setelah easing diterapkan**. Untuk animasi keluar, Svelte sendiri yang membalik: `t` jalan `1 → 0`. Jadi kamu **selalu** menulis seolah-olah "1 = tampil penuh", dan keluar otomatis jadi kebalikannya.
+- `u` adalah singkatan dari `1 - t`. Praktis untuk hal seperti "geser masuk dari 100px": `'transform: translateX(' + u * 100 + 'px)'`.
+
+```svelte
+<script>
+	let visible = $state(true);
+
+	// custom transition: putar + zoom sambil memudar.
+	// css lebih disukai daripada tick — dikompilasi jadi keyframes
+	// yang jalan di compositor (GPU), tetap 60fps walau main thread sibuk.
+	function spin(node, { duration = 400 } = {}) {
+		return {
+			duration,
+			css: (t, u) =>
+				'transform: scale(' + t + ') rotate(' + u * 360 + 'deg); opacity: ' + t
+		};
+	}
+</script>
+
+<button onclick={() => (visible = !visible)}>Toggle</button>
+
+{#if visible}
+	<div transition:spin={{ duration: 600 }}>🌀</div>
+{/if}
+```
+
+Contoh `tick` (untuk efek yang **tidak bisa** dideskripsikan dengan CSS, mis. mengetik teks huruf demi huruf):
+
+```js
+function typewriter(node, { speed = 1 } = {}) {
+	const text = node.textContent;
+	const duration = text.length / (speed * 0.01);
+	return {
+		duration,
+		// t: 0 -> 1; potong teks sesuai progres
+		tick: (t) => {
+			const i = Math.trunc(text.length * t);
+			node.textContent = text.slice(0, i);
+		}
+	};
+}
+```
+
+## 3. Coba sendiri
+
+Klik Toggle. Empat kotak muncul bersamaan, masing-masing dengan built-in berbeda — perhatikan karakter geraknya. Kotak `fade` juga melaporkan event lifecycle-nya ke teks status; saat kamu sembunyikan, status sempat jadi "mulai keluar" sebelum kotaknya benar-benar lepas.
+
+<Playground code={`<script>
+	import { fade, fly, slide, scale } from 'svelte/transition';
+	let visible = $state(true);
+	let status = $state('siap');
+</script>
+
+<button onclick={() => (visible = !visible)}>
+	{visible ? 'Sembunyikan' : 'Tampilkan'}
+</button>
+<p>status kotak fade: <strong>{status}</strong></p>
+
+{#if visible}
+	<div class="grid">
+		<div
+			class="box"
+			transition:fade={{ duration: 400 }}
+			onintrostart={() => (status = 'mulai masuk')}
+			onintroend={() => (status = 'selesai masuk')}
+			onoutrostart={() => (status = 'mulai keluar')}
+			onoutroend={() => (status = 'sudah lepas')}
+		>
+			fade
+		</div>
+		<div class="box" transition:fly={{ y: 30, duration: 400 }}>fly</div>
+		<div class="box" transition:slide={{ duration: 400 }}>slide</div>
+		<div class="box" transition:scale={{ start: 0.5, duration: 400 }}>scale</div>
+	</div>
+{/if}
+
+<style>
+	.grid { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+	.box {
+		padding: 16px 22px;
+		background: #ff7a59;
+		color: white;
+		border-radius: 10px;
+		font-weight: 700;
+	}
+</style>`} />
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Animasi masuk/keluar"
+	svelte={`<script>
+	import { fade } from 'svelte/transition';
+	let visible = $state(true);
+</script>
+
+<button onclick={() => (visible = !visible)}>Toggle</button>
+
+{#if visible}
+	<!-- masuk DAN keluar diurus satu directive, tanpa library -->
+	<p transition:fade={{ duration: 300 }}>Halo!</p>
+{/if}`}
+	react={`import { useState } from 'react';
+// React tidak punya animasi keluar bawaan.
+// Butuh library, mis. Framer Motion.
+import { AnimatePresence, motion } from 'framer-motion';
+
+function Demo() {
+	const [visible, setVisible] = useState(true);
+	return (
+		<>
+			<button onClick={() => setVisible((v) => !v)}>Toggle</button>
+			{/* AnimatePresence menahan elemen agar exit-anim sempat jalan */}
+			<AnimatePresence>
+				{visible && (
+					<motion.p
+						initial={{ opacity: 0 }}
+						animate={{ opacity: 1 }}
+						exit={{ opacity: 0 }}
+					>
+						Halo!
+					</motion.p>
+				)}
+			</AnimatePresence>
+		</>
+	);
+}`}
+	vue={`<script setup>
+import { ref } from 'vue';
+const visible = ref(true);
+</script>
+
+<template>
+	<button @click="visible = !visible">Toggle</button>
+	<!-- <Transition> bawaan: kamu definisikan kelas CSS enter/leave -->
+	<Transition name="fade">
+		<p v-if="visible">Halo!</p>
+	</Transition>
+</template>
+
+<style>
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+<\/style>`}
+	diff={{ react: [3], vue: [9] }}
+	note="React tidak punya animasi keluar bawaan: butuh AnimatePresence/Framer Motion supaya elemen sempat beranimasi sebelum lepas. Vue punya <Transition> bawaan, tapi kamu menulis kelas CSS-nya sendiri (enter-from/leave-to). Svelte paling ringkas: satu directive transition:fade mengurus masuk + keluar, plus banyak fungsi siap pakai (fly/slide/scale) dan custom transition berbasis fungsi. Plus-minus: pendekatan CSS-class Vue lebih transparan/standar; pendekatan fungsi Svelte lebih programatik dan mudah di-parametrisasi."
+/>
+
+## 5. Latihan
+
+<Exercise title="Custom transition 'swoosh' + hitung berapa kali masuk">
+Buat sebuah kartu yang bisa di-toggle. Persyaratan:
+
+1. Tulis **custom transition** bernama `swoosh` yang memakai `css`: saat masuk, kartu **meluncur dari kiri** (gunakan `u` untuk offset `translateX`) sambil **membesar** dari `scale(0.9)` ke `scale(1)` dan memudar (`opacity`).
+2. Pasang dengan `transition:swoosh` supaya masuk dan keluar pakai efek yang sama (keluar otomatis jadi kebalikannya).
+3. Pakai event `onintroend` untuk menambah sebuah counter `tampilCount` setiap kali animasi **masuk** selesai. Tampilkan angkanya.
+
+Petunjuk: ingat `u` sama dengan `1 - t`, jadi saat `t = 0` (mulai masuk) `u = 1` → offset maksimum.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let visible = $state(true);
+	let tampilCount = $state(0);
+
+	// t: 0 -> 1 (masuk), 1 -> 0 (keluar, Svelte yang membalik).
+	// u = 1 - t, dipakai untuk offset yang mengecil ke 0 saat tampil penuh.
+	function swoosh(node, { duration = 450 } = {}) {
+		return {
+			duration,
+			css: (t, u) =>
+				'transform: translateX(' + (-u * 60) + 'px) scale(' + (0.9 + t * 0.1) + '); ' +
+				'opacity: ' + t
+		};
+	}
+</script>
+
+<button onclick={() => (visible = !visible)}>Toggle kartu</button>
+<p>Sudah tampil {tampilCount} kali.</p>
+
+{#if visible}
+	<div
+		class="card"
+		transition:swoosh={{ duration: 450 }}
+		onintroend={() => (tampilCount += 1)}
+	>
+		Aku meluncur masuk dari kiri lalu mengecil pergi.
+	</div>
+{/if}
+
+<style>
+	.card {
+		margin-top: 12px;
+		padding: 20px;
+		background: #fff3ee;
+		border: 1px solid #ffd9cc;
+		border-radius: 12px;
+	}
+</style>
+```
+
+Kunci jawabannya: karena `transition:` itu dua arah dan reversible, satu fungsi `css` cukup untuk masuk **dan** keluar — kamu tidak perlu menulis logika "keluar" terpisah. `u * 60` membuat offset 60px saat tersembunyi dan 0px saat tampil penuh. `onintroend` hanya terpicu di akhir animasi **masuk**, jadi counter naik tepat sekali per kemunculan.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>transition:</code> butuh elemennya <strong>benar-benar ditambah/dihapus dari DOM</strong> — yaitu berada di dalam blok seperti <code>&#123;#if&#125;</code> atau <code>&#123;#each&#125;</code>. Kalau kamu cuma menyembunyikan elemen dengan CSS (<code>display:none</code> atau <code>hidden</code>), elemennya tidak pernah dilepas, jadi tidak ada animasi masuk/keluar yang terpicu. Toggle keberadaannya, bukan visibilitas CSS-nya.
+</Callout>
+
+<Callout type="warning">
+Default transition Svelte 5 adalah <code>local</code> — animasi cuma jalan kalau blok pembungkus <em>langsung</em> yang dibuat/dihancurkan. Kalau transisi tidak muncul saat <strong>parent</strong> muncul/hilang (mis. saat pindah halaman atau seluruh seksi dirender), tambahkan <code>|global</code>: <code>transition:fade|global</code>. Tapi pakai seperlunya, supaya tidak ada banjir animasi serentak.
+</Callout>
+
+<Callout type="tip">
+Untuk custom transition, utamakan <code>css</code> daripada <code>tick</code>. Fungsi <code>css</code> dievaluasi <em>sekali</em> di awal untuk membangun CSS keyframes yang jalan di compositor browser (GPU), sehingga tetap mulus walau main thread sibuk. <code>tick</code> dipanggil <em>tiap frame</em> di main thread — hanya pakai kalau efeknya memang tak bisa dideskripsikan dengan CSS (mis. mengetik teks huruf demi huruf, atau memanipulasi <code>textContent</code>).
+</Callout>
+
+<Callout type="tip">
+Animasi keluar enak dilihat, tapi hormati preferensi pengguna. Hubungkan durasi dengan <code>prefers-reduced-motion</code> (lewat <code>matchMedia</code> di JS atau media query di CSS) supaya pengguna yang sensitif terhadap gerakan tidak terganggu. Animasi yang aksesibel adalah animasi yang bisa dimatikan.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/transition" label="transition: directive — dokumentasi resmi Svelte" />

@@ -1,0 +1,254 @@
+---
+title: sv check
+product: cli
+section: commands
+sectionTitle: Perintah
+sectionOrder: 2
+order: 3
+status: stable
+description: Menjalankan svelte-check untuk memvalidasi seluruh proyek — type error, aksesibilitas, dan CSS tak terpakai — lengkap dengan opsi --watch, --threshold, dan integrasi CI.
+docs: https://svelte.dev/docs/cli/sv-check
+keywords: [sv check, svelte-check, type-check, a11y, watch, CI]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`sv check` adalah perintah yang menjalankan **svelte-check**, alat diagnostik resmi yang menyisir seluruh proyekmu mencari masalah: error tipe TypeScript/JavaScript, masalah aksesibilitas (a11y), CSS yang tak terpakai, sampai props yang salah dipakai antar-komponen. Hasilnya satu laporan dengan **exit code** yang bisa dibaca CI — kalau ada error, prosesnya keluar dengan kode bukan-nol, dan pipeline-mu gagal.
+
+### Analogi: inspektur bangunan vs. mata kamu sendiri
+
+Saat ngoding, editor (VS Code + ekstensi Svelte) memberi garis merah bergelombang di file yang sedang **kamu buka**. Itu seperti melihat retakan di dinding kamar tempat kamu berdiri sekarang. Berguna, tapi terbatas: retakan di kamar lain — file yang belum kamu buka hari ini — tidak kamu lihat.
+
+`sv check` adalah **inspektur bangunan profesional** yang berkeliling ke **seluruh rumah**, kamar demi kamar, membandingkan tiap detail dengan cetak biru resmi (`tsconfig.json`). Ia tidak peduli kamar mana yang sedang kamu tempati; ia memeriksa semuanya dan menyerahkan satu laporan tertulis. Itu sebabnya `sv check` sering menemukan error yang "tiba-tiba muncul" di CI padahal editor-mu tampak hijau — kamu cuma belum membuka kamar tempat retakan itu berada.
+
+### Kenapa butuh alat KHUSUS — bukan cukup `tsc` atau `vite build`?
+
+Ini pertanyaan paling penting, dan jawabannya membuat banyak hal jadi masuk akal:
+
+1. **`tsc` tidak bisa membaca file `.svelte`.** TypeScript compiler hanya paham `.ts`/`.tsx`/`.js`. Saat ketemu `<script lang="ts">` di dalam `.svelte`, plus markup template dan blok `{#if}`/`{#each}`, `tsc` angkat tangan. svelte-check menanamkan pemahaman tentang format `.svelte` sehingga tipe di dalam komponen — termasuk `$props()`, `$state`, dan binding di template — benar-benar dicek.
+
+2. **`vite build` / esbuild MEN-strip tipe, bukan MENGE-cek-nya.** Demi kecepatan, bundler membuang anotasi tipe tanpa memverifikasinya. Build bisa "sukses" walau ada puluhan type error. Jadi build hijau **bukan** jaminan tipe-mu benar. svelte-check-lah yang melakukan verifikasi itu.
+
+3. **Editor cuma mengecek file yang terbuka.** Language server bekerja per-file demi responsif. `sv check` menjalankan pengecekan menyeluruh sekali jalan untuk seluruh repo — pas untuk CI dan untuk momen "pastikan semua beres sebelum push".
+
+Kalau kamu datang dari **Vue**, padanan langsungnya adalah `vue-tsc` — sama-sama "tsc yang mengerti file komponen". Di **React**, kombinasi setaranya biasanya `tsc --noEmit` (tipe) plus `eslint-plugin-jsx-a11y` (aksesibilitas); Svelte menyatukan keduanya, ditambah cek CSS tak terpakai, ke dalam satu perintah.
+
+### Apa yang sebenarnya dilaporkan
+
+svelte-check mengumpulkan diagnostik dari tiga **sumber** sekaligus:
+
+| Sumber (`--diagnostic-sources`) | Contoh yang ditangkap |
+| --- | --- |
+| `js` | Error tipe TS/JS: tipe tak cocok, nama tak dikenal, props wajib yang lupa diisi |
+| `svelte` | Aturan khusus Svelte: a11y (mis. `img` tanpa `alt`), binding salah, props tak dikenal |
+| `css` | Selector CSS yang tak match elemen mana pun (unused selector) |
+
+Default-nya ketiganya jalan. Tiap temuan diberi tingkat **error** atau **warning** — dan perbedaan ini menentukan apakah CI-mu gagal (lihat bagian opsi di bawah).
+
+### Peta lengkap opsi
+
+`sv check` adalah pembungkus tipis untuk svelte-check, jadi opsinya identik. Ini referensi lengkapnya:
+
+| Opsi | Nilai | Fungsi |
+| --- | --- | --- |
+| `--workspace` | `<path>` | Root yang dicek. Semua subfolder dicek kecuali `node_modules` dan yang ada di `--ignore`. Berguna untuk monorepo. |
+| `--output` | `human` \| `human-verbose` \| `machine` \| `machine-verbose` | Cara menampilkan error & warning. `human` untuk dibaca orang; `machine` untuk diparse skrip/CI. |
+| `--watch` | — | Proses tetap hidup dan **mengecek ulang** otomatis tiap file berubah. |
+| `--preserveWatchOutput` | — | Mencegah layar di-clear tiap siklus watch (riwayat tetap kelihatan). |
+| `--tsconfig` | `<path>` | Pakai `tsconfig.json`/`jsconfig.json` tertentu. Hanya file yang match pola di config itu yang didiagnosis. |
+| `--no-tsconfig` | — | Hanya cek file `.svelte` di folder saat ini ke bawah, abaikan tsconfig. |
+| `--ignore` | `"<paths>"` | File/folder yang diabaikan, relatif ke workspace root. Dipisah koma dan **dikutip**. |
+| `--fail-on-warnings` | — | Warning pun ikut membuat `sv check` keluar dengan exit code error. |
+| `--compiler-warnings` | `<code:behaviour,...>` | Override perilaku per-kode warning: `error` (naikkan jadi error) atau `ignore` (bungkam). |
+| `--diagnostic-sources` | `"js,svelte,css"` | Sumber diagnostik mana yang dijalankan (default ketiganya). |
+| `--threshold` | `warning` \| `error` | Saring tampilan. Default menampilkan error **dan** warning; `error` hanya error. |
+
+Dua opsi yang akan paling sering kamu sentuh: `--watch` (loop saat ngoding) dan `--threshold` / `--fail-on-warnings` (mengatur ketegasan CI).
+
+## 2. Contoh kode
+
+Biasanya kamu tidak mengetik flag-nya berulang; kamu menyimpannya sebagai script di `package.json`. Inilah pola standar yang dihasilkan template SvelteKit:
+
+```json
+{
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    // svelte-kit sync WAJIB jalan dulu: ia men-generate .svelte-kit/types
+    // (sumber tipe ./$types). Tanpa ini, sv check error "Cannot find ./$types".
+    "check": "svelte-kit sync && sv check --tsconfig ./tsconfig.json",
+    // Versi watch untuk dipakai sambil ngoding di terminal kedua:
+    "check:watch": "svelte-kit sync && sv check --tsconfig ./tsconfig.json --watch"
+  }
+}
+```
+
+Pemanggilan langsung dari terminal, dari yang paling umum sampai yang lebih spesifik:
+
+```bash
+# Cek seluruh proyek sekali jalan (sumber kebenaran untuk "apakah aman push?").
+npx sv check
+
+# Mode watch: tetap hidup, otomatis cek ulang tiap kamu menyimpan file.
+# --preserveWatchOutput menjaga laporan lama tidak terhapus tiap siklus.
+npx sv check --watch --preserveWatchOutput
+
+# CI ketat: warning A11Y/CSS pun dianggap kegagalan (exit code error).
+npx sv check --fail-on-warnings
+
+# Tampilkan HANYA error, sembunyikan warning (mis. saat membereskan error dulu).
+npx sv check --threshold error
+```
+
+Mengatur perilaku per-warning lewat `--compiler-warnings`. Format-nya pasangan `kode:perilaku` dipisah koma:
+
+```bash
+# - Bungkam warning "selector CSS tak terpakai" (mis. CSS-mu memang global).
+# - Tapi PAKSA "atribut a11y yang hilang" jadi ERROR keras supaya pasti ditangani.
+npx sv check --compiler-warnings "css_unused_selector:ignore,a11y_missing_attribute:error"
+
+# Lewati cek CSS sepenuhnya, cek tipe & aturan Svelte saja (lebih cepat).
+npx sv check --diagnostic-sources "js,svelte"
+```
+
+## 3. Coba sendiri
+
+`sv check` hidup di **terminal** dan butuh seluruh proyek di disk, jadi tidak bisa dijalankan di playground browser. Sebagai gantinya, mari baca **laporan `sv check` yang sudah dianotasi**, supaya kamu paham anatomi outputnya.
+
+Misalkan ada dua file bermasalah:
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script lang="ts">
+	// BUG 1 (sumber: js) — string ditaruh ke variabel bertipe number.
+	let count: number = 'satu';
+</script>
+
+<!-- BUG 2 (sumber: svelte) — img tanpa atribut alt: warning aksesibilitas. -->
+<img src="/logo.png" />
+
+<p>{count}</p>
+```
+
+Menjalankan `npx sv check` menghasilkan laporan `human` kira-kira begini:
+
+```bash
+# ====================================
+# Loading svelte-check in workspace: /home/me/my-app
+# Getting Svelte diagnostics...
+#
+# /home/me/my-app/src/routes/+page.svelte:4:21
+# Error: Type 'string' is not assignable to type 'number'. (ts)
+#   let count: number = 'satu';
+#
+# /home/me/my-app/src/routes/+page.svelte:9:5
+# Warn: A11y: <img> element should have an alt attribute (svelte)
+#
+# ====================================
+# svelte-check found 1 error and 1 warning
+#
+# $ echo $?      <- exit code shell setelah perintah selesai
+# 1              <- BUKAN nol -> CI akan menganggap step ini GAGAL
+```
+
+Yang perlu kamu tangkap dari anatomi ini:
+
+- Tiap temuan menyebut **lokasi presisi** (`file:baris:kolom`), **tingkat** (`Error`/`Warn`), pesan, dan **sumber** dalam kurung (`(ts)`, `(svelte)`).
+- Baris ringkasan menyebut jumlah error dan warning total.
+- **Exit code** = 1 karena ada 1 error. Inilah sinyal yang dibaca CI. Kalau hanya ada warning (tanpa error), exit code default-nya 0 — kecuali kamu menambahkan `--fail-on-warnings`, yang membuat warning juga memulangkan 1.
+
+Untuk CI yang ingin memproses output secara terprogram, ganti ke format mesin yang gampang diparse baris-per-baris:
+
+```bash
+# Tiap baris berawalan timestamp + kata kunci (START/ERROR/WARNING/COMPLETED),
+# jadi skrip bisa menghitung & memformat ulang tanpa regex rumit.
+npx sv check --output machine
+```
+
+## 4. Latihan
+
+<Exercise title="Siapkan sv check untuk dev loop dan CI yang tegas">
+Targetmu: (a) script `package.json` untuk pengecekan sekali jalan dan mode watch, lalu (b) sebuah job GitHub Actions yang **menggagalkan** Pull Request bila ada type error **atau** masalah aksesibilitas, tapi tetap mentoleransi warning CSS "unused selector".
+
+Petunjuk: ingat dua hal — `svelte-kit sync` harus jalan sebelum check, dan kamu perlu mengubah ketegasan warning lewat opsi yang tepat.
+
+{#snippet solution()}
+
+```json
+// package.json — script
+{
+  "scripts": {
+    "check": "svelte-kit sync && sv check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && sv check --tsconfig ./tsconfig.json --watch"
+  }
+}
+```
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # --fail-on-warnings: warning (termasuk a11y) ikut menggagalkan job.
+      # --compiler-warnings "...:ignore": KECUALIKAN unused CSS dari kegagalan
+      # supaya satu warning kosmetik tidak memblokir merge.
+      - run: >-
+          svelte-kit sync &&
+          npx sv check --tsconfig ./tsconfig.json
+          --fail-on-warnings
+          --compiler-warnings "css_unused_selector:ignore"
+```
+
+Inti penalarannya:
+
+- **`svelte-kit sync` dulu** men-generate `.svelte-kit/types`, sumber tipe `./$types`. Lewati langkah ini dan CI akan dibanjiri error "Cannot find module './$types'" yang menyesatkan — padahal kodemu benar.
+- **`--fail-on-warnings`** menaikkan semua warning jadi pemicu kegagalan, sehingga masalah a11y tidak bisa lolos diam-diam.
+- **`--compiler-warnings "css_unused_selector:ignore"`** menurunkan satu kategori spesifik (CSS tak terpakai) kembali ke "tidak menggagalkan", jadi kebijakanmu tegas pada yang penting tanpa rewel pada yang kosmetik.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa <code>svelte-kit sync</code> sebelum <code>sv check</code> di CI.</strong> Tipe <code>./$types</code> (untuk <code>load</code>, <code>PageData</code>, dll.) di-generate ke folder <code>.svelte-kit/</code> yang biasanya <em>tidak</em> di-commit. Di mesin CI yang fresh, folder itu belum ada, jadi tanpa <code>svelte-kit sync</code> kamu akan melihat puluhan error "Cannot find module './$types'". Itu sebabnya script <code>check</code> bawaan template selalu diawali <code>svelte-kit sync &amp;&amp;</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Editor hijau bukan berarti <code>sv check</code> hijau.</strong> Language server di editor hanya mengecek file yang sedang terbuka, sementara <code>sv check</code> menyisir seluruh proyek. Error bisa "muncul tiba-tiba" di CI hanya karena kamu belum pernah membuka file itu. Biasakan menjalankan <code>npm run check</code> secara lokal sebelum push — itu satu-satunya cara melihat apa yang dilihat CI.
+</Callout>
+
+<Callout type="warning">
+<strong>Build sukses bukan jaminan tipe benar.</strong> <code>vite build</code> men-strip anotasi TypeScript tanpa memverifikasinya, jadi proyek dengan type error bisa tetap "build hijau". Hanya <code>sv check</code> (svelte-check) yang benar-benar memvalidasi tipe. Perlakukan keduanya sebagai gerbang terpisah: build untuk "bisakah di-bundle?", check untuk "apakah tipenya benar?".
+</Callout>
+
+<Callout type="tip">
+<strong>Pakai <code>--watch</code> di terminal kedua saat ngoding.</strong> Jalankan <code>npm run check:watch</code> berdampingan dengan <code>vite dev</code>. Kamu dapat umpan balik tipe & a11y untuk <em>seluruh</em> proyek secara real-time — bukan cuma file yang kebetulan terbuka di editor. Tambahkan <code>--preserveWatchOutput</code> agar laporan lama tidak terhapus tiap siklus, sehingga kamu bisa menelusuri riwayat.
+</Callout>
+
+<Callout type="tip">
+<strong>Selisihkan ketegasan: <code>--threshold</code> menyaring TAMPILAN, <code>--fail-on-warnings</code> mengubah EXIT CODE.</strong> <code>--threshold error</code> sekadar menyembunyikan warning dari output (berguna saat kamu fokus membereskan error dulu) tapi tidak mengubah apakah CI gagal. <code>--fail-on-warnings</code> justru sebaliknya: warning tetap tampil tapi kini ikut menggagalkan proses. Pakai <code>--compiler-warnings</code> bila kamu butuh kebijakan per-kode (naikkan sebagian, bungkam sebagian).
+</Callout>
+
+<Callout type="tip">
+<strong>Samakan versi alat antara editor dan CI.</strong> Bila ekstensi Svelte di editormu memakai versi <code>svelte</code>/<code>svelte-check</code> berbeda dari yang ada di <code>devDependencies</code>, kamu bisa melihat warning yang berbeda di dua tempat. Pasang <code>svelte-check</code> sebagai dependensi lokal dan pin versinya di lockfile supaya tim dan CI menilai kode dengan aturan yang sama.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-check" label="sv check — referensi resmi Svelte CLI" />

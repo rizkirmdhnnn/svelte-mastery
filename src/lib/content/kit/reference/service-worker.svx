@@ -1,0 +1,372 @@
+---
+title: $service-worker
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 22
+status: reference
+description: Modul virtual $service-worker — build, files, prerendered, version, dan base — untuk menyusun daftar cache dan menulis service worker offline-ready di SvelteKit.
+docs: https://svelte.dev/docs/kit/$service-worker
+keywords: [service-worker, build, files, prerendered, version, base]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`$service-worker` adalah **modul virtual** SvelteKit yang isinya cuma satu hal: memberitahu service worker-mu **file apa saja yang dihasilkan build ini**, supaya kamu bisa meng-cache-nya dengan percaya diri. Ia tidak menulis service worker untukmu — ia hanya menyodorkan "daftar inventaris" hasil build agar kamu tidak perlu menebak nama chunk seperti `/_app/immutable/entry/app.a1b2c3.js` (nama yang berubah tiap kali kamu deploy).
+
+Modul ini cuma bisa di-import **di dalam `src/service-worker.js`** (atau `.ts`). Mengimpornya di komponen biasa tidak ada artinya — variabelnya hanya terisi dalam konteks build service worker.
+
+### Kenapa modul ini ada
+
+Service worker yang baik perlu meng-cache "seluruh isi app" agar bisa jalan offline. Masalahnya, di app modern nama file aset penuh **hash** (`app.a1b2c3.js`) supaya browser bisa cache selamanya tapi tetap tahu kapan ada versi baru. Hash itu berubah tiap build. Kalau kamu menulis daftar file cache **secara manual**, daftarnya basi begitu kamu deploy ulang — kamu akan meng-cache file yang sudah tidak ada (404) dan melewatkan file baru.
+
+`$service-worker` memecahkan ini: SvelteKit yang menyusun daftarnya **saat build**, lalu menyuntikkannya sebagai variabel. Kamu tinggal pakai `[...build, ...files]` dan daftarnya selalu sinkron dengan hasil build terbaru — tanpa kamu sentuh.
+
+### Analogi: manifes pindahan rumah
+
+Bayangkan service worker itu **tim packing** yang akan mengepak seluruh isi rumahmu (app) ke dalam gudang (cache) supaya tetap bisa diakses walau jalan ke rumah ditutup (offline). Lima variabel `$service-worker` adalah **lembar manifes** yang otomatis dicetak tim logistik tiap kali kamu pindahan (deploy):
+
+- **`version`** — **label nomor pengiriman** di tiap kardus. Tiap pindahan dapat nomor baru. Begitu pindahan baru tiba, kamu tahu kardus berlabel lama boleh dibuang. Ini yang kamu pakai untuk menamai cache (`cache-${version}`) supaya cache versi lama mudah dibersihkan.
+- **`build`** — **furnitur yang kamu rakit sendiri**: file JS/CSS hasil bundling Vite (kode app-mu).
+- **`files`** — **barang bawaan pribadi**: aset statis dari folder `static` (logo, font, favicon).
+- **`prerendered`** — **kamar yang sudah jadi**: halaman & endpoint yang sudah di-prerender jadi HTML statis saat build.
+- **`base`** — **alamat kompleksnya**: prefix path tempat app dipasang (mis. `/docs` kalau app di sub-folder). Dipakai saat kamu menyusun URL sendiri di dalam service worker.
+
+Manifes ini dicetak otomatis dan selalu akurat untuk pindahan yang sedang berlangsung. Tugasmu hanya menulis *cara* mengepak dan mengeluarkan barang (strategi cache) — bukan menghitung ulang isi rumah tiap kali.
+
+### Bagaimana service worker-nya diaktifkan
+
+Kalau file `src/service-worker.js` ada, SvelteKit **otomatis membundel dan meregistrasikannya** dengan `{ type: 'module' }`. Tidak perlu memanggil `navigator.serviceWorker.register()` sendiri (kecuali kamu mau kontrol penuh — lihat bagian Tips). Yang perlu diingat: secara default service worker hanya aktif di build **production**, bukan saat `vite dev` — makanya saat dev, `build` dan `prerendered` bernilai array kosong (lihat tabel).
+
+## 2. Tabel API
+
+Semua export di bawah hanya berarti di dalam `src/service-worker.js`. `build`, `files`, dan `prerendered` adalah array string yang **sudah memuat prefix `base`** (jadi cocok langsung dengan `url.pathname` saat mencocokkan request).
+
+| Export | Tipe | Isi | Saat `vite dev` |
+| --- | --- | --- | --- |
+| `build` | `string[]` | URL file hasil bundling Vite (chunk JS/CSS app). Aman untuk `cache.addAll(build)`. | `[]` (kosong) |
+| `files` | `string[]` | URL file di folder `static` (atau `config.kit.files.assets`). Bisa difilter via `config.kit.serviceWorker.files`. | terisi |
+| `prerendered` | `string[]` | Pathname halaman & endpoint yang di-**prerender** saat build. | `[]` (kosong) |
+| `version` | `string` | String unik per build (dari `config.kit.version`). Untuk menamai cache → invalidasi antar-deploy. | terisi (nilai dev) |
+| `base` | `string` | Base path deployment, dihitung dari `location.pathname` (cocok dengan `config.kit.paths.base`). | terisi |
+
+Tanda tangan lengkap dengan tipe:
+
+```ts
+// Modul ini deklarasinya virtual; di service worker kamu meng-import-nya begini:
+declare module '$service-worker' {
+	/**
+	 * Array URL file yang dihasilkan Vite (chunk JS/CSS aplikasimu).
+	 * Cocok untuk `cache.addAll(build)`. Kosong saat dev.
+	 */
+	export const build: string[];
+
+	/**
+	 * Array URL file di folder static (atau config.kit.files.assets).
+	 * Bisa dipersempit lewat config.kit.serviceWorker.files.
+	 */
+	export const files: string[];
+
+	/**
+	 * Array pathname halaman & endpoint yang di-prerender. Kosong saat dev.
+	 */
+	export const prerendered: string[];
+
+	/**
+	 * String unik per build (config.kit.version) untuk membuat nama cache unik.
+	 */
+	export const version: string;
+
+	/**
+	 * Base path deployment — sama seperti config.kit.paths.base, tapi dihitung
+	 * dari location.pathname agar tetap benar di sub-folder.
+	 */
+	export const base: string;
+}
+```
+
+<Callout type="warning">
+Service worker <strong>tidak bisa dipakai</strong> bila kamu menyetel <code>config.kit.paths.assets</code> (aset di domain/CDN terpisah). Sebabnya, service worker hanya boleh mengintersep request dalam scope origin-nya sendiri; kalau aset ada di origin lain, model cache-nya jadi tidak konsisten. Untuk app yang butuh service worker, biarkan aset di origin yang sama (cukup atur <code>paths.base</code>, bukan <code>paths.assets</code>).
+</Callout>
+
+## 3. Contoh kode
+
+Mari rakit service worker lengkap memakai kelima variabel. Pola standarnya tiga tahap: **install** (precache semua aset), **activate** (buang cache versi lama), **fetch** (sajikan dari cache, jatuh ke jaringan / sebaliknya).
+
+```js
+// src/service-worker.js
+// Baris referensi tipe ini memberi autocomplete untuk '$service-worker' & ServiceWorkerGlobalScope.
+/// <reference types="@sveltejs/kit" />
+import { build, files, prerendered, version } from '$service-worker';
+
+// `version` unik per build -> nama cache ikut berganti tiap deploy.
+// Inilah kunci invalidasi: cache lama akan dibersihkan saat 'activate'.
+const CACHE = `cache-${version}`;
+
+// Gabungkan SEMUA yang ingin di-precache saat install:
+//   build       -> kode app (JS/CSS hasil Vite)
+//   files       -> aset statis dari /static
+//   prerendered -> halaman/endpoint yang sudah jadi HTML statis
+const ASSETS = [...build, ...files, ...prerendered];
+
+self.addEventListener('install', (event) => {
+	// INSTALL: unduh & simpan seluruh ASSETS ke cache baru bernama `cache-<version>`.
+	async function preCache() {
+		const cache = await caches.open(CACHE);
+		await cache.addAll(ASSETS);
+	}
+	// waitUntil menahan fase install sampai precache selesai.
+	event.waitUntil(preCache());
+});
+
+self.addEventListener('activate', (event) => {
+	// ACTIVATE: hapus semua cache yang BUKAN versi sekarang.
+	// Tanpa ini, tiap deploy menambah cache baru tanpa pernah membersihkan yang lama.
+	async function cleanup() {
+		for (const key of await caches.keys()) {
+			if (key !== CACHE) await caches.delete(key);
+		}
+	}
+	event.waitUntil(cleanup());
+});
+
+self.addEventListener('fetch', (event) => {
+	// Hanya tangani GET; biarkan POST/PUT/DELETE lewat apa adanya ke jaringan.
+	if (event.request.method !== 'GET') return;
+
+	async function respond() {
+		const url = new URL(event.request.url);
+		const cache = await caches.open(CACHE);
+
+		// ASSETS sudah memuat prefix base, jadi cocok langsung dengan url.pathname.
+		// Aset hasil build/static: cache-first -> super cepat & siap offline.
+		if (ASSETS.includes(url.pathname)) {
+			const cached = await cache.match(url.pathname);
+			if (cached) return cached;
+		}
+
+		// Sisanya (mis. data dinamis): network-first, jatuh ke cache saat offline.
+		try {
+			const response = await fetch(event.request);
+			// Hanya cache respons sukses dari skema http/https (lewati ekstensi browser, dll).
+			if (response.status === 200 && url.protocol.startsWith('http')) {
+				cache.put(event.request, response.clone());
+			}
+			return response;
+		} catch (err) {
+			const cached = await cache.match(event.request);
+			if (cached) return cached;
+			// Benar-benar offline & tak ada di cache: lempar agar browser tampilkan error jaringan.
+			throw err;
+		}
+	}
+
+	event.respondWith(respond());
+});
+```
+
+Kalau pakai TypeScript, `self` perlu di-cast agar tipenya tepat (default-nya `self` bertipe Window, bukan service worker scope):
+
+```ts
+// src/service-worker.ts
+/// <reference types="@sveltejs/kit" />
+import { build, files, version } from '$service-worker';
+
+// Cast eksplisit -> dapat tipe ServiceWorkerGlobalScope (punya addEventListener('fetch'), skipWaiting, dll).
+const sw = self as unknown as ServiceWorkerGlobalScope;
+
+const CACHE = `cache-${version}`;
+const ASSETS = [...build, ...files];
+
+sw.addEventListener('install', (event) => {
+	event.waitUntil(
+		caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+	);
+});
+```
+
+Memakai `base` — diperlukan saat kamu **menyusun URL sendiri** di dalam service worker (mis. menyajikan satu halaman fallback offline saat user menavigasi ke halaman yang belum di-cache):
+
+```js
+// src/service-worker.js (potongan handler fetch)
+import { base } from '$service-worker';
+
+// Misal kamu prerender halaman /offline lalu memasukkannya ke cache.
+// `base` memastikan path benar walau app dipasang di sub-folder seperti /docs.
+const OFFLINE_URL = `${base}/offline`;
+
+// ... di dalam respond(), khusus untuk request navigasi dokumen:
+if (event.request.mode === 'navigate') {
+	try {
+		return await fetch(event.request);
+	} catch {
+		const cache = await caches.open(CACHE);
+		const fallback = await cache.match(OFFLINE_URL);
+		if (fallback) return fallback;
+		throw new Error('offline & tak ada halaman fallback');
+	}
+}
+```
+
+Konfigurasi opsional di `svelte.config.js`:
+
+```js
+// svelte.config.js
+const config = {
+	kit: {
+		// version: dipakai sebagai $service-worker `version`. Default-nya hash isi build.
+		// Set manual kalau ingin mengontrol kapan klien dianggap "versi baru".
+		version: {
+			name: process.env.GIT_COMMIT_SHA // string unik per deploy
+		},
+		serviceWorker: {
+			// register: false -> matikan auto-registrasi (kamu daftarkan manual sendiri).
+			register: true,
+			// files: filter mana saja dari /static yang masuk ke `files`.
+			// Berguna untuk MENGECUALIKAN file besar yang tak perlu di-precache.
+			files: (filepath) => !/\.DS_Store$/.test(filepath)
+		}
+	}
+};
+
+export default config;
+```
+
+## 4. Coba sendiri
+
+Service worker butuh build production sungguhan (di `vite dev` ia tidak teregistrasi dan `build`/`prerendered` kosong), jadi tidak ada live playground. Sebagai gantinya, gunakan langkah uji lokal berikut untuk membuktikan tiap variabel bekerja.
+
+```bash
+# Bukti cepat: cetak isi build/files/prerendered di service worker.
+# 1) Tambahkan baris berikut di paling atas body service-worker.js:
+#       console.log({ build, files, prerendered, version, base });
+# 2) Jalankan mode production lokal:
+vite build && vite preview
+# 3) Buka app -> DevTools > Application > Service Workers (pastikan "activated").
+#    Lihat Console: build & prerendered kini TERISI (tidak kosong seperti saat dev).
+```
+
+```bash
+# Bukti offline: app tetap hidup tanpa jaringan.
+# 1) Masih di `vite preview`, buka app dan klik beberapa halaman (biar ter-cache).
+# 2) DevTools > Network -> centang "Offline".
+# 3) Reload. Kalau precache benar, app tetap tampil dari cache (CACHE = cache-<version>).
+# 4) DevTools > Application > Cache Storage -> lihat entri "cache-<version>"
+#    berisi semua URL dari [...build, ...files, ...prerendered].
+```
+
+```bash
+# Bukti invalidasi via `version`:
+# 1) Ubah apa pun lalu `vite build` lagi -> `version` baru -> nama cache baru.
+# 2) Reload app: handler 'activate' menghapus cache versi lama,
+#    sehingga klien tidak terjebak di aset usang.
+```
+
+<Callout type="warning">
+Saat <code>vite dev</code>, <code>build</code> dan <code>prerendered</code> sengaja <strong>kosong</strong> dan service worker default-nya tidak teregistrasi — ini agar tidak mengganggu hot-reload. Artinya kamu <strong>tidak bisa</strong> menguji caching di mode dev. Selalu uji dengan <code>vite build</code> lalu <code>vite preview</code>.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Susun daftar precache yang lengkap + bersih-bersih versi lama">
+Tulis `src/service-worker.js` yang:
+
+1. Meng-cache **semua** aset app: hasil build, aset statis, **dan** halaman prerender (banyak orang lupa yang ketiga).
+2. Menamai cache memakai `version` agar tiap deploy punya cache terpisah.
+3. Pada fase `activate`, menghapus **semua** cache yang bukan versi sekarang.
+4. Pada `fetch`, melayani aset yang termasuk daftar precache secara **cache-first**, dan sisanya **network-first** dengan fallback ke cache saat offline. Abaikan request non-GET.
+
+{#snippet solution()}
+
+  ```js
+  // src/service-worker.js
+  /// <reference types="@sveltejs/kit" />
+  import { build, files, prerendered, version } from '$service-worker';
+
+  // (2) Nama cache mengandung version -> unik per deploy.
+  const CACHE = `cache-${version}`;
+
+  // (1) Ketiga sumber digabung: build (kode) + files (static) + prerendered (HTML statis).
+  const ASSETS = [...build, ...files, ...prerendered];
+
+  self.addEventListener('install', (event) => {
+  	event.waitUntil(
+  		caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+  	);
+  });
+
+  self.addEventListener('activate', (event) => {
+  	// (3) Hapus semua cache selain versi sekarang.
+  	async function cleanup() {
+  		for (const key of await caches.keys()) {
+  			if (key !== CACHE) await caches.delete(key);
+  		}
+  	}
+  	event.waitUntil(cleanup());
+  });
+
+  self.addEventListener('fetch', (event) => {
+  	// (4) Hanya GET.
+  	if (event.request.method !== 'GET') return;
+
+  	async function respond() {
+  		const url = new URL(event.request.url);
+  		const cache = await caches.open(CACHE);
+
+  		// (4a) Aset precache -> cache-first.
+  		if (ASSETS.includes(url.pathname)) {
+  			const cached = await cache.match(url.pathname);
+  			if (cached) return cached;
+  		}
+
+  		// (4b) Sisanya -> network-first, fallback cache saat offline.
+  		try {
+  			const response = await fetch(event.request);
+  			if (response.status === 200 && url.protocol.startsWith('http')) {
+  				cache.put(event.request, response.clone());
+  			}
+  			return response;
+  		} catch (err) {
+  			const cached = await cache.match(event.request);
+  			if (cached) return cached;
+  			throw err;
+  		}
+  	}
+
+  	event.respondWith(respond());
+  });
+  ```
+
+  Inti yang sering terlewat: memasukkan `prerendered` ke `ASSETS`. Tanpa itu, halaman statismu (mis. landing page yang di-prerender) tidak ikut ter-cache dan gagal saat offline, padahal justru halaman itulah yang paling cocok disajikan dari cache.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa <code>prerendered</code>.</strong> Banyak contoh hanya menulis <code>[...build, ...files]</code> dan mengira itu "seluruh app". Kalau kamu memakai prerendering (<code>export const prerender = true</code>), HTML hasil prerender ada di <code>prerendered</code> — bukan di <code>build</code> maupun <code>files</code>. Tidak menyertakannya berarti halaman-halaman itu tidak siap offline. Gabungkan ketiganya: <code>[...build, ...files, ...prerendered]</code>.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Menamai cache tanpa <code>version</code>.</strong> Kalau nama cache statis (mis. <code>'app-cache'</code>) tanpa <code>version</code>, handler <code>activate</code> tidak punya cara membedakan cache lama vs baru — user bisa "terjebak" di aset usang selamanya karena cache-first selalu menyajikan yang lama. Selalu sisipkan <code>version</code> ke nama cache (`cache-${version}`) supaya tiap deploy menghasilkan cache baru dan yang lama bisa dibersihkan.
+</Callout>
+
+<Callout type="warning">
+<strong>Variabel kosong saat dev itu normal.</strong> <code>build</code> dan <code>prerendered</code> bernilai <code>[]</code> di <code>vite dev</code>. Jangan kira service worker-mu rusak — itu memang disengaja. Uji selalu lewat <code>vite build</code> + <code>vite preview</code>. Kalau benar-benar perlu menjalankan service worker saat dev, matikan auto-registrasi (<code>config.kit.serviceWorker.register: false</code>) lalu daftarkan manual, gunakan `{ type: dev ? 'module' : 'classic' }` sesuai mode.
+</Callout>
+
+<Callout type="tip">
+<strong>$service-worker hanya menyediakan daftar, bukan strategi.</strong> Untuk app produksi dengan kebutuhan offline yang rumit (precaching pintar, runtime caching per-rute, update prompt "versi baru tersedia"), banyak tim memilih <code>@vite-pwa/sveltekit</code> (berbasis Workbox) ketimbang menulis ketiga event listener sendiri. <code>$service-worker</code> tetap ideal untuk kebutuhan sederhana atau saat kamu ingin kontrol penuh tanpa dependensi tambahan.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$service-worker" label="SvelteKit — $service-worker (build, files, prerendered, version, base)" />
+<DocsLink href="https://svelte.dev/docs/kit/service-workers" label="SvelteKit — Service workers (registrasi, contoh lengkap, konfigurasi)" />

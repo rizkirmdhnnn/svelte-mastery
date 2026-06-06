@@ -1,0 +1,295 @@
+---
+title: "style:"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 18
+status: stable
+description: "Mengatur properti CSS inline secara reaktif dengan directive style: — termasuk shorthand, modifier |important, banyak style: sekaligus, custom properties, dan kombinasinya dengan atribut style serta class."
+docs: https://svelte.dev/docs/svelte/style
+keywords: [style, directive, inline css, important, custom property, reaktif]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`style:` adalah directive untuk menyetel **satu** properti CSS inline pada sebuah elemen, dan membuatnya **reaktif** secara otomatis. Bentuknya `style:nama-properti={nilai}`. Begitu `nilai` berubah, properti CSS itu ikut diperbarui di DOM tanpa kamu menulis kode update manual.
+
+Bayangkan setiap elemen punya sebuah **panel kontrol** kecil. Atribut `style="..."` biasa itu seperti menempel satu lembar stiker bertuliskan semua aturan sekaligus — kalau mau ganti satu warna, kamu harus menulis ulang seluruh string. Sedangkan `style:` itu seperti **satu sakelar khusus untuk satu properti**: ada sakelar `color`, sakelar `background`, sakelar `--columns`. Kamu putar sakelar `color`, hanya warna yang berubah; sakelar lain tidak terganggu. Inilah inti kenapa `style:` enak dipakai untuk styling dinamis: tiap properti berdiri sendiri dan terhubung langsung ke state-mu.
+
+Secara teknis, `<div style:color="red">` itu **setara** dengan `<div style="color: red;">`. Jadi bukan sihir — di akhir tetap menghasilkan inline style. Bedanya pada **ergonomi dan reaktivitas**: dengan `style:color={warna}`, Svelte tahu properti `color` bergantung pada variabel `warna`, lalu memasang update yang presisi hanya untuk properti itu.
+
+Kalau kamu datang dari React, ini mirip `style={{ color: warna }}` tapi lebih ringkas dan per-properti. Bedanya, di React kamu membangun **satu object style** lalu React mendiff-nya; di Svelte tiap `style:` adalah binding granular yang sudah dikompilasi ke instruksi "set properti X ke nilai Y". Di Vue, padanannya `:style="{ color: warna }"`. Svelte memilih bentuk directive `style:color={warna}` supaya tiap properti bisa berdiri sebagai atribut tersendiri yang gampang dibaca.
+
+Kapan pakai `style:` dan kapan pakai blok `<style>` scoped? Aturan praktisnya:
+
+- Nilai **dihitung dari state/JS** (warna dari slider, lebar dari progress, posisi dari koordinat mouse) -> `style:`.
+- Aturan **statis & struktural** (layout, tipografi, state via kelas) -> blok `<style>` + `class:`/`class`.
+
+`style:` unggul tepat di titik di mana CSS murni kesulitan: nilai yang berubah-ubah terus dari JavaScript.
+
+## 2. Contoh kode
+
+### Bentuk dasar, shorthand, dan banyak properti
+
+```svelte
+<script>
+	let hue = $state(200);
+	let color = $state('white');
+	// nama variabel SAMA dengan nama properti CSS -> bisa shorthand
+	let width = '12rem';
+	let darkMode = $state(false);
+</script>
+
+<!-- 1) Nilai literal string -->
+<div style:color="red">teks merah</div>
+
+<!-- 2) Nilai dari ekspresi (reaktif): saat hue berubah, background ikut berubah -->
+<div style:background="hsl({hue}, 70%, 45%)">kotak warna</div>
+
+<!-- 3) Shorthand: karena variabel `color` namanya sama dengan properti `color`,
+     cukup tulis `style:color` tanpa ={...} -->
+<div style:color>teks pakai variabel color</div>
+
+<!-- 4) Banyak style: dalam satu elemen — tiap properti directive sendiri-sendiri -->
+<div
+	style:color
+	style:width="12rem"
+	style:background-color={darkMode ? 'black' : 'white'}
+>
+	beberapa properti sekaligus
+</div>
+```
+
+Catatan penting soal nomor 3: `style:color` (tanpa `={...}`) adalah **shorthand** yang hanya jalan ketika ada variabel dalam scope yang **persis bernama** `color`. Ini sejajar dengan shorthand atribut `{value}`. Kalau nama variabelnya beda (`warna`), kamu harus eksplisit: `style:color={warna}`.
+
+### Modifier `|important`
+
+```svelte
+<script>
+	let pakaiTema = $state(true);
+</script>
+
+<!-- |important menambahkan !important pada properti tersebut.
+     Berguna untuk menimpa CSS dari library/third-party yang sudah memakai !important. -->
+<button style:color|important="red">
+	warna ini menang melawan CSS lain
+</button>
+
+<!-- bisa dikombinasikan dengan ekspresi juga -->
+<div style:background|important={pakaiTema ? 'navy' : 'gray'}>
+	background dipaksa menang
+</div>
+```
+
+### CSS custom properties (variabel CSS)
+
+```svelte
+<script>
+	let columns = $state(3);
+	let gap = $state(16);
+</script>
+
+<!-- style: bisa menyetel custom property (--nama).
+     Lalu CSS di bawah memakainya lewat var(--columns). -->
+<div
+	class="grid"
+	style:--columns={columns}
+	style:--gap="{gap}px"
+>
+	<div>a</div><div>b</div><div>c</div><div>d</div>
+</div>
+
+<style>
+	.grid {
+		display: grid;
+		/* nilai diisi dari style:--columns & style:--gap di markup */
+		grid-template-columns: repeat(var(--columns), 1fr);
+		gap: var(--gap);
+	}
+</style>
+```
+
+Pola custom property ini sangat kuat: kamu mengontrol nilai dari JavaScript lewat `style:--columns`, tapi **logika layout tetap tinggal di blok `<style>` yang rapi dan scoped**. Jadi JS cuma "menyuntik angka", CSS yang mengatur aturannya.
+
+### Kombinasi `style:` dengan atribut `style` dan dengan `class`
+
+```svelte
+<script>
+	let aktif = $state(false);
+	let hue = $state(120);
+</script>
+
+<!-- style atribut statis untuk hal tetap, style: untuk yang dinamis.
+     CATATAN: kalau ada bentrok properti, style: directive MENANG (lihat Tips). -->
+<div
+	style="padding: 1rem; border-radius: 8px;"
+	style:background="hsl({hue}, 60%, 50%)"
+>
+	statis + dinamis
+</div>
+
+<!-- style: untuk warna/ukuran dinamis, class untuk on/off state (lebih cocok ke CSS) -->
+<p
+	class={{ aktif }}
+	style:color={aktif ? 'green' : 'gray'}
+>
+	gabungan style: dan class
+</p>
+
+<button onclick={() => (aktif = !aktif)}>toggle</button>
+
+<style>
+	.aktif { font-weight: bold; text-decoration: underline; }
+</style>
+```
+
+Pembagian peran yang sehat: **`class` mengurus "state diskret" (aktif/nonaktif, error/sukses)** yang aturannya enak ditulis di `<style>`, sedangkan **`style:` mengurus "nilai kontinu" (warna, derajat, piksel)** yang datang langsung dari angka JavaScript.
+
+## 3. Coba sendiri
+
+Geser slider, ketik di kolom, dan klik tombol. Perhatikan tiap `style:` hanya menyetel satu properti, dan semuanya reaktif. Custom property `--size` dipakai oleh blok `<style>` di bawah komponen.
+
+<Playground code={`<script>
+  let hue = $state(280);
+  let size = $state(20);
+  let teks = $state('Halo Svelte');
+  let tebal = $state(false);
+  let paksa = $state(false);
+</script>
+
+<div class="kartu" style:--size={size + 'px'}>
+  <p
+    class={{ tebal }}
+    style:color={'hsl(' + hue + ', 70%, 45%)'}
+    style:letter-spacing={hue > 180 ? '2px' : 'normal'}
+  >
+    {teks}
+  </p>
+</div>
+
+<!-- contoh |important: paksa background biru menimpa CSS .kotak -->
+<div class="kotak" style:background|important={paksa ? 'royalblue' : null}>
+  {paksa ? 'background dipaksa biru' : 'background default dari class'}
+</div>
+
+<label>Teks: <input bind:value={teks} /></label>
+<br />
+<label>Hue: <input type="range" min="0" max="360" bind:value={hue} /> {hue}</label>
+<br />
+<label>Ukuran font: <input type="range" min="12" max="48" bind:value={size} /> {size}px</label>
+<br />
+<label><input type="checkbox" bind:checked={tebal} /> Tebalkan</label>
+<label><input type="checkbox" bind:checked={paksa} /> Paksa background</label>
+
+<style>
+  .kartu {
+    padding: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    margin-bottom: 0.75rem;
+  }
+  .kartu p {
+    margin: 0;
+    /* font-size diisi dari style:--size di markup */
+    font-size: var(--size);
+  }
+  .tebal { font-weight: 800; }
+  .kotak {
+    background: lightgray;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+  }
+</style>`} />
+
+<Callout type="tip">
+Di playground, nilai <code>style:color</code> dirangkai pakai operator <code>+</code> dan kutip biasa (mis. <code>'hsl(' + hue + ', 70%, 45%)'</code>) karena di dalam Playground kita menghindari template literal. Di file <code>.svelte</code> sungguhan kamu bebas menulis lebih ringkas: <code>style:color="hsl(&#123;hue&#125;, 70%, 45%)"</code>.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Bar progres reaktif">
+Buat satu komponen Svelte 5 berisi:
+
+1. State `persen` (angka 0–100) yang dikontrol lewat `<input type="range">`.
+2. Sebuah "track" bar dan "fill" di dalamnya. Lebar fill diatur lewat `style:width` mengikuti `persen`.
+3. Warna fill berubah lewat `style:background`: merah saat di bawah 40, oranye saat 40–79, hijau saat 80 ke atas. Pakai `$derived` untuk menghitung warnanya.
+4. Setel tinggi bar lewat **custom property** `style:--h` dan pakai `var(--h)` di blok `<style>`.
+
+Petunjuk: `style:width` butuh satuan, jadi gabungkan angka dengan `'%'`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let persen = $state(35);
+
+	// turunan: pilih warna berdasarkan nilai persen
+	let warna = $derived(
+		persen >= 80 ? 'seagreen' : persen >= 40 ? 'orange' : 'tomato'
+	);
+</script>
+
+<input type="range" min="0" max="100" bind:value={persen} />
+<p>{persen}%</p>
+
+<!-- tinggi bar dikontrol via custom property --h -->
+<div class="track" style:--h="14px">
+	<!-- lebar & warna fill keduanya reaktif dari state -->
+	<div
+		class="fill"
+		style:width="{persen}%"
+		style:background={warna}
+	></div>
+</div>
+
+<style>
+	.track {
+		width: 100%;
+		height: var(--h);
+		background: #eee;
+		border-radius: 999px;
+		overflow: hidden;
+	}
+	.fill {
+		height: 100%;
+		transition: width 0.15s ease;
+	}
+</style>
+```
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Satu <code>style:</code> hanya untuk <strong>satu</strong> properti CSS. Untuk banyak properti, tulis beberapa directive berturut-turut (<code>style:color</code> <code>style:width</code> ...), <strong>bukan</strong> menjejalkan beberapa deklarasi ke dalam satu nilai. Menulis <code>style:foo="color: red; width: 10px"</code> itu salah — itu menyetel properti CSS bernama <code>foo</code> ke string ngawur.
+</Callout>
+
+<Callout type="warning">
+<strong>Precedence:</strong> jika sebuah properti diset di atribut <code>style</code> sekaligus lewat <code>style:</code>, maka <code>style:</code> directive yang <strong>menang</strong> — bahkan mengalahkan <code>!important</code> di atribut <code>style</code>, dan tidak peduli urutan penulisan di markup. Jadi jangan kaget kalau nilai dari atribut <code>style</code> "diabaikan"; pindahkan saja semua properti dinamis ke <code>style:</code> agar konsisten.
+</Callout>
+
+<Callout type="tip">
+Butuh memaksa sebuah nilai menang melawan CSS pihak ketiga? Pakai modifier <code>|important</code>: <code>style:color|important="red"</code>. Tapi pakai seperlunya — <code>!important</code> yang berlebihan membuat styling susah ditelusuri. Seringnya cukup andalkan precedence <code>style:</code> di atas yang sudah otomatis.
+</Callout>
+
+<Callout type="tip">
+Untuk nilai dinamis bersatuan, ingat menyertakan unitnya: <code>style:width="&#123;persen&#125;%"</code> atau <code>style:--gap="&#123;gap&#125;px"</code>. Properti tanpa satuan seperti <code>opacity</code> atau <code>z-index</code> cukup angka. Untuk "matikan" sebuah properti secara kondisional, set nilainya ke <code>null</code> (mis. <code>style:background=&#123;aktif ? 'navy' : null&#125;</code>) — Svelte akan melepas properti itu.
+</Callout>
+
+<Callout type="warning">
+Hati-hati membedakan <code>style:--columns</code> (menyetel <strong>custom property</strong> yang dibaca <code>var(--columns)</code> di CSS) dengan <code>style:columns</code> (properti CSS asli <code>columns</code> untuk multi-kolom teks). Keduanya valid tapi artinya jauh berbeda; salah ketik <code>--</code> bisa bikin layout tidak sesuai harapan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/style" label="style: directive — dokumentasi resmi Svelte" />

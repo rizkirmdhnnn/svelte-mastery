@@ -1,0 +1,387 @@
+---
+title: Compiler warnings
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 16
+status: reference
+description: Daftar lengkap kode warning compiler Svelte 5 — arti, penyebab umum, cara memperbaiki, dan cara membungkamnya dengan svelte-ignore atau warningFilter.
+docs: https://svelte.dev/docs/svelte/compiler-warnings
+keywords: [compiler-warnings, svelte-ignore, a11y, warningFilter, linting]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Saat compiler Svelte menerjemahkan komponen `.svelte`-mu menjadi JavaScript, ia tidak cuma menerjemahkan — ia juga **memeriksa**. Selain *error* (yang menghentikan build karena kodemu tidak valid), compiler bisa mengeluarkan *warning*: kodemu **valid dan tetap di-build**, tapi compiler curiga ada sesuatu yang kemungkinan besar bukan yang kamu maksud. Aksesibilitas yang bolong, CSS yang tak terpakai, reaktivitas yang tak akan jalan, atau sintaks lama yang sudah usang.
+
+### Analogi: lampu indikator di dashboard mobil
+
+Bayangkan compiler sebagai mobilmu. Ada dua jenis lampu di dashboard. **Lampu merah** (error) berarti "mesin mati, mobil tidak akan jalan" — build gagal, titik. **Lampu kuning** (warning) berarti "mobil tetap jalan, tapi ada yang perlu kamu cek": tekanan ban kurang, oli mau habis. Kamu *bisa* tetap menyetir sambil mengabaikannya, dan untuk perjalanan singkat mungkin aman. Tapi lampu kuning itu adalah cara mobil bilang "ini akan menggigitmu nanti kalau dibiarkan".
+
+Warning compiler persis seperti lampu kuning itu. `a11y_missing_attribute` tidak akan merusak halamanmu hari ini, tapi pengguna screen reader akan tersesat. `css_unused_selector` tidak error, tapi memberi sinyal kamu salah ketik nama class. `non_reactive_update` membuat aplikasimu *tampak* jalan di dev, lalu "diam-diam tidak update" di skenario tertentu. Inilah kenapa kamu sebaiknya tidak membiasakan diri mengabaikan warning — perlakukan ia seperti lampu kuning yang serius, bukan dekorasi dashboard.
+
+Buat pembaca yang datang dari React/Vue: ini mirip gabungan **ESLint + `eslint-plugin-jsx-a11y` + warning dev-mode React** — bedanya, di Svelte semuanya menyatu di dalam compiler dan jalan otomatis tanpa kamu pasang plugin terpisah. Pesan seperti "each child in a list should have a unique key" di React adalah saudara konsep dari warning Svelte.
+
+### Anatomi sebuah kode warning
+
+Setiap warning punya **kode** unik berupa string `snake_case`, dikelompokkan dengan prefiks menurut kategori:
+
+| Prefiks | Kategori | Contoh kode |
+| --- | --- | --- |
+| `a11y_` | Aksesibilitas (paling banyak) | `a11y_missing_attribute` |
+| `attribute_` | Atribut HTML/komponen | `attribute_quoted` |
+| `options_` | Opsi compiler usang/dihapus | `options_deprecated_accessors` |
+| `perf_` | Performa | `perf_avoid_inline_class` |
+| `state_` / `non_reactive_` / `reactive_` | Reaktivitas runes | `non_reactive_update` |
+| (lain-lain) | CSS, slot, event, dll | `css_unused_selector`, `slot_element_deprecated` |
+
+Kode inilah yang kamu pakai untuk **membungkam** warning secara selektif. Dua mekanismenya:
+
+1. **`<!-- svelte-ignore <kode> -->`** — komentar yang diletakkan tepat di atas baris markup yang memicu warning. Lokal, satu titik.
+2. **`compilerOptions.warningFilter`** — fungsi di `svelte.config.js` yang menyaring warning untuk seluruh proyek. Global.
+
+<Callout type="warning">
+Sejak Svelte 5, kode warning memakai <strong>underscore</strong> (<code>a11y_autofocus</code>), bukan dash seperti Svelte 4 (<code>a11y-autofocus</code>). Kalau kamu menyalin <code>svelte-ignore</code> dari kode atau tutorial lama dan warning-nya tak kunjung hilang, kemungkinan besar gara-gara kamu masih memakai format dash. Compiler akan memunculkan <code>unknown_code</code> kalau kode yang kamu tulis tidak dikenal.
+</Callout>
+
+## 2. Contoh kode
+
+Tiga cara berinteraksi dengan warning: melihatnya, membungkamnya per baris, dan menyaringnya secara global.
+
+```svelte
+<!-- Komponen ini valid & tetap di-build, tapi memicu beberapa warning -->
+<script>
+	let count = 0; // ⚠️ non_reactive_update — di-reassign tapi bukan $state
+</script>
+
+<!-- ⚠️ a11y_autofocus — autofocus menyusahkan sebagian pengguna -->
+<input autofocus />
+
+<!-- ⚠️ a11y_missing_attribute — <img> wajib punya alt -->
+<img src="/logo.png" />
+
+<!-- ⚠️ a11y_click_events_have_key_events + a11y_no_static_element_interactions
+     <div> yang bisa diklik butuh handler keyboard & role ARIA -->
+<div onclick={() => count++}>Klik: {count}</div>
+
+<style>
+	/* ⚠️ css_unused_selector — tidak ada elemen .judul di markup */
+	.judul { font-weight: bold; }
+</style>
+```
+
+```svelte
+<!-- Membungkam per baris dengan svelte-ignore.
+     Komentar diletakkan TEPAT di atas elemen yang memicunya. -->
+
+<!-- svelte-ignore a11y_autofocus -->
+<input autofocus />
+
+<!-- Beberapa kode sekaligus: pisahkan dengan spasi (BUKAN koma) -->
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<div onclick={() => count++}>Klik di sini</div>
+```
+
+```js
+// svelte.config.js — menyaring warning untuk SELURUH proyek.
+// warningFilter menerima objek warning, kembalikan `false` untuk membungkam.
+export default {
+	compilerOptions: {
+		warningFilter: (warning) => {
+			// Bungkam SEMUA warning a11y (mis. di prototipe internal)
+			if (warning.code.startsWith('a11y_')) return false;
+
+			// Bungkam satu kode spesifik
+			if (warning.code === 'css_unused_selector') return false;
+
+			// Sisanya tetap tampil
+			return true;
+		}
+	}
+};
+```
+
+<Callout type="tip">
+Objek <code>warning</code> di <code>warningFilter</code> punya field berguna: <code>warning.code</code> (string kode), <code>warning.message</code> (teks lengkap), serta <code>warning.start</code> / <code>warning.end</code> (posisi baris &amp; kolom). Kamu bisa, misalnya, hanya membungkam <code>a11y_*</code> di file tertentu dengan memeriksa <code>warning.filename</code>.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini bersifat referensi dan beberapa warning hanya muncul dalam konteks build, jadi tidak ada playground interaktif. Sebagai gantinya, berikut satu komponen "penuh dosa" — setiap baris diberi anotasi kode warning yang dipicunya **dan** versi perbaikannya. Bacalah seperti latihan "spot the bug".
+
+```svelte
+<!-- ❌ SEBELUM — penuh warning -->
+<script>
+	let total = 0;            // ⚠️ non_reactive_update
+	export let title = '';    // (di komponen runes ini juga akan error,
+	                          //  tapi di mode legacy hanya memicu export_let_unused
+	                          //  bila 'title' tak dipakai)
+</script>
+
+<userCard />                 <!-- ⚠️ component_name_lowercase: dikira elemen HTML -->
+
+<img src="hero.jpg" />       <!-- ⚠️ a11y_missing_attribute: butuh alt -->
+
+<a href="#">Beranda</a>      <!-- ⚠️ a11y_invalid_attribute: href '#' tidak valid -->
+
+<input type="text" />
+<label>Nama</label>          <!-- ⚠️ a11y_label_has_associated_control -->
+
+<div on:click={() => total++}>  <!-- ⚠️ event_directive_deprecated: on:click usang -->
+	{total}
+</div>
+
+<style>
+	.kotak { padding: 1rem; }  <!-- ⚠️ css_unused_selector: .kotak tak dipakai -->
+</style>
+```
+
+```svelte
+<!-- ✅ SESUDAH — bersih -->
+<script>
+	// $state agar reassignment benar-benar reaktif
+	let total = $state(0);
+	// prop lewat $props(), bukan export let
+	let { title = '' } = $props();
+</script>
+
+<!-- Nama komponen kapital -->
+<UserCard />
+
+<!-- alt deskriptif (bukan "gambar hero") -->
+<img src="hero.jpg" alt="Pemandangan gunung saat fajar" />
+
+<!-- href yang valid -->
+<a href="/">Beranda</a>
+
+<!-- label dikaitkan ke input via for/id (atau bungkus input di dalam label) -->
+<label for="nama">Nama</label>
+<input id="nama" type="text" />
+
+<!-- onclick (bukan on:click); div interaktif diberi role + handler keyboard,
+     atau lebih baik: pakai <button> yang sudah aksesibel by default -->
+<button class="kotak" onclick={() => total++}>
+	{total}
+</button>
+
+<style>
+	/* sekarang .kotak benar-benar terpakai */
+	.kotak { padding: 1rem; }
+</style>
+```
+
+## 4. Tabel lengkap kode warning
+
+Daftar di bawah dikelompokkan per kategori. Format kolom: **kode → arti → penyebab umum → perbaikan**. Semua kode bisa dibungkam dengan `<!-- svelte-ignore <kode> -->` atau lewat `warningFilter`, tapi membungkam jarang merupakan jawaban yang benar — lebih sering perbaikannya kecil.
+
+### 4.1 Aksesibilitas (`a11y_*`)
+
+Kelompok terbesar. Svelte menanamkan aturan yang setara dengan `eslint-plugin-jsx-a11y` langsung di compiler.
+
+| Kode | Arti / pemicu | Perbaikan |
+| --- | --- | --- |
+| `a11y_accesskey` | Memakai atribut `accesskey` | Hapus; shortcut keyboard manual bentrok dengan screen reader |
+| `a11y_aria_activedescendant_has_tabindex` | `aria-activedescendant` tanpa `tabindex` | Tambahkan `tabindex` agar elemen bisa difokus |
+| `a11y_aria_attributes` | Elemen reserved (`meta`, `html`, `script`, `style`) punya `aria-*` | Hapus atribut ARIA dari elemen tersebut |
+| `a11y_autocomplete_valid` | Nilai `autocomplete` tak valid untuk tipe input | Pakai nilai `autocomplete` yang sah (mis. `email`, `name`) |
+| `a11y_autofocus` | Memakai `autofocus` | Hapus; fokus paksa membingungkan banyak pengguna |
+| `a11y_click_events_have_key_events` | Elemen non-interaktif dengan `onclick` tanpa handler keyboard | Tambah `onkeydown`/`onkeyup` + `tabindex`, atau pakai `<button>`/`<a>` |
+| `a11y_distracting_elements` | Memakai `<marquee>` atau `<blink>` | Ganti dengan animasi CSS yang bisa di-pause |
+| `a11y_figcaption_index` | `<figcaption>` bukan anak pertama/terakhir `<figure>` | Pindahkan ke awal atau akhir `<figure>` |
+| `a11y_figcaption_parent` | `<figcaption>` bukan anak langsung `<figure>` | Jadikan anak langsung `<figure>` |
+| `a11y_hidden` | Elemen penting (mis. heading) di-`hidden` | Jangan sembunyikan elemen navigasi screen reader |
+| `a11y_img_redundant_alt` | `alt` berisi kata "image/picture/photo" | Hapus kata itu; screen reader sudah mengumumkan "gambar" |
+| `a11y_incorrect_aria_attribute_type` | Tipe nilai atribut ARIA salah | Sesuaikan tipe (boolean, integer, id, dll) |
+| `a11y_incorrect_aria_attribute_type_boolean` | ARIA boolean kosong/non-boolean | Isi `true` atau `false` eksplisit |
+| `a11y_incorrect_aria_attribute_type_id` | ARIA tipe id bukan ID DOM valid | Beri string ID elemen yang ada |
+| `a11y_incorrect_aria_attribute_type_idlist` | ARIA idlist bukan daftar ID dipisah spasi | Pakai daftar ID dipisah spasi |
+| `a11y_incorrect_aria_attribute_type_integer` | ARIA integer bukan angka | Beri nilai integer |
+| `a11y_incorrect_aria_attribute_type_token` | ARIA token di luar nilai yang diizinkan | Pakai salah satu nilai token yang valid |
+| `a11y_incorrect_aria_attribute_type_tokenlist` | ARIA tokenlist tak valid | Pakai daftar token valid dipisah spasi |
+| `a11y_incorrect_aria_attribute_type_tristate` | ARIA tristate selain `true`/`false`/`mixed` | Pakai salah satu dari tiga nilai itu |
+| `a11y_interactive_supports_focus` | Role interaktif tanpa `tabindex` | Tambahkan `tabindex` |
+| `a11y_invalid_attribute` | `href` bernilai kosong, `#`, atau `javascript:` | Beri URL valid, atau pakai `<button>` untuk aksi |
+| `a11y_label_has_associated_control` | `<label>` tak terkait kontrol form | Pakai `for`/`id`, atau bungkus input di dalam `<label>` |
+| `a11y_media_has_caption` | `<video>` tanpa `<track kind="captions">` | Tambahkan track caption (kecuali video `muted`) |
+| `a11y_misplaced_role` | Elemen reserved punya atribut `role` | Hapus `role` dari elemen tersebut |
+| `a11y_misplaced_scope` | `scope` di elemen selain `<th>` | Pakai `scope` hanya pada `<th>` |
+| `a11y_missing_attribute` | Atribut a11y wajib hilang (`<a>` butuh `href`, `<img>` butuh `alt`) | Tambahkan atribut yang diminta |
+| `a11y_missing_content` | Heading/anchor tanpa teks | Isi konten teks yang bermakna |
+| `a11y_mouse_events_have_key_events` | `onmouseover`/`onmouseout` tanpa `onfocus`/`onblur` | Tambahkan event keyboard pasangannya |
+| `a11y_no_abstract_role` | Memakai role abstrak | Hapus; role abstrak tak boleh dipakai langsung |
+| `a11y_no_interactive_element_to_noninteractive_role` | Elemen interaktif diberi role non-interaktif | Hapus/ganti role agar konsisten |
+| `a11y_no_noninteractive_element_interactions` | Elemen non-interaktif (`<p>`, `<li>`...) diberi event listener | Pindahkan listener ke elemen interaktif |
+| `a11y_no_noninteractive_element_to_interactive_role` | Elemen non-interaktif diberi role interaktif | Pakai elemen semantik yang tepat |
+| `a11y_no_noninteractive_tabindex` | Elemen non-interaktif punya `tabindex >= 0` | Hapus `tabindex` dari elemen non-interaktif |
+| `a11y_no_redundant_roles` | Role mengulang role implisit elemen | Hapus `role` yang berlebihan |
+| `a11y_no_static_element_interactions` | `<div>`/`<span>` dengan handler tanpa role | Tambahkan `role` yang sesuai, atau pakai elemen semantik |
+| `a11y_positive_tabindex` | `tabindex` di atas nol | Pakai `0` atau `-1`; nilai positif merusak urutan tab |
+| `a11y_role_has_required_aria_props` | Role tanpa atribut ARIA wajibnya | Tambahkan atribut yang diharuskan role |
+| `a11y_role_supports_aria_props` | Atribut ARIA tak didukung oleh role | Hapus atribut yang tidak cocok |
+| `a11y_role_supports_aria_props_implicit` | Sama, untuk role implisit elemen | Sesuaikan atribut dengan role implisit |
+| `a11y_unknown_aria_attribute` | Atribut `aria-*` tak dikenal | Periksa ejaan terhadap spesifikasi WAI-ARIA |
+| `a11y_unknown_role` | Nilai `role` tak dikenal | Pakai role WAI-ARIA yang valid |
+
+### 4.2 Reaktivitas (runes & store)
+
+Yang ini paling berbahaya untuk diabaikan — sering berarti "aplikasimu diam-diam tidak update".
+
+| Kode | Arti / pemicu | Perbaikan |
+| --- | --- | --- |
+| `non_reactive_update` | Variabel di-reassign tapi bukan `$state(...)` | Bungkus deklarasi dengan `$state(...)` |
+| `state_referenced_locally` | Referensi `$state` hanya menangkap nilai awal | Akses di dalam fungsi/`$derived` agar tetap reaktif |
+| `reactive_declaration_invalid_placement` | `$:` bukan di top-level script (mode legacy) | Pindahkan ke top-level, atau pakai `$derived`/`$effect` |
+| `reactive_declaration_module_script_dependency` | `$:` bergantung pada variabel level-modul | Variabel modul tak memicu reaktivitas; restrukturisasi |
+| `store_rune_conflict` | `$nama` (store) bentrok dengan variabel lokal `nama` | Ganti nama variabel agar tak ambigu |
+
+### 4.3 Deprecation — sintaks lama (Svelte 4 → 5)
+
+Warning kategori ini muncul kalau kamu (atau migration script yang belum tuntas) masih memakai API gaya Svelte 4. Padanan modernnya ada di bagian 4.4.
+
+| Kode | Arti / pemicu | Perbaikan |
+| --- | --- | --- |
+| `event_directive_deprecated` | `on:click` (directive event lama) | Pakai atribut `onclick` |
+| `slot_element_deprecated` | `<slot>` untuk render konten parent | Pakai snippet + `{@render ...}` |
+| `svelte_component_deprecated` | `<svelte:component this={X}>` di mode runes | Cukup `<X />` — komponen sudah dinamis |
+| `svelte_self_deprecated` | `<svelte:self>` | Pakai self-import: `import Self from './Self.svelte'` |
+| `script_context_deprecated` | `<script context="module">` | Pakai atribut `module`: `<script module>` |
+| `legacy_code` | Sintaks lama tak lagi valid | Ikuti `suggestion` di pesan warning |
+| `legacy_component_creation` | Instansiasi komponen gaya class (`new Comp()`) | Pakai `mount`/`hydrate` dari `'svelte'` |
+| `options_deprecated_accessors` | Opsi `accessors` di mode runes | Hapus; tak berefek di runes |
+| `options_deprecated_immutable` | Opsi `immutable` di mode runes | Hapus; tak berefek di runes |
+| `options_missing_custom_element` | Sintaks custom element tanpa opsi | Set `customElement: true` di compile option |
+| `options_removed_enable_sourcemap` | Opsi `enableSourcemap` | Hapus; source map selalu dibuat |
+| `options_removed_hydratable` | Opsi `hydratable` | Hapus; komponen selalu hydratable |
+| `options_removed_loop_guard_timeout` | Opsi `loopGuardTimeout` | Hapus; sudah tak ada |
+| `options_renamed_ssr_dom` | `generate: "dom"`/`"ssr"` | Ganti jadi `"client"`/`"server"` |
+
+### 4.4 Atribut & struktur elemen
+
+| Kode | Arti / pemicu | Perbaikan |
+| --- | --- | --- |
+| `attribute_avoid_is` | Atribut `is` (dukungan browser tak konsisten) | Hindari; pakai pendekatan lain |
+| `attribute_global_event_reference` | Referensi tak sengaja ke `globalThis.<name>` | Deklarasikan variabel; mungkin lupa `let`/`const` |
+| `attribute_illegal_colon` | Nama atribut mengandung `:` | Hapus titik dua agar tak bentrok dengan directive |
+| `attribute_invalid_property_name` | Nama atribut HTML salah eja | Pakai nama yang disarankan compiler |
+| `attribute_quoted` | Atribut komponen diberi tanda kutip | Hapus kutip agar tipe nilai dipertahankan |
+| `component_name_lowercase` | Komponen diawali huruf kecil | Pakai huruf kapital (`<UserCard />`) |
+| `element_implicitly_closed` | Elemen tertutup implisit oleh tag berikutnya | Tambahkan tag penutup eksplisit |
+| `element_invalid_self_closing_tag` | Self-closing pada elemen non-void (`<div ... />`) | Tulis lengkap: `<div ...></div>` |
+| `node_invalid_placement_ssr` | Struktur HTML ilegal (mis. `<div>` di dalam `<p>`) | Perbaiki nesting; browser akan merombak HTML & merusak hydration |
+
+### 4.5 CSS, performa, custom element & lain-lain
+
+| Kode | Arti / pemicu | Perbaikan |
+| --- | --- | --- |
+| `css_unused_selector` | Selector tak cocok elemen mana pun | Hapus selector, atau pakai `:global(...)` untuk `{@html}`/komponen anak |
+| `block_empty` | Blok `{#if}`/`{#each}` kosong | Hapus blok yang tak berisi apa-apa |
+| `bind_invalid_each_rest` | `bind:` ke variabel dari rest (`...`) di `{#each}` | Rest membuat objek baru; binding tak nyambung ke aslinya |
+| `bidirectional_control_characters` | Karakter kontrol bidirectional tersembunyi | Hapus; bisa mengubah arah visual kode (lihat trojansource.codes) |
+| `custom_element_props_identifier` | `$props()` pakai rest/non-destructured di custom element | Destructure semua prop, atau set `customElement.props` |
+| `perf_avoid_inline_class` | `new class { ... }` inline | Deklarasikan class di top-level scope |
+| `perf_avoid_nested_class` | Deklarasi class di bawah top-level | Pindahkan ke top-level scope |
+| `export_let_unused` | `export let` tak dipakai internal | Pakai `export const` bila hanya untuk referensi eksternal |
+| `script_unknown_attribute` | Atribut `<script>` tak dikenal | Pakai `generics`, `lang`, atau `module` |
+| `svelte_element_invalid_this` | `<svelte:element this="div">` pakai string | Pakai expression: `this={tag}` |
+| `unknown_code` | Kode di `svelte-ignore` tak dikenal | Periksa ejaan kode warning |
+
+## 5. Latihan
+
+<Exercise title="Bersihkan komponen dari warning compiler">
+
+Komponen `<Avatar>` di bawah memicu **empat** warning compiler. Identifikasi kodenya, lalu tulis ulang agar bersih. (Petunjuk: satu reaktivitas, satu a11y, satu deprecation, satu CSS.)
+
+```svelte
+<script>
+	let likes = 0;
+</script>
+
+<img src={src} />
+
+<div on:click={() => likes++}>
+	❤️ {likes}
+</div>
+
+<style>
+	.avatar { border-radius: 50%; }
+</style>
+```
+
+{#snippet solution()}
+
+Empat warning yang dipicu:
+
+1. `non_reactive_update` — `likes` di-reassign tapi bukan `$state`.
+2. `a11y_missing_attribute` — `<img>` tanpa `alt`.
+3. `event_directive_deprecated` — `on:click` sudah usang.
+4. `css_unused_selector` — `.avatar` tak dipakai di markup.
+
+```svelte
+<script>
+	// 1. $state agar reassignment benar-benar reaktif
+	let likes = $state(0);
+	let { src, name } = $props();
+</script>
+
+<!-- 2. alt deskriptif (pakai nama orangnya) -->
+<img class="avatar" {src} alt={'Foto profil ' + name} />
+
+<!-- 3. onclick (bukan on:click). Lebih baik lagi: <button> agar aksesibel.
+     Kalau tetap <div>, tambahkan role + handler keyboard untuk menghindari
+     a11y_no_static_element_interactions & a11y_click_events_have_key_events. -->
+<button onclick={() => likes++}>
+	❤️ {likes}
+</button>
+
+<style>
+	/* 4. .avatar kini terpasang di <img>, jadi tak lagi "unused" */
+	.avatar { border-radius: 50%; }
+</style>
+```
+
+Kalau memang harus mempertahankan `autofocus` atau pola lain yang sengaja, barulah gunakan `<!-- svelte-ignore <kode> -->` di atas elemennya — sebagai keputusan sadar, bukan untuk "menyumpal" warning.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>non_reactive_update</code> adalah warning yang <strong>paling sering disepelekan dan paling sering jadi bug</strong>. Kodenya jalan di dev seolah baik-baik saja, lalu UI "tidak update" di kondisi tertentu. Pesannya jelas: variabel yang kamu reassign harus dideklarasikan dengan <code>$state(...)</code>. Jangan membungkamnya dengan <code>svelte-ignore</code> — perbaiki dengan menambahkan <code>$state</code>. Membungkam warning reaktivitas hampir selalu menyembunyikan bug nyata, bukan false positive.
+</Callout>
+
+<Callout type="warning">
+<code>svelte-ignore</code> mematikan warning <em>untuk elemen tepat di bawahnya saja</em>, dan beberapa kode dipisah <strong>spasi</strong> (bukan koma). Salah tempat — misalnya menaruh komentar dua baris di atas elemen, atau menyelipkan baris kosong di antaranya — membuat ignore tidak berlaku dan warning tetap muncul. Untuk mematikan satu kode di seluruh proyek, jangan menyebar <code>svelte-ignore</code> ke mana-mana; pakai <code>warningFilter</code> di <code>svelte.config.js</code>.
+</Callout>
+
+<Callout type="legacy">
+Warning <code>event_directive_deprecated</code>, <code>slot_element_deprecated</code>, <code>svelte_component_deprecated</code>, <code>svelte_self_deprecated</code>, dan <code>script_context_deprecated</code> adalah penanda kode <strong>gaya Svelte 4</strong> yang masih dijalankan oleh compiler demi kompatibilitas. Jangan membungkamnya — itu mengubur utang teknis. Jalankan <code>npx sv migrate svelte-5</code> untuk mengonversi otomatis, lalu beresi sisa <code>@migration-task</code> secara manual. Padanan modernnya ada di tabel bagian berikut.
+</Callout>
+
+<Callout type="tip">
+Jangan jadikan a11y sebagai "warning yang nanti saja". Sebagian besar perbaikannya remeh (tambah <code>alt</code>, ganti <code>&lt;div onclick&gt;</code> jadi <code>&lt;button&gt;</code>, kaitkan <code>&lt;label&gt;</code> dengan <code>for</code>) tapi dampaknya besar untuk pengguna screen reader. Trik praktis: pakai elemen <strong>semantik</strong> (<code>&lt;button&gt;</code>, <code>&lt;a&gt;</code>, <code>&lt;nav&gt;</code>) sejak awal — itu sekaligus memadamkan banyak warning <code>a11y_*</code> tanpa usaha tambahan, karena elemen-elemen itu sudah membawa role &amp; perilaku keyboard bawaan.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'on:click={fn}', modern: 'onclick={fn}', note: 'event_directive_deprecated' },
+	{ legacy: '<slot />', modern: '{@render children()}', note: 'slot_element_deprecated' },
+	{ legacy: '<svelte:component this={X} />', modern: '<X />', note: 'svelte_component_deprecated' },
+	{ legacy: '<svelte:self />', modern: "import Self from './Self.svelte'", note: 'svelte_self_deprecated' },
+	{ legacy: '<script context="module">', modern: '<script module>', note: 'script_context_deprecated' },
+	{ legacy: 'let n = 0; (lalu n++)', modern: 'let n = $state(0)', note: 'non_reactive_update' },
+	{ legacy: 'new Comp({ target })', modern: "mount(Comp, { target })", note: 'legacy_component_creation' },
+	{ legacy: 'compilerOptions: { accessors: true }', modern: '(hapus — tak berefek di runes)', note: 'options_deprecated_accessors' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/compiler-warnings" label="Compiler warnings — daftar resmi semua kode warning" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-compiler" label="svelte/compiler — opsi compile termasuk warningFilter" />
+<DocsLink href="https://svelte.dev/docs/svelte/v5-migration-guide" label="Svelte 5 Migration Guide — untuk warning deprecation" />

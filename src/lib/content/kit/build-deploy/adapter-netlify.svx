@@ -1,0 +1,241 @@
+---
+title: Netlify
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 9
+status: stable
+description: Deploy SvelteKit ke Netlify dengan adapter-netlify — pilih antara Netlify Functions (Node) atau Edge Functions, atur netlify.toml, redirects, dan pahami batasannya.
+docs: https://svelte.dev/docs/kit/adapter-netlify
+keywords: [adapter-netlify, netlify, edge functions, netlify.toml, redirects, deploy]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Saat kamu menjalankan `vite build`, SvelteKit menghasilkan representasi aplikasimu yang **netral platform**: sekumpulan modul plus sebuah "handler" yang tahu cara mengubah satu HTTP request menjadi satu HTTP response. Hasil itu belum bisa dijalankan di mana pun — ia butuh **adapter** untuk dibungkus ulang ke bentuk yang dimengerti platform tujuan. `adapter-netlify` adalah jembatan terakhir yang menerjemahkan output universal itu ke "dialek" Netlify.
+
+Kalau kamu sudah baca modul adapter sebelumnya, analoginya sama: aplikasimu adalah laptop yang butuh listrik 220V (kebutuhan universal), dan adapter adalah adaptor travel yang mencocokkan ke stop kontak negara tujuan. Yang spesial dari Netlify adalah ia menawarkan **dua "stop kontak" sekaligus**, dan kamu harus memilih salah satu lewat opsi `edge`.
+
+### Dua mode runtime: Netlify Functions vs Edge Functions
+
+Ini inti dari modul ini. Netlify bisa menjalankan kode server-mu di dua tempat yang sangat berbeda, dan pilihanmu menentukan API apa yang tersedia.
+
+- **Netlify Functions** (`edge: false`, default) — ini adalah **fungsi serverless berbasis Node.js**. Di balik layar, Netlify menjalankannya di AWS Lambda. Karena ini Node sungguhan, kamu dapat akses ke ekosistem Node yang luas (sebagian besar `npm` package, banyak Node API). Cold start sedikit lebih lambat dan dijalankan di satu region, tapi kompatibilitasnya paling tinggi. Ini pilihan default yang aman untuk SSR penuh.
+
+- **Netlify Edge Functions** (`edge: true`) — ini berjalan di **runtime Deno di edge**, secara geografis dekat dengan pengunjung (di banyak lokasi di seluruh dunia). Latency lebih rendah karena kode dieksekusi di POP terdekat, bukan di satu region pusat. Tapi karena ini Deno + Web Standards API (bukan Node penuh), **beberapa Node API tidak tersedia** — yang paling menonjol, modul `fs` tidak bisa dipakai. Cocok untuk aplikasi yang ringan, global, dan tidak bergantung pada API Node berat.
+
+Analogi sederhana: **Netlify Functions itu seperti dapur pusat** — satu lokasi, lengkap dengan semua peralatan (Node API penuh), tapi makanan harus dikirim ke seluruh kota dari satu titik. **Edge Functions itu seperti food truck** yang diparkir di tiap sudut kota — dekat dengan pelanggan (latency rendah), tapi peralatannya terbatas (tidak ada `fs`, hanya Web API). Pilih sesuai kebutuhan: jangkauan global cepat, atau kelengkapan peralatan.
+
+### Mengapa `read()` dari `$app/server`, bukan `fs`
+
+Ada jebakan halus di Netlify yang berbeda dari `adapter-node`. Pada deployment serverless (Functions maupun Edge), file proyekmu **tidak ikut disalin** ke dalam lingkungan fungsi seperti di server Node biasa. Jadi kalau kode `load`-mu mencoba `fs.readFileSync('static/data.json')`, ia akan gagal di produksi meski jalan mulus di lokal. Solusinya: gunakan `read()` dari `$app/server` (yang SvelteKit jamin bekerja lintas adapter), atau prerender rute yang butuh file tersebut. Ini batasan platform, bukan bug.
+
+### `adapter-auto` sudah cukup untuk memulai
+
+Proyek SvelteKit baru memakai `adapter-auto`, yang **mendeteksi** kamu sedang build di Netlify (lewat environment variable CI Netlify) lalu otomatis memakai `adapter-netlify`. Jadi untuk deploy pertama, kamu sering tidak perlu memasang apa pun. Begitu kamu butuh **mengatur opsi** (mis. `edge: true` atau `split: true`), barulah pasang `@sveltejs/adapter-netlify` secara eksplisit — karena `adapter-auto` tidak menerima opsi konfigurasi apa pun.
+
+## 2. Contoh kode
+
+Pola pemasangannya identik dengan adapter lain: import paket, panggil di `kit.adapter`. Perbedaannya ada di opsi `edge` dan `split`.
+
+```js
+// svelte.config.js — adapter-netlify (Node Functions, default)
+import adapter from '@sveltejs/adapter-netlify';
+
+export default {
+	kit: {
+		adapter: adapter({
+			// edge: false  -> Netlify Functions berbasis Node (default, paling kompatibel)
+			// edge: true   -> Netlify Edge Functions berbasis Deno (latency rendah, Node API terbatas)
+			edge: false,
+
+			// split: pecah app jadi BANYAK fungsi (satu per rute) alih-alih satu fungsi besar.
+			// Berguna agar tiap rute punya cold start & bundle sendiri.
+			// CATATAN: split TIDAK BISA dipakai bersamaan dengan edge: true.
+			split: false
+		})
+	}
+};
+```
+
+```js
+// svelte.config.js — mode Edge Functions
+import adapter from '@sveltejs/adapter-netlify';
+
+export default {
+	kit: {
+		// edge: true menjadikan seluruh app sebuah Edge Function (Deno, dekat pengunjung).
+		// Ingat: di sini `fs` & sebagian Node API TIDAK tersedia.
+		adapter: adapter({ edge: true })
+	}
+};
+```
+
+Lalu Netlify perlu tahu cara mem-build dan folder mana yang dipublikasikan. Itu diatur di `netlify.toml` di root proyek:
+
+```toml
+# netlify.toml — diletakkan di root proyek
+[build]
+	command = "npm run build"   # perintah build (menjalankan vite build + adapter)
+	publish = "build"           # folder output adapter-netlify (default: "build")
+
+# Penting: jika kamu juga mengisi "Publish directory" di dashboard Netlify,
+# nilainya HARUS sama dengan publish di sini, agar tidak bentrok.
+```
+
+Kalau kamu butuh **Netlify Function buatan sendiri** (terpisah dari yang dihasilkan SvelteKit, mis. webhook handler), arahkan direktorinya:
+
+```toml
+# netlify.toml — daftarkan folder fungsi custom milikmu sendiri
+[functions]
+	directory = "functions"   # SvelteKit tetap punya fungsinya sendiri secara otomatis
+```
+
+## 3. Coba sendiri
+
+Modul ini berurusan dengan build & deploy ke platform server — outputnya adalah fungsi serverless yang dijalankan Netlify, bukan komponen yang bisa dirender di playground browser. Jadi alih-alih live preview, berikut contoh statis beranotasi untuk dua hal yang paling sering ditanyakan: mengakses **konteks Netlify** dan mengatur **redirects**.
+
+```js
+// src/routes/+layout.server.js (atau di hooks / +server.js mana pun)
+// Mengakses konteks spesifik Netlify lewat event.platform.
+export const load = async (event) => {
+	// event.platform hanya terisi saat dijalankan DI Netlify (bukan saat `vite dev` lokal).
+	// Karena itu pakai optional chaining (?.) agar tidak crash saat dev.
+	const context = event.platform?.context;
+
+	// `context` berisi info dari Netlify, mis. data Netlify Identity (user yang login),
+	// info geolokasi, dsb. Nilainya juga muncul di Function logs pada dashboard Netlify.
+	console.log(context);
+
+	return { loggedIn: Boolean(context?.clientContext?.user) };
+};
+```
+
+```text
+# static/_redirects — file redirect ala Netlify (satu aturan per baris)
+# Format: <dari>  <ke>  <status>
+# adapter-netlify menyalin file dari folder `static/` ke output, jadi taruh di sini.
+
+/blog-lama/*   /blog/:splat   301
+/promo         /diskon        302
+
+# CATATAN PENTING soal urutan:
+# SvelteKit menangani routing aplikasimu LEBIH DULU. Aturan _redirects di sini
+# berlaku terutama untuk path yang TIDAK ditangani oleh rute SvelteKit
+# (mis. redirect aset/legacy URL). Untuk redirect berbasis logika di dalam app,
+# gunakan redirect() dari @sveltejs/kit di fungsi load/actions.
+```
+
+```text
+# static/_headers — pasang header HTTP custom untuk path tertentu
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+```
+
+Untuk redirect yang bergantung pada logika aplikasi (mis. cek sesi lalu lempar ke `/login`), tetap pakai cara SvelteKit, bukan `_redirects`:
+
+```js
+// src/routes/dashboard/+page.server.js
+import { redirect } from '@sveltejs/kit';
+
+export const load = async ({ locals }) => {
+	// SvelteKit 2: redirect() melempar sendiri — TIDAK pakai `throw` di depannya.
+	if (!locals.user) redirect(303, '/login');
+	return { user: locals.user };
+};
+```
+
+## 4. Latihan
+
+<Exercise title="Pilih mode & lengkapi konfigurasi Netlify untuk dua skenario">
+Untuk tiap skenario, tentukan apakah pakai `edge: true` atau `edge: false`, tulis potongan `svelte.config.js`-nya, dan tulis `netlify.toml` minimal yang dibutuhkan. Beri alasan singkat.
+
+1. Aplikasi marketing global: butuh latency serendah mungkin di seluruh dunia, kode server-nya ringan (sekadar baca cookie & set header), tidak membaca file dari disk.
+2. Aplikasi yang `load`-nya butuh sebuah library `npm` berbasis Node yang memakai modul `crypto`/`fs` Node, dan kamu ingin kompatibilitas semaksimal mungkin.
+
+{#snippet solution()}
+
+  ```js
+  // 1) Marketing global, ringan, tanpa baca disk -> EDGE FUNCTIONS (edge: true).
+  //    Alasan: latency rendah karena dieksekusi dekat pengunjung; tak butuh fs/Node API berat.
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-netlify';
+  export default {
+    kit: { adapter: adapter({ edge: true }) }
+  };
+  ```
+
+  ```toml
+  # netlify.toml
+  [build]
+    command = "npm run build"
+    publish = "build"
+  ```
+
+  ```js
+  // 2) Butuh Node API penuh (crypto/fs, npm berbasis Node) -> NODE FUNCTIONS (edge: false).
+  //    Alasan: Edge (Deno) tak punya fs & sebagian Node API; Functions berbasis Node paling kompatibel.
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-netlify';
+  export default {
+    kit: { adapter: adapter({ edge: false }) } // default, ditulis eksplisit utk kejelasan
+  };
+  ```
+
+  ```toml
+  # netlify.toml
+  [build]
+    command = "npm run build"
+    publish = "build"
+  ```
+
+  Catatan tambahan untuk skenario 2: meski di Node Functions, ingat file proyek tidak disalin —
+  kalau perlu membaca file aset, pakai `read()` dari `$app/server`, bukan `fs.readFileSync` langsung.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan andalkan modul <code>fs</code> Node untuk membaca file di Netlify. Pada deployment serverless, file proyek <strong>tidak ikut disalin</strong> ke lingkungan fungsi, jadi <code>fs.readFileSync('static/data.json')</code> akan jalan di lokal tapi <em>gagal di produksi</em>. Pakai <code>read()</code> dari <code>$app/server</code>, atau prerender rute yang butuh file itu. Di mode <code>edge: true</code>, <code>fs</code> bahkan tidak ada sama sekali (runtime Deno).
+</Callout>
+
+<Callout type="warning">
+Opsi <code>split: true</code> dan <code>edge: true</code> <strong>tidak bisa dipakai bersamaan</strong>. <code>split</code> memecah app jadi banyak Netlify Function (satu per rute), sedangkan <code>edge</code> membungkus app jadi satu Edge Function — keduanya saling eksklusif. Kalau kamu mengaktifkan keduanya, build akan error.
+</Callout>
+
+<Callout type="warning">
+<code>event.platform</code> (tempat <code>context</code> Netlify berada) hanya terisi saat aplikasi berjalan <strong>di Netlify</strong>. Saat <code>vite dev</code> di lokal, <code>event.platform</code> bernilai <code>undefined</code>. Selalu pakai optional chaining (<code>event.platform?.context</code>) agar kode tidak crash saat development.
+</Callout>
+
+<Callout type="tip">
+Untuk fitur <strong>Netlify Forms</strong>, halaman yang memuat form harus <strong>di-prerender</strong> — pasang <code>export const prerender = true</code> di rute terkait (atau <code>kit.prerender.force: true</code> global). Netlify mendeteksi form dengan memindai HTML statis saat deploy; jika halaman dirender on-demand oleh fungsi, form-nya tidak akan terdaftar.
+</Callout>
+
+<Callout type="tip">
+Pastikan <code>publish</code> di <code>netlify.toml</code> dan "Publish directory" di dashboard Netlify <strong>sama persis</strong> (default keduanya <code>build</code>). Jika berbeda, Netlify bisa mempublikasikan folder yang salah dan kamu akan melihat 404 atau situs kosong.
+</Callout>
+
+<Callout type="legacy">
+Tutorial lama mungkin menyuruhmu membuat file <code>netlify.toml</code> dengan <code>functions</code> directory manual untuk handler SvelteKit, atau menulis Netlify Function pembungkus sendiri. Di <code>adapter-netlify</code> versi sekarang, semua itu otomatis: adapter menghasilkan fungsi yang dibutuhkan dan mengatur routing-nya. Kamu hanya perlu <code>[functions] directory</code> jika punya fungsi <em>custom</em> milikmu sendiri, terpisah dari yang dihasilkan SvelteKit.
+</Callout>
+
+Perbandingan singkat dua mode agar mudah diingat:
+
+<LegacyVsModern rows={[
+	{ legacy: 'edge: false (Netlify Functions)', modern: 'edge: true (Edge Functions)', note: 'Functions = Node penuh, 1 region, kompatibilitas tinggi. Edge = Deno, global, latency rendah, tanpa fs.' },
+	{ legacy: 'fs.readFileSync(...)', modern: "read() dari '$app/server'", note: 'File proyek tidak disalin ke fungsi; read() bekerja lintas adapter.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/adapter-netlify" label="SvelteKit — adapter-netlify (Functions, Edge, netlify.toml)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (gambaran umum semua adapter)" />

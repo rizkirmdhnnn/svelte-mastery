@@ -1,0 +1,315 @@
+---
+title: Reactive $: statements
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 3
+status: legacy
+description: Label reaktif `$:` Svelte 4 untuk derivasi & efek, jebakannya, dan padanan modern $derived / $effect.
+docs: https://svelte.dev/docs/svelte/legacy-reactive-assignments
+keywords: [reactive, derived, effect, legacy, migrasi]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+<Callout type="legacy">
+Halaman ini membahas <strong>API lama Svelte 4</strong>: label reaktif <code>$:</code>. Compiler Svelte 5 <em>masih</em> menjalankannya demi kompatibilitas, tapi <strong>jangan tulis kode baru dengan ini.</strong> Padanan modernnya adalah <code>$derived</code> dan <code>$effect</code> — dibahas tuntas di bawah. Kamu tetap perlu memahami <code>$:</code> untuk <em>membaca</em> kode lama dan memigrasinya.
+</Callout>
+
+## 1. Konsep
+
+Di Svelte 4, kamu bisa membuat statement apa pun di level atas `<script>` menjadi reaktif dengan menambahkan label `$:` di depannya. "Reaktif" artinya: statement itu otomatis dijalankan ulang setiap kali nilai yang ia rujuk berubah.
+
+```svelte
+<script>
+	let a = 1;
+	let b = 2;
+	$: sum = a + b; // sum otomatis diperbarui saat a atau b berubah
+</script>
+```
+
+Secara teknis, `$:` bukan sintaks ciptaan Svelte — itu **labeled statement** JavaScript yang sah (biasanya dipakai untuk `break`/`continue` di loop bersarang). Svelte "membajak" label bernama `$` ini dan memberinya makna khusus saat kompilasi. Karena itu ia hanya bekerja di compiler Svelte 4 / mode legacy, bukan JavaScript biasa.
+
+### Analogi: sel spreadsheet yang menghitung sendiri
+
+Bayangkan `$: sum = a + b` seperti sel di spreadsheet yang berisi rumus `=A1+B1`. Kamu tidak pernah menekan tombol "hitung ulang" — begitu `A1` atau `B1` berubah, sel `sum` ikut berubah sendiri. Itulah daya tarik `$:`: kamu menulis *hubungan* antar nilai, bukan *langkah* memperbaruinya.
+
+Tapi ada satu detail penting yang sering bikin orang tersandung: **bagaimana spreadsheet tahu sel mana yang harus memicu hitung ulang?** Excel tahu karena rumusmu *secara harfiah* menyebut `A1` dan `B1`. Svelte 4 juga begitu — dan di situ letak semua jebakannya nanti.
+
+### Dua identitas dalam satu sintaks (akar masalahnya)
+
+Inilah cacat desain terbesar `$:` yang akhirnya diperbaiki Svelte 5. Satu sintaks dipakai untuk **dua maksud yang sangat berbeda**:
+
+```svelte
+<script>
+	let count = 0;
+	$: double = count * 2;        // (1) DERIVASI — menghitung sebuah nilai
+	$: console.log(count);        // (2) EFEK — melakukan sesuatu (side effect)
+</script>
+```
+
+- Baris (1) **menurunkan nilai** (derived value): hasilnya disimpan ke variabel `double`. Ini murni perhitungan, tanpa efek samping.
+- Baris (2) **menjalankan efek samping** (effect): logging, fetch, manipulasi DOM, set timer. Tidak menghasilkan nilai.
+
+Compiler menebak mana yang mana hanya berdasarkan "apakah ada assignment di level atas blok ini?". Tebakan ini biasanya benar, tapi kabur: blok `$:` yang campur aduk (menghitung nilai *sekaligus* melakukan efek) jadi ambigu. Svelte 5 menghapus ambiguitas ini dengan memecahnya jadi dua rune terpisah: `$derived` khusus untuk (1), `$effect` khusus untuk (2). Pemisahan ini mirip `computed` vs `watchEffect` di Vue — dan memang itu arah yang lebih sehat.
+
+### Kapan ia jalan, dan urutannya
+
+Dua fakta penting soal *waktu* eksekusi:
+
+1. **Kapan:** Blok `$:` jalan sekali setelah sisa kode `<script>` selesai dan **sebelum** markup pertama kali dirender, lalu jalan lagi setiap kali dependensinya berubah. Penting: pembaruannya **di-batch** — beberapa perubahan dalam satu "tick" digabung, lalu blok reaktif jalan sekali sebelum DOM diperbarui.
+
+2. **Urutan:** Blok `$:` **tidak** dieksekusi sesuai urutan baris di file, melainkan diurutkan secara **topologis** berdasarkan dependensinya. Contoh:
+
+```svelte
+<script>
+	let a = 1, b = 2;
+	$: console.log(sum);   // ditulis duluan...
+	$: sum = a + b;        // ...tapi ini dihitung LEBIH DULU
+</script>
+```
+
+Karena `console.log(sum)` butuh `sum`, compiler menata `sum = a + b` agar jalan duluan walau letaknya di bawah. Ini fitur yang cerdas, tapi juga sumber kebingungan: urutan eksekusi tidak sama dengan urutan baca. Di Svelte 5, `$derived` mengikuti aliran data yang sama secara otomatis, tapi jadi lebih mudah dilacak karena setiap nilai turunan punya deklarasi eksplisitnya sendiri.
+
+### Bagaimana dependensi dilacak (dan kenapa ini krusial)
+
+Inti dari semua jebakan `$:` ada di satu kalimat: **dependensi ditentukan saat kompilasi, dengan memindai variabel mana yang *dirujuk tapi tidak di-assign* di dalam statement.**
+
+Artinya pelacakan dependensi `$:` itu **statis dan harfiah** — sama seperti spreadsheet yang hanya tahu sel yang kamu sebut dalam rumus. Compiler membaca teks blokmu, mencatat variabel yang kamu baca, dan menjadikannya pemicu. Kalau sebuah dependensi "tersembunyi" (mis. dipakai di dalam fungsi yang kamu panggil, bukan disebut langsung), compiler **buta** terhadapnya. Inilah yang membedakannya tajam dari Svelte 5: `$derived` dan `$effect` melacak dependensi **saat runtime** — apa pun `$state` yang benar-benar *dibaca* saat blok dijalankan otomatis jadi dependensi, sekalipun bacaannya terjadi di dalam fungsi terpisah.
+
+## 2. Contoh kode
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — derivasi vs efek dengan $: -->
+<script>
+	let count = 0;
+
+	// DERIVASI: assignment di level atas → Svelte buat 'double' jadi reaktif.
+	// Tidak perlu (dan tidak boleh) deklarasi 'let double' terpisah — compiler urus.
+	$: double = count * 2;
+
+	// EFEK: tidak ada assignment → Svelte anggap ini side effect.
+	$: console.log('count =', count, 'double =', double);
+
+	// BLOK bergroup: bungkus banyak statement dengan { }.
+	// Dependensinya tetap dipindai dari isi blok (di sini: count).
+	$: {
+		document.title = 'Hitungan: ' + count;
+	}
+
+	// KONDISIONAL: '$:' boleh diikuti if. Ini efek yang hanya jalan saat syarat benar.
+	$: if (count >= 10) {
+		alert('Sudah sepuluh!');
+		count = 0; // hati-hati: menulis dependensi sendiri bisa memicu ulang
+	}
+</script>
+
+<button on:click={() => count++}>
+	{count} (x2 = {double})
+</button>
+```
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — destructuring & guard SSR -->
+<script>
+	import { browser } from '$app/environment';
+
+	let stooges = { larry: 1, moe: 2, curly: 3 };
+
+	// '$:' mendukung destructuring, tapi WAJIB dibungkus tanda kurung
+	// karena '{' di awal statement akan dikira blok, bukan pola objek.
+	$: ({ larry, moe, curly } = stooges);
+
+	// Blok reaktif IKUT jalan saat SSR (di server). Kalau isinya menyentuh
+	// 'window'/'document', bungkus dengan guard 'browser' agar tak error di server.
+	$: if (browser) {
+		localStorage.setItem('larry', String(larry));
+	}
+</script>
+
+<p>{larry} {moe} {curly}</p>
+```
+
+```svelte
+<!-- ❌ JEBAKAN KLASIK (Svelte 4) — dependensi yang tak terlihat -->
+<script>
+	let count = 0;
+
+	// Compiler memindai blok ini dan TIDAK menemukan 'count' disebut langsung —
+	// yang ia lihat hanya 'hitungUlang'. Maka blok ini TAK akan jalan ulang
+	// saat 'count' berubah. Bug yang sulit dilacak!
+	function hitungUlang() {
+		return count * 2;
+	}
+	$: hasil = hitungUlang(); // ❌ 'count' tidak terdeteksi sebagai dependensi
+
+	// ✅ Perbaikan gaya lama: sebut 'count' secara harfiah di dalam statement,
+	// supaya compiler "melihat"-nya.
+	$: hasil2 = count, hitungUlang(); // atau cukup: $: hasil2 = hitungUlang(), count;
+</script>
+```
+
+## 3. Coba sendiri
+
+Modul ini menampilkan API lama, jadi tidak ada live playground (kode `$:` tidak akan jalan di runtime Svelte 5 runes pada playground kita). Sebagai gantinya, baca perbandingan **statis** berikut sambil membaca anotasinya. Tujuannya: melatih mata membaca kode `$:` lama lalu langsung memetakannya ke runes.
+
+```svelte
+<!-- ❌ SVELTE 4 — apa yang akan kamu temui di kode lama -->
+<script>
+	export let nama = ''; // prop gaya lama
+
+	// derivasi
+	$: panjang = nama.length;
+	$: salam = nama === '' ? 'Ketik sesuatu...' : 'Halo, ' + nama + '!';
+
+	// efek
+	$: console.log('nama sekarang:', nama);
+</script>
+
+<input bind:value={nama} />
+<p>{salam}</p>
+<p>Panjang: {panjang} karakter</p>
+```
+
+```svelte
+<!-- ✅ SVELTE 5 — hasil migrasi yang setara, lebih eksplisit -->
+<script>
+	let { nama = '' } = $props(); // prop = destructuring $props()
+
+	// $derived: pengganti '$:' yang menghitung nilai
+	let panjang = $derived(nama.length);
+	let salam = $derived(nama === '' ? 'Ketik sesuatu...' : 'Halo, ' + nama + '!');
+
+	// $effect: pengganti '$:' yang melakukan efek samping
+	$effect(() => {
+		console.log('nama sekarang:', nama);
+	});
+</script>
+
+<!-- bind:value tetap sama; bedanya cuma cara state/derived dideklarasikan -->
+<input bind:value={nama} />
+<p>{salam}</p>
+<p>Panjang: {panjang} karakter</p>
+```
+
+Perhatikan tiga hal saat memetakan: (1) setiap `$:` *yang ada assignment-nya* menjadi `let x = $derived(...)`; (2) setiap `$:` *tanpa assignment* (logging, fetch, DOM) menjadi `$effect(() => { ... })`; (3) di runes, deklarasi nilai turunan tidak lagi "muncul dari ketiadaan" — kamu menulis `let` eksplisit, jadi linter & TypeScript bisa melihatnya.
+
+### Tabel pemetaan cepat
+
+<LegacyVsModern rows={[
+	{ legacy: '$: double = a * 2', modern: 'let double = $derived(a * 2)', note: 'Ada assignment → nilai turunan → $derived.' },
+	{ legacy: '$: full = a + b * c', modern: 'let full = $derived.by(() => a + b * c)', note: 'Untuk logika panjang/bercabang, $derived.by(() => {...}) lebih enak dibaca.' },
+	{ legacy: '$: console.log(a)', modern: '$effect(() => console.log(a))', note: 'Tanpa assignment → efek samping → $effect.' },
+	{ legacy: '$: { document.title = a; }', modern: '$effect(() => { document.title = a; })', note: 'Blok bergroup → $effect.' },
+	{ legacy: '$: if (cond) doSomething()', modern: '$effect(() => { if (cond) doSomething(); })', note: 'Kondisional efek pindah ke dalam $effect.' },
+	{ legacy: '$: ({ a, b } = obj)', modern: 'let a = $derived(obj.a), b = $derived(obj.b)', note: 'Destructuring reaktif → derived per-field.' },
+	{ legacy: '$: if (browser) {...}', modern: '$effect(() => {...})', note: '$effect TIDAK jalan saat SSR, jadi guard browser sering tak perlu lagi.' }
+]} />
+
+## 4. Latihan
+
+<Exercise title="Migrasikan komponen $: ke runes Svelte 5">
+
+Di bawah ini komponen `<Keranjang>` gaya **Svelte 4** yang penuh `$:`. Komponen ini menghitung subtotal, pajak, dan total, lalu menulis jumlah item ke `console`. Tugasmu: tulis ulang sepenuhnya ke **Svelte 5 (runes)**.
+
+Petunjuk pemetaan:
+
+- `export let` → `$props()`
+- `$:` yang menghitung nilai → `$derived`
+- `$:` yang hanya logging → `$effect`
+- `on:click` → `onclick`
+
+```svelte
+<!-- ❌ Keranjang.svelte (Svelte 4) -->
+<script>
+	export let items = []; // [{ nama, harga, qty }]
+	export let taxRate = 0.11;
+
+	$: subtotal = items.reduce((s, i) => s + i.harga * i.qty, 0);
+	$: pajak = subtotal * taxRate;
+	$: total = subtotal + pajak;
+	$: jumlahItem = items.reduce((s, i) => s + i.qty, 0);
+
+	$: console.log('Total item di keranjang:', jumlahItem);
+
+	function kosongkan() {
+		items = [];
+	}
+</script>
+
+<p>Subtotal: {subtotal}</p>
+<p>Pajak: {pajak}</p>
+<p>Total: {total}</p>
+<button on:click={kosongkan}>Kosongkan</button>
+```
+
+{#snippet solution()}
+
+```svelte
+<!-- ✅ Keranjang.svelte (Svelte 5 runes) -->
+<script>
+	// export let → destructuring $props(), default value lewat default destructuring
+	let { items = [], taxRate = 0.11 } = $props();
+
+	// Tiap '$:' derivasi → $derived. Perhatikan: subtotal, pajak, total
+	// boleh saling merujuk — Svelte mengurus urutannya otomatis (seperti topological
+	// ordering di '$:', tapi sekarang dependensinya dilacak saat runtime).
+	let subtotal = $derived(items.reduce((s, i) => s + i.harga * i.qty, 0));
+	let pajak = $derived(subtotal * taxRate);
+	let total = $derived(subtotal + pajak);
+	let jumlahItem = $derived(items.reduce((s, i) => s + i.qty, 0));
+
+	// '$: console.log(...)' (tanpa assignment) → $effect
+	$effect(() => {
+		console.log('Total item di keranjang:', jumlahItem);
+	});
+
+	function kosongkan() {
+		items = [];
+	}
+</script>
+
+<p>Subtotal: {subtotal}</p>
+<p>Pajak: {pajak}</p>
+<p>Total: {total}</p>
+<!-- on:click → onclick -->
+<button onclick={kosongkan}>Kosongkan</button>
+```
+
+Catatan: `subtotal`, `pajak`, dan `total` saling bergantung berantai. Di `$:` lama, compiler mengurutkannya secara topologis saat kompilasi; di runes, `$derived` melacak dependensi saat dibaca, jadi rantai apa pun "tinggal jalan" tanpa kamu perlu memikirkan urutan baris. Untuk perhitungan multi-baris yang lebih rumit, pertimbangkan `$derived.by(() => { ...; return hasil; })` agar tetap mudah dibaca.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Dependensi tersembunyi adalah jebakan #1 `$:`.</strong> Karena Svelte 4 memindai dependensi <em>saat kompilasi</em> dari teks yang kamu tulis, statement seperti <code>$: hasil = hitung()</code> <strong>tidak</strong> akan jalan ulang ketika variabel yang dipakai <em>di dalam</em> <code>hitung()</code> berubah — compiler tak "melihat"-nya. Solusi lama: sebut variabel itu secara harfiah di dalam statement. Kabar baik di Svelte 5: <code>$derived</code> melacak dependensi <em>saat runtime</em>, jadi bug kelas ini hilang sendiri — apa pun <code>$state</code> yang benar-benar dibaca saat eksekusi otomatis jadi dependensi, walau dibaca di dalam fungsi lain.
+</Callout>
+
+<Callout type="warning">
+<strong>Jangan paksa semua <code>$:</code> menjadi <code>$effect</code> saat migrasi.</strong> Godaan terbesar adalah menerjemahkan tiap <code>$:</code> jadi <code>$effect</code> mentah-mentah. Itu salah: <code>$:</code> yang <em>menghitung nilai</em> harus jadi <code>$derived</code>, bukan <code>$effect</code> yang menulis ke <code>$state</code> lain. <code>$effect</code> yang men-set state mudah memicu loop tak sengaja dan jalan setelah render (telat). Aturan emas: kalau blok itu <em>menghasilkan nilai</em> → <code>$derived</code>; kalau ia <em>melakukan sesuatu ke dunia luar</em> (log, fetch, DOM, timer) → <code>$effect</code>.
+</Callout>
+
+<Callout type="legacy">
+<strong>Tidak boleh mencampur mode dalam satu file.</strong> Begitu sebuah komponen memakai satu rune saja (mis. <code>$state</code> atau <code>$derived</code>), seluruh komponen otomatis masuk mode runes — dan <code>$:</code> lama akan jadi <strong>error</strong>, bukan sekadar warning. Jadi migrasi <code>$:</code> bersifat "semua atau tidak sama sekali" <em>per file</em>. Strategi aman: migrasi file demi file, mulai dari komponen daun.
+</Callout>
+
+<Callout type="tip">
+Saat memigrasi blok <code>$:</code> yang panjang atau bercabang (banyak <code>if</code>/perhitungan antara), jangan jejalkan jadi satu ekspresi <code>$derived(...)</code> yang sulit dibaca. Pakai <code>$derived.by(() => &#123; ... return hasil; &#125;)</code> — ia menerima fungsi penuh sehingga kamu bisa menulis variabel antara, percabangan, dan komentar dengan rapi, sambil tetap mendapat pelacakan dependensi otomatis.
+</Callout>
+
+<Callout type="tip">
+Biarkan mesin mengerjakan yang membosankan. Jalankan <code>npx sv migrate svelte-5</code>; ia mengubah sebagian besar <code>$:</code> otomatis. Blok yang ambigu (campur derivasi + efek, atau dependensi tersembunyi) akan ditandai komentar <code>@migration-task</code> untuk kamu tinjau manual. Setelah itu, <code>grep -r "@migration-task"</code> untuk menyisir sisa yang perlu sentuhan tangan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-reactive-assignments" label="Legacy: Reactive $: statements — dokumentasi resmi" />
+<DocsLink href="https://svelte.dev/docs/svelte/$derived" label="$derived — padanan modern untuk derivasi" />
+<DocsLink href="https://svelte.dev/docs/svelte/$effect" label="$effect — padanan modern untuk efek samping" />

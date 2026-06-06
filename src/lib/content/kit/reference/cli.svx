@@ -1,0 +1,277 @@
+---
+title: Command Line Interface
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 24
+status: reference
+description: Referensi lengkap perintah CLI yang dipakai proyek SvelteKit — vite dev/build/preview, svelte-kit sync, flag-flagnya, dan bedanya dengan CLI sv.
+docs: https://svelte.dev/docs/kit/cli
+keywords: [sveltekit, cli, vite dev, svelte-kit sync, flags, sv]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Hal pertama yang sering bikin bingung pendatang dari Next.js/Nuxt: di SvelteKit **tidak ada satu CLI bernama "sveltekit" yang kamu pakai sehari-hari.** Tidak ada `sveltekit dev` seperti `next dev` atau `nuxt dev`. Sebagai gantinya, pekerjaan harianmu dijalankan oleh **CLI Vite** (`vite dev`, `vite build`, `vite preview`), karena SvelteKit memang dibangun di atas Vite dan hanya menumpang lewat plugin `sveltekit()`. Satu-satunya perintah khas-Kit adalah `svelte-kit sync`, dan itu pun biasanya jalan otomatis sehingga kamu jarang mengetiknya sendiri.
+
+Jadi total ada **tiga binary** yang bersentuhan dengan proyek SvelteKit, dan kunci memahaminya adalah memisahkan **kapan** masing-masing dipakai:
+
+| Binary | Asal paket | Perannya | Frekuensi pakai |
+| --- | --- | --- | --- |
+| `vite` | `vite` | Operasional harian: dev server, build, preview | **Tiap hari** (lewat npm scripts) |
+| `svelte-kit` | `@sveltejs/kit` | Generate type & tsconfig (`sync`) | **Otomatis** (hampir tak pernah manual) |
+| `sv` | `sv` (dijalankan via `npx sv`) | Tooling proyek: scaffold, tambah integrasi, cek, migrasi | **Sesekali** (setup & maintenance) |
+
+### Analogi: tukang, peralatan harian, dan asisten otomatis
+
+Bayangkan proyekmu adalah sebuah **rumah**:
+
+- **`sv` itu kontraktor/tukang.** Kamu memanggilnya di awal untuk **membangun** rumah (`sv create`), atau sesekali saat mau **renovasi** — nambah kamar (Tailwind, Drizzle, auth) lewat `sv add`, atau memodernkan instalasi lama lewat `sv migrate`. Tidak kamu panggil tiap hari.
+- **`vite` itu peralatan harian rumah.** Inilah yang kamu operasikan terus-menerus: nyalakan listrik untuk tinggal (`vite dev`), produksi massal furnitur untuk dijual (`vite build`), atau coba-tinggali dulu hasil produksinya sebelum dikirim (`vite preview`).
+- **`svelte-kit sync` itu asisten otomatis yang memperbarui denah & papan nama.** Tiap kali kamu menambah ruangan baru (sebuah rute `+page.svelte`), ia diam-diam memperbarui "denah resmi" rumah — yaitu type `./$types` dan `tsconfig` — supaya editor & type-checker tahu ruangan itu ada. Kamu nyaris tak pernah memanggilnya manual karena ia ikut jalan otomatis.
+
+Pemisahan ini penting: kalau type `./$types` kamu error padahal kodenya benar, tersangka utamanya bukan Vite dan bukan `sv` — melainkan **`svelte-kit sync` yang belum jalan.**
+
+### Kenapa lewat Vite, bukan CLI sendiri?
+
+SvelteKit sengaja **tidak** membungkus Vite di balik CLI sendiri (mis. `svelte-kit dev`). Di SvelteKit 1.x ke atas, perintah `svelte-kit dev/build/preview` **dihapus** dan diserahkan langsung ke `vite`. Alasannya jujur dan praktis: Vite sudah punya CLI matang dengan ratusan flag (`--port`, `--host`, `--mode`, dst). Membungkusnya hanya akan menyembunyikan flag-flag itu dan memaksa SvelteKit meneruskan tiap opsi satu per satu. Dengan memanggil `vite` langsung, **semua flag Vite otomatis tersedia** tanpa lapisan perantara. SvelteKit cukup menyisipkan diri sebagai plugin; sisanya Vite yang urus.
+
+## 2. Contoh kode
+
+Saat kamu menjalankan `npx sv create`, file `package.json` yang dihasilkan sudah berisi script standar. **Inilah "CLI SvelteKit" yang sesungguhnya** — sekumpulan alias npm di atas `vite` dan `svelte-kit`:
+
+```json
+// package.json (bagian scripts dari hasil `sv create`)
+{
+	"scripts": {
+		"dev": "vite dev",                        // dev server + HMR + SSR
+		"build": "vite build",                    // bundle produksi (lalu adapter jalan)
+		"preview": "vite preview",                // jalankan hasil build secara lokal
+		"prepare": "svelte-kit sync",             // generate ./$types + tsconfig (lifecycle npm)
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+	}
+}
+```
+
+Yang biasa kamu ketik cuma alias-nya, lewat package manager-mu:
+
+```bash
+# Operasional harian — semuanya delegasi ke `vite`
+npm run dev          # = vite dev      -> buka http://localhost:5173
+npm run build        # = vite build    -> output di .svelte-kit/ lalu diserahkan ke adapter
+npm run preview      # = vite preview  -> sajikan hasil build untuk dicek sebelum deploy
+
+# Type-check sekali jalan (sync dulu, baru svelte-check)
+npm run check
+```
+
+Karena `dev`/`build`/`preview` hanyalah alias `vite`, kamu bisa **menambahkan flag Vite apa pun** setelah `--` (npm meneruskan argumen sesudah `--` ke script):
+
+```bash
+# Teruskan flag ke vite lewat pemisah `--`
+npm run dev -- --port 3000 --open        # ganti port + buka browser otomatis
+npm run dev -- --host                     # expose ke jaringan lokal (akses dari HP)
+npm run build -- --mode staging           # build pakai env mode "staging" (.env.staging)
+```
+
+<Callout type="tip">
+Tanda <code>--</code> itu wajib saat lewat npm: <code>npm run dev --port 3000</code> (tanpa <code>--</code>) akan menyetel opsi <em>npm</em>, bukan diteruskan ke Vite. Kalau pakai <strong>pnpm</strong> atau <strong>bun</strong>, kamu boleh langsung: <code>pnpm dev --port 3000</code>. Atau panggil binary-nya langsung: <code>npx vite dev --port 3000</code>.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini soal CLI/tooling yang butuh terminal & server, jadi tidak ada live playground. Sebagai gantinya, mari telusuri **apa yang sebenarnya terjadi** di tiap perintah, plus tabel flag yang paling sering kepakai.
+
+### `vite dev` — dev server
+
+Menyalakan dev server dengan HMR (Hot Module Replacement) dan SSR. Saat halaman dirender, plugin `sveltekit()` membaca pohon rute `src/routes`, menjalankan `load`, lalu me-render HTML di server — bukan sekadar menyajikan file statis.
+
+```bash
+npx vite dev --port 3000 --host --open
+#            └─ port    └─ expose LAN └─ buka browser
+```
+
+Flag yang paling sering dipakai (semuanya milik Vite, bukan Kit):
+
+| Flag | Singkatan | Arti |
+| --- | --- | --- |
+| `--port <n>` | | Set port (default 5173) |
+| `--host [host]` | | Expose ke jaringan lokal — akses dari device lain |
+| `--open` | | Buka browser otomatis saat server siap |
+| `--force` | | Buang cache pre-bundle `optimizeDeps` & paksa rebuild |
+| `--config <file>` | `-c` | Pakai file config Vite selain `vite.config.js` |
+| `--mode <mode>` | `-m` | Set mode env (memuat `.env.<mode>`), default `development` |
+| `--logLevel <lvl>` | `-l` | `info` \| `warn` \| `error` \| `silent` |
+| `--no-clearScreen` | | Jangan hapus layar terminal saat log |
+
+### `vite build` — build produksi
+
+Membangun versi produksi: build dua tahap (bundle klien lalu bundle server), lalu di akhir **memanggil adapter** yang kamu set di `svelte.config.js` untuk membungkus hasil ke platform tujuan (Node, Vercel, Cloudflare, static, dst).
+
+```bash
+npx vite build --mode production
+```
+
+| Flag | Singkatan | Arti |
+| --- | --- | --- |
+| `--mode <mode>` | `-m` | Mode env (default `production`) |
+| `--sourcemap` | | Hasilkan source map untuk produksi |
+| `--minify <m>` | | `esbuild` (default) \| `terser` \| `false` |
+| `--watch` | `-w` | Rebuild otomatis saat file berubah |
+
+<Callout type="warning">
+Banyak flag <code>vite build</code> generik seperti <code>--outDir</code>, <code>--ssr</code>, atau <code>--emptyOutDir</code> <strong>diabaikan/diatur sendiri oleh SvelteKit</strong>. Lokasi output, build klien-vs-server, dan pembersihan folder ditentukan plugin <code>sveltekit()</code> + adapter — bukan flag CLI. Jadi untuk proyek Kit, flag build yang benar-benar berguna cuma sedikit (terutama <code>--mode</code> dan <code>--sourcemap</code>).
+</Callout>
+
+### `vite preview` — jalankan hasil build secara lokal
+
+Menyajikan output `vite build` di server lokal sederhana. Gunanya: **mengecek versi produksi sebelum deploy**, bukan untuk dev (tidak ada HMR di sini).
+
+```bash
+npx vite build && npx vite preview --port 4173
+```
+
+| Flag | Singkatan | Arti |
+| --- | --- | --- |
+| `--port <n>` | | Set port (default 4173) |
+| `--host [host]` | | Expose ke jaringan |
+| `--strictPort` | | Gagal kalau port sudah terpakai (jangan auto-pindah) |
+| `--open` | | Buka browser otomatis |
+
+<Callout type="warning">
+<code>vite preview</code> <strong>bukan</strong> server produksi sungguhan — ia cuma alat cek lokal yang menyajikan hasil build. Untuk production beneran kamu jalankan output adapter (mis. <code>node build</code> dari <code>adapter-node</code>, atau deploy ke platform via adapternya). Jangan pernah memakai <code>vite preview</code> untuk melayani trafik nyata.
+</Callout>
+
+### `svelte-kit sync` — generator type & tsconfig
+
+Inilah satu-satunya perintah khas SvelteKit. Tugasnya: membuat folder kerja `.svelte-kit/` yang berisi **type yang digenerasi otomatis** (inilah yang membuat `import type { PageLoad } from './$types'` bekerja) dan `tsconfig` turunan yang di-`extends` oleh `tsconfig.json`-mu.
+
+```bash
+npx svelte-kit sync
+```
+
+Ia praktis **tanpa flag** — kamu cuma menjalankannya. Yang penting dipahami adalah **kapan ia berjalan**:
+
+1. **Otomatis via `prepare`.** Di `package.json`, `"prepare": "svelte-kit sync"` membuatnya jalan otomatis sesudah `npm install`. Jadi habis clone repo + install, type sudah ada.
+2. **Otomatis saat `vite dev`/`vite build`.** Plugin `sveltekit()` memicu sync di awal, jadi selama dev/build type selalu segar.
+3. **Manual saat dibutuhkan.** Kamu jalankan sendiri terutama di **CI sebelum type-check**, atau saat editor tiba-tiba teriak `Cannot find module './$types'` padahal kodenya benar.
+
+```bash
+# Pola CI yang umum: pastikan type ada DULU, baru cek tipe
+npx svelte-kit sync
+npx svelte-check --tsconfig ./tsconfig.json
+```
+
+<Callout type="tip">
+Hafalkan satu refleks ini: <strong>error <code>./$types</code> atau modul <code>$app/*</code> "tidak ditemukan" → jalankan <code>npx svelte-kit sync</code>.</strong> Folder <code>.svelte-kit/</code> tidak di-commit (ada di <code>.gitignore</code>), jadi sesudah clone segar atau ganti branch, type bisa belum tergenerasi sampai sync jalan.
+</Callout>
+
+### Beda dengan CLI `sv`
+
+`sv` adalah CLI yang **berbeda paket dan beda tujuan**. Gampang tertukar karena sama-sama urusan "SvelteKit", padahal perannya tidak tumpang-tindih:
+
+| | `vite` / `svelte-kit` | `sv` |
+| --- | --- | --- |
+| Paket | `vite`, `@sveltejs/kit` | `sv` (via `npx sv`) |
+| Untuk apa | **Menjalankan** proyek (dev/build/sync) | **Mengelola** proyek (scaffold/integrasi/cek) |
+| Perintah | `vite dev/build/preview`, `svelte-kit sync` | `sv create`, `sv add`, `sv check`, `sv migrate` |
+| Frekuensi | Tiap hari & otomatis | Sesekali, manual |
+
+Ringkasnya: **`sv` menyiapkan & memodifikasi proyek; `vite`/`svelte-kit` menjalankannya.** Contoh perintah `sv` yang sering dipakai:
+
+```bash
+npx sv create my-app     # scaffold proyek SvelteKit baru (pengganti `npm create svelte`)
+npx sv add tailwindcss   # tambah integrasi (tailwind, drizzle, lucia, paraglide, dll)
+npx sv check             # jalankan svelte-check (type & a11y) — bukan untuk runtime
+npx sv migrate kit       # bantu migrasi otomatis antar versi major
+```
+
+<Callout type="tip">
+Catat bahwa <code>sv check</code> dan script <code>npm run check</code> sama-sama menjalankan <strong>svelte-check</strong> di balik layar — keduanya melakukan type-checking sekali jalan, bukan menyalakan aplikasi. Jangan mengira <code>sv check</code> menjalankan dev server.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Petakan perintah ke pekerjaannya">
+Tanpa melihat ke atas, jawab cepat:
+
+1. Kamu baru `git clone` sebuah proyek SvelteKit dan VS Code langsung merah: `Cannot find module './$types'`. Perintah apa yang membereskan ini, dan kenapa folder type-nya hilang sejak awal?
+2. Tulis isi `scripts` minimal di `package.json` untuk: dev, build, preview, dan auto-sync type sesudah install.
+3. Kamu mau menjalankan dev server di port `3000` lalu mengaksesnya dari HP di Wi-Fi yang sama. Tulis satu perintah `npm run` yang melakukannya.
+4. Mana yang dipakai untuk **menambah Tailwind** ke proyek yang sudah ada — `vite`, `svelte-kit`, atau `sv`?
+
+{#snippet solution()}
+
+```bash
+# 1) Jalankan:
+npx svelte-kit sync
+# Folder .svelte-kit/ (tempat ./$types tinggal) masuk .gitignore, jadi
+# TIDAK ikut ke-clone. Type baru lahir saat sync jalan — biasanya otomatis
+# lewat `prepare` sesudah `npm install`, atau saat `vite dev` pertama kali.
+```
+
+```json
+// 2) scripts minimal
+{
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync"
+	}
+}
+```
+
+```bash
+# 3) Port 3000 + expose ke LAN (akses dari HP).
+#    `--` meneruskan flag ke vite; `--host` membuatnya dengar di IP jaringan.
+npm run dev -- --port 3000 --host
+
+# 4) `sv` — khususnya: npx sv add tailwindcss
+#    `sv` mengelola/memodifikasi proyek; vite & svelte-kit hanya menjalankan.
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa <code>--</code> saat meneruskan flag via npm.</strong> <code>npm run dev --port 3000</code> TIDAK mengubah port — npm menganggap <code>--port</code> sebagai opsi npm dan mengabaikannya, server tetap di 5173. Yang benar: <code>npm run dev -- --port 3000</code>. (pnpm & bun tidak butuh <code>--</code>.)
+</Callout>
+
+<Callout type="pitfall">
+<strong>Mengira <code>vite preview</code> itu server produksi.</strong> Ia cuma alat pengecekan lokal hasil build — tanpa logika adapter, tanpa skalabilitas. Untuk produksi nyata, jalankan output adapter (mis. <code>node build</code>) atau deploy ke platform. <code>preview</code> = "intip dulu", bukan "deploy".
+</Callout>
+
+<Callout type="warning">
+<strong>Jangan commit folder <code>.svelte-kit/</code>.</strong> Itu artefak hasil <code>svelte-kit sync</code> dan harus tetap di <code>.gitignore</code>. Meng-commit-nya bikin konflik merge tak berguna dan type basi. Biarkan ia digenerasi ulang otomatis di tiap mesin/CI.
+</Callout>
+
+<Callout type="legacy">
+Perintah <code>svelte-kit dev</code>, <code>svelte-kit build</code>, dan <code>svelte-kit preview</code> adalah <strong>API lama (pra-SvelteKit 1.0)</strong> dan sudah dihapus. Sejak SvelteKit 1.0+, ketiga tugas itu diserahkan langsung ke CLI Vite. Begitu pula scaffolder lama <code>npm create svelte</code> sudah digantikan <code>npx sv create</code>. Kalau menemukan tutorial yang memakai perintah lama ini, anggap sudah usang.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Dulu (SvelteKit lama)"
+	modernLabel="Sekarang (SvelteKit 2 + sv)"
+	rows={[
+		{ legacy: 'svelte-kit dev', modern: 'vite dev', note: 'dipindah ke CLI Vite sejak Kit 1.0' },
+		{ legacy: 'svelte-kit build', modern: 'vite build' },
+		{ legacy: 'svelte-kit preview', modern: 'vite preview' },
+		{ legacy: 'npm create svelte@latest', modern: 'npx sv create', note: 'scaffolder lama -> CLI sv' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/cli" label="SvelteKit — Command Line Interface (vite & svelte-kit sync)" />
+<DocsLink href="https://svelte.dev/docs/cli/overview" label="sv — CLI resmi (create, add, check, migrate)" />

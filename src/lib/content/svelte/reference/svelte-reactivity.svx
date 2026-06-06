@@ -1,0 +1,425 @@
+---
+title: svelte/reactivity
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 11
+status: reference
+description: Koleksi & objek reaktif bawaan Svelte 5 — SvelteMap, SvelteSet, SvelteDate, SvelteURL, SvelteURLSearchParams, MediaQuery, dan createSubscriber untuk membungkus sumber event eksternal.
+docs: https://svelte.dev/docs/svelte/svelte-reactivity
+keywords: [SvelteMap, SvelteSet, SvelteDate, MediaQuery, createSubscriber, reactivity]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Rune `$state` membuat objek dan array menjadi reaktif **dalam (deep)**: ubah `obj.a` atau `arr.push(...)`, dan UI ikut. Tapi ada satu kelompok built-in JavaScript yang **tidak** ikut terpantau: `Map`, `Set`, `Date`, dan `URL`. Panggil `map.set(...)`, `set.add(...)`, `date.setHours(...)`, atau `url.searchParams.set(...)` di dalam `$state`, dan UI diam saja seolah tak terjadi apa-apa.
+
+Kenapa? Reaktivitas Svelte bekerja lewat **property access** — Svelte membungkus objek `$state`-mu dengan Proxy, lalu mencatat siapa membaca property apa dan kapan property itu ditulis. Masalahnya, `Map` dan `Set` tidak menyimpan datanya di property biasa. Mereka menyimpannya di **slot internal** (internal slots) yang hanya bisa disentuh lewat method bawaannya, dan slot itu **tak terlihat** oleh Proxy. Jadi Svelte tidak punya cara tahu kapan isi `Map` berubah. `Date` serupa: nilai waktunya ada di slot internal `[[DateValue]]`.
+
+Analoginya: `Map` biasa itu seperti **buku catatan di laci tertutup**. Kamu menulis dan menghapus di dalamnya, tapi dari luar laci kelihatan sama persis — tak ada yang tahu isinya berubah. `SvelteMap` itu **papan tulis di tengah ruangan**: setiap coretan langsung terlihat semua orang (setiap komponen/`$derived`/`$effect` yang sedang membacanya).
+
+`svelte/reactivity` adalah jawaban resmi Svelte untuk masalah ini. Ia menyediakan **versi reaktif drop-in** dari built-in tersebut: `SvelteMap`, `SvelteSet`, `SvelteDate`, `SvelteURL`, `SvelteURLSearchParams`. API-nya **identik 100%** dengan aslinya — kamu hanya mengganti nama konstruktor. Di belakang layar, mereka memakai sebuah signal internal: setiap operasi tulis (`set`, `add`, `delete`, `setHours`, dll.) "menyenggol" signal itu, dan setiap operasi baca (`get`, `has`, `.size`, iterasi) "mendaftar" sebagai dependency. Hasilnya: baca di `$derived`/`$effect`/template, lalu tulis di mana pun, dan semuanya ikut update.
+
+Buat yang datang dari React/Vue: ini mirip dengan kenapa kamu tidak bisa `state.push()` lalu berharap React re-render — bedanya, di React kamu wajib bikin objek/array baru (immutability), sedangkan di Svelte kamu **mutasi langsung** dan cukup memakai tipe yang sadar-reaktif. Di Vue, `reactive()` juga membungkus `Map`/`Set` agar reaktif lewat handler khusus — `SvelteMap`/`SvelteSet` adalah padanannya, hanya saja kamu mengimpornya secara eksplisit, bukan otomatis dari `$state`.
+
+Selain koleksi, modul ini punya dua alat lain dengan watak berbeda:
+
+- **`MediaQuery`** — objek reaktif yang mencerminkan apakah sebuah media query (mis. `min-width: 800px`) sedang cocok. Baca `.current` (boolean) di template, dan ia otomatis update saat ukuran/orientasi layar berubah. Ini "VueUse `useMediaQuery`" versi bawaan.
+- **`createSubscriber`** — primitif tingkat rendah untuk **membungkus sumber event eksternal** (WebSocket, `IntersectionObserver`, `addEventListener`, `requestAnimationFrame`) menjadi nilai reaktif. Ini bahan mentah yang dipakai `MediaQuery` sendiri di dalamnya. Pakai ini ketika kamu ingin membuat "reactive primitive"-mu sendiri yang hanya berlangganan ke sumber luar **selama ada yang membacanya**, lalu otomatis berhenti berlangganan saat tak ada lagi pembaca — manajemen langganan otomatis tanpa kamu mengurus `useEffect`/cleanup secara manual.
+
+## 2. Contoh kode
+
+```svelte
+<!-- map-set.svelte — kenapa harus SvelteMap/SvelteSet, bukan yang biasa -->
+<script>
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+
+	// Map BIASA: .set() menyentuh slot internal, Proxy tak melihatnya -> UI diam.
+	// SvelteMap: API identik (set/get/has/delete/size/iterasi), tapi reaktif.
+	const stok = new SvelteMap([
+		['kopi', 3],
+		['teh', 5]
+	]);
+
+	// SvelteSet untuk "keanggotaan" yang reaktif (mis. id yang dipilih)
+	const habis = new SvelteSet();
+
+	function ambil(nama) {
+		const sisa = (stok.get(nama) ?? 0) - 1; // baca .get -> jadi dependency
+		stok.set(nama, sisa); // tulis -> memicu update semua pembaca
+		if (sisa <= 0) habis.add(nama); // .add -> memicu update
+	}
+</script>
+
+<!-- iterasi SvelteMap juga reaktif: [...stok] menjadi dependency -->
+{#each [...stok] as [nama, jumlah]}
+	<p>
+		{nama}: {jumlah}
+		<button onclick={() => ambil(nama)}>-1</button>
+		{#if habis.has(nama)}<em>(habis)</em>{/if}
+	</p>
+{/each}
+```
+
+```svelte
+<!-- date-url.svelte — SvelteDate & SvelteURL -->
+<script>
+	import { SvelteDate, SvelteURL } from 'svelte/reactivity';
+
+	// SvelteDate: membaca lewat method (getTime/toLocale*/Intl) bersifat reaktif
+	const jam = new SvelteDate();
+	// perbarui tiap detik; setTime() memicu update pembaca .toLocaleTimeString()
+	$effect(() => {
+		const id = setInterval(() => jam.setTime(Date.now()), 1000);
+		return () => clearInterval(id);
+	});
+
+	// SvelteURL: mengubah searchParams memicu pembacaan .href ter-update
+	const url = new SvelteURL('https://app.example/cari');
+	let q = $state('');
+	$effect(() => {
+		url.searchParams.set('q', q); // tulis -> .href ikut berubah
+	});
+</script>
+
+<p>Sekarang: {jam.toLocaleTimeString()}</p>
+<input bind:value={q} placeholder="kata kunci" />
+<p>Link berbagi: {url.href}</p>
+```
+
+```ts
+// online.svelte.ts — bikin reactive primitive sendiri dengan createSubscriber + on()
+import { createSubscriber } from 'svelte/reactivity';
+import { on } from 'svelte/events';
+
+class Online {
+	// start dipanggil saat .current PERTAMA kali dibaca di dalam sebuah effect,
+	// dan TIDAK dipanggil lagi selama masih ada pembaca. Kembalikan fungsi cleanup.
+	#subscribe = createSubscriber((update) => {
+		// 'update' menandai semua effect pembaca agar dievaluasi ulang
+		const offOnline = on(window, 'online', update);
+		const offOffline = on(window, 'offline', update);
+		// cleanup: dipanggil saat tak ada lagi effect yang membaca .current
+		return () => {
+			offOnline();
+			offOffline();
+		};
+	});
+
+	get current() {
+		this.#subscribe(); // daftarkan effect aktif sebagai pelanggan
+		return navigator.onLine; // nilai aktual dibaca SETELAH subscribe
+	}
+}
+
+// satu instance dipakai bersama; langganan window dibuat sekali, dihapus otomatis
+export const online = new Online();
+// Pemakaian: {#if online.current}Online{:else}Offline{/if}
+```
+
+## 3. Coba sendiri
+
+Playground ini menggabungkan empat struktur reaktif sekaligus dalam satu komponen murni-klien: `SvelteMap` (keranjang nama -> jumlah), `SvelteSet` (item favorit), `SvelteDate` (waktu terakhir diubah), dan `SvelteURL` (link berbagi yang query string-nya ikut bereaksi). Klik tombol-tombolnya dan perhatikan: angka, jumlah favorit, jam, dan URL semuanya update tanpa satu pun `$state` membungkus koleksinya — reaktivitas datang murni dari tipe `Svelte*`-nya. Coba ganti `SvelteMap` jadi `Map` biasa dan lihat semuanya membeku.
+
+<Playground code={`<script>
+	import { SvelteMap, SvelteSet, SvelteDate, SvelteURL } from 'svelte/reactivity';
+
+	const menu = ['Kopi', 'Teh', 'Roti'];
+
+	// SvelteMap: keranjang (nama -> jumlah). set/get memicu & mendaftar dependency.
+	const keranjang = new SvelteMap();
+	// SvelteSet: kumpulan favorit yang reaktif.
+	const favorit = new SvelteSet();
+	// SvelteDate: stempel waktu terakhir diubah.
+	const terakhir = new SvelteDate();
+	// SvelteURL: link berbagi; searchParams reaktif.
+	const link = new SvelteURL('https://toko.example/cart');
+
+	function tambah(nama) {
+		keranjang.set(nama, (keranjang.get(nama) ?? 0) + 1);
+		terakhir.setTime(Date.now());
+		link.searchParams.set(nama, String(keranjang.get(nama)));
+	}
+
+	function toggleFavorit(nama) {
+		if (favorit.has(nama)) favorit.delete(nama);
+		else favorit.add(nama);
+	}
+
+	// $derived membaca koleksi reaktif -> ikut terhitung ulang otomatis
+	let total = $derived([...keranjang.values()].reduce((a, b) => a + b, 0));
+</script>
+
+<h3>Menu</h3>
+{#each menu as nama}
+	<div style="margin-bottom: 6px;">
+		<strong>{nama}</strong> x{keranjang.get(nama) ?? 0}
+		<button onclick={() => tambah(nama)}>Tambah</button>
+		<button onclick={() => toggleFavorit(nama)}>
+			{favorit.has(nama) ? 'Hapus favorit' : 'Favoritkan'}
+		</button>
+	</div>
+{/each}
+
+<hr />
+<p>Total item: {total}</p>
+<p>Favorit: {favorit.size}</p>
+<p>Diubah: {terakhir.toLocaleTimeString()}</p>
+<p>Link: {link.href}</p>`} />
+
+<Callout type="tip">
+Perhatikan tidak ada satu pun <code>$state</code> di sini — namun semuanya tetap reaktif. Itu karena tipe <code>Svelte*</code> membawa signal reaktivitasnya <strong>sendiri</strong> di dalam. Kamu boleh menaruhnya di top-level modul (seperti contoh), di dalam komponen, atau di file <code>.svelte.ts</code> untuk state global lintas komponen. Untuk membuktikan pitfall-nya: ganti <code>new SvelteMap()</code> jadi <code>new Map()</code> — tombol "Tambah" akan tetap memutakhirkan data di memori, tapi angka di layar berhenti bergerak.
+</Callout>
+
+## 4. Ringkasan API
+
+Semua diimpor dari `svelte/reactivity`. Tabel ikhtisar dulu, lalu tanda tangan & catatan per item.
+
+| Export | Untuk apa | Baca yang bersifat reaktif |
+| --- | --- | --- |
+| `SvelteMap` | `Map` yang memicu update | `get`, `has`, `size`, iterasi |
+| `SvelteSet` | `Set` yang memicu update | `has`, `size`, iterasi |
+| `SvelteDate` | `Date` yang memicu update | `getTime`, `toLocale*`, `Intl`, dll. |
+| `SvelteURL` | `URL` yang memicu update | `href`, `pathname`, `searchParams`, dll. |
+| `SvelteURLSearchParams` | Query string reaktif | `get`, `getAll`, `has`, iterasi |
+| `MediaQuery` | Cocokkan media query | `current` (boolean) |
+| `createSubscriber` | Bungkus sumber event eksternal jadi reaktif | mengembalikan fungsi `subscribe` |
+
+### `SvelteMap`
+
+```ts
+class SvelteMap<K, V> extends Map<K, V> {
+	constructor(value?: Iterable<readonly [K, V]> | null);
+	set(key: K, value: V): this;
+	// + semua method/property Map: get, has, delete, clear, forEach,
+	//   keys, values, entries, [Symbol.iterator], size
+}
+```
+
+- Konstruktor menerima iterable pasangan `[key, value]` (sama seperti `Map`), atau kosong.
+- **Reaktif:** `get`, `has`, `size`, dan iterasi (`[...map]`, `{#each}`, `keys/values/entries/forEach`) mendaftar sebagai dependency. `set`, `delete`, `clear` memicu update.
+- **Penting:** value di dalam map **tidak** dibuat reaktif-dalam. Kalau value-nya objek dan kamu mutasi property-nya (`map.get(k).qty++`), itu tidak otomatis terpantau — bungkus value dengan `$state`, atau ganti seluruh value lewat `map.set(k, valueBaru)`.
+
+```svelte
+<script>
+	import { SvelteMap } from 'svelte/reactivity';
+	const skor = new SvelteMap([['A', 0]]);
+</script>
+<button onclick={() => skor.set('A', skor.get('A') + 1)}>A: {skor.get('A')}</button>
+```
+
+### `SvelteSet`
+
+```ts
+class SvelteSet<T> extends Set<T> {
+	constructor(value?: Iterable<T> | null);
+	add(value: T): this;
+	// + semua method/property Set: has, delete, clear, forEach,
+	//   keys, values, entries, [Symbol.iterator], size
+}
+```
+
+- Konstruktor menerima iterable nilai (sama seperti `Set`).
+- **Reaktif:** `has`, `size`, dan iterasi mendaftar sebagai dependency. `add`, `delete`, `clear` memicu update.
+- Pas untuk "keanggotaan reaktif": id terpilih, baris ter-expand, fitur yang aktif. Sama seperti `SvelteMap`, nilai di dalamnya tidak dibuat reaktif-dalam.
+
+```svelte
+<script>
+	import { SvelteSet } from 'svelte/reactivity';
+	const dipilih = new SvelteSet();
+	const toggle = (id) => (dipilih.has(id) ? dipilih.delete(id) : dipilih.add(id));
+</script>
+<button onclick={() => toggle(1)}>{dipilih.has(1) ? 'Batal' : 'Pilih'} (#1)</button>
+```
+
+### `SvelteDate`
+
+```ts
+class SvelteDate extends Date {
+	constructor(...params: any[]); // sama seperti new Date(...)
+}
+```
+
+- Konstruktor menerima argumen apa pun yang diterima `Date` (kosong = sekarang, timestamp, string ISO, atau komponen tanggal).
+- **Reaktif:** membaca lewat method apa pun (`getTime`, `getHours`, `toISOString`, `toLocaleTimeString`, dipakai dalam `Intl.DateTimeFormat`) mendaftar sebagai dependency. Setter (`setTime`, `setHours`, dll.) memicu update.
+- Berguna untuk jam langsung, hitung mundur, "x menit lalu" yang terus segar.
+
+```svelte
+<script>
+	import { SvelteDate } from 'svelte/reactivity';
+	const t = new SvelteDate();
+	$effect(() => {
+		const id = setInterval(() => t.setTime(Date.now()), 1000);
+		return () => clearInterval(id);
+	});
+</script>
+<p>{t.toLocaleTimeString()}</p>
+```
+
+### `SvelteURL`
+
+```ts
+class SvelteURL extends URL {
+	constructor(url: string | URL, base?: string | URL);
+	get searchParams(): SvelteURLSearchParams; // override: mengembalikan versi reaktif
+}
+```
+
+- Konstruktor sama seperti `URL` (`url`, dan `base` opsional untuk URL relatif).
+- **Reaktif:** membaca `href`, `protocol`, `hostname`, `pathname`, `search`, `hash`, dll. mendaftar sebagai dependency; menulisnya memicu update.
+- `searchParams` mengembalikan `SvelteURLSearchParams` yang tertaut — memutasinya ikut memperbarui `url.href` secara reaktif. Cocok untuk menyimpan "state aplikasi di URL" (filter, query) yang langsung tercermin di link berbagi.
+
+```svelte
+<script>
+	import { SvelteURL } from 'svelte/reactivity';
+	const u = new SvelteURL('https://x.test/list');
+	let page = $state(1);
+	$effect(() => u.searchParams.set('page', String(page)));
+</script>
+<button onclick={() => page++}>Next</button>
+<code>{u.href}</code>
+```
+
+### `SvelteURLSearchParams`
+
+```ts
+class SvelteURLSearchParams extends URLSearchParams {
+	constructor(init?: string | string[][] | Record<string, string> | URLSearchParams);
+	// method standar URLSearchParams: get, getAll, has, set, append,
+	//   delete, sort, toString, keys, values, entries, [Symbol.iterator]
+}
+```
+
+- Konstruktor sama seperti `URLSearchParams` (string `"a=1&b=2"`, array pasangan, objek, atau instance lain).
+- **Reaktif:** `get`, `getAll`, `has`, `toString`, dan iterasi mendaftar sebagai dependency; `set`, `append`, `delete`, `sort` memicu update.
+- Biasanya kamu mengaksesnya lewat `SvelteURL#searchParams`, tapi bisa dipakai berdiri sendiri.
+
+### `MediaQuery`
+
+```ts
+class MediaQuery extends ReactiveValue<boolean> {
+	constructor(query: string, fallback?: boolean);
+	readonly current: boolean; // true jika query sedang cocok
+}
+```
+
+- `query` ditulis **tanpa** `@media` dan tanpa tanda kurung luar — Svelte menambahkannya. Contoh: `'min-width: 800px'`, `'prefers-color-scheme: dark'`, `'orientation: landscape'`.
+- `fallback` adalah nilai yang dipakai saat **server-side rendering** (di server tidak ada `window.matchMedia`), untuk menghindari mismatch sebelum hidrasi.
+- Baca `.current` (boolean) — reaktif; berubah otomatis saat layar/preferensi berubah. Di belakang layar ia memakai `createSubscriber` + `matchMedia` sehingga listener hanya aktif selama `.current` dibaca.
+
+```svelte
+<script>
+	import { MediaQuery } from 'svelte/reactivity';
+	const lebar = new MediaQuery('min-width: 800px');
+	const gelap = new MediaQuery('prefers-color-scheme: dark');
+</script>
+<p>{lebar.current ? 'Desktop' : 'Mobile'} — tema {gelap.current ? 'gelap' : 'terang'}</p>
+```
+
+### `createSubscriber`
+
+```ts
+function createSubscriber(
+	start: (update: () => void) => (() => void) | void
+): () => void;
+```
+
+- Mengembalikan sebuah fungsi `subscribe`. Panggil `subscribe()` di dalam **getter** (atau di mana pun yang dibaca dalam effect/derived) untuk mendaftarkan dependency.
+- `start` dipanggil **sekali** saat ada pelanggan pertama (effect pertama membaca). Ia menerima `update` — panggil `update()` untuk menandai semua pembaca agar dievaluasi ulang. Kalau `start` mengembalikan fungsi cleanup, fungsi itu dipanggil saat pelanggan **terakhir** berhenti (semua effect-nya hancur).
+- Inti idenya: langganan ke sumber luar (WebSocket, observer, event) **otomatis dibuat saat diperlukan dan dibersihkan saat tidak** — tanpa kamu mengurus daur hidup secara manual. Nilai sebenarnya tetap kamu baca sendiri di getter (lihat contoh `Online` di Bagian 2).
+
+## 5. Latihan
+
+<Exercise title="Penghitung suara reaktif (SvelteMap + SvelteSet + SvelteDate)">
+Buat satu komponen `.svelte` mini-voting yang:
+
+1. Memakai `SvelteMap` untuk menyimpan jumlah suara tiap kandidat (`'Svelte' | 'React' | 'Vue'`), mulai dari 0.
+2. Memakai `SvelteSet` untuk mencatat nama pemilih yang **sudah** memilih, supaya satu nama tak bisa memilih dua kali.
+3. Memakai `SvelteDate` untuk menampilkan jam pembaruan terakhir.
+4. Memakai `$derived` untuk menghitung **pemenang sementara** dari isi map.
+
+Petunjuk: baca via `map.get()` / `set.has()` / `date.toLocaleTimeString()` agar bagian itu menjadi dependency; tulis via `map.set()` / `set.add()` / `date.setTime()` untuk memicu update. Pemenang dihitung dari `[...suara]` yang diurutkan.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { SvelteMap, SvelteSet, SvelteDate } from 'svelte/reactivity';
+
+	const kandidat = ['Svelte', 'React', 'Vue'];
+	// SvelteMap: jumlah suara per kandidat (reaktif)
+	const suara = new SvelteMap(kandidat.map((k) => [k, 0]));
+	// SvelteSet: siapa saja yang sudah memilih (cegah double vote)
+	const sudahMemilih = new SvelteSet();
+	// SvelteDate: stempel waktu pembaruan terakhir
+	const terakhir = new SvelteDate();
+
+	let pemilih = $state('');
+
+	function pilih(k) {
+		const nama = pemilih.trim();
+		if (!nama || sudahMemilih.has(nama)) return; // .has -> dependency + guard
+		suara.set(k, (suara.get(k) ?? 0) + 1); // memicu update
+		sudahMemilih.add(nama); // memicu update + tandai sudah memilih
+		terakhir.setTime(Date.now()); // memicu update jam
+		pemilih = '';
+	}
+
+	// $derived membaca SvelteMap -> ikut terhitung ulang tiap suara berubah
+	let pemenang = $derived([...suara].sort((a, b) => b[1] - a[1])[0]);
+</script>
+
+<input bind:value={pemilih} placeholder="Nama kamu" />
+{#each kandidat as k}
+	<button onclick={() => pilih(k)}>{k} ({suara.get(k)})</button>
+{/each}
+
+<p>Total pemilih: {sudahMemilih.size}</p>
+<p>Pemenang sementara: {pemenang[0]} ({pemenang[1]})</p>
+<p>Pembaruan terakhir: {terakhir.toLocaleTimeString()}</p>
+```
+
+Kuncinya ada di pembagian peran tiga struktur: `SvelteMap` memegang **data terhitung** (jumlah per kandidat), `SvelteSet` memegang **keanggotaan** (siapa sudah memilih) sebagai guard `O(1)`, dan `SvelteDate` memegang **stempel waktu**. Ketiganya reaktif tanpa `$state`, sehingga `$derived` `pemenang`, `.size`, dan jam semuanya update otomatis. Kalau salah satu diganti versi biasa (`Map`/`Set`/`Date`), bagian UI yang membacanya akan membeku — bukti langsung kenapa modul ini ada.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Memakai <code>Map</code>/<code>Set</code>/<code>Date</code>/<code>URL</code> bawaan JavaScript di dalam <code>$state</code> lalu heran kenapa UI tak berubah saat memanggil <code>.set()</code>/<code>.add()</code>/<code>.setHours()</code>. Itu memang tidak reaktif: method-nya menyentuh slot internal yang tak terlihat Proxy Svelte. Pakai <code>SvelteMap</code>, <code>SvelteSet</code>, <code>SvelteDate</code>, <code>SvelteURL</code> dari <code>svelte/reactivity</code>. API-nya identik, jadi penggantiannya cuma soal nama konstruktor.
+</Callout>
+
+<Callout type="warning">
+Nilai di dalam <code>SvelteMap</code>/<code>SvelteSet</code> <strong>tidak</strong> dibuat reaktif-dalam. Reaktivitasnya hanya pada level koleksi (key mana ada, value-nya apa). Jadi <code>map.get(id).selesai = true</code> (memutasi property objek value) <strong>tidak</strong> memicu update. Solusi: bungkus value dengan <code>$state</code> saat memasukkannya, atau ganti seluruh value lewat <code>map.set(id, &#123; ...lama, selesai: true &#125;)</code>.
+</Callout>
+
+<Callout type="warning">
+Untuk <code>MediaQuery</code>, tulis query <strong>tanpa</strong> <code>@media</code> dan tanpa kurung luar — cukup <code>new MediaQuery('min-width: 800px')</code>, bukan <code>new MediaQuery('@media (min-width: 800px)')</code>. Dan kalau halaman di-SSR, isi argumen <code>fallback</code> agar tak terjadi mismatch hidrasi. Bila keputusan tampilan murni soal CSS (sembunyikan/atur layout), lebih baik pakai media query CSS biasa; pakai <code>MediaQuery</code> hanya saat kamu butuh nilai boolean-nya di <strong>logika JavaScript</strong>.
+</Callout>
+
+<Callout type="tip">
+<code>createSubscriber</code> adalah cara "benar" membungkus sumber event eksternal (WebSocket, <code>IntersectionObserver</code>, <code>matchMedia</code>, <code>scroll</code>) jadi reaktif: langganan dibuat saat pertama dibaca dan dibersihkan otomatis saat tak ada lagi pembaca. Padukan dengan <code>on()</code> dari <code>svelte/events</code> di dalam <code>start</code> supaya cleanup tinggal mengembalikan fungsi pelepasnya. Untuk kebutuhan umum seperti media query, pakai <code>MediaQuery</code> yang sudah jadi — ia dibangun di atas <code>createSubscriber</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'new Map() di dalam $state', modern: "new SvelteMap() dari 'svelte/reactivity'", note: 'API identik; .set/.delete kini memicu update.' },
+	{ legacy: 'new Set() di dalam $state', modern: 'new SvelteSet()', note: '.add/.delete/.has & .size reaktif.' },
+	{ legacy: 'new Date() lalu .setTime()', modern: 'new SvelteDate()', note: 'Untuk jam/hitung-mundur yang terus segar.' },
+	{ legacy: 'new URL() + .searchParams.set()', modern: 'new SvelteURL()', note: 'href ikut update; pas untuk state di URL.' },
+	{ legacy: 'window.matchMedia(...).matches manual + listener', modern: 'new MediaQuery(query).current', note: 'Listener auto-pasang/lepas, ada fallback SSR.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-reactivity" label="svelte/reactivity — SvelteMap, SvelteSet, SvelteDate, SvelteURL, MediaQuery, createSubscriber" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-events" label="svelte/events — on() (sering dipakai bersama createSubscriber)" />
+<DocsLink href="https://svelte.dev/docs/svelte/$state" label="$state — kenapa Map/Set/Date tidak deep-reactive secara default" />

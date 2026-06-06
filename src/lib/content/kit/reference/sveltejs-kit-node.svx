@@ -1,0 +1,289 @@
+---
+title: @sveltejs/kit/node
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 4
+status: reference
+description: Helper level-rendah yang menjembatani objek HTTP Node (IncomingMessage/ServerResponse) dengan standar web Request/Response — fondasi adapter-node.
+docs: https://svelte.dev/docs/kit/@sveltejs-kit-node
+keywords: [node, getRequest, setResponse, adapter-node, createReadableStream]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Modul `@sveltejs/kit/node` isinya cuma tiga fungsi, tapi keberadaannya menjelaskan salah satu keputusan arsitektur paling penting di SvelteKit: **kode aplikasimu berbicara dalam bahasa standar web (`Request`/`Response`), bukan bahasa Node**. Setiap `load`, setiap `+server.js`, setiap `hooks.server.js` menerima objek `Request` standar (yang sama persis seperti di browser, Deno, Bun, dan Cloudflare Workers) dan mengembalikan `Response`. Itulah kenapa kode SvelteKit yang sama bisa jalan di runtime yang sangat berbeda-beda.
+
+Masalahnya, Node.js lahir tahun 2009 — jauh sebelum Fetch API standar ada. Server HTTP bawaan Node tidak mengenal `Request`/`Response`. Yang ia berikan adalah `http.IncomingMessage` (sebuah **readable stream** berisi data request masuk) dan `http.ServerResponse` (sebuah **writable stream** tempat kamu menulis balasan). Dua dialek ini tidak kompatibel begitu saja. Di sinilah `@sveltejs/kit/node` masuk: ia adalah **penerjemah dua arah** di perbatasan antara dunia Node dan dunia web-standard tempat SvelteKit hidup.
+
+### Analogi: petugas imigrasi bilingual di perbatasan
+
+Bayangkan SvelteKit adalah sebuah "negara" yang seluruh penduduknya hanya bicara satu bahasa: **Web Standard** (`Request`/`Response`). Node adalah negara tetangga yang bicara **dialek Stream** (`IncomingMessage`/`ServerResponse`). Tiap kali sebuah request datang dari Node, ia harus melewati pos perbatasan dan diterjemahkan dulu sebelum boleh masuk:
+
+- **`getRequest`** = petugas imigrasi di gerbang **masuk**. Ia menerima `IncomingMessage` (dialek Stream) dan menerbitkan "paspor" berupa objek `Request` web-standard. Karena `IncomingMessage` cuma membawa *path* (mis. `/blog/halo`) tanpa alamat lengkap, petugas ini butuh kamu memberitahu **`base`** (origin seperti `https://situs.com`) supaya bisa menyusun URL absolut yang utuh.
+- **`setResponse`** = petugas di gerbang **keluar**. SvelteKit menyerahkan `Response` web-standard, lalu petugas ini menuliskannya kembali ke `ServerResponse` Node — menyalin status code, header, dan men-*stream* body keluar.
+- **`createReadableStream`** = "kurir" yang mengubah file di disk menjadi aliran data web-standard, supaya bisa dijadikan body sebuah `Response` tanpa harus memuat seluruh file ke memori.
+
+Di dalam "negara" SvelteKit, tidak ada yang perlu tahu soal Node sama sekali. Semua urusan penerjemahan terjadi di perbatasan — dan tiga fungsi inilah perbatasan itu.
+
+### Siapa yang sebenarnya memakai ini?
+
+Jujur saja: **mayoritas pengembang SvelteKit tidak akan pernah memanggil fungsi-fungsi ini secara langsung.** Mereka adalah "pipa di balik tembok". Yang memakainya adalah:
+
+1. **`@sveltejs/adapter-node`** secara internal — saat kamu `node build`, server yang dihasilkannya memanggil `getRequest` di tiap request masuk dan `setResponse` di tiap response keluar.
+2. **Penulis adapter kustom** atau siapa pun yang mau **menempelkan (embed)** handler SvelteKit ke dalam server Node yang sudah ada (Express, Connect, Polka, atau `node:http` mentah) — misalnya karena kamu butuh middleware lama, WebSocket, atau menjalankan SvelteKit di samping API lain dalam satu proses.
+
+Kalau di mental-model React/Vue: anggap ini seperti lapisan adaptor antara `http` Node dan handler universalmu — mirip peran `@vercel/node` request helpers atau wrapper yang dipakai `next start` untuk menerjemahkan request platform menjadi objek yang dimengerti framework. Bedanya, SvelteKit memilih **standar web** sebagai bahasa internalnya, jadi penerjemahnya tipis dan kode aplikasimu portabel ke runtime non-Node tanpa diubah.
+
+## 2. Tabel API
+
+Modul `@sveltejs/kit/node` meng-export tepat tiga fungsi. Semua bersifat **server-only** (butuh Node, tidak ada di browser).
+
+| Export | Tanda tangan singkat | Mengembalikan | Sejak |
+| --- | --- | --- | --- |
+| `getRequest` | `getRequest({ request, base, bodySizeLimit? })` | `Promise<Request>` | awal |
+| `setResponse` | `setResponse(res, response)` | `Promise<void>` | awal |
+| `createReadableStream` | `createReadableStream(file)` | `ReadableStream` | 2.4.0 |
+
+Tanda tangan lengkap beserta tipe parameternya:
+
+```ts
+// getRequest — Node IncomingMessage  ->  web Request
+function getRequest({
+  request,        // import('node:http').IncomingMessage — request mentah dari Node
+  base,           // string — origin absolut, mis. 'https://situs.com', untuk menyusun URL penuh
+  bodySizeLimit   // number | undefined — batas ukuran body (byte); lebih dari ini -> ditolak (413)
+}: {
+  request: import('node:http').IncomingMessage;
+  base: string;
+  bodySizeLimit?: number;
+}): Promise<Request>;
+
+// setResponse — web Response  ->  Node ServerResponse
+function setResponse(
+  res: import('node:http').ServerResponse, // objek response Node yang akan ditulisi
+  response: Response                        // Response web-standard dari SvelteKit
+): Promise<void>;
+
+// createReadableStream — file di disk  ->  web ReadableStream (untuk body Response)
+function createReadableStream(
+  file: string                              // path absolut/relatif ke file di disk
+): ReadableStream;
+```
+
+Catatan penting tiap parameter:
+
+- **`base`** — `IncomingMessage` Node hanya membawa `req.url` berupa *path* (`/produk?id=3`), bukan URL lengkap. `getRequest` menggabungkan `base` + path untuk menghasilkan `request.url` yang absolut. Salah mengisi `base` = `request.url`, `url.origin`, dan deteksi same-origin di SvelteKit jadi salah.
+- **`bodySizeLimit`** — opsional. Jika body request melebihi batas, `getRequest` (atau pembacaan stream-nya) menolak dengan error berstatus `413`. Pada adapter-node, nilai default ini diatur lewat env `BODY_SIZE_LIMIT`.
+- **`createReadableStream`** mengembalikan `ReadableStream` web-standard yang bisa langsung dipakai sebagai argumen pertama `new Response(stream)` — jadi file besar dialirkan, bukan dimuat penuh ke RAM.
+
+## 3. Contoh kode
+
+Inti perbatasan itu cuma tiga langkah: **terjemahkan masuk -> proses -> terjemahkan keluar**. Berikut versi sederhana (dan beranotasi) dari apa yang dilakukan adapter-node di setiap request.
+
+```js
+// server.js — server Node minimal yang "berbicara SvelteKit"
+import http from 'node:http';
+import { getRequest, setResponse } from '@sveltejs/kit/node';
+
+// `respond` di dunia nyata berasal dari Server SvelteKit hasil build:
+//   import { Server } from './build/server/index.js';
+//   const app = new Server(manifest); await app.init({ env: process.env });
+//   const respond = (request) => app.respond(request, { getClientAddress });
+// Di sini kita anggap `respond(request) -> Promise<Response>`.
+import { respond } from './my-sveltekit-handler.js';
+
+const server = http.createServer(async (req, res) => {
+  let request;
+  try {
+    // 1) GERBANG MASUK: IncomingMessage Node -> Request web-standard.
+    request = await getRequest({
+      request: req,
+      // origin absolut; di balik proxy gunakan X-Forwarded-* / env ORIGIN.
+      base: 'http://' + req.headers.host,
+      bodySizeLimit: 512 * 1024 // 512 KB; body lebih besar -> ditolak (413)
+    });
+  } catch (err) {
+    // getRequest menolak body yang kebesaran (atau request rusak).
+    res.statusCode = err?.status ?? 400;
+    res.end(err?.reason ?? 'Bad Request');
+    return;
+  }
+
+  // 2) PROSES: serahkan Request ke SvelteKit -> dapat Response web-standard.
+  const response = await respond(request);
+
+  // 3) GERBANG KELUAR: Response web-standard -> tulis ke ServerResponse Node.
+  //    Menyalin status, header, dan men-stream body ke `res`.
+  await setResponse(res, response);
+});
+
+server.listen(3000, () => console.log('http://localhost:3000'));
+```
+
+`createReadableStream` berguna saat handler-mu sendiri perlu mengirim file dari disk sebagai body sebuah `Response` — misalnya endpoint unduhan di `+server.js`:
+
+```js
+// src/routes/unduh/+server.js
+import { createReadableStream } from '@sveltejs/kit/node';
+
+export function GET() {
+  // File besar dialirkan potongan demi potongan, bukan dimuat penuh ke memori.
+  const body = createReadableStream('/var/data/laporan-besar.zip');
+
+  return new Response(body, {
+    headers: {
+      'content-type': 'application/zip',
+      'content-disposition': 'attachment; filename="laporan.zip"'
+    }
+  });
+}
+```
+
+<Callout type="warning">
+<code>createReadableStream</code> hanya tersedia sejak <strong>SvelteKit 2.4.0</strong> dan, sesuai namanya, ini API <em>Node</em> — ia membaca file dari filesystem. Di runtime edge (Cloudflare Workers, Vercel Edge) yang tidak punya akses disk seperti Node, fungsi ini tidak relevan; di sana kamu mengambil aset lewat binding/fetch, bukan path file.
+</Callout>
+
+## 4. Coba sendiri
+
+Karena modul ini butuh server Node yang berjalan (bukan komponen yang bisa dirender di browser), tidak ada live preview di sini. Sebagai gantinya, contoh nyata berikut menunjukkan **kasus paling berguna**: menempelkan handler SvelteKit ke dalam server Express yang sudah ada — sesuatu yang sering dibutuhkan saat kamu migrasi bertahap atau punya middleware/legacy route yang ingin dipertahankan.
+
+```js
+// custom-server.js — Express lama + SvelteKit dalam satu proses
+import express from 'express';
+import { getRequest, setResponse } from '@sveltejs/kit/node';
+import { respond } from './my-sveltekit-handler.js'; // app.respond hasil build
+
+const app = express();
+
+// (a) Route/middleware Express LAMA tetap jalan seperti biasa.
+app.get('/health', (req, res) => res.send('ok'));
+
+// (b) Semua request lain diserahkan ke SvelteKit lewat "perbatasan".
+//     PENTING: JANGAN pasang body-parser (express.json()) sebelum ini —
+//     parser akan menguras stream body, sehingga getRequest dapat body kosong.
+app.use(async (req, res) => {
+  let request;
+  try {
+    request = await getRequest({
+      request: req,
+      base: `${req.protocol}://${req.get('host')}`
+    });
+  } catch (err) {
+    res.status(err?.status ?? 400).end(err?.reason ?? 'Bad Request');
+    return;
+  }
+
+  const response = await respond(request);
+  await setResponse(res, response); // status + header + body -> res
+});
+
+app.listen(3000, () => console.log('http://localhost:3000'));
+```
+
+Tiga hal yang ingin kamu perhatikan dari contoh ini:
+
+1. **`base` dibangun dari request** (`protocol` + `host`) supaya `request.url` di dalam SvelteKit benar — termasuk untuk deteksi origin pada form actions/CSRF.
+2. **Urutan middleware itu krusial.** `getRequest` membaca `req` sebagai stream. Kalau ada middleware sebelumnya (body-parser, multer, dll.) yang sudah membaca stream itu, SvelteKit akan menerima body kosong.
+3. **`setResponse` menutup siklus** — kamu tidak menulis `res.end()` sendiri untuk jalur SvelteKit; `setResponse` yang melakukannya (men-stream body sampai habis).
+
+```text
+DIAGRAM ALUR (satu request)
+───────────────────────────
+Node req (IncomingMessage)
+        │  getRequest({ request, base, bodySizeLimit })
+        ▼
+   web Request  ──►  SvelteKit respond(request)  ──►  web Response
+                                                          │  setResponse(res, response)
+                                                          ▼
+                                              Node res (ServerResponse) ──► klien
+```
+
+## 5. Latihan
+
+<Exercise title="Bangun jembatan getRequest -> respond -> setResponse">
+Lengkapi handler `node:http` di bawah agar setiap request masuk diterjemahkan ke `Request`, diproses oleh `respond` (anggap sudah ada, mengembalikan `Promise<Response>`), lalu hasilnya dikirim balik ke klien. Tambahkan juga batas body 1 MB dan tangani request yang gagal diterjemahkan dengan status `400`.
+
+```js
+import http from 'node:http';
+import { /* ??? */ } from '@sveltejs/kit/node';
+import { respond } from './handler.js';
+
+http.createServer(async (req, res) => {
+  // TODO: 1) terjemahkan req -> Request (base + bodySizeLimit)
+  // TODO: 2) proses lewat respond()
+  // TODO: 3) tulis Response -> res
+}).listen(3000);
+```
+
+{#snippet solution()}
+
+  ```js
+  import http from 'node:http';
+  import { getRequest, setResponse } from '@sveltejs/kit/node';
+  import { respond } from './handler.js';
+
+  http
+    .createServer(async (req, res) => {
+      let request;
+      try {
+        // 1) Gerbang masuk: IncomingMessage -> Request web-standard.
+        request = await getRequest({
+          request: req,
+          base: 'http://' + req.headers.host, // origin untuk URL absolut
+          bodySizeLimit: 1024 * 1024 // 1 MB; lebih -> error 413
+        });
+      } catch (err) {
+        // Body kebesaran / request rusak: balas tanpa menyentuh SvelteKit.
+        res.statusCode = err?.status ?? 400;
+        res.end(err?.reason ?? 'Bad Request');
+        return;
+      }
+
+      // 2) Proses: dapatkan Response web-standard dari SvelteKit.
+      const response = await respond(request);
+
+      // 3) Gerbang keluar: salin status/header + stream body ke res.
+      await setResponse(res, response);
+    })
+    .listen(3000, () => console.log('http://localhost:3000'));
+  ```
+
+  Kunci penilaian: `getRequest` dipanggil dengan objek `{ request, base, bodySizeLimit }` (bukan argumen posisional), `base` berisi origin absolut, error penerjemahan dibalas `400`/`413` tanpa memanggil `respond`, dan `setResponse(res, response)` yang menutup koneksi (bukan `res.end` manual).
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan baca/parse body sebelum <code>getRequest</code>.</strong> <code>IncomingMessage</code> adalah stream sekali-pakai. Kalau middleware sebelumnya — <code>express.json()</code>, <code>body-parser</code>, <code>multer</code> — sudah membaca stream-nya, maka <code>getRequest</code> akan menghasilkan <code>Request</code> dengan body kosong dan <code>await request.json()</code> di dalam <code>load</code>/action-mu akan gantung atau gagal. Saat menempelkan SvelteKit ke server lama, taruh handler SvelteKit <em>sebelum</em> parser body, atau jangan pasang parser global sama sekali.
+</Callout>
+
+<Callout type="pitfall">
+<strong><code>base</code> yang salah merusak banyak hal.</strong> Karena <code>request.url</code> dibangun dari <code>base + req.url</code>, mengisi <code>base</code> dengan nilai keliru (mis. lupa skema <code>https://</code>, atau memakai <code>localhost</code> padahal di balik proxy) membuat <code>url.origin</code>, link absolut, dan pemeriksaan CSRF/same-origin pada form actions jadi salah. Di belakang reverse proxy, ambil host/protokol dari header <code>X-Forwarded-Host</code>/<code>X-Forwarded-Proto</code> (atau set env <code>ORIGIN</code> bila pakai adapter-node) — jangan asal <code>req.headers.host</code>.
+</Callout>
+
+<Callout type="tip">
+<strong>Kamu mungkin tidak butuh modul ini sama sekali.</strong> Untuk deploy Node biasa, cukup pakai <code>@sveltejs/adapter-node</code> — ia sudah memanggil <code>getRequest</code>/<code>setResponse</code> untuk-mu. Bahkan untuk meng-embed ke server lain, adapter-node sudah mengekspor handler siap-pakai di <code>build/handler.js</code> (sebuah middleware bergaya Connect) yang bisa langsung di-<code>app.use()</code>. Gunakan <code>@sveltejs/kit/node</code> langsung hanya saat kamu menulis adapter kustom atau butuh kontrol penuh atas siklus request.
+</Callout>
+
+<Callout type="warning">
+Set <code>bodySizeLimit</code> untuk endpoint yang menerima upload/JSON dari publik. Tanpa batas, satu request bertubuh raksasa bisa menghabiskan memori server. Pada <code>adapter-node</code> batas ini diatur lewat env <code>BODY_SIZE_LIMIT</code> (mis. <code>BODY_SIZE_LIMIT=10M</code>); saat memanggil <code>getRequest</code> manual, kamu yang bertanggung jawab mengisinya.
+</Callout>
+
+<Callout type="legacy">
+Di era <strong>Sapper</strong> (pendahulu SvelteKit) dan tutorial lama, kamu menulis handler bergaya Express yang mengoper <code>req</code>/<code>res</code> Node mentah ke seluruh aplikasi, lengkap dengan <code>body-parser</code> dan <code>res.end()</code> manual. Di SvelteKit 2, aplikasimu bicara <code>Request</code>/<code>Response</code> web-standard; <code>req</code>/<code>res</code> Node hanya muncul di "perbatasan" lewat <code>getRequest</code>/<code>setResponse</code>. Jika menemukan kode lama yang menyebar <code>req.body</code> Node ke mana-mana, itu pola usang — modern-nya, baca body lewat <code>await request.json()</code>/<code>request.formData()</code> pada objek <code>Request</code> standar.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/@sveltejs-kit-node" label="SvelteKit — @sveltejs/kit/node (getRequest, setResponse, createReadableStream)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapter-node" label="SvelteKit — adapter-node (pengguna utama modul ini; handler.js, BODY_SIZE_LIMIT, ORIGIN)" />
+<DocsLink href="https://svelte.dev/docs/kit/writing-adapters" label="SvelteKit — Writing custom adapters (kapan kamu memanggil getRequest/setResponse langsung)" />

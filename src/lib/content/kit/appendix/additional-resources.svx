@@ -1,0 +1,227 @@
+---
+title: Additional resources
+product: kit
+section: appendix
+sectionTitle: Appendix
+sectionOrder: 6
+order: 6
+status: stable
+description: Peta lengkap sumber belajar lanjutan SvelteKit — tutorial interaktif resmi, repo contoh, komunitas Discord, integrasi via sv add, dan kumpulan FAQ.
+docs: https://svelte.dev/docs/kit/additional-resources
+keywords: [additional resources, tutorial, discord, integrations, faq, komunitas]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Modul ini bukan "fitur baru". Ia adalah **peta**: ke mana kamu pergi setelah dokumentasi inti habis kamu baca. Pertanyaan yang dijawab di sini bukan "bagaimana cara kerja `load`", tapi pertanyaan yang muncul *setelah* itu — "aku stuck, tanya ke mana?", "ada contoh aplikasi nyata yang sudah jadi?", "bagaimana nambah Tailwind/Drizzle tanpa salah konfigurasi?", "kenapa tutorial yang kutemukan di Google pakai sintaks yang beda?".
+
+Kunci memakai modul ini: tahu **resource mana untuk masalah mana**. Salah pintu = buang waktu. Bertanya ke Discord untuk hal yang sudah dijawab tuntas di FAQ akan lambat; sebaliknya, menunggu jawaban dari membaca seluruh dokumentasi untuk bug spesifik integrasi juga lambat. Tiap sumber punya "spesialisasi"-nya.
+
+### Analogi: kamu baru pindah ke kota baru
+
+Kamu sudah bisa berkendara (paham React/Vue: konsep komponen, state, routing). Sekarang kamu pindah ke "kota Svelte". Kemampuan dasarmu tetap kepakai — tapi kamu belum hafal **di mana letak fasilitasnya**. Tiap resource SvelteKit adalah satu tempat di kota itu:
+
+- **Tutorial interaktif** = sekolah mengemudi lokal. Bukan karena kamu belum bisa nyetir, tapi karena rambu dan aturan jalan di sini sedikit beda (runes, file-based routing, server vs klien). Setengah hari di sini menghemat berminggu-minggu salah-arah.
+- **Repo contoh** (`realworld`, HackerNews clone, `svelte.dev`) = rumah contoh / *show unit*. Kamu bisa masuk, lihat denah aplikasi sungguhan yang sudah jadi dan dipakai, lalu meniru pola tata-letaknya.
+- **Discord (`/chat`)** = balai warga. Tempat tanya-jawab cepat, ngobrol dengan tetangga, dan tahu kabar terbaru sebelum jadi pengumuman resmi.
+- **`npx sv add`** = toko perlengkapan rumah satu atap. Mau pasang Tailwind, Drizzle, Playwright, atau adapter? Daripada merakit sendiri dari nol dan salah pasang kabel, kamu ambil paket yang sudah dikonfigurasi benar.
+- **FAQ** = papan pengumuman "pertanyaan yang sudah ditanyakan 1000 orang sebelummu". Cek dulu di sini sebelum repot bertanya — jawabannya kemungkinan besar sudah tertempel.
+
+Orang yang datang dari React/Vue sebenarnya sudah kenal "kota" semacam ini: ada tutorial Next.js/Nuxt, ada `create-next-app`/`nuxi`, ada Discord/Stack Overflow, ada `awesome-*` list. Strukturnya sama; yang berubah cuma nama jalan dan etalase tokonya. Modul ini memetakan nama-nama itu supaya kamu tidak nyasar.
+
+### Tabel peta sumber belajar
+
+Anggap ini indeks cepat. Tiap baris dibahas lebih dalam di bawah.
+
+| Kebutuhan | Pergi ke | Catatan |
+| --- | --- | --- |
+| Belajar dari nol, hands-on | Tutorial interaktif resmi (`svelte.dev/tutorial`) | Editor + preview di browser; tak perlu setup lokal |
+| Lihat aplikasi nyata yang sudah jadi | Repo contoh: `sveltejs/realworld`, HackerNews clone, `svelte.dev` | Pola arsitektur "produksi", bukan toy demo |
+| Cari template / starter komunitas | GitHub topic `#sveltekit`, `#sveltekit-template`, Svelte Society | Belum tentu diverifikasi maintainer — cek tanggal & versi |
+| Tanya cepat / diskusi | Discord (`svelte.dev/chat`) | Balai warga; cari dulu sebelum tanya |
+| Tanya yang butuh jejak permanen | Stack Overflow tag `sveltekit` | Bisa di-Google orang lain nanti |
+| Pasang tooling (lint, test, CSS, DB, i18n) | `npx sv add` | Konfigurasi otomatis & benar |
+| Preprocess `<style>`/`<script>` | `vitePreprocess` (bawaan) | PostCSS, SCSS, Less, Stylus, SugarSS |
+| Fitur preprocess lanjutan (Pug, Babel) | `svelte-preprocess` | Install & konfigurasi manual |
+| Masalah umum + tips/trik | SvelteKit FAQ, Svelte FAQ, vite-plugin-svelte FAQ | Cek **sebelum** bertanya |
+
+## 2. Contoh kode
+
+Resource paling "berkode" di sini adalah **integrasi**. Daripada cuma menautkan, mari lihat wujud konkretnya.
+
+### `npx sv add` — toko perlengkapan satu atap
+
+```bash
+# `sv` adalah CLI resmi Svelte (sama yang dipakai `npx sv create` untuk
+# bikin proyek baru). Subcommand `add` menambahkan integrasi ke proyek
+# yang SUDAH ada — ia memasang dependency, menulis config, dan menambal
+# file yang perlu, semua dengan setup yang benar.
+
+# Interaktif: pilih dari menu (prettier, eslint, vitest, playwright,
+# tailwind, drizzle, paraglide, mdsvex, storybook, better-auth, mcp, ...).
+npx sv add
+
+# Atau sebutkan langsung beberapa sekaligus (non-interaktif):
+npx sv add tailwindcss drizzle vitest
+
+# Tiap integrasi tahu cara memodifikasi svelte.config.js / vite.config.js
+# milikmu tanpa kamu menebak-nebak urutan plugin atau opsi yang benar.
+```
+
+### `vitePreprocess` — preprocessing bawaan
+
+```js
+// svelte.config.js
+// vitePreprocess sudah disertakan saat proyek dibuat lewat `npx sv create`.
+// Ia memproses <style> dan <script> di file .svelte: mendukung
+// PostCSS, SCSS, Less, Stylus, dan SugarSS — cukup install dependency-nya
+// (mis. `npm i -D sass`) lalu pakai lang="scss" di <style>.
+import adapter from '@sveltejs/adapter-auto';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	preprocess: vitePreprocess(),
+	kit: { adapter: adapter() }
+};
+
+export default config;
+```
+
+```js
+// Untuk Svelte 5, TypeScript di markup ditangani sendiri oleh compiler,
+// jadi vitePreprocess() cukup polos seperti di atas. Opsi { script: true }
+// HANYA diperlukan untuk proyek pra-Svelte-5 atau fitur TS lanjutan yang
+// "memancarkan" kode (mis. enum, decorator eksperimental).
+vitePreprocess({ script: true });
+```
+
+### Mengambil repo contoh untuk dipelajari
+
+```bash
+# Repo contoh resmi adalah aplikasi sungguhan, bukan demo mainan.
+# `sveltejs/realworld` = klon situs blog lengkap (auth, CRUD, pagination)
+# yang mengikuti spesifikasi "RealWorld" — pas untuk membandingkan pola
+# antar-framework karena versi React/Vue/dll-nya juga ada.
+
+git clone https://github.com/sveltejs/realworld.git
+cd realworld
+npm install
+npm run dev   # bedah strukturnya: routes/, +page.server.js, hooks, dll.
+```
+
+## 3. Coba sendiri
+
+Modul ini soal CLI dan tautan, jadi tidak ada live playground. Sebagai gantinya, ini **alur nyata** dari nol sampai siap ngoding — memakai resource di atas secara berurutan, beranotasi.
+
+```bash
+# 1) Scaffold proyek baru dengan CLI resmi.
+#    Wizard akan menanyakan: template (minimal/demo/library), TypeScript,
+#    dan tooling awal (prettier, eslint, vitest, playwright).
+npx sv create my-app
+cd my-app
+
+# 2) Tambah integrasi yang tadi belum dipilih, kapan pun, tanpa setup manual.
+#    Misal sekarang kamu mau Tailwind + Drizzle (ORM) + mdsvex (markdown).
+npx sv add tailwindcss drizzle mdsvex
+
+# 3) Jalankan dev server.
+npm run dev
+```
+
+```text
+# 4) Saat stuck, gunakan resource sesuai jenis masalahnya:
+#
+#    - "Kok `window is not defined`?"            -> SvelteKit FAQ (kemungkinan
+#                                                   besar sudah ada jawabannya)
+#    - "Bagaimana orang lain menata folder auth?" -> repo contoh `realworld`
+#    - "Bug aneh khusus kombinasi versi-ku"       -> Discord (svelte.dev/chat),
+#                                                   sertakan reproduksi minimal
+#    - "Butuh referensi permanen ber-SEO"         -> Stack Overflow tag sveltekit
+#
+# 5) Sebelum bertanya di Discord/SO: cari dulu. Mayoritas pertanyaan pemula
+#    sudah terjawab di FAQ atau thread lama. Komunitas mengandalkan ini agar
+#    tetap "scalable" — makin sedikit pertanyaan duplikat, makin banyak energi
+#    untuk masalah yang benar-benar baru.
+```
+
+<Callout type="tip">
+Kalau kamu cuma punya waktu untuk <strong>satu</strong> resource, pilih <strong>tutorial interaktif resmi</strong> di <code>svelte.dev/tutorial</code>. Ia berjalan penuh di browser (editor + preview, tanpa setup lokal), urut dari Svelte dasar sampai SvelteKit (routing, <code>load</code>, form actions), dan selalu memakai sintaks Svelte 5 terbaru. Untuk yang sudah paham React/Vue, ini cara tercepat memetakan konsep yang sudah kamu kuasai ke padanannya di Svelte.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Pilih pintu yang benar">
+Untuk tiap situasi, tentukan resource mana yang paling tepat dituju <strong>pertama kali</strong>, dan kenapa. Hindari jawaban malas "tanya Discord" untuk semuanya.
+
+1. Kamu baru saja menyelesaikan dokumentasi inti dan ingin membangun "muscle memory" lewat latihan berpemandu sebelum proyek beneran.
+2. Kamu butuh menambahkan unit testing (Vitest) dan formatter (Prettier) ke proyek SvelteKit yang sudah berjalan, tanpa salah konfigurasi.
+3. `npm run dev` melempar `document is not defined` — terdengar seperti masalah SSR yang sangat umum.
+4. Kamu ingin melihat bagaimana sebuah aplikasi SvelteKit "produksi" menata autentikasi, CRUD, dan pagination dalam satu repo utuh.
+5. Kamu menemukan template komunitas keren di GitHub, tapi ragu apakah aman dijadikan fondasi.
+
+{#snippet solution()}
+
+  ```text
+  1. Tutorial interaktif resmi (svelte.dev/tutorial).
+     Dirancang persis untuk latihan berpemandu, jalan di browser, sintaks
+     Svelte 5 terbaru. Lebih efektif daripada langsung bikin proyek besar.
+
+  2. `npx sv add vitest prettier`.
+     Integrasi resmi memasang dependency + menulis config yang benar.
+     Lebih aman daripada merakit manual dan menebak opsi plugin.
+
+  3. SvelteKit FAQ lebih dulu.
+     "document is not defined" adalah keluhan SSR klasik yang sudah dibahas
+     tuntas (bungkus akses browser-API di onMount / `if (browser)`).
+     Bertanya di Discord untuk ini lambat & menambah duplikat.
+
+  4. Repo contoh resmi: sveltejs/realworld.
+     Itu memang klon blog lengkap (auth, CRUD, pagination) — show unit
+     untuk meniru pola arsitektur produksi.
+
+  5. Periksa dulu, jangan langsung pakai.
+     Template di topic #sveltekit / #sveltekit-template & Svelte Society
+     TIDAK divetting maintainer. Cek tanggal commit terakhir dan apakah
+     sudah Svelte 5 (cari `export let` / `$:` / `on:click` = pertanda
+     Svelte 4 yang perlu diterjemahkan).
+  ```
+
+  Inti pelajaran: tiap resource punya spesialisasi. Tutorial untuk latihan,
+  `sv add` untuk tooling, FAQ untuk masalah umum, repo contoh untuk pola
+  arsitektur, dan komunitas untuk yang benar-benar baru/spesifik. Memilih
+  pintu yang tepat jauh lebih cepat daripada satu pintu untuk segalanya.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+<strong>Contoh komunitas belum tentu mutakhir.</strong> Repo di bawah topic <code>#sveltekit</code>/<code>#sveltekit-template</code> dan listing di Svelte Society <em>tidak</em> divetting tim inti. Banyak yang ditulis di era Svelte 4. Sebelum menyalin, cek tanggal commit dan endus sintaks lama. Hanya repo resmi <code>sveltejs/*</code> yang relatif aman dijadikan acuan terkini.
+</Callout>
+
+<Callout type="legacy">
+Saat berburu tutorial/blog lewat Google, kamu akan sering mendarat di konten Svelte 4. Penanda cepat: <code>export let</code> (kini <code>let &#123; ... &#125; = $props()</code>), <code>$:</code> reactive statement (kini <code>$derived</code>/<code>$effect</code>), <code>on:click</code> (kini atribut <code>onclick</code>), dan <code>&lt;slot&gt;</code> (kini <code>&#123;@render ...&#125;</code> + snippet). Kalau menemukannya, anggap itu materi lama dan terjemahkan ke API runes — jangan ikuti mentah-mentah.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Bertanya tanpa mencari dulu.</strong> Dokumentasi resmi secara eksplisit meminta komunitas mencari resource yang ada sebelum memposting pertanyaan — supaya komunitas tetap "scalable". Sebelum bertanya di Discord/Stack Overflow: cek FAQ, telusuri thread lama, dan saat akhirnya bertanya, sertakan <strong>reproduksi minimal</strong> (potongan kode terkecil yang memicu masalah) plus versi Svelte/SvelteKit. Itu memperbesar peluang dapat jawaban berkali-kali lipat.
+</Callout>
+
+<Callout type="tip">
+Untuk preprocessing CSS biasa (SCSS/Less/PostCSS/Stylus/SugarSS), cukup <code>vitePreprocess</code> bawaan — tidak perlu <code>svelte-preprocess</code>. Pasang <code>svelte-preprocess</code> hanya kalau butuh fitur ekstra yang tak ditangani <code>vitePreprocess</code>, seperti <strong>Pug</strong>, <strong>Babel</strong>, atau global styles, dan siap mengonfigurasinya manual. Untuk daftar integrasi pihak ketiga yang lebih luas, lihat list komunitas <code>sveltejs/integrations</code> dan <a href="https://sveltesociety.dev/" target="_blank" rel="noreferrer">Svelte Society</a>.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/additional-resources" label="SvelteKit — Additional resources (FAQ, contoh, dukungan)" />
+<DocsLink href="https://svelte.dev/tutorial" label="Svelte & SvelteKit — Tutorial interaktif resmi (mulai dari sini)" />
+<DocsLink href="https://svelte.dev/chat" label="Discord komunitas Svelte (svelte.dev/chat)" />
+<DocsLink href="https://svelte.dev/docs/kit/integrations" label="SvelteKit — Integrations (vitePreprocess, sv add, svelte-preprocess)" />
+<DocsLink href="https://svelte.dev/docs/kit/faq" label="SvelteKit — Frequently asked questions" />

@@ -1,0 +1,256 @@
+---
+title: Browser support
+product: svelte
+section: misc
+sectionTitle: Misc
+sectionOrder: 7
+order: 5
+status: stable
+description: Browser mana saja yang didukung Svelte 5 (Baseline 2020), fitur JavaScript yang diasumsikan, polyfill, dan pertimbangan untuk browser lawas.
+docs: https://svelte.dev/docs/svelte/browser-support
+keywords: [browser-support, baseline, polyfill, proxy, legacy-browser]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Setiap framework punya "garis bawah": browser paling tua yang masih dijamin bisa menjalankan hasil kerjamu. Di luar garis itu, framework tidak menjanjikan apa-apa — aplikasimu mungkin error, mungkin tampil rusak, atau bahkan layar putih total. Memahami garis bawah ini penting supaya kamu tidak janji ke klien "jalan di semua browser" padahal kenyataannya tidak.
+
+### Analogi: stiker "minimum system requirements"
+
+Ingat stiker di kotak game PC: *"Butuh Windows 10, RAM 8GB, GPU sekian"*? Itu bukan basa-basi — di bawah spesifikasi itu, game-nya benar-benar tidak jalan. Dukungan browser Svelte adalah stiker yang sama persis, tapi untuk browser. Svelte 5 menempelkan stiker bertuliskan **"Baseline 2020"** — kira-kira: *butuh browser yang dirilis sekitar tahun 2020 atau lebih baru*.
+
+"Baseline" sendiri bukan istilah karangan Svelte. Itu standar industri (didorong oleh web.dev / browser vendor) yang menandai: *fitur web ini sudah didukung merata di semua browser besar sejak tanggal X*. Dengan menyebut "Baseline 2020", Svelte sebenarnya bilang: *"saya hanya memakai fitur web yang sudah aman dipakai di mana-mana sejak 2020."*
+
+### Tabel browser yang didukung
+
+Inilah versi minimum tiap browser untuk menjalankan **Svelte 5 itu sendiri**:
+
+| Browser | Versi minimum |
+| --- | --- |
+| Chrome / Edge | 87 |
+| Firefox | 83 |
+| Safari | 14 |
+| Opera | 73 |
+| Opera (Android) | 62 |
+| Samsung Internet | 14.0 |
+| Android WebView | 87 |
+| Internet Explorer | **Tidak didukung** |
+
+Angka-angka ini tidak ditarik dari topi. Mengutip docs, daftar ini *"derived from the browser APIs used by Svelte's internal code"* — yaitu disuling dari API browser apa saja yang dipakai mesin internal Svelte. Versi minimum sebuah browser = versi pertama yang sudah punya **semua** API yang Svelte butuhkan.
+
+### Mengapa Internet Explorer mati total di Svelte 5
+
+Ini pertanyaan paling sering muncul dari developer yang pindah dari Svelte 4 (atau React/Vue lama): *"kok IE11 sekarang tidak bisa sama sekali?"*
+
+Jawabannya satu kata: **`Proxy`**. Sistem reaktivitas Svelte 5 — runes seperti `$state` — dibangun di atas objek `Proxy` JavaScript. Ketika kamu menulis `let user = $state({ name: 'Rizki' })`, Svelte membungkus objek itu dengan `Proxy` supaya bisa mendeteksi kapan kamu membaca atau menulis `user.name`.
+
+Analogikan `Proxy` sebagai **resepsionis** yang berdiri di depan sebuah objek: setiap kali ada yang mau mengakses properti, resepsionis itu mencegat dulu, mencatat, baru meneruskan. Reaktivitas Svelte 5 bergantung total pada resepsionis ini. Masalahnya, `Proxy` adalah fitur bahasa yang **tidak bisa di-polyfill** — kamu tidak bisa "menambal" resepsionis dari luar kalau mesinnya memang tidak punya slot untuknya. IE11 lahir jauh sebelum `Proxy` ada, jadi tidak ada cara apa pun membuat Svelte 5 jalan di sana. Titik.
+
+Bandingkan dengan Svelte 3/4: reaktivitasnya dikerjakan saat **compile** (compiler menyuntik kode update manual), bukan saat runtime via `Proxy`. Karena itu Svelte 4 masih bisa ditranspilasi untuk IE11. Svelte 5 menukar kompatibilitas itu dengan reaktivitas yang jauh lebih mulus — sebuah trade-off yang sama persis dengan langkah React dan Vue.
+
+> Buat kamu yang dari React/Vue: ini pola yang sudah kamu kenal. **Vue 3** menjatuhkan IE11 (Vue 2 masih menjangkaunya lewat build terpisah), dan **React 18+** juga resmi melepas IE. Vue 3 bahkan menjatuhkannya karena alasan yang sama: reaktivitas berbasis `Proxy`. Svelte 5 cuma ikut arus yang sama.
+
+### Fitur yang butuh browser lebih baru dari baseline
+
+Sebagian kecil fitur Svelte memakai API yang baru muncul **setelah** 2020, jadi butuh versi browser lebih tinggi dari tabel di atas. Kalau kamu memakai salah satunya, baseline efektif aplikasimu ikut naik:
+
+| Fitur Svelte | Butuh versi lebih tinggi |
+| --- | --- |
+| `$state.snapshot(...)` | Chrome/Edge 98+, Firefox 94+, Safari 15.4+ |
+| `bind:devicePixelContentBoxSize` | Firefox 93+; **tidak didukung** di Safari |
+| Animasi `flip` (`svelte/animate`) | Firefox 126+ |
+
+`$state.snapshot` naik karena di balik layar ia memakai `structuredClone()` — API deep-clone bawaan browser yang baru merata di 2022. Jadi kalau target kamu Safari 14, memakai `$state.snapshot` akan pecah meski Svelte intinya jalan.
+
+### Ruang lingkup: tabel ini cuma soal Svelte inti
+
+Ini batas penting yang sering disalahpahami. Docs menegaskan: *"This table only covers Svelte itself. It does not include SvelteKit, other Svelte libraries, or your own code."*
+
+Artinya garis bawah aplikasimu adalah **yang tertinggi** di antara empat hal:
+
+1. **Svelte inti** — Baseline 2020 (tabel di atas).
+2. **SvelteKit** — punya kebutuhannya sendiri (mis. service worker, `fetch`, dsb).
+3. **Library lain** yang kamu pasang — bisa lebih galak.
+4. **Kode kamu sendiri** — kalau kamu menulis `array.at(-1)` atau optional chaining yang tidak ditranspilasi, kamu sendiri yang menaikkan baseline.
+
+Svelte cuma bertanggung jawab atas poin 1. Tiga sisanya ada di tanganmu.
+
+## 2. Contoh kode
+
+Dukungan browser sebagian besar soal **konfigurasi build**, bukan kode komponen. Tiga hal di bawah ini yang biasa kamu sentuh.
+
+```js
+// vite.config.js
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	plugins: [sveltekit()],
+	build: {
+		// Default Vite untuk target = 'modules': browser yang mendukung
+		// ES modules native, dynamic import, dan import.meta.
+		// Kebetulan rentang itu (Chrome 87, Firefox 83, Safari 14, dst)
+		// SELARAS dengan Baseline 2020 yang ditarget Svelte 5 —
+		// jadi setup SvelteKit default biasanya SUDAH pas tanpa diutak-atik.
+		//
+		// Override eksplisit hanya kalau kamu perlu menyebut versi tertentu:
+		target: ['chrome87', 'edge88', 'firefox83', 'safari14']
+	}
+});
+```
+
+```jsonc
+// package.json (cuplikan) — daftar browserslist
+// Dipakai oleh banyak tooling (autoprefixer, dll) untuk tahu target kamu.
+// CATATAN: Vite TIDAK membaca ini untuk build.target secara default
+// (beda dari Create React App). Ini lebih ke "dokumentasi niat" + dipakai PostCSS.
+{
+	"browserslist": [
+		"defaults",   // preset standar browserslist (browser populer, versi mutakhir-ish)
+		"not IE 11"   // tegaskan: IE 11 di luar cakupan (Svelte 5 memang tak bisa ke sana)
+	]
+}
+```
+
+```js
+// Feature detection: jangan asumsikan API "baru" selalu ada.
+// Contoh: $state.snapshot butuh structuredClone (Safari 15.4+).
+// Kalau kamu menargetkan browser lebih tua, deteksi dulu sebelum pakai.
+function snapshotAman(value) {
+	if (typeof structuredClone === 'function') {
+		// Browser modern: pakai jalur cepat & benar.
+		return structuredClone(value);
+	}
+	// Fallback untuk browser lawas (hanya valid untuk data JSON-serializable:
+	// tanpa fungsi, Date, Map, Set, dll).
+	return JSON.parse(JSON.stringify(value));
+}
+```
+
+## 3. Coba sendiri
+
+Karena topik ini menyangkut build & konfigurasi (bukan satu komponen yang bisa jalan di live preview), kita berlatih dengan langkah yang bisa kamu jalankan di terminal proyekmu sendiri.
+
+```bash
+# 1. Lihat daftar browser NYATA yang dicakup konfigurasi browserslist-mu.
+#    Perintah ini membaca field "browserslist" di package.json (atau .browserslistrc).
+npx browserslist
+
+# Contoh keluaran:
+#   chrome 126
+#   edge 126
+#   firefox 127
+#   safari 17.5
+#   ... dst
+
+# 2. Uji sebuah query secara langsung tanpa mengubah config:
+npx browserslist "defaults, not IE 11"
+
+# 3. Lihat data statistik penggunaan untuk query tertentu:
+npx browserslist --coverage "defaults"
+# -> "These browsers account for 92% of global usage" (contoh)
+```
+
+```js
+// 4. Cek cepat di console browser apakah ENGINE-nya sanggup menjalankan Svelte 5.
+//    Inti reaktivitas Svelte 5 = Proxy. Kalau ini false, Svelte 5 mustahil jalan.
+console.log('Proxy didukung?', typeof Proxy === 'function');
+
+// API tambahan yang dipakai fitur tertentu:
+console.log('structuredClone (untuk $state.snapshot)?', typeof structuredClone === 'function');
+console.log('ResizeObserver (untuk sebagian bind:)?', typeof ResizeObserver === 'function');
+```
+
+Coba jalankan `npx browserslist` di proyekmu, lalu cocokkan keluarannya dengan tabel di bagian 1. Kalau ada browser di keluaranmu yang versinya **di bawah** baseline Svelte (mis. Safari 13), itu sinyal bahwa konfigurasi browserslist-mu menjanjikan dukungan yang Svelte inti sendiri tidak berikan — perketat query-nya.
+
+## 4. Latihan
+
+<Exercise title="Tentukan baseline aplikasi & atur build target">
+
+Aplikasi dashboard internal perusahaan harus dijamin jalan di **Safari 14** dan **Chrome 87** (kebijakan IT, perangkat lama tidak bisa di-upgrade). Jawab tiga hal:
+
+1. Apakah **Svelte 5 inti** mendukung dua target itu?
+2. Kamu ingin memakai `$state.snapshot()` untuk men-deep-clone state sebelum mengirim ke API. Aman di target itu? Kalau tidak, apa solusinya?
+3. Tulis konfigurasi `build.target` di `vite.config.js` yang sesuai.
+
+{#snippet solution()}
+
+**1. Apakah Svelte 5 inti mendukungnya?**
+
+Ya, dan keduanya tepat menyentuh garis bawah: Chrome 87 dan Safari 14 adalah **versi minimum** persis yang ada di tabel Baseline 2020. Jadi Svelte intinya aman — tapi tidak ada ruang turun lebih jauh.
+
+**2. Apakah `$state.snapshot()` aman?**
+
+Tidak. `$state.snapshot` butuh **Safari 15.4+** (karena memakai `structuredClone` di balik layar), sedangkan target kita Safari 14. Di Safari 14 pemanggilannya akan gagal. Solusi:
+
+- **Hindari** `$state.snapshot`, atau
+- **Polyfill** `structuredClone`, atau
+- **Deep-clone manual** untuk data sederhana (JSON-serializable):
+
+```js
+function snapshotAman(value) {
+	return typeof structuredClone === 'function'
+		? structuredClone(value)
+		: JSON.parse(JSON.stringify(value)); // cukup untuk objek/array biasa
+}
+```
+
+**3. Konfigurasi `vite.config.js`:**
+
+```js
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	plugins: [sveltekit()],
+	build: {
+		// Sebut versi minimum secara eksplisit supaya esbuild
+		// menurunkan sintaks JS agar dimengerti Safari 14 & Chrome 87.
+		target: ['chrome87', 'safari14']
+	}
+});
+```
+
+**Kunci:** `build.target` menurunkan **sintaks** JS (mis. optional chaining ditranspilasi), tapi TIDAK otomatis menambahkan **polyfill API** seperti `structuredClone`. Itulah kenapa poin 2 tetap harus ditangani terpisah — dua hal yang berbeda.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Internet Explorer 11 mustahil di Svelte 5 — bukan "sulit", tapi mustahil.</strong> Reaktivitas runes (<code>$state</code>) dibangun di atas <code>Proxy</code>, dan <code>Proxy</code> tidak bisa di-polyfill. Jangan habiskan waktu mencari "mode legacy" seperti Svelte 4 — sudah dihapus. Kalau klien benar-benar wajib IE11, pilihanmu adalah framework lain atau tetap di Svelte 4.
+</Callout>
+
+<Callout type="warning">
+<strong>Tabel dukungan hanya mencakup Svelte inti.</strong> Baseline asli aplikasimu = yang TERTINGGI di antara Svelte inti, SvelteKit, library pihak ketiga, dan kode kamu sendiri. Kalau kamu menulis <code>arr.at(-1)</code> atau <code>Object.hasOwn(...)</code> tanpa transpilasi, kamu sendiri yang menaikkan baseline — bukan salah Svelte.
+</Callout>
+
+<Callout type="tip">
+<strong><code>build.target</code> (transpilasi sintaks) ≠ polyfill (menambah API).</strong> Menurunkan <code>build.target</code> ke <code>'safari14'</code> membuat esbuild menulis ulang sintaks baru jadi sintaks lama, TAPI tidak menambahkan <code>structuredClone</code>, <code>ResizeObserver</code>, atau API browser lain yang hilang. Untuk API yang hilang, kamu butuh polyfill terpisah atau feature detection.
+</Callout>
+
+<Callout type="tip">
+<strong>Hati-hati fitur ber-baseline lebih tinggi.</strong> <code>$state.snapshot</code> (butuh Safari 15.4+), <code>bind:devicePixelContentBoxSize</code> (tidak ada di Safari sama sekali), dan animasi <code>flip</code> (Firefox 126+) diam-diam menaikkan kebutuhan browser. Kalau target kamu lawas, cek dulu sebelum memakainya.
+</Callout>
+
+<Callout type="warning">
+<strong><code>@vitejs/plugin-legacy</code> tidak menyelamatkan IE11.</strong> Plugin ini membuat bundle legacy + polyfill untuk browser tua, dan berguna untuk menjangkau browser <em>di bawah</em> target default Vite. Tapi ia tetap tidak bisa membuat Svelte 5 jalan di IE11, karena <code>Proxy</code> tetap tak bisa di-polyfill. Plugin ini menolong kode <em>kamu</em>, bukan engine Svelte.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'Svelte 4: reaktivitas saat compile -> bisa ditranspilasi ke IE11', modern: 'Svelte 5: reaktivitas runtime via Proxy -> Baseline 2020, IE11 dihapus', note: 'Proxy tidak bisa di-polyfill; ini trade-off yang sama dengan Vue 3 & React 18.' },
+	{ legacy: 'Mode/legacy build untuk browser sangat tua', modern: 'build.target Vite (default "modules") sudah selaras Baseline 2020', note: 'Setup SvelteKit default umumnya tak perlu diubah.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/browser-support" label="Browser support — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/$state#$state.snapshot" label="$state.snapshot — referensi rune (catatan dukungan browser)" />

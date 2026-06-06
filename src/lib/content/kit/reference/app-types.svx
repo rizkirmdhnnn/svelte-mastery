@@ -1,0 +1,302 @@
+---
+title: $app/types
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 13
+status: reference
+description: Tipe TypeScript yang di-generate SvelteKit dari struktur rutemu — RouteId, RouteParams, LayoutParams, Pathname, ResolvedPathname, dan Asset — untuk path, params, dan aset yang type-safe.
+docs: https://svelte.dev/docs/kit/$app-types
+keywords: [app-types, RouteId, RouteParams, Pathname, Asset, type-safe]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/types` adalah modul virtual yang isinya **bukan kode yang jalan**, melainkan sekumpulan **tipe TypeScript yang di-generate SvelteKit dari struktur folder rutemu**. Tidak ada fungsi, tidak ada konstanta, tidak ada objek reaktif — hanya tipe. Tugasnya satu: membuat string-string penting di aplikasimu (route id, pathname, dan nama aset) **diketahui compiler**, bukan sekadar `string` buram.
+
+Kenapa ini perlu? Di SvelteKit, rute "ditulis" sebagai folder dan file (`src/routes/blog/[slug]/+page.svelte`). Router tahu persis route mana yang ada. Tapi TypeScript, secara default, **tidak** tahu apa-apa: kalau kamu menulis `goto('/bolg')` (salah ketik), bagi TypeScript itu cuma `string` yang valid — error baru ketahuan saat runtime, saat user mengklik dan dapat 404. `$app/types` menutup celah ini: SvelteKit **membaca filesystem rutemu** lalu menerbitkan **union literal type** berisi semua route/path/aset yang benar-benar ada. Hasilnya, salah ketik path jadi **error saat compile**, dan kalau kamu me-rename sebuah route, semua link yang patah ikut menyala merah di editor.
+
+### Analogi: papan direktori gedung yang dicetak ulang otomatis
+
+Bayangkan kantormu punya papan direktori di lobi yang mencantumkan **setiap ruangan yang benar-benar ada**. Setiap kali ada ruangan baru dibangun atau dipindah, petugas langsung mencetak ulang papan itu. Kalau kamu menyuruh kurir mengantar dokumen ke "Ruang 9Z" yang tidak tercantum, satpam di lobi (TypeScript) menahannya **sebelum** dia nyasar berputar-putar di lantai atas (runtime).
+
+`$app/types` adalah papan direktori itu. Bukan kamu yang menulisnya — SvelteKit yang mencetak ulang dari struktur folder `src/routes` (dan folder `static`) setiap kali ada perubahan. Karena papannya selalu sinkron dengan gedung sungguhan, "alamat" yang tidak ada langsung ketahuan.
+
+### Buat yang datang dari React/Vue
+
+Idenya sama dengan **typed routes** yang belakangan populer di ekosistem lain:
+
+- Di Next.js ada `experimental.typedRoutes` yang membuat `<Link href>` hanya menerima route yang ada.
+- Di komunitas React ada **TanStack Router** yang terkenal karena route-nya fully type-safe.
+- Di Vue ada **unplugin-vue-router** yang men-generate tipe untuk `router.push()`.
+
+`$app/types` adalah versi bawaan SvelteKit dari ide itu — kamu tidak perlu plugin tambahan, tipe-nya muncul otomatis dari konvensi file-based routing.
+
+### Jangan tertukar dengan `./$types`
+
+Ini sumber kebingungan paling umum, jadi pegang baik-baik:
+
+- **`./$types`** (impor relatif, mis. `import type { PageData } from './$types'`) adalah tipe **per-route**: `PageData`, `PageLoad`, `LayoutData`, params milik route ITU saja. Hanya berlaku di dalam satu folder route.
+- **`$app/types`** (impor absolut) adalah tipe **se-aplikasi**: union dari **semua** route id, **semua** pathname, **semua** aset di seluruh app. Dipakai dari tempat yang generik — komponen nav bersama, util di `$lib`, store — yang tidak "tahu" sedang berada di route mana.
+
+Aturan praktis: butuh data/params milik satu route tertentu → `./$types`. Butuh menyebut sembarang route/path/aset dari kode bersama → `$app/types`.
+
+## 2. Ringkasan API
+
+`$app/types` mengekspor **enam tipe** (tersedia sejak **SvelteKit 2.26**). Semuanya tipe murni, jadi selalu impor dengan `import type`:
+
+```ts
+import type {
+	RouteId,
+	RouteParams,
+	LayoutParams,
+	Pathname,
+	ResolvedPathname,
+	Asset
+} from '$app/types';
+```
+
+| Tipe | Parameter | Menghasilkan |
+| --- | --- | --- |
+| `RouteId` | — | Union literal **semua id route** (bentuk pola), mis. `'/blog/[slug]'`. Strict — tanpa escape hatch. |
+| `RouteParams<T>` | `T extends RouteId` | Objek params untuk route `T`. `RouteParams<'/blog/[slug]'>` → `{ slug: string }`. |
+| `LayoutParams<T>` | `T extends RouteId` | Seperti `RouteParams`, plus params dari route **anak** sebagai **opsional**. |
+| `Pathname` | — | Union **path konkret** yang bisa dinavigasi (tanpa prefix `base`). |
+| `ResolvedPathname` | — | `Pathname` yang **mungkin diberi prefix `base`**. Ini tipe dari `page.url.pathname`. |
+| `Asset` | — | Union nama file di folder `static/`. Punya escape hatch `(string & {})`. |
+
+Bentuk yang di-generate kira-kira seperti ini — kamu **tidak** menulisnya; SvelteKit yang membuatnya di `.svelte-kit/types`:
+
+```ts
+// Ilustrasi untuk app dengan route: '/', '/blog', '/blog/[slug]', '/produk/[id]'
+
+type RouteId =
+	| '/'
+	| '/blog'
+	| '/blog/[slug]'
+	| '/produk/[id]';
+
+type RouteParams<T extends RouteId> = /* tergantung T */ | Record<string, never>;
+// RouteParams<'/blog/[slug]'>  ->  { slug: string }
+// RouteParams<'/'>             ->  Record<string, never>  (artinya: objek kosong)
+
+type LayoutParams<T extends RouteId> = /* params route ini + anak (opsional) */;
+// LayoutParams<'/blog'>  ->  { slug?: string }   (slug datang dari anak '/blog/[slug]')
+
+type Pathname =
+	| '/'
+	| '/blog'
+	| `/blog/${string}`
+	| `/produk/${string}`;
+
+type ResolvedPathname = `${'' | `/${string}`}${Pathname}`;
+// = Pathname, mungkin diawali base path (mis. '/docs' saat app dipasang di sub-path)
+
+type Asset =
+	| '/favicon.png'
+	| '/robots.txt'
+	| (string & {}); // escape hatch: tetap kasih autocomplete, tapi izinkan string dinamis
+```
+
+### Siapa yang "memakai" tipe-tipe ini?
+
+Tipe ini bukan untuk dipajang — pemakai utamanya adalah dua fungsi dari `$app/paths`:
+
+```ts
+// resolve(): bangun path type-safe. Dua bentuk pemanggilan:
+function resolve(pathname: Pathname): ResolvedPathname;
+function resolve<T extends RouteId>(routeId: T, params: RouteParams<T>): ResolvedPathname;
+
+// asset(): ubah referensi aset jadi URL final (dengan base/assets yang benar).
+function asset(file: Asset): string;
+```
+
+Jadi `RouteId`/`RouteParams`/`Pathname` adalah "bahasa" yang dimengerti `resolve()`, dan `Asset` adalah "bahasa" `asset()`. Hasil `resolve()` selalu bertipe `ResolvedPathname`, yang cocok dipasang ke `href`, `goto()`, dan dibandingkan dengan `page.url.pathname`.
+
+## 3. Contoh kode
+
+```svelte
+<!-- src/lib/components/Nav.svelte — link & ikon yang dicek tipe -->
+<script lang="ts">
+	import { resolve, asset } from '$app/paths';
+	import type { Pathname, Asset } from '$app/types';
+
+	// `Pathname` = path konkret yang valid; `Asset` = file yang ADA di static/.
+	type Item = { to: Pathname; label: string; icon: Asset };
+
+	const items: Item[] = [
+		{ to: '/', label: 'Beranda', icon: '/icons/home.svg' },
+		{ to: '/blog', label: 'Blog', icon: '/icons/blog.svg' }
+		// { to: '/blgo', ... }  <- salah ketik: ERROR compile, '/blgo' bukan Pathname
+	];
+</script>
+
+<nav>
+	{#each items as item}
+		<!-- resolve(): Pathname -> ResolvedPathname (diberi prefix `base` bila ada) -->
+		<a href={resolve(item.to)}>
+			<img src={asset(item.icon)} alt="" width="16" height="16" />
+			{item.label}
+		</a>
+	{/each}
+</nav>
+```
+
+```ts
+// src/lib/links.ts — RouteParams<T> untuk mengetik params route dinamis
+import { resolve } from '$app/paths';
+import type { RouteParams } from '$app/types';
+
+// RouteParams<'/blog/[slug]'> = { slug: string }
+// Pakai untuk mengetik objek params yang kamu simpan / oper antar fungsi.
+const params: RouteParams<'/blog/[slug]'> = { slug: 'rilis-svelte-5' };
+
+// resolve() SUDAH type-safe: route id + params dicek BERSAMA.
+export const url = resolve('/blog/[slug]', params); // -> ResolvedPathname
+
+// ❌ resolve menolak params yang tidak cocok untuk route-nya:
+//    resolve('/blog/[slug]', { id: '1' });    // butuh { slug: string }
+// ❌ dan menolak route id yang tidak ada:
+//    resolve('/blgo/[slug]', { slug: 'x' });  // '/blgo/[slug]' bukan RouteId
+```
+
+```ts
+// src/lib/layout-params.ts — beda RouteParams vs LayoutParams
+import type { RouteParams, LayoutParams } from '$app/types';
+
+// Sebuah +layout di '/blog' "memayungi" anak '/blog/[slug]'.
+// Dari sudut pandang LAYOUT, `slug` belum tentu ada (tergantung anak mana yang dibuka),
+// makanya LayoutParams membuatnya OPSIONAL:
+
+type R = RouteParams<'/blog'>;   // {} — route '/blog' sendiri tak punya segmen dinamis
+type L = LayoutParams<'/blog'>;  // { slug?: string } — params anak, jadi opsional
+
+// Inilah kenapa di +layout.svelte, params anak selalu kamu cek dulu sebelum dipakai.
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — ResolvedPathname untuk active-link yang konsisten -->
+<script lang="ts">
+	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
+
+	let { children } = $props();
+
+	// page.url.pathname bertipe ResolvedPathname (sudah termasuk `base` bila ada).
+	// Karena resolve() juga mengembalikan ResolvedPathname, perbandingan ini
+	// "apel ketemu apel" secara tipe — tidak ada bug base path yang lolos diam-diam.
+	function isActive(path: ResolvedPathname) {
+		return page.url.pathname === path;
+	}
+</script>
+
+<a href={resolve('/blog')} aria-current={isActive(resolve('/blog')) ? 'page' : undefined}>
+	Blog
+</a>
+
+{@render children()}
+```
+
+## 4. Coba sendiri
+
+Modul ini soal **tipe**, jadi tidak ada live preview di browser (playground hanya menjalankan runtime `svelte/*`, sedangkan tipe `$app/types` butuh project SvelteKit nyata + TypeScript). Sebagai gantinya, berikut "potret" apa yang akan dilihat editormu — perhatikan baris yang ditandai compiler. Anggap app punya route `'/'`, `'/blog'`, dan `'/blog/[slug]'`.
+
+```ts
+import { resolve, asset } from '$app/paths';
+
+// ✅ route statis — '/' ada di union
+resolve('/');
+
+// ✅ route dinamis — params cocok
+resolve('/blog/[slug]', { slug: 'halo-dunia' });
+
+// ❌ TYPO route id. TypeScript:
+//    Argument of type '"/blgo/[slug]"' is not assignable to parameter of type ...
+resolve('/blgo/[slug]', { slug: 'halo-dunia' });
+
+// ❌ params SALAH. RouteParams<'/blog/[slug]'> butuh { slug: string }:
+//    Object literal may only specify known properties; 'id' does not exist ...
+resolve('/blog/[slug]', { id: 'halo-dunia' });
+
+// ⚠️ asset: dapat autocomplete daftar file di static/, TAPI karena tipe Asset
+//    mengandung `(string & {})`, string acak TETAP lolos (tidak error):
+asset('/icons/home.svg');        // ✅ ada di static/, disarankan & dicek
+asset('/file-yang-tak-ada.png'); // ⚠️ TIDAK error — lihat catatan di Tips
+```
+
+Inti pelajarannya: untuk **route id** dan **segmen path statis**, union-nya strict sehingga typo benar-benar tertangkap. Untuk **aset** dan **segmen dinamis** (`${string}`), ada kelonggaran sengaja agar nilai yang dibangun saat runtime tetap boleh — jadi jangan menganggap lolosnya `asset(...)` sebagai jaminan filenya pasti ada.
+
+## 5. Latihan
+
+<Exercise title="Menu navigasi type-safe">
+Untuk sebuah app dengan route `'/'`, `'/produk'`, dan `'/produk/[id]'`, serta ikon di folder `static/icons/`:
+
+1. Definisikan tipe `MenuItem` dengan field `to` (path navigasi valid), `label` (string), dan `icon` (aset valid). Pakai tipe yang tepat dari `$app/types`.
+2. Buat array `menu: MenuItem[]` berisi Beranda (`/`) dan Produk (`/produk`).
+3. Buat fungsi `produkHref(id: string): ResolvedPathname` yang mengembalikan URL ke `/produk/[id]` memakai `resolve`.
+4. (Bonus) Jelaskan kenapa salah ketik `to: '/prodk'` pasti tertangkap compiler, tapi `icon: '/icons/typo.svg'` belum tentu.
+
+{#snippet solution()}
+
+  ```ts
+  // src/lib/menu.ts
+  import { resolve } from '$app/paths';
+  import type { Pathname, Asset, ResolvedPathname } from '$app/types';
+
+  // `Pathname` = path konkret yang bisa dinavigasi; `Asset` = file di static/.
+  type MenuItem = { to: Pathname; label: string; icon: Asset };
+
+  const menu: MenuItem[] = [
+    { to: '/', label: 'Beranda', icon: '/icons/home.svg' },
+    { to: '/produk', label: 'Produk', icon: '/icons/box.svg' }
+  ];
+
+  function produkHref(id: string): ResolvedPathname {
+    // resolve(routeId, params): segmen [id] diisi, hasil sudah ber-prefix base.
+    return resolve('/produk/[id]', { id });
+  }
+
+  export { menu, produkHref };
+  ```
+
+  Jawaban bonus:
+
+  - `to` bertipe `Pathname`, yaitu union literal path konkret. `'/prodk'` **bukan** anggota union itu, dan segmen statis tidak punya escape hatch → **error compile**.
+  - `icon` bertipe `Asset`, yang mengandung `(string & {})` sebagai escape hatch (supaya nama aset yang dibangun saat runtime tetap boleh). Akibatnya string acak **lolos**, jadi `'/icons/typo.svg'` tidak menyalakan error. `Asset` memberi **autocomplete**, bukan jaminan filenya ada.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="warning">
+Tipe `$app/types` <strong>di-generate</strong>, bukan dibundel. Kalau editormu bilang <code>Cannot find module '$app/types'</code>, itu karena folder <code>.svelte-kit/types</code> belum dibuat atau sudah basi. Jalankan <code>npm run dev</code> sekali, atau panggil <code>svelte-kit sync</code> (biasanya sudah terikat ke skrip <code>prepare</code> / <code>postinstall</code>). Habis menambah/rename route, biarkan dev server jalan agar papannya tercetak ulang.
+</Callout>
+
+<Callout type="warning">
+Modul ini baru ada sejak <strong>SvelteKit 2.26</strong>. Versi lebih lama tidak punya <code>$app/types</code> maupun <code>resolve()</code>/<code>asset()</code> yang type-safe — di sana orang menyambung string manual seperti <code>base + '/blog/' + slug</code>, yang <em>tidak</em> dicek tipe sama sekali. Kalau bisa, upgrade dan pindah ke <code>resolve()</code> agar dapat keamanan tipe + penanganan <code>base</code> otomatis.
+</Callout>
+
+<Callout type="pitfall">
+Jangan menganggap semua string tertangkap. Tipe <code>Asset</code> mengandung <code>(string &amp; &#123;&#125;)</code> dan <code>Pathname</code> memakai <code>&#96;/blog/&#36;&#123;string&#125;&#96;</code> untuk segmen dinamis — keduanya <strong>escape hatch</strong> yang sengaja melonggarkan pengecekan agar nilai runtime tetap valid. Yang strict (typo pasti ketahuan) hanya <strong>route id</strong> dan <strong>segmen path statis</strong>. Untuk memastikan aset benar-benar ada, andalkan <code>import</code> aset (yang gagal saat build kalau filenya hilang), bukan sekadar tipe <code>Asset</code>.
+</Callout>
+
+<Callout type="tip">
+Ingat beda <code>$app/types</code> (union <em>se-aplikasi</em>: semua route/path/aset) vs <code>./$types</code> (tipe <em>per-route</em>: <code>PageData</code>, <code>PageLoad</code>, dll). Pakai <code>$app/types</code> di kode bersama yang generik (komponen nav, util di <code>$lib</code>); pakai <code>./$types</code> di dalam folder route untuk mengetik <code>load</code>, <code>data</code>, dan params route itu sendiri.
+</Callout>
+
+<Callout type="tip">
+Selalu impor dengan <code>import type { ... } from '$app/types'</code>. Karena isinya murni tipe, <code>import type</code> memastikan semuanya terhapus di hasil build (tidak menambah satu byte pun ke bundle) dan tidak bentrok dengan tree-shaking.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-types" label="SvelteKit — $app/types (RouteId, RouteParams, Pathname, Asset)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-paths" label="SvelteKit — $app/paths (resolve & asset yang memakai tipe-tipe ini)" />

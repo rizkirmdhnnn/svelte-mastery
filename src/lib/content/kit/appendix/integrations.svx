@@ -1,0 +1,405 @@
+---
+title: Integrations
+product: kit
+section: appendix
+sectionTitle: Appendix
+sectionOrder: 6
+order: 2
+status: stable
+description: Cara menyambung SvelteKit ke tooling lain — vitePreprocess untuk SCSS/TS, add-on otomatis lewat `sv add` (Tailwind, MDsveX, Drizzle), setup database/ORM yang server-only, dan testing dengan Vitest & Playwright.
+docs: https://svelte.dev/docs/kit/integrations
+keywords: [integrations, vitePreprocess, sv add, drizzle, vitest, playwright]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+"Integrations" di SvelteKit bukan satu fitur tunggal, melainkan **empat lapisan** yang sering bercampur. Begitu kamu paham lapisan mana yang sedang kamu sentuh, semuanya jadi jauh lebih jelas:
+
+1. **Preprocessor** — penerjemah yang jalan sebelum compiler Svelte, mengubah isi `<script>`/`<style>` di file `.svelte` (mis. SCSS, TypeScript) menjadi JS/CSS polos. Tokohnya: `vitePreprocess`.
+2. **Vite plugin** — karena setiap proyek SvelteKit dibangun di atas **Vite**, *semua* plugin Vite bisa langsung dipakai (image optimization, SVG-as-component, dll). Kamu sudah otomatis mewarisi seluruh ekosistem Vite.
+3. **Add-on `sv add`** — satu perintah yang meng-*scaffold* integrasi rumit (Tailwind, MDsveX, Drizzle, Vitest, Playwright, ...) sekaligus: install paket + edit config + bikin boilerplate.
+4. **Paket npm biasa** — sisa ekosistem (ORM, auth, util) yang kamu `npm install` lalu sambungkan sendiri.
+
+> Kunci mentalnya: lapisan 1 mengubah *bagaimana file `.svelte` dibaca*; lapisan 2 mengubah *bagaimana bundle dibangun*; lapisan 3 cuma **otomasi** yang menyentuh lapisan 1, 2, dan 4 untukmu.
+
+### vitePreprocess: penerjemah yang duduk di depan compiler
+
+File `.svelte` itu makhluk khusus — di dalam satu file ada tiga bahasa: markup, script, dan style. Compiler Svelte hanya mengerti **JS polos** dan **CSS polos**. Jadi kalau kamu menulis `<script lang="ts">` atau `<style lang="scss">`, ada yang harus menerjemahkan TS dan SCSS itu **lebih dulu**, sebelum compiler menyentuhnya. Penerjemah itulah **preprocessor**.
+
+Analoginya: bayangkan compiler Svelte adalah editor naskah yang hanya bisa baca bahasa Indonesia. Kalau ada paragraf berbahasa Inggris (SCSS) dan Jepang (TS) di tengah naskah, kamu butuh **penerjemah** yang merapikannya jadi Indonesia dulu. `vitePreprocess` adalah penerjemah itu.
+
+Yang membuat `vitePreprocess` istimewa: ia tidak membawa mesin SCSS/PostCSS-nya sendiri. Ia **menumpang pipeline yang sudah ada di Vite**. Artinya SCSS yang kamu tulis di dalam `<style lang="scss">` diproses dengan aturan yang *sama persis* seperti file `.scss` biasa di proyekmu — config PostCSS, variabel, semuanya konsisten. Cukup `vitePreprocess()` + install `sass`, dan `<style lang="scss">` langsung jalan. Ia mendukung **PostCSS, SCSS, Less, Stylus, dan SugarSS**.
+
+Buat yang datang dari React: di proyek React + Vite, file `.tsx`-mu lewat esbuild dan `.module.scss`-mu lewat pipeline CSS Vite — otomatis. Di Svelte, karena script & style "terbungkus" di dalam satu file `.svelte`, kamu butuh `vitePreprocess` sebagai jembatan yang menyerahkan tiap bagian ke transformer yang tepat di Vite.
+
+Satu catatan penting soal **TypeScript**: di **Svelte 5**, dukungan TypeScript sudah *native* (type-stripping) untuk kasus umum, jadi kamu sering **tidak** perlu mengaktifkan `{ script: true }`. Opsi `script: true` baru diperlukan untuk fitur TS lanjutan yang menghasilkan kode runtime (enum, decorator, namespace) atau proyek pra-Svelte-5.
+
+### sv add: "ng add"-nya SvelteKit
+
+Setup integrasi modern itu melelahkan kalau manual: install 3-4 paket, edit `svelte.config.js`, edit `vite.config.js`, bikin file config baru, tambah script di `package.json`, bikin boilerplate. Gampang salah satu langkah kelewat.
+
+`sv add` (bagian dari CLI `sv`) menyelesaikan itu dengan satu perintah. Analoginya persis seperti `ng add` di Angular, `nuxi module add` di Nuxt, atau `shadcn add` — kamu sebut nama integrasinya, ia yang merangkai semuanya. Bedanya, `sv add` tidak menempel string secara membabi buta; ia membaca config-mu sebagai **AST** lalu menyuntik perubahan dengan rapi, jadi aman dijalankan di proyek yang sudah ada.
+
+Ada **12 add-on resmi**:
+
+| Add-on | Gunanya |
+| --- | --- |
+| `prettier` | Formatter kode |
+| `eslint` | Linting / kualitas kode |
+| `vitest` | Unit & component testing |
+| `playwright` | End-to-end (browser) testing |
+| `tailwindcss` | Utility-first CSS |
+| `drizzle` | ORM / toolkit database |
+| `better-auth` | Library autentikasi |
+| `mdsvex` | Markdown + komponen Svelte (`.svx`) |
+| `paraglide` | Internationalization (i18n) |
+| `storybook` | Workshop komponen terisolasi |
+| `sveltekit-adapter` | Konfigurasi adapter deploy |
+| `mcp` | Tooling Model Context Protocol (AI) |
+
+Jalankan **interaktif** (ia akan menanyakan add-on mana yang mau dipasang, lalu opsi tiap add-on):
+
+```sh
+npx sv add
+```
+
+atau **non-interaktif**, sebut langsung (boleh banyak, dipisah spasi):
+
+```sh
+npx sv add eslint prettier vitest
+```
+
+### Database / ORM: SvelteKit tidak memaksamu pakai apa pun
+
+Berbeda dari framework full-stack yang membundel ORM, SvelteKit **netral soal database** — kamu bawa sendiri. Dua jalur populer:
+
+- **Drizzle** — `npx sv add drizzle`. Add-on akan menanyakan jenis database (PostgreSQL / MySQL / SQLite) dan client/driver-nya, lalu membuat folder `src/lib/server/db/` (schema + koneksi), `drizzle.config.ts`, menambah `DATABASE_URL` ke `.env`, dan script `db:push`/`db:migrate`/`db:studio` di `package.json`.
+- **Prisma** — belum ada add-on resmi, jadi setup manual: `npm i -D prisma`, `npx prisma init`, definisikan schema, lalu `npx prisma generate`.
+
+Apa pun ORM-nya, ada **satu aturan emas** yang spesifik SvelteKit: **kode database harus server-only.** Taruh koneksi dan query di `src/lib/server/` (atau di `+page.server.js`, `+layout.server.js`, `+server.js`). Kenapa? Karena `load` universal dan komponen ikut jalan di **browser** — kalau koneksi DB (yang memegang password/connection string) ikut ter-*bundle* ke client, rahasiamu bocor. SvelteKit bahkan **menolak build** kalau kamu mengimpor sesuatu dari `$lib/server/` ke kode yang bisa sampai ke client. Anggap `$lib/server/` sebagai brankas: isinya tak pernah ikut ke browser. (Pola yang sama persis kita pakai untuk auth/`locals` di modul Auth.)
+
+### Testing: dua lapis, dua alat
+
+SvelteKit memisahkan testing jadi dua lapis yang saling melengkapi:
+
+- **Unit & component** lewat **Vitest** (`npx sv add vitest`). Vitest itu Vite-native, jadi cepat dan ikut config Vite-mu. Untuk menguji logika `$state` (runes) di luar komponen, file-nya wajib berekstensi `.svelte.js` / `.svelte.test.js` supaya runes ikut dikompilasi. Untuk render komponen, pasang `@testing-library/svelte` + `jsdom`.
+- **End-to-end** lewat **Playwright** (`npx sv add playwright`). Ini menjalankan **browser sungguhan** terhadap app yang sudah di-build, menguji alur dari sudut pandang user (klik, isi form, cek teks muncul). Add-on otomatis menyetel `webServer` di `playwright.config.js` supaya app dibangun & disajikan sebelum tes jalan.
+
+Pegangan praktis: **Vitest** untuk "apakah fungsi/komponen ini benar secara unit", **Playwright** untuk "apakah halaman benar-benar jalan end-to-end".
+
+## 2. Contoh kode
+
+### vitePreprocess di `svelte.config.js`
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+// PENTING: di setup modern, vitePreprocess diimpor dari vite-plugin-svelte
+// (bukan lagi dari '@sveltejs/kit/vite' seperti tutorial lama).
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+const config = {
+	// Jembatan ke pipeline Vite untuk <script>/<style> di file .svelte.
+	// Setelah ini + `npm i -D sass`, <style lang="scss"> langsung jalan.
+	preprocess: vitePreprocess(),
+
+	kit: {
+		adapter: adapter()
+	}
+};
+
+export default config;
+```
+
+Kalau butuh fitur TS yang menghasilkan kode runtime (jarang di Svelte 5), aktifkan script:
+
+```js
+// Hanya jika perlu (enum/decorator/namespace, atau proyek pra-Svelte-5).
+// Di Svelte 5 dukungan TS sudah native, jadi ini sering TIDAK diperlukan.
+preprocess: vitePreprocess({ script: true });
+```
+
+### Scaffold integrasi dengan `sv add`
+
+```sh
+# Interaktif: sv menanyakan add-on & opsinya satu per satu.
+npx sv add
+
+# Non-interaktif: sebut beberapa add-on sekaligus.
+npx sv add tailwindcss mdsvex vitest playwright
+
+# Database: add-on akan menanya jenis DB & driver, lalu bikin
+# src/lib/server/db/, drizzle.config.ts, isi .env, dan script db:* .
+npx sv add drizzle
+
+# Flag berguna: --no-install (lewati npm install), --cwd <dir>,
+# --no-git-check (lewati cek working tree bersih).
+npx sv add eslint prettier --no-install
+```
+
+### Database server-only dengan Drizzle
+
+```ts
+// src/lib/server/db/schema.ts — definisi tabel (Drizzle, contoh PostgreSQL)
+import { pgTable, serial, text, boolean } from 'drizzle-orm/pg-core';
+
+export const todos = pgTable('todos', {
+	id: serial('id').primaryKey(),
+	title: text('title').notNull(),
+	done: boolean('done').notNull().default(false)
+});
+```
+
+```ts
+// src/lib/server/db/index.ts — koneksi DB sebagai singleton, SERVER-ONLY.
+// Folder $lib/server/ tak akan pernah ikut ter-bundle ke browser.
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import { env } from '$env/dynamic/private'; // env privat: hanya terbaca di server
+import * as schema from './schema';
+
+if (!env.DATABASE_URL) throw new Error('DATABASE_URL belum di-set');
+
+const client = postgres(env.DATABASE_URL);
+export const db = drizzle(client, { schema });
+```
+
+```ts
+// src/routes/todos/+page.server.ts — query DB di load SERVER (aman).
+// Mengimpor $lib/server/db dari sini OK; dari +page.svelte/load universal -> ERROR build.
+import { db } from '$lib/server/db';
+import { todos } from '$lib/server/db/schema';
+
+export async function load() {
+	const items = await db.select().from(todos);
+	return { todos: items };
+}
+```
+
+### Testing: Vitest (unit) + Playwright (e2e)
+
+```js
+// vite.config.js — setelah `sv add vitest`, defineConfig berasal dari vitest/config.
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+	plugins: [sveltekit()],
+	test: {
+		// Cari semua file *.test/spec.js|ts di src.
+		include: ['src/**/*.{test,spec}.{js,ts}']
+	}
+});
+```
+
+```js
+// src/lib/sum.test.js — unit test biasa (logika murni).
+import { describe, it, expect } from 'vitest';
+import { sum } from './sum.js';
+
+describe('sum', () => {
+	it('menjumlahkan dua angka', () => {
+		expect(sum(2, 3)).toBe(5);
+	});
+});
+```
+
+```js
+// e2e/home.test.js — Playwright menjalankan BROWSER sungguhan ke app yang di-build.
+import { expect, test } from '@playwright/test';
+
+test('halaman utama menampilkan judul', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.locator('h1')).toBeVisible();
+});
+```
+
+## 3. Coba sendiri
+
+Integrasi di modul ini menyentuh **build/CLI/server** (config, `sv add`, koneksi DB, runner test), jadi tidak bisa dijalankan di playground interaktif. Sebagai gantinya, berikut **alur nyata** menyiapkan sebuah halaman blog ber-Markdown + bergaya SCSS, lengkap dengan anotasi tiap langkah dan struktur file hasilnya.
+
+```sh
+# 1) Tambah dua add-on sekaligus. sv akan install paket + edit config + bikin boilerplate.
+npx sv add mdsvex tailwindcss
+
+# 2) Untuk SCSS via vitePreprocess, cukup install engine-nya — config sudah ada.
+npm i -D sass
+```
+
+```js
+// 3) svelte.config.js — hasil setelah `sv add mdsvex` (disederhanakan).
+//    Perhatikan: preprocess sekarang ARRAY [vitePreprocess(), mdsvex()],
+//    dan ada extensions agar file .svx ikut diperlakukan sebagai komponen.
+import adapter from '@sveltejs/adapter-auto';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { mdsvex } from 'mdsvex';
+
+const config = {
+	// .svelte = komponen biasa, .svx = Markdown-yang-jadi-komponen.
+	extensions: ['.svelte', '.svx'],
+
+	// Urutan penting: vitePreprocess (SCSS/TS) lalu mdsvex (Markdown).
+	preprocess: [vitePreprocess(), mdsvex()],
+
+	kit: { adapter: adapter() }
+};
+
+export default config;
+```
+
+```svelte
+<!-- 4) src/routes/blog/+page.svelte — pakai SCSS (berkat vitePreprocess) -->
+<script>
+	let { data } = $props();
+</script>
+
+<h1>Blog</h1>
+<ul>
+	{#each data.posts as post}
+		<li><a href={`/blog/${post.slug}`}>{post.title}</a></li>
+	{/each}
+</ul>
+
+<!-- <style lang="scss"> bisa karena vitePreprocess + sass terpasang.
+     SCSS di sini diproses dengan pipeline Vite yang sama seperti file .scss biasa. -->
+<style lang="scss">
+	$accent: #e11d48;
+	h1 {
+		color: $accent;
+		a:hover { text-decoration: underline; } // nesting khas SCSS
+	}
+</style>
+```
+
+```text
+# 5) Struktur file yang relevan setelah scaffold:
+my-app/
+├─ svelte.config.js        # preprocess: [vitePreprocess(), mdsvex()]
+├─ vite.config.js          # plugin tailwind + sveltekit
+├─ src/
+│  ├─ app.css              # @import "tailwindcss";  (disuntik sv add tailwindcss)
+│  ├─ lib/server/db/       # (jika `sv add drizzle`) — SERVER-ONLY
+│  └─ routes/
+│     └─ blog/
+│        ├─ +page.svelte
+│        └─ hello.svx      # Markdown -> komponen, berkat extensions + mdsvex
+└─ package.json            # dep & script ter-update otomatis
+```
+
+<Callout type="tip">
+Untuk menguji logika <code>$state</code> (runes) di Vitest, beri nama file <code>.svelte.test.js</code> (mis. <code>counter.svelte.test.js</code>). Ekstensi <code>.svelte.*</code> memberi sinyal ke toolchain agar runes ikut dikompilasi; tanpa itu, <code>$state</code> tidak dikenali di file <code>.test.js</code> biasa.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Pasang SCSS, Drizzle, dan satu unit test">
+Kamu punya proyek SvelteKit baru. Kerjakan empat hal, perhatikan aturan **server-only** dan setup modern Svelte 5:
+
+1. **SCSS**: aktifkan `vitePreprocess` di `svelte.config.js` (impor dari paket yang benar) lalu jelaskan satu langkah lagi agar `<style lang="scss">` jalan.
+2. **Database**: pakai satu perintah `sv add` untuk memasang ORM, lalu tulis file koneksi DB yang **tidak mungkin** bocor ke browser (tunjukkan path-nya).
+3. **Query**: tulis `load` yang membaca tabel `users`. Pastikan kamu menaruhnya di file yang benar (server, bukan universal).
+4. **Test**: tulis satu unit test Vitest untuk fungsi `slugify(text)`.
+
+{#snippet solution()}
+
+  ```js
+  // 1) svelte.config.js — impor vitePreprocess dari @sveltejs/vite-plugin-svelte.
+  import adapter from '@sveltejs/adapter-auto';
+  import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+  const config = {
+    preprocess: vitePreprocess(), // jembatan SCSS/TS ke pipeline Vite
+    kit: { adapter: adapter() }
+  };
+
+  export default config;
+  // Langkah tambahan: `npm i -D sass` agar engine SCSS tersedia. Selesai —
+  // <style lang="scss"> kini diproses. (script: true TIDAK perlu untuk TS di Svelte 5.)
+  ```
+
+  ```sh
+  # 2) Satu perintah memasang ORM + scaffold (db/, drizzle.config.ts, .env, script db:*).
+  npx sv add drizzle
+  ```
+
+  ```ts
+  // 2) src/lib/server/db/index.ts — SERVER-ONLY karena ada di $lib/server/.
+  //    Mengimpor file ini dari komponen/ load universal akan GAGAL build (by design).
+  import { drizzle } from 'drizzle-orm/postgres-js';
+  import postgres from 'postgres';
+  import { env } from '$env/dynamic/private';
+  import * as schema from './schema';
+
+  const client = postgres(env.DATABASE_URL);
+  export const db = drizzle(client, { schema });
+  ```
+
+  ```ts
+  // 3) src/routes/users/+page.server.ts — .server. = hanya jalan di server.
+  import { db } from '$lib/server/db';
+  import { users } from '$lib/server/db/schema';
+
+  export async function load() {
+    return { users: await db.select().from(users) };
+  }
+  ```
+
+  ```js
+  // 4) src/lib/slugify.test.js — unit test Vitest.
+  import { describe, it, expect } from 'vitest';
+  import { slugify } from './slugify.js';
+
+  describe('slugify', () => {
+    it('mengubah judul jadi slug', () => {
+      expect(slugify('Halo Dunia!')).toBe('halo-dunia');
+    });
+  });
+  ```
+
+  Inti: `vitePreprocess` cukup diaktifkan + install engine-nya; ORM disambung via `sv add`; koneksi DB hidup di `$lib/server/` (mustahil bocor ke client); query dilakukan di `+page.server.*`; dan Vitest menguji logika murni tanpa perlu server.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan pernah mengimpor kode database/koneksi (atau apa pun yang memegang secret) dari <strong>load universal</strong> (<code>+page.js</code>) atau komponen <code>.svelte</code> — itu ikut jalan di browser dan akan membundel connection string-mu. Taruh selalu di <code>$lib/server/</code> atau di file <code>+*.server.js</code> / <code>+server.js</code>. SvelteKit sengaja <strong>menolak build</strong> jika <code>$lib/server/</code> bocor ke client; anggap pesan error itu sebagai sabuk pengaman, bukan gangguan.
+</Callout>
+
+<Callout type="warning">
+<code>sv add</code> memodifikasi file config dan <code>package.json</code> milikmu. Jalankan di working tree git yang <strong>bersih</strong> (commit dulu) supaya kamu bisa me-<em>review diff</em>-nya dan mudah <code>git checkout</code> kalau hasilnya tak sesuai. Secara default <code>sv</code> memperingatkan bila tree kotor; <code>--no-git-check</code> melewati cek itu — pakai hanya kalau kamu tahu konsekuensinya.
+</Callout>
+
+<Callout type="tip">
+Di <strong>Svelte 5</strong>, kamu hampir tak pernah butuh <code>vitePreprocess({ script: true })</code> karena TypeScript sudah didukung native (type-stripping). Aktifkan <code>script: true</code> hanya untuk fitur TS yang menghasilkan kode runtime (enum, decorator, namespace) atau proyek lama pra-Svelte-5. Mengaktifkannya tanpa perlu cuma menambah kerja build.
+</Callout>
+
+<Callout type="tip">
+Karena SvelteKit dibangun di atas <strong>Vite</strong>, setiap plugin Vite otomatis tersedia — kamu tidak terkurung pada add-on resmi saja. Butuh sesuatu yang tak ada di daftar <code>sv add</code>? Cari di <em>awesome-vite</em> atau ekosistem Svelte Society, lalu pasang seperti plugin Vite biasa di <code>vite.config.js</code>.
+</Callout>
+
+<Callout type="legacy">
+Pola lama yang masih sering muncul di tutorial usang — ganti dengan padanan modern di bawah:
+</Callout>
+
+<LegacyVsModern rows={[
+  { legacy: "import { vitePreprocess } from '@sveltejs/kit/vite'", modern: "import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'", note: 'Lokasi impor pindah ke paket vite-plugin-svelte' },
+  { legacy: 'svelte-preprocess (setup SCSS/TS manual)', modern: 'vitePreprocess()', note: 'Default baru: numpang pipeline Vite, lebih cepat & konsisten' },
+  { legacy: "vitePreprocess({ script: true }) wajib untuk TS", modern: 'vitePreprocess()', note: 'Svelte 5 punya TS native; script preprocessing sering tak perlu' },
+  { legacy: 'Setup Tailwind/MDsveX manual (install + edit 4 file)', modern: 'npx sv add tailwindcss mdsvex', note: 'Satu perintah merangkai semuanya via AST' },
+  { legacy: 'Query DB di +page.js (universal)', modern: 'Query DB di +page.server.js + $lib/server/', note: 'Server-only: cegah secret bocor ke browser' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/integrations" label="SvelteKit — Integrations (vitePreprocess, sv add, Vite plugins)" />
+<DocsLink href="https://svelte.dev/docs/cli/sv-add" label="sv CLI — sv add (12 add-on resmi & opsinya)" />
+<DocsLink href="https://svelte.dev/docs/kit/server-only-modules" label="SvelteKit — Server-only modules ($lib/server, $env/.../private)" />
+<DocsLink href="https://svelte.dev/docs/svelte/testing" label="Svelte — Testing (Vitest, .svelte.test.js, Playwright)" />

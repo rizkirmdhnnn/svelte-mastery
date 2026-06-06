@@ -1,0 +1,241 @@
+---
+title: '<svelte:window>'
+product: svelte
+section: special-elements
+sectionTitle: Special elements
+sectionOrder: 5
+order: 2
+status: stable
+description: Pasang event listener dan binding ke objek window secara deklaratif lewat <svelte:window> — dengan auto-cleanup dan aman SSR.
+docs: https://svelte.dev/docs/svelte/svelte-window
+keywords: [svelte-window, bind-scrollY, window-events, auto-cleanup, special-elements]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Markup yang kamu tulis di Svelte biasanya memetakan ke elemen DOM nyata: `<div>`, `<button>`, `<input>`. Tapi `window` bukan elemen — ia objek global milik browser yang sudah ada sebelum komponenmu lahir dan tetap hidup setelah komponenmu mati. Kamu tidak bisa "merender" `window`. Yang sering kamu butuhkan justru **menempel sesuatu** ke sana: dengar tombol keyboard global, baca posisi scroll, atau tahu lebar viewport. Untuk itu Svelte menyediakan `<svelte:window>` — sebuah elemen khusus yang terlihat seperti tag, tapi sebenarnya instruksi ke compiler: "pasang listener/binding ini ke objek `window`".
+
+Kalau kamu datang dari React, naluri pertamamu pasti begini: `useEffect` lalu `window.addEventListener('keydown', fn)`, dan **jangan lupa** `return () => window.removeEventListener('keydown', fn)` di cleanup. Di Vue kira-kira `onMounted` + `onUnmounted`, atau langsung pakai `@vueuse/core` seperti `useWindowSize` / `useScroll`. Ritual itu mudah salah: lupa cleanup bikin memory leak dan listener dobel; salah array dependensi bikin listener menempel ke closure basi. `<svelte:window>` menghapus seluruh ritual itu — kamu cukup **mendeklarasikan** niatmu di markup, dan Svelte mengurus pasang saat mount dan lepas saat unmount, otomatis.
+
+### Analogi: stiker di pintu gerbang kos
+
+Bayangkan komponenmu adalah sebuah kamar kos. Tembok, meja, kasur — itu DOM milikmu, bebas kamu cat dan bongkar. Tapi **pintu gerbang kos** itu milik bersama; ia sudah ada sejak gedung berdiri dan tetap berdiri setelah kamu pindah. Kamu tidak boleh "membangun" gerbang itu — tapi kamu boleh **menempel stiker** di sana: "kalau gerbang diketuk (`onkeydown` di window), kabari aku". `<svelte:window>` adalah stiker itu. Dan inilah bagian terbaiknya: saat kamu pindah kos (komponen di-unmount), Svelte otomatis **mencopot stikermu**. Tidak ada bekas lem, tidak ada listener nyangkut. Itulah yang dimaksud *auto-cleanup* — kamu tidak pernah menulis `removeEventListener` sendiri.
+
+### Dua kemampuan: event dan binding
+
+`<svelte:window>` memberimu dua hal sekaligus:
+
+1. **Event listener** — atribut `on<event>` (mis. `onkeydown`, `onresize`, `onscroll`, `onfocus`) menempel ke `window`. Sama persis seperti event handler di elemen biasa, hanya targetnya objek global. Berguna untuk shortcut keyboard global (tekan Escape di mana pun untuk menutup modal), atau reaksi terhadap resize/scroll halaman.
+2. **Binding** — `bind:<properti>` menyinkronkan properti `window` ke variabel `$state`-mu, dan Svelte memperbaruinya saat nilainya berubah (tanpa kamu menulis listener `resize`/`scroll` manual). Ada delapan properti yang bisa di-bind, dan ada perbedaan penting: sebagian **read-only**, dua di antaranya **dua arah**.
+
+| Binding | Tipe | Arah |
+|---|---|---|
+| `innerWidth` | number | read-only |
+| `innerHeight` | number | read-only |
+| `outerWidth` | number | read-only |
+| `outerHeight` | number | read-only |
+| `scrollX` | number | **dua arah** |
+| `scrollY` | number | **dua arah** |
+| `online` | boolean | read-only |
+| `devicePixelRatio` | number | read-only |
+
+*Read-only* artinya: kamu boleh **membaca** nilainya (Svelte mengisinya untukmu dan memperbaruinya saat berubah), tapi menulis ke variabel itu **tidak** mengubah window. Mengubah `innerWidth = 100` tidak akan mengecilkan jendela browser — itu di luar kuasa halaman web. Sebaliknya `scrollX`/`scrollY` **dua arah**: membacanya memberi posisi scroll saat ini, dan **menulisnya benar-benar men-scroll halaman**. Jadi `scrollY = 0` adalah cara deklaratif untuk "scroll ke atas".
+
+### Kenapa bentuknya markup, bukan rune atau fungsi?
+
+Karena niatnya **deklaratif dan terikat daur hidup**. Listener window harus terpasang saat komponen mount dan tercopot saat unmount — persis seperti elemen biasa muncul lalu hilang. Dengan menulisnya sebagai "elemen", Svelte memperlakukan pasang/lepas-nya seperti elemen biasa, tanpa array dependensi yang bisa salah dan tanpa cleanup yang lupa kamu return. Bonus: `<svelte:window>` juga **aman SSR**. Di server tidak ada objek `window`, dan kalau kamu menulis `addEventListener` mentah di `$effect` kamu harus hati-hati. Karena `<svelte:window>` hanya aktif di sisi klien secara desain, kamu tidak akan kena error "window is not defined" saat server-side rendering.
+
+## 2. Contoh kode
+
+Pola paling umum: shortcut keyboard global plus binding scroll.
+
+```svelte
+<script>
+	let y = $state(0);
+
+	function handleKeydown(event) {
+		// listener ini menempel ke window, bukan ke satu elemen tertentu.
+		// otomatis dilepas saat komponen di-unmount — tidak ada removeEventListener.
+		if (event.key === 'Escape') console.log('Escape ditekan di mana pun');
+	}
+</script>
+
+<!-- bind:scrollY dua arah: membaca posisi scroll saat ini,
+     dan menulis y (lihat tombol di bawah) men-scroll halaman.
+     onkeydown menempel ke window. -->
+<svelte:window bind:scrollY={y} onkeydown={handleKeydown} />
+
+<p style="position: fixed; top: 0;">Scroll: {Math.round(y)}px</p>
+
+<!-- karena scrollY dua arah, set y = 0 = scroll ke atas, deklaratif -->
+<button style="position: fixed; bottom: 1rem; right: 1rem;" onclick={() => (y = 0)}>
+	Ke atas
+</button>
+```
+
+Binding read-only untuk membuat UI responsif tanpa media query JavaScript manual:
+
+```svelte
+<script>
+	let innerWidth = $state(0);
+	let online = $state(true);
+
+	// turunan reaktif: berubah otomatis tiap viewport melewati 768px,
+	// karena Svelte memperbarui innerWidth saat window di-resize.
+	let isMobile = $derived(innerWidth < 768);
+</script>
+
+<!-- keduanya read-only: kita hanya membaca, Svelte yang mengisi & memperbarui -->
+<svelte:window bind:innerWidth bind:online />
+
+<nav>
+	{#if isMobile}
+		<button>☰ Menu</button>
+	{:else}
+		<a href="/">Beranda</a> <a href="/tentang">Tentang</a>
+	{/if}
+</nav>
+
+{#if !online}
+	<p role="status">Kamu sedang offline. Perubahan akan disimpan nanti.</p>
+{/if}
+```
+
+Catatan singkat penulisan: `bind:innerWidth` (tanpa `={...}`) adalah bentuk ringkas dari `bind:innerWidth={innerWidth}` ketika nama variabel sama dengan nama properti — sama seperti shorthand prop di Svelte.
+
+## 3. Coba sendiri
+
+Peraga di bawah memasang banyak binding window sekaligus dan satu event keyboard — tanpa satu pun `addEventListener` / `removeEventListener`. Geser-resize jendela browser untuk melihat `innerWidth`/`innerHeight` berubah, scroll area, lalu klik kotak agar fokus dan tekan panah kiri/kanan untuk menggesernya. Tombol "Ke atas" memanfaatkan sifat **dua arah** `scrollY`.
+
+<Playground code={`<script>
+	let scrollY = $state(0);
+	let innerWidth = $state(0);
+	let innerHeight = $state(0);
+	let online = $state(true);
+	let dpr = $state(1);
+	let x = $state(0);
+
+	function onkeydown(e) {
+		if (e.key === 'ArrowRight') x += 20;
+		if (e.key === 'ArrowLeft') x -= 20;
+	}
+
+	let isMobile = $derived(innerWidth < 768);
+</script>
+
+<svelte:window
+	bind:scrollY
+	bind:innerWidth
+	bind:innerHeight
+	bind:online
+	bind:devicePixelRatio={dpr}
+	{onkeydown}
+/>
+
+<div style="position: fixed; top: 8px; right: 8px; background: #222; color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.6;">
+	<div>scrollY: {Math.round(scrollY)}</div>
+	<div>viewport: {innerWidth} x {innerHeight}</div>
+	<div>layout: {isMobile ? 'mobile' : 'desktop'}</div>
+	<div>online: {online ? 'ya' : 'tidak'}</div>
+	<div>dpr: {dpr}</div>
+</div>
+
+<p>Klik kotak ini agar fokus, lalu tekan panah kiri/kanan.</p>
+<div
+	tabindex="0"
+	style="width: 60px; height: 60px; background: tomato; border-radius: 8px; transform: translateX({x}px); transition: transform 0.12s;"
+></div>
+
+<button onclick={() => (scrollY = 0)} style="margin-top: 12px;">
+	Scroll ke atas (set scrollY = 0)
+</button>
+
+<div style="height: 1400px;"></div>
+<p>Kamu sampai di bawah. Lihat scrollY berubah, lalu klik tombol di atas.</p>`} />
+
+## 4. Latihan
+
+<Exercise title="Shortcut keyboard global + banner offline">
+Buat satu komponen `App.svelte` yang memakai `<svelte:window>` untuk dua hal sekaligus:
+
+1. Sebuah tombol "Buka modal". Saat diklik, tampilkan "modal" sederhana (cukup sebuah `<div>` berisi teks dan tombol Tutup).
+2. Tekan tombol **Escape** di mana pun harus menutup modal — tapi **hanya** kalau modal sedang terbuka.
+3. Tampilkan banner "Sedang offline" ketika koneksi mati, dengan binding `bind:online`.
+
+Petunjuk: simpan `open` dengan `$state`, dan di handler keydown cek `if (open && event.key === 'Escape')`. Untuk banner, ingat `online` itu read-only — kamu cuma membacanya.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let open = $state(false);
+	let online = $state(true);
+
+	function handleKeydown(event) {
+		// kondisi ditaruh DI DALAM handler, bukan dengan membungkus <svelte:window>
+		if (open && event.key === 'Escape') {
+			open = false;
+		}
+	}
+</script>
+
+<!-- satu tag, top-level: listener + binding dipasang/dilepas otomatis -->
+<svelte:window onkeydown={handleKeydown} bind:online />
+
+{#if !online}
+	<p role="status" style="background: #fde68a; padding: .5rem;">
+		Kamu sedang offline.
+	</p>
+{/if}
+
+<button onclick={() => (open = true)}>Buka modal</button>
+
+{#if open}
+	<div role="dialog" style="border: 1px solid #888; padding: 1rem; margin-top: 1rem;">
+		<p>Tekan Escape atau klik tombol untuk menutup.</p>
+		<button onclick={() => (open = false)}>Tutup</button>
+	</div>
+{/if}
+```
+
+Inti jawabannya: `<svelte:window onkeydown={...} bind:online>` menggantikan seluruh pola `addEventListener('keydown', ...)` + `addEventListener('online'/'offline', ...)` + cleanup. Pengecekan `if (open && ...)` di dalam handler memastikan Escape hanya menutup saat relevan — dan inilah cara yang benar, karena tag `<svelte:window>` sendiri **tidak boleh** dibungkus di dalam `{#if open}`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+`<svelte:window>` harus berada di <strong>top-level</strong> komponen — tidak boleh dibungkus di dalam blok `{#if}`, blok `{#each}`, atau elemen lain. Compiler akan menolaknya. Kalau kamu butuh listener yang kondisional, jangan bungkus tag-nya; pasang selalu `<svelte:window onkeydown={handler} />` lalu beri logika kondisi <em>di dalam</em> handler (mis. `if (open) ...`). Pola yang sama berlaku untuk membatalkan handler secara dinamis.
+</Callout>
+
+<Callout type="warning">
+Hanya `scrollX` dan `scrollY` yang <strong>dua arah</strong> — menulis ke variabelnya benar-benar men-scroll halaman. Properti lain (`innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `online`, `devicePixelRatio`) bersifat <strong>read-only</strong>: kamu boleh membacanya, tapi menulisnya tidak berefek apa-apa pada window. Jangan berharap `innerWidth = 500` mengecilkan jendela.
+</Callout>
+
+<Callout type="warning">
+Soal aksesibilitas pada `bind:scrollY`: halaman <strong>tidak</strong> akan otomatis di-scroll ke nilai awal variabelmu saat mount. Jadi kalau `let y = $state(300)`, halaman tetap mulai di posisi 0 — hanya <em>perubahan berikutnya</em> pada `y` yang memicu scroll. Ini disengaja agar pengguna keyboard/screen reader tidak "terlempar" ke posisi acak saat halaman dimuat. Kalau kamu memang perlu memulihkan posisi scroll saat mount, lakukan eksplisit: `$effect(() => window.scrollTo(0, 300))`.
+</Callout>
+
+<Callout type="tip">
+Cukup satu `<svelte:window>` per komponen, tapi kamu boleh menumpuk banyak binding dan event di dalam tag yang sama: `<svelte:window bind:scrollY bind:innerWidth onkeydown={fn} onresize={g} />`. Karena `<svelte:window>` aman SSR (tidak menyentuh objek `window` di server), kamu tidak perlu lagi menjaga-jaga dengan `if (typeof window !== 'undefined')` seperti saat memakai `addEventListener` mentah di `$effect`.
+</Callout>
+
+<LegacyVsModern
+	rows={[
+		{ legacy: '<svelte:window on:keydown={fn} />', modern: '<svelte:window onkeydown={fn} />', note: 'Svelte 5: event pakai atribut onevent biasa, bukan direktif on:event.' },
+		{ legacy: 'onMount(() => { addEventListener(...); return () => removeEventListener(...) })', modern: '<svelte:window onkeydown={fn} />', note: 'Listener + cleanup otomatis; tak ada removeEventListener manual.' },
+		{ legacy: 'useWindowSize() / @vueuse (Vue) atau useEffect resize (React)', modern: '<svelte:window bind:innerWidth bind:innerHeight />', note: 'Ukuran viewport reaktif tanpa library/efek tambahan.' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-window" label="<svelte:window> — dokumentasi resmi Svelte" />

@@ -1,0 +1,350 @@
+---
+title: Testing
+product: svelte
+section: misc
+sectionTitle: Misc
+sectionOrder: 7
+order: 2
+status: stable
+description: Strategi testing Svelte 5 lengkap — unit logic .svelte.ts dengan flushSync & $effect.root, component test pakai @testing-library/svelte, dan E2E dengan Playwright, plus kapan memakai masing-masing.
+docs: https://svelte.dev/docs/svelte/testing
+keywords: [testing, vitest, testing-library, playwright, flushSync, effect-root]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Testing di Svelte 5 bukan satu alat tunggal, melainkan **tiga lapis** yang saling melengkapi. Kalau kamu datang dari React, peta mentalnya nyaris identik: Vitest menggantikan Jest, `@testing-library/svelte` adalah saudara kandung `@testing-library/react`, dan Playwright (atau Cypress) berperan sama persis untuk E2E. Yang benar-benar berubah cuma satu detail: **cara memicu reaktivitas Svelte di dalam test**. Itulah bagian yang akan kita kupas dalam-dalam, karena di situlah pendatang baru paling sering tersandung.
+
+### Analogi: piramida pengujian sebagai inspeksi pabrik mobil
+
+Bayangkan kamu memeriksa kualitas pabrik mobil. Ada tiga level inspeksi:
+
+- **Unit test** = menguji satu baut, satu per satu, di meja kerja. Cepat, murah, ribuan kali sehari. Kamu tidak merakit seluruh mobil hanya untuk tahu apakah satu baut sesuai spesifikasi.
+- **Component test** = menguji satu modul rakitan, misalnya pintu lengkap dengan engsel dan kaca. Kamu cek apakah jendela naik-turun saat tombol ditekan — tapi belum dipasang ke mobil utuh.
+- **E2E test** = menyetir mobil utuh di sirkuit. Lambat dan mahal, tapi inilah satu-satunya cara membuktikan "kalau pelanggan benar-benar pakai, semua bekerja bersama".
+
+Aturan piramidanya: **banyak unit, lebih sedikit component, sangat sedikit E2E**. Bukan karena E2E jelek, tapi karena ia lambat dan rapuh; kamu menyimpannya untuk alur kritis (login, checkout) bukan untuk memverifikasi setiap tombol kecil.
+
+### Tiga alat, tiga tugas
+
+1. **Vitest (unit)** — menguji logika murni: fungsi util, store, dan logika reaktif yang kamu pisahkan ke file `.svelte.js`/`.svelte.ts`. File berakhiran `.svelte.ts` itu istimewa: ia diproses compiler Svelte sehingga `$state`, `$derived`, dan `$effect` bisa hidup **di luar** komponen. Karena reaktivitas Svelte berjalan **asinkron** (di-batch lewat microtask), unit test butuh dua alat khusus: `flushSync()` untuk memaksa effect/update berjalan **sekarang juga**, dan `$effect.root()` untuk membuat scope effect manual (effect biasa wajib berada di dalam komponen yang sedang hidup).
+
+2. **@testing-library/svelte (component)** — me-`render` komponen `.svelte` sungguhan ke DOM (jsdom/happy-dom), lalu kamu berinteraksi seperti user: cari elemen lewat role/teks, klik, ketik, dan periksa hasilnya di DOM. Filosofinya: **uji perilaku yang dilihat user, bukan detail implementasi internal**.
+
+3. **Playwright (E2E)** — menjalankan aplikasi sungguhan di browser asli (Chromium/Firefox/WebKit), menavigasi halaman, dan memverifikasi alur lengkap termasuk routing SvelteKit, server, dan jaringan.
+
+### Mengapa reaktivitas Svelte butuh `flushSync`
+
+Ini bagian paling sering bikin pendatang baru bingung. Di Svelte 5, saat kamu mengubah `$state`, DOM dan effect **tidak** langsung diperbarui — Svelte menundanya ke akhir microtask agar bisa menggabungkan banyak perubahan jadi satu update efisien. Bagus untuk performa, repot untuk test: kalau kamu klik tombol lalu langsung memeriksa DOM di baris berikutnya, perubahannya **belum terjadi**.
+
+`flushSync()` dari `'svelte'` adalah tombol "kerjakan semua pekerjaan tertunda sekarang". Setelah memanggilnya, DOM dan effect dijamin sudah ter-update sehingga assertion sinkronmu valid. Di `@testing-library/svelte` kamu sering tidak perlu memanggilnya manual karena helper `await`-nya sudah menunggu update; tapi di unit test mentah (pakai `mount`), `flushSync` adalah temanmu.
+
+### Mengapa `$effect.root` ada
+
+`$state` murni (tanpa effect) sebenarnya hanya butuh `flushSync`. Tapi begitu kode yang kamu uji memakai `$effect` atau `$derived`, Svelte butuh sebuah **scope reaktif** yang hidup untuk menjalankan dan membersihkannya. Di dalam komponen, scope itu otomatis tersedia (lahir saat mount, mati saat unmount). Di unit test tidak ada komponen, jadi kamu membuat scope-nya sendiri dengan `$effect.root(() => { ... })`. Fungsi ini mengembalikan sebuah `cleanup` yang **wajib** kamu panggil di akhir test — kalau lupa, effect tetap "hidup" dan bocor ke test berikutnya.
+
+Analogi singkat: `$effect.root` itu seperti menyalakan generator portabel di lokasi yang tidak ada listrik. Selama generator menyala, alat-alat reaktif (`$effect`, `$derived`) bisa bekerja. `cleanup()` adalah mematikan generatornya — kalau dibiarkan menyala, ia mengganggu pekerjaan tetangga (test berikutnya).
+
+## 2. Contoh kode
+
+Mulai dari **unit test logika reaktif**. Kita pisahkan logika ke file `.svelte.ts` agar bisa diuji tanpa merender komponen sama sekali:
+
+```ts
+// counter.svelte.ts — logika reaktif, bisa diuji terpisah dari UI
+export function createCounter(initial = 0) {
+	let count = $state(initial);
+
+	return {
+		get count() {
+			return count;
+		},
+		increment() {
+			count++;
+		},
+		double: () => count * 2
+	};
+}
+```
+
+```ts
+// counter.svelte.test.ts
+import { flushSync } from 'svelte';
+import { expect, test } from 'vitest';
+import { createCounter } from './counter.svelte';
+
+test('counter naik dan double ikut', () => {
+	// $state hidup di luar komponen, jadi kita bungkus dengan $effect.root
+	// agar Svelte punya "scope" reaktif yang valid untuk dijalankan.
+	const cleanup = $effect.root(() => {
+		const c = createCounter(0);
+		expect(c.count).toBe(0);
+
+		c.increment();
+		flushSync(); // paksa semua update reaktif terjadi sekarang
+
+		expect(c.count).toBe(1);
+		expect(c.double()).toBe(2);
+	});
+
+	cleanup(); // matikan scope; cegah bocor ke test berikutnya
+});
+```
+
+Untuk logika yang memakai `$effect` (mis. logger yang mencatat tiap perubahan input), pola `$effect.root` + `flushSync` jadi **wajib**, karena `$effect` butuh scope reaktif yang hidup:
+
+```ts
+// logger.svelte.ts
+export function logger(getValue: () => unknown) {
+	const log: unknown[] = [];
+
+	// $effect mencatat nilai tiap kali dependensinya berubah
+	$effect(() => {
+		log.push(getValue());
+	});
+
+	return log;
+}
+```
+
+```ts
+// logger.svelte.test.ts
+import { flushSync } from 'svelte';
+import { expect, test } from 'vitest';
+import { logger } from './logger.svelte';
+
+test('logger mencatat tiap perubahan', () => {
+	const cleanup = $effect.root(() => {
+		let count = $state(0);
+		const log = logger(() => count);
+
+		// Effect baru jalan setelah microtask; flushSync memaksanya jalan kini.
+		flushSync();
+		expect(log).toEqual([0]);
+
+		count = 1;
+		flushSync();
+		expect(log).toEqual([0, 1]);
+	});
+
+	cleanup();
+});
+```
+
+Lapis kedua: **component test** dengan `@testing-library/svelte`. Di sini kita render komponen asli dan berinteraksi seperti user:
+
+```ts
+// Stepper.svelte.test.ts
+import { render, screen } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
+import { expect, test } from 'vitest';
+import Stepper from './Stepper.svelte';
+
+test('tombol + menaikkan angka', async () => {
+	const user = userEvent.setup();
+
+	// render() me-mount komponen ke DOM (jsdom/happy-dom)
+	render(Stepper, { props: { start: 5 } });
+
+	// Cari elemen lewat ROLE & teks — bukan class/id internal.
+	// Ini menguji perilaku yang user lihat, bukan implementasi.
+	const tombol = screen.getByRole('button', { name: '+' });
+	expect(screen.getByText('Nilai: 5')).toBeInTheDocument();
+
+	// userEvent menunggu update reaktif Svelte secara otomatis,
+	// jadi di sini kita TIDAK perlu flushSync manual — cukup await.
+	await user.click(tombol);
+
+	expect(screen.getByText('Nilai: 6')).toBeInTheDocument();
+});
+```
+
+Lapis ketiga: **E2E** dengan Playwright. Ini menjalankan aplikasi sungguhan (build + preview) di browser asli:
+
+```ts
+// e2e/login.spec.ts
+import { expect, test } from '@playwright/test';
+
+test('user bisa login dan diarahkan ke dashboard', async ({ page }) => {
+	await page.goto('/login');
+
+	// Berinteraksi seperti manusia: cari field, ketik, klik.
+	await page.getByLabel('Email').fill('budi@contoh.id');
+	await page.getByLabel('Password').fill('rahasia123');
+	await page.getByRole('button', { name: 'Masuk' }).click();
+
+	// Verifikasi alur lengkap: routing SvelteKit benar-benar pindah halaman.
+	await expect(page).toHaveURL('/dashboard');
+	await expect(page.getByRole('heading', { name: /selamat datang/i })).toBeVisible();
+});
+```
+
+<Callout type="tip">
+Kalau kamu mau menguji komponen <strong>tanpa</strong> Testing Library, Svelte menyediakan API mentah <code>mount</code>/<code>unmount</code> dari <code>'svelte'</code>: <code>mount(Component, &#123; target: document.body, props &#125;)</code>, lalu klik elemen, panggil <code>flushSync()</code>, periksa DOM, dan terakhir <code>unmount(component)</code>. Testing Library hanyalah pembungkus ergonomis di atas pola ini — ia menambah query berbasis role/teks dan <code>cleanup()</code> otomatis antar-test.
+</Callout>
+
+## 3. Coba sendiri
+
+Karena modul ini butuh runner sungguhan (Vitest + jsdom/Playwright), tidak ada playground interaktif. Sebagai gantinya, berikut **konfigurasi minimal** yang membuat semuanya berjalan. Pahami tiap baris — inilah yang biasanya gagal pertama kali.
+
+```js
+// vite.config.js — Vitest membaca config Vite yang sama
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+	plugins: [sveltekit()], // WAJIB: agar file .svelte & .svelte.ts dikompilasi
+	test: {
+		// Dua "project" terpisah: satu untuk logika (cepat, tanpa DOM),
+		// satu untuk komponen (butuh DOM jsdom). Vitest menjalankan keduanya
+		// dalam satu perintah, tapi dengan environment berbeda.
+		projects: [
+			{
+				// Logika murni & .svelte.ts — paling cepat tanpa DOM.
+				extends: './vite.config.js',
+				test: {
+					name: 'unit',
+					environment: 'node',
+					include: ['src/**/*.{test,spec}.{js,ts}'],
+					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+				}
+			},
+			{
+				// Component test — butuh DOM palsu (jsdom) + setup matcher.
+				extends: './vite.config.js',
+				test: {
+					name: 'component',
+					environment: 'jsdom',
+					include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
+					// daftarkan matcher seperti toBeInTheDocument()
+					setupFiles: ['./vitest-setup.js']
+				}
+			}
+		]
+	}
+});
+```
+
+```js
+// vitest-setup.js — dijalankan sebelum tiap file component test
+import '@testing-library/jest-dom/vitest';
+// Sekarang expect(...).toBeInTheDocument() & teman-temannya tersedia.
+```
+
+```js
+// playwright.config.js — E2E terpisah dari Vitest, runner sendiri
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+	// Playwright otomatis build + preview app sebelum test jalan,
+	// lalu mengetes URL preview itu di browser asli.
+	webServer: {
+		command: 'npm run build && npm run preview',
+		port: 4173
+	},
+	testDir: 'e2e' // pisahkan dari unit/component test
+});
+```
+
+<Callout type="tip">
+Tidak perlu menyusun semua ini dari nol. Saat menjalankan <code>npx sv create</code>, pilih add-on <strong>vitest</strong> dan <strong>playwright</strong> — CLI <code>sv</code> akan menulis <code>vite.config</code>, <code>vitest-setup</code>, dan <code>playwright.config</code> lengkap dengan skrip <code>npm test</code> untukmu. Modul ini menjelaskan <em>apa</em> yang dihasilkan add-on itu supaya kamu paham, bukan sekadar menyalin.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Tulis tiga lapis test untuk fitur 'keranjang belanja'">
+Kamu punya logika keranjang di `cart.svelte.ts` yang mengekspos `createCart()` dengan `items` (array `$state`), method `add(item)`, dan derived `total` (jumlah `price` semua item). Tulislah:
+
+1. **Unit test** memakai `$effect.root` + `flushSync` yang membuktikan: setelah `add({ price: 10 })` dan `add({ price: 5 })`, nilai `total` menjadi `15`.
+2. Jelaskan singkat (di komentar) **mengapa** `flushSync()` dibutuhkan setelah memanggil `add`.
+3. Sebutkan kapan kamu akan menambah **component test** dan kapan **E2E** untuk fitur keranjang ini.
+
+{#snippet solution()}
+
+```ts
+// cart.svelte.ts
+export function createCart() {
+	let items = $state<{ price: number }[]>([]);
+	const total = $derived(items.reduce((sum, i) => sum + i.price, 0));
+
+	return {
+		get items() {
+			return items;
+		},
+		get total() {
+			return total;
+		},
+		add(item: { price: number }) {
+			items = [...items, item];
+		}
+	};
+}
+```
+
+```ts
+// cart.svelte.test.ts
+import { flushSync } from 'svelte';
+import { expect, test } from 'vitest';
+import { createCart } from './cart.svelte';
+
+test('total menjumlahkan harga semua item', () => {
+	// $state + $derived butuh scope reaktif hidup -> $effect.root.
+	const cleanup = $effect.root(() => {
+		const cart = createCart();
+
+		cart.add({ price: 10 });
+		cart.add({ price: 5 });
+
+		// flushSync dibutuhkan karena update $state & evaluasi ulang
+		// $derived terjadi secara batched/asinkron. Tanpa flushSync,
+		// `total` bisa jadi belum dihitung ulang saat kita assert.
+		flushSync();
+
+		expect(cart.total).toBe(15);
+	});
+
+	cleanup(); // bersihkan agar derived/effect tidak bocor antar-test
+});
+```
+
+Kapan naik lapis:
+
+- **Component test** ketika ada UI nyata: komponen `<Cart>` yang menampilkan daftar item dan tombol "Tambah". Uji bahwa klik tombol benar-benar menampilkan item baru dan total di layar (pakai `render` + `userEvent.click` + `getByText`).
+- **E2E (Playwright)** untuk alur kritis utuh: user membuka produk, menekan "Beli", masuk halaman keranjang, lalu checkout — melintasi beberapa route SvelteKit dan mungkin server/`+page.server.ts`. Cukup satu-dua skenario "happy path" plus satu error penting; jangan duplikasi semua kasus yang sudah ditutup unit/component test.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa <code>cleanup()</code> dari <code>$effect.root</code>.</strong> Fungsi yang dikembalikan <code>$effect.root</code> WAJIB dipanggil di akhir test. Kalau tidak, effect dan state tetap "hidup" dan bisa bocor ke test berikutnya — menyebabkan kegagalan misterius yang berubah-ubah tergantung urutan eksekusi. Pola amannya: simpan ke variabel <code>cleanup</code> di awal, panggil di akhir (atau di <code>afterEach</code>).
+</Callout>
+
+<Callout type="pitfall">
+<strong>Mengira state langsung ter-update tanpa <code>flushSync</code>.</strong> Di unit test mentah, setelah mengubah <code>$state</code> atau memicu <code>$effect</code>, DOM/effect belum berjalan sampai microtask berikutnya. Assertion sinkron yang langsung dijalankan akan melihat nilai lama. Panggil <code>flushSync()</code> dulu. (Di <code>@testing-library/svelte</code> ini biasanya tertangani oleh <code>await user.click(...)</code> atau <code>await screen.findBy*</code>, jadi pastikan kamu meng-<code>await</code>-nya.)
+</Callout>
+
+<Callout type="warning">
+<strong>File harus berakhiran <code>.svelte.ts</code> / <code>.svelte.js</code> agar runes bekerja di luar komponen.</strong> Menulis <code>$state</code> di file <code>utils.ts</code> biasa akan gagal kompilasi — compiler Svelte hanya memproses ekstensi <code>.svelte.*</code>. Begitu juga file test yang memakai <code>$effect.root</code>/<code>$state</code> harus bernama <code>*.svelte.test.ts</code> supaya ikut dikompilasi.
+</Callout>
+
+<Callout type="warning">
+<strong>Jangan menguji detail implementasi.</strong> Hindari assertion pada class CSS internal, nama variabel, atau struktur DOM yang tidak dilihat user. Cari elemen lewat <strong>role</strong> dan <strong>teks</strong> (<code>getByRole</code>, <code>getByLabelText</code>, <code>getByText</code>). Test yang terikat pada teks yang dilihat user tetap hijau saat kamu merefactor internal — itu justru tujuannya.
+</Callout>
+
+<Callout type="tip">
+<strong>Pisahkan environment demi kecepatan.</strong> Unit test logika murni jauh lebih cepat tanpa DOM — set <code>environment: 'node'</code>. Hanya component test yang butuh <code>jsdom</code>/<code>happy-dom</code>. Vitest mendukung beberapa <code>projects</code> sehingga keduanya berjalan dengan konfigurasi berbeda dalam satu perintah. Letakkan E2E Playwright di folder terpisah (mis. <code>e2e/</code>) dengan runner sendiri, jangan dicampur dengan Vitest.
+</Callout>
+
+<Callout type="tip">
+<strong>Pilih lapis sesuai pertanyaan yang ingin dijawab.</strong> "Apakah logika perhitungan benar?" → unit. "Apakah komponen bereaksi benar terhadap klik?" → component. "Apakah seluruh alur user (routing + server) jalan?" → E2E. Kalau sebuah bug bisa ditangkap di lapis yang lebih murah, tulis di sana — E2E mahal dan lambat, simpan untuk yang benar-benar butuh browser sungguhan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/testing" label="Testing — dokumentasi resmi Svelte" />

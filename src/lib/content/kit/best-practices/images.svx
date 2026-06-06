@@ -1,0 +1,324 @@
+---
+title: Images
+product: kit
+section: best-practices
+sectionTitle: Best practices
+sectionOrder: 5
+order: 4
+status: stable
+description: Optimalkan gambar di SvelteKit — @sveltejs/enhanced-img untuk aset lokal (AVIF/WebP + srcset otomatis), Vite asset handling, lazy loading, ukuran responsif, dan CDN gambar untuk sumber dinamis.
+docs: https://svelte.dev/docs/kit/images
+keywords: [enhanced-img, lazy-loading, srcset, avif, webp, image-cdn]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Gambar hampir selalu jadi byte terberat di sebuah halaman. Satu foto hero 3 MB bisa mengalahkan total seluruh JavaScript-mu, dan ia memukul dua metrik Core Web Vitals sekaligus: **LCP** (seberapa cepat elemen besar muncul) dan **CLS** (seberapa banyak layout "loncat" saat gambar akhirnya masuk). Jadi "mengurus gambar" bukan polesan akhir — ia bagian dari arsitektur performa.
+
+Pertanyaan kunci yang menentukan strategi cuma satu, dan ini benang merah seluruh modul: **kapan gambar itu diketahui?**
+
+- **Saat build** (file ada di repo / `$lib/assets`) → optimalkan sekarang juga, gratis selamanya. Inilah wilayah `@sveltejs/enhanced-img` dan Vite asset handling.
+- **Saat runtime** (URL dari CMS, database, upload user) → build tak pernah melihatnya, jadi optimasi harus terjadi belakangan, di **CDN gambar**.
+
+Kalau kamu datang dari React/Vue, peta mentalnya: `@sveltejs/enhanced-img` itu kira-kira `next/image` atau `@nuxt/image`-nya SvelteKit — tapi dengan satu perbedaan filosofis penting yang kita bahas di bawah.
+
+### Analogi: tukang foto vs. studio cetak on-demand
+
+Bayangkan kamu punya toko yang butuh banyak ukuran cetakan dari satu foto.
+
+**`@sveltejs/enhanced-img` = percetakan yang bekerja sekali saat toko dibangun.** Sebelum toko buka (saat *build*), ia mengambil foto mastermu, lalu mencetak banyak versi: ukuran kecil untuk HP, sedang untuk tablet, besar untuk desktop; masing-masing dalam format hemat (AVIF, WebP) plus satu format lawas sebagai cadangan. Semua hasil cetak ditempel rapi, lengkap dengan label ukuran (`width`/`height`) supaya bingkainya tidak pernah goyang. Setelah itu, melayani pengunjung nyaris tanpa biaya — semua sudah jadi. Kelemahannya jelas: ia cuma bisa mencetak foto yang **sudah ada di tangan saat toko dibangun**.
+
+**CDN gambar = studio cetak ekspres yang buka 24 jam di sebelah toko.** Kalau ada foto baru yang baru diunggah pelanggan tadi pagi (runtime), percetakan build sudah tutup — kamu kirim foto itu ke studio ekspres lewat URL, dan ia mencetak ukuran yang diminta saat itu juga, lalu menyimpan hasilnya supaya permintaan berikutnya instan.
+
+**Vite asset handling = petugas arsip.** Dia tidak mencetak ulang apa pun, tapi setiap berkas yang kamu `import` diberi cap sidik jari (hash) di namanya supaya browser bisa meng-cache selamanya, dan file yang sangat kecil malah ia tempel langsung (inline) biar tak perlu request terpisah.
+
+Ketiganya **bukan pilihan saling meniadakan** — proyek nyata mencampur semuanya: enhanced-img untuk hero & konten statis, Vite import untuk logo/icon kecil, CDN untuk konten dinamis dari CMS.
+
+### Kenapa `enhanced:img`, bukan `<img>` polos?
+
+`<img src="foto.jpg">` polos punya tiga dosa diam-diam:
+
+1. **Format boros.** JPEG/PNG jauh lebih berat dari AVIF/WebP untuk kualitas visual yang sama.
+2. **Satu ukuran untuk semua.** HP 360px mengunduh gambar 2000px yang sama dengan monitor 4K — buang kuota.
+3. **Tanpa `width`/`height` → CLS.** Browser tak tahu ruang yang harus dipesan, jadi teks "loncat" saat gambar mendarat.
+
+`<enhanced:img>` menambal ketiganya **saat compile**: satu baris dikompilasi jadi `<picture>` berisi banyak `<source>` (AVIF/WebP + fallback), `srcset` multi-ukuran, dan `width`/`height` yang sudah terisi otomatis. Bonus: EXIF (lokasi GPS kamera, dll.) ikut dibuang demi privasi. Karena semua kerja berat terjadi sekali saat build (hasilnya di-cache di `node_modules/.cache/imagetools`), pengguna akhir tak menanggung biaya komputasi sama sekali.
+
+Catatan filosofis vs. `next/image`: `next/image` mengoptimasi **on-demand di server** saat request pertama (butuh runtime Node + cache). `enhanced:img` melakukannya **di build**, jadi tak ada layanan runtime yang perlu dijaga untuk aset statis — sangat cocok untuk deploy ke host statis/edge. Trade-off-nya: ia hanya untuk file yang ada saat build, bukan URL dinamis.
+
+## 2. Contoh kode
+
+Langkah 1 — pasang plugin. Urutannya penting: `enhancedImages()` harus **sebelum** `sveltekit()`.
+
+```sh
+npm i -D @sveltejs/enhanced-img
+```
+
+```js
+// vite.config.js
+import { sveltekit } from '@sveltejs/kit/vite';
+import { enhancedImages } from '@sveltejs/enhanced-img';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	plugins: [
+		// HARUS sebelum sveltekit() agar <enhanced:img> diproses lebih dulu.
+		enhancedImages(),
+		sveltekit()
+	]
+});
+```
+
+Langkah 2 — pakai. Tidak ada import komponen; `enhanced:img` adalah elemen khusus yang dikenali compiler. `src` memakai path Vite biasa (relatif `./` atau alias `$lib`).
+
+```svelte
+<!-- Satu baris ini -> dikompilasi jadi <picture> AVIF/WebP + srcset + width/height.
+     Sediakan gambar di resolusi 2x (retina); SvelteKit otomatis melayani versi
+     lebih kecil ke layar lebih kecil. alt yang bermakna = a11y + SEO. -->
+<enhanced:img src="./hero.jpg" alt="Tim kami sedang rapat di kantor" />
+```
+
+Untuk gambar **besar** (lebih lebar dari ~400px), beri tahu browser berapa lebar render-nya lewat `sizes`, supaya HP tidak mengunduh versi desktop:
+
+```svelte
+<!-- sizes: "render selebar viewport, tapi maksimal 1280px".
+     Browser memilih kandidat srcset terkecil yang cukup. -->
+<enhanced:img src="./hero.jpg" alt="Hero" sizes="min(1280px, 100vw)" />
+
+<!-- Mau kontrol penuh lebar yang dibangun? Daftarkan via query ?w=...
+     (pisah titik-koma). Cocokkan dengan media query di sizes. -->
+<enhanced:img
+	src="./hero.jpg?w=1280;640;400"
+	alt="Hero"
+	sizes="(min-width: 1920px) 1280px, (min-width: 1080px) 640px, 400px"
+/>
+```
+
+Untuk **memilih gambar secara dinamis** dari himpunan file yang tetap diketahui saat build (mis. galeri di folder), gunakan query `?enhanced` saat import — bukan URL runtime:
+
+```svelte
+<script>
+	// Cara 1: import satu file dengan query ?enhanced.
+	import hero from '$lib/assets/hero.jpg?enhanced';
+
+	// Cara 2: import banyak file sekaligus (build-time glob).
+	// eager + query enhanced -> tiap modul.default siap dipakai <enhanced:img>.
+	const galeri = import.meta.glob('$lib/assets/galeri/*.{avif,jpeg,jpg,png,webp}', {
+		eager: true,
+		query: { enhanced: true }
+	});
+</script>
+
+<enhanced:img src={hero} alt="Hero" />
+
+{#each Object.values(galeri) as gambar}
+	<enhanced:img src={gambar.default} alt="Foto galeri" />
+{/each}
+```
+
+Transform per-gambar memakai query string yang sama (di balik layar ini imagetools), mis. blur untuk placeholder atau menurunkan kualitas:
+
+```svelte
+<!-- ?blur=15 dan ?quality=... adalah directive imagetools. -->
+<enhanced:img src="./hero.jpg?blur=15" alt="Pratinjau buram hero" />
+```
+
+Untuk aset yang **tidak** butuh varian banyak-ukuran (logo, icon kecil, satu gambar di CSS), Vite asset handling sudah cukup — cukup `import`, dapat URL ber-hash siap cache:
+
+```svelte
+<script>
+	// Vite memproses ini: nama file diberi hash (cache abadi),
+	// file sangat kecil malah di-inline jadi data URI.
+	import logo from '$lib/assets/logo.png';
+</script>
+
+<img src={logo} alt="Logo perusahaan" width="120" height="32" />
+```
+
+## 3. Coba sendiri
+
+Karena `enhanced:img` adalah transformasi **build-time** (butuh Vite + plugin) dan CDN butuh layanan eksternal, bagian ini tidak bisa dijalankan di playground live. Tapi inti pembelajarannya ada pada **markup yang dihasilkan** dan **keputusan atribut** — itu yang kita bedah lewat contoh statis beranotasi di bawah.
+
+Pertama, lihat apa yang sebenarnya kamu dapat. Satu `enhanced:img` di kiri, hasil kompilasinya (disederhanakan) di kanan:
+
+```svelte
+<!-- YANG KAMU TULIS -->
+<enhanced:img src="./hero.jpg" alt="Tim kami" sizes="min(1280px, 100vw)" />
+```
+
+```html
+<!-- YANG DIHASILKAN saat build (disederhanakan) -->
+<picture>
+	<!-- Browser memilih format pertama yang ia dukung, dari paling hemat. -->
+	<source
+		type="image/avif"
+		srcset="/_app/.../hero-400.avif 400w, /_app/.../hero-800.avif 800w, /_app/.../hero-1280.avif 1280w"
+		sizes="min(1280px, 100vw)"
+	/>
+	<source
+		type="image/webp"
+		srcset="/_app/.../hero-400.webp 400w, /_app/.../hero-800.webp 800w, /_app/.../hero-1280.webp 1280w"
+		sizes="min(1280px, 100vw)"
+	/>
+	<!-- <img> fallback: width/height TERISI -> tak ada layout shift (CLS). -->
+	<img src="/_app/.../hero-1280.jpg" alt="Tim kami" width="1280" height="720" />
+</picture>
+```
+
+Perhatikan: `width`/`height` terisi otomatis (mencegah CLS), ada banyak `w` di `srcset` (browser pilih yang pas dengan layar + DPR), dan format hemat didahulukan. Kamu menulis satu baris; compiler menulis 15 baris membosankan ini untukmu.
+
+Kedua, keputusan paling berdampak: gambar **LCP** (biasanya hero paling atas). Setelan default justru salah untuknya.
+
+```svelte
+<!-- HERO / LCP: jangan lazy-load gambar yang langsung terlihat!
+     loading="lazy" menunda gambar terpenting -> LCP melambat.
+     fetchpriority="high" menyuruh browser memprioritaskannya. -->
+<enhanced:img
+	src="./hero.jpg"
+	alt="Promo utama"
+	sizes="min(1280px, 100vw)"
+	fetchpriority="high"
+/>
+
+<!-- Gambar DI BAWAH lipatan (galeri, footer): di sinilah lazy load tepat.
+     Browser menundanya sampai mendekati viewport -> hemat bandwidth awal. -->
+<enhanced:img src="./galeri-1.jpg" alt="Produk" loading="lazy" />
+```
+
+Ketiga, untuk gambar **runtime** dari API/CMS, `enhanced:img` tidak berlaku. Pola `<img>` polos yang benar tetap penting:
+
+```svelte
+<script>
+	let { produk } = $props(); // produk.imageUrl datang dari API saat runtime
+</script>
+
+<!-- Gambar dinamis: SELALU set width/height (atau aspect-ratio via CSS) untuk cegah CLS,
+     loading="lazy" jika di bawah lipatan, alt bermakna.
+     Untuk ukuran responsif + format modern, minta CDN yang melakukannya (lihat bawah). -->
+<img
+	src={produk.imageUrl}
+	alt={produk.nama}
+	width="600"
+	height="400"
+	loading="lazy"
+/>
+```
+
+Keempat, gambaran **CDN gambar** untuk sumber dinamis. Idenya: kamu menaruh parameter transform di URL, CDN yang mengerjakannya saat request lalu meng-cache hasilnya.
+
+```svelte
+<script>
+	let { produk } = $props();
+
+	// Bangun srcset menunjuk CDN; CDN memotong/mengubah format sesuai query.
+	// (Sintaks query tiap CDN beda; ini ilustrasi pola umum w=&format=auto.)
+	const base = produk.imageUrl;
+	const srcset = [400, 800, 1280]
+		.map((w) => base + '?w=' + w + '&format=auto ' + w + 'w')
+		.join(', ');
+</script>
+
+<img
+	src={base + '?w=800&format=auto'}
+	{srcset}
+	sizes="min(1280px, 100vw)"
+	alt={produk.nama}
+	width="1280"
+	height="720"
+	loading="lazy"
+/>
+```
+
+Di praktik nyata kamu jarang merangkai string ini sendiri — library seperti `@unpic/svelte` (CDN-agnostic) atau library resmi CDN (Cloudinary) / CMS (Contentful, Storyblok) menghasilkan `<img>`/`srcset` yang benar dari sebuah URL atau ID.
+
+## 4. Latihan
+
+<Exercise title="Pilih strategi gambar yang tepat untuk tiap kasus">
+Sebuah halaman produk punya tiga gambar berbeda asal-usulnya. Tentukan teknik untuk masing-masing, lalu tulis markup-nya dengan atribut yang benar (format modern, ukuran responsif, dan anti-CLS):
+
+1. **Foto hero kategori** — file `hero.jpg` ada di `$lib/assets`, tampil paling atas (LCP), lebar penuh.
+2. **Logo brand** — file `logo.svg` kecil di `$lib/assets`, tidak butuh banyak ukuran.
+3. **Foto produk** — URL-nya datang dari API saat runtime (`produk.imageUrl`), tampil di bawah lipatan.
+
+{#snippet solution()}
+
+  ```svelte
+  <script>
+    // (2) Logo: cukup Vite asset import -> URL ber-hash, cache abadi.
+    import logo from '$lib/assets/logo.svg';
+
+    let { produk } = $props(); // (3) gambar runtime dari API
+  </script>
+
+  <!-- (1) Hero/LCP: enhanced:img (AVIF/WebP + srcset otomatis).
+       sizes untuk gambar lebar; fetchpriority high; JANGAN lazy. -->
+  <enhanced:img
+    src="$lib/assets/hero.jpg"
+    alt="Promo kategori sepatu lari"
+    sizes="min(1280px, 100vw)"
+    fetchpriority="high"
+  />
+
+  <!-- (2) Logo: <img> biasa dengan URL hasil Vite import.
+       SVG kecil tak perlu varian ukuran; set width/height tetap. -->
+  <img src={logo} alt="Logo toko" width="120" height="32" />
+
+  <!-- (3) Gambar runtime: enhanced:img TIDAK berlaku (tak ada saat build).
+       Pakai <img> polos: width/height anti-CLS, lazy karena di bawah lipatan,
+       alt bermakna. Untuk responsif/format, serahkan ke CDN gambar. -->
+  <img
+    src={produk.imageUrl}
+    alt={produk.nama}
+    width="600"
+    height="400"
+    loading="lazy"
+  />
+  ```
+
+  Inti keputusan: **build-time vs runtime**. Hero & logo diketahui saat build → optimalkan saat build (enhanced-img untuk yang butuh banyak ukuran, Vite import untuk yang kecil). Foto produk baru ada saat runtime → enhanced-img mustahil, jadi `<img>` benar + (idealnya) CDN. Dan jangan pernah lupa `width`/`height` untuk mencegah CLS, plus `fetchpriority="high"` (bukan `lazy`) untuk elemen LCP.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan memberi <code>loading="lazy"</code> pada gambar <strong>LCP</strong> (hero/banner paling atas yang langsung terlihat). Lazy-loading justru menunda gambar terpentingmu sehingga skor LCP memburuk. Untuk gambar yang terlihat saat halaman dibuka, gunakan <code>fetchpriority="high"</code> dan biarkan ia dimuat eager. Simpan <code>loading="lazy"</code> hanya untuk gambar <em>di bawah lipatan</em> (galeri, footer, daftar panjang).
+</Callout>
+
+<Callout type="warning">
+<code>@sveltejs/enhanced-img</code> adalah <strong>build plugin</strong>: ia hanya bisa mengoptimasi file yang ada di mesinmu saat build. URL dinamis dari API/CMS/database tidak bisa dipakai sebagai <code>src</code> <code>&lt;enhanced:img&gt;</code>. Untuk sumber runtime, pakai <code>&lt;img&gt;</code> biasa (dengan <code>width</code>/<code>height</code> + <code>alt</code>) dan delegasikan optimasi ke <strong>CDN gambar</strong>. SVG pun untuk sekarang hanya didukung secara statis.
+</Callout>
+
+<Callout type="tip">
+Selalu sediakan gambar sumber pada <strong>2x lebar tampilnya</strong> (untuk layar retina/HiDPI) dan tambahkan <code>sizes</code> untuk gambar yang jauh lebih lebar dari layar HP (~400px). Tanpa <code>sizes</code>, browser menganggap gambar selebar viewport dan bisa mengunduh varian lebih besar dari perlu. Hindari satuan <code>em</code>/<code>rem</code> di dalam <code>sizes</code> — gunakan <code>px</code> atau <code>vw</code> agar perhitungan browser konsisten.
+</Callout>
+
+<Callout type="tip">
+Cegah CLS dari sisi CSS juga: bungkus gambar dalam container dan kunci rasionya. Untuk <code>&lt;enhanced:img&gt;</code> yang ingin kamu ubah ukurannya via CSS, targetkan elemen <code>img</code> di dalamnya dan set <code>height: auto</code> agar rasio terjaga, mis. <code>.hero img &#123; width: 100%; height: auto; &#125;</code>. Untuk memilih dengan tag selector, escape titik dua: <code>enhanced\:img</code>.
+</Callout>
+
+<Callout type="pitfall">
+Salah urutan plugin di <code>vite.config.js</code> = gambar tidak teroptimasi diam-diam (tanpa error jelas). Pastikan <code>enhancedImages()</code> ditempatkan <strong>sebelum</strong> <code>sveltekit()</code> di array <code>plugins</code>.
+</Callout>
+
+Untuk membandingkan pola lama vs. modern yang sering muncul di tutorial usang:
+
+<LegacyVsModern rows={[
+  { legacy: 'img src="hero.jpg" (statis, tanpa optimasi)', modern: 'enhanced:img src="./hero.jpg" alt="..."', note: 'AVIF/WebP + srcset + width/height otomatis (gambar lokal)' },
+  { legacy: 'img tanpa width/height', modern: 'img width="600" height="400" (atau aspect-ratio CSS)', note: 'Cegah CLS dengan memesan ruang lebih dulu' },
+  { legacy: 'loading="lazy" pada hero/LCP', modern: 'fetchpriority="high" pada hero, lazy hanya di bawah lipatan', note: 'Jangan menunda gambar terpenting' },
+  { legacy: 'satu ukuran besar untuk semua layar', modern: 'srcset + sizes (atau CDN ?w=...&format=auto)', note: 'HP tak perlu mengunduh versi desktop' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/images" label="SvelteKit — Images (enhanced-img, Vite assets, CDN)" />
+<DocsLink href="https://svelte.dev/docs/kit/assets" label="SvelteKit — Static assets & the static directory" />
+<DocsLink href="https://vitejs.dev/guide/assets" label="Vite — Static asset handling (import & hashing)" />

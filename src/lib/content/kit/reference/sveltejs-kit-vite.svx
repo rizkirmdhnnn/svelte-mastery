@@ -1,0 +1,309 @@
+---
+title: @sveltejs/kit/vite
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 5
+status: reference
+description: Fungsi sveltekit() dari @sveltejs/kit/vite — plugin Vite yang menyulap bundler generik jadi framework SSR penuh, plus cara mengonfigurasinya di vite.config.js.
+docs: https://svelte.dev/docs/kit/@sveltejs-kit-vite
+keywords: [sveltekit, vite plugin, vite.config.js, build, dev, ssr]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Modul `@sveltejs/kit/vite` cuma punya **satu** ekspor: fungsi `sveltekit()`. Tapi jangan tertipu ukurannya — satu pemanggilan fungsi inilah yang mengubah Vite (sebuah bundler/dev-server generik yang tidak tahu apa-apa soal routing, SSR, atau `+page.svelte`) menjadi mesin penuh SvelteKit. Tanpa baris `plugins: [sveltekit()]` di `vite.config.js`, proyekmu hanyalah proyek Vite biasa yang kebetulan punya folder `src/routes`.
+
+Kenapa SvelteKit dibangun **di atas** Vite, bukan menulis tooling sendiri dari nol? Karena Vite sudah sangat jago di hal-hal yang sulit dan netral-framework: dev server super cepat dengan HMR, resolusi modul, bundling produksi lewat Rollup, code-splitting, penanganan CSS/aset, dan ekosistem plugin yang besar. SvelteKit tidak perlu menemukan ulang semua itu. Yang ia lakukan adalah **menumpangkan** pengetahuan khusus-framework — "ini cara membaca pohon rute", "ini cara me-render SSR di dev", "ini cara membangun untuk produksi lalu menyerahkannya ke adapter" — ke atas fondasi Vite, dalam bentuk sebuah plugin.
+
+### Analogi: base tool + attachment
+
+Bayangkan Vite sebagai **bor cordless serbaguna** — badan mesin yang kuat dan cepat, tapi sendirian ia cuma bisa memutar. `sveltekit()` adalah **satu set attachment** yang kamu klik ke badan itu: tiba-tiba bor yang sama bisa mengebor, mengamplas, memotong, mengaduk. Kamu tidak mengganti mesinnya; kamu memperluas kemampuannya lewat satu sambungan. Begitulah `sveltekit()` bekerja — satu panggilan fungsi me-wiring bundler generik menjadi framework SSR lengkap, tanpa kamu menyentuh internal Vite.
+
+Buat yang datang dari ekosistem lain: ini mirip `@vitejs/plugin-react` yang kamu pasang di proyek React+Vite, atau modul `@nuxt/vite` yang dipakai Nuxt di balik layar. Sama-sama "plugin tunggal yang membawa framework masuk ke Vite". Bedanya, `sveltekit()` membawa **jauh lebih banyak**: bukan cuma transform JSX/SFC, tapi seluruh lapisan routing + SSR + build orchestration.
+
+### Yang sebenarnya dilakukan plugin ini
+
+Hal yang sering bikin bingung: `sveltekit()` tidak mengembalikan **satu** plugin, melainkan **array** plugin (dibungkus `Promise`, jadi tanda tangannya `Promise<Plugin[]>`). Di balik satu pemanggilan itu tersembunyi beberapa tanggung jawab:
+
+- **Meng-compile `.svelte`.** `sveltekit()` sudah memasukkan `@sveltejs/vite-plugin-svelte` (plugin `svelte()`) di dalam array yang dikembalikannya. Jadi di proyek SvelteKit kamu **tidak** menambahkan `svelte()` sendiri — itu sudah ikut.
+- **Dev server SSR.** Saat `vite dev`, plugin memasang middleware yang membaca rutemu, menjalankan `load`, dan me-render halaman di server lebih dulu (SSR) — lengkap dengan HMR. Inilah kenapa `vite dev` di SvelteKit terasa seperti server beneran, bukan sekadar static file server.
+- **Membaca pohon rute & membuat manifest.** Plugin memindai `src/routes`, memahami `+page`, `+layout`, `+server`, lalu menyusun manifest rute yang dipakai router klien maupun server.
+- **Menggenerasi `.svelte-kit/`.** Folder kerja ini berisi tipe yang dibuat otomatis (`$types`), `tsconfig` turunan, dan manifest. Inilah yang membuat `import type { PageLoad } from './$types'` bekerja.
+- **Menyediakan modul virtual.** `$app/*`, `$env/static/*`, `$env/dynamic/*`, alias `$lib`, dan `$service-worker` semuanya dipasok oleh plugin ini. Termasuk aturan keamanan env: hanya variabel berawalan `PUBLIC_` yang boleh menembus ke sisi klien.
+- **Mengorkestrasi build produksi.** Saat `vite build`, plugin menjalankan build dua tahap (bundle klien lalu bundle server) lalu **memanggil adapter**mu di akhir untuk membungkus hasilnya ke platform tujuan.
+
+Jadi rantai lengkapnya begini: `sveltekit()` (di `vite.config.js`) menghasilkan output **netral-platform**, lalu **adapter** (di `svelte.config.js`) menerjemahkannya untuk Node/Vercel/Cloudflare/dll. Plugin ini adalah **mesinnya**; adapter adalah **colokan terakhir**-nya.
+
+### Dua file config, dua tanggung jawab
+
+SvelteKit memakai dua file konfigurasi yang sering tertukar:
+
+- **`svelte.config.js`** — milik SvelteKit & compiler Svelte: `kit` (adapter, alias, prerender, files, dll.), `preprocess`, `compilerOptions`, `extensions`. `sveltekit()` membaca file ini otomatis.
+- **`vite.config.js`** — milik Vite: daftar `plugins` (tempat `sveltekit()` dipasang), `server`, `define`, `optimizeDeps`, `ssr`, `resolve`, plus blok `test` untuk Vitest.
+
+Sejak SvelteKit **2.62.0**, ada jalan pintas: kamu boleh mengoper config langsung ke `sveltekit(config)`. Begitu kamu melakukannya, **`svelte.config.js` diabaikan total** dan semua konfigurasi hidup di `vite.config.js`. Berguna kalau kamu ingin satu file config saja, tapi mayoritas proyek tetap memakai dua file karena tooling lain (editor extension, dll.) mengharapkan `svelte.config.js`.
+
+## 2. Contoh kode
+
+Pemakaian standar — inilah `vite.config.js` yang kamu dapat dari `npx sv create`:
+
+```js
+// vite.config.js — setup standar SvelteKit
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	// sveltekit() mengembalikan ARRAY plugin (Promise<Plugin[]>).
+	// Vite mendukung promise di dalam array plugins, jadi TIDAK perlu di-await.
+	plugins: [sveltekit()]
+	// Catatan: JANGAN tambahkan svelte() dari @sveltejs/vite-plugin-svelte di sini —
+	// sveltekit() sudah menyertakannya. Menambah dua kali = error/compile ganda.
+});
+```
+
+Menambah konfigurasi Vite lain berdampingan dengan plugin — ini area "milik Vite", bukan milik SvelteKit:
+
+```js
+// vite.config.js — dengan opsi Vite tambahan
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	plugins: [sveltekit()],
+
+	server: {
+		port: 4000, // ganti port dev server (default 5173)
+		proxy: {
+			// teruskan /api ke backend lain saat dev
+			'/api': 'http://localhost:8080'
+		}
+	},
+
+	define: {
+		// konstanta yang di-inline saat build (mis. versi app)
+		__APP_VERSION__: JSON.stringify('1.0.0')
+	},
+
+	ssr: {
+		// paksa dependency ESM-bermasalah ikut di-bundle untuk SSR,
+		// alih-alih di-import sebagai external Node
+		noExternal: ['some-esm-only-lib']
+	},
+
+	// blok test ini dibaca Vitest, bukan SvelteKit
+	test: {
+		include: ['src/**/*.{test,spec}.{js,ts}']
+	}
+});
+```
+
+Bentuk **inline config** (SvelteKit 2.62.0+) — semua konfigurasi di satu file, `svelte.config.js` tak lagi dipakai:
+
+```js
+// vite.config.js — inline config (mengganti peran svelte.config.js)
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+import adapter from '@sveltejs/adapter-auto';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default defineConfig({
+	plugins: [
+		sveltekit({
+			// Field-field SvelteConfig (preprocess, compilerOptions, extensions, ...)
+			preprocess: vitePreprocess(),
+			// Field `kit` = persis isi yang biasanya ada di svelte.config.js > kit
+			kit: {
+				adapter: adapter(),
+				alias: { $components: 'src/lib/components' }
+			}
+		})
+	]
+});
+// Karena config dioper ke sveltekit(), svelte.config.js DIABAIKAN sepenuhnya.
+```
+
+## 3. Coba sendiri
+
+Plugin ini bekerja di tahap **dev & build**, bukan sesuatu yang bisa dirender di playground browser. Cara terbaik melatih intuisi: pasang config di proyek SvelteKit lokal, jalankan ketiga perintah Vite, lalu intip apa yang dihasilkan. Tiga perintah itu memanggil plugin yang sama dengan tiga mode berbeda.
+
+```bash
+# Ketiga perintah ini SEMUANYA dijalankan oleh Vite, dan memicu sveltekit():
+
+vite dev        # mode DEV: HMR + SSR live. Plugin memasang middleware yang
+                # menjalankan load() & me-render rute di server tiap request.
+
+vite build      # mode BUILD: bundle klien + bundle server, lalu plugin
+                # memanggil ADAPTER-mu untuk membungkus ke platform tujuan.
+
+vite preview    # jalankan hasil build secara lokal untuk dicek (mendekati prod).
+                # Catatan: ini BUKAN server produksi sungguhan — untuk adapter-node
+                # produksi, jalankan `node build` setelah `vite build`.
+```
+
+```text
+APA YANG TERJADI SAAT `vite dev`
+────────────────────────────────
+1. Vite memuat vite.config.js  ->  memanggil sveltekit()
+2. sveltekit() membaca svelte.config.js (kecuali config dioper inline)
+3. Plugin memindai src/routes, menyusun manifest, menulis .svelte-kit/
+4. Middleware SSR aktif: setiap request dirender di server, lalu di-hidrasi di klien
+5. Edit file .svelte -> vite-plugin-svelte (di dalam sveltekit()) meng-compile -> HMR
+
+APA YANG TERJADI SAAT `vite build`
+──────────────────────────────────
+1. Build tahap-1: bundle untuk BROWSER (klien) — JS/CSS + code-splitting
+2. Build tahap-2: bundle untuk SERVER — handler netral-platform
+3. Plugin memanggil adapter (dari kit.adapter) -> output siap-deploy
+```
+
+```bash
+# Intip "otak" yang ditulis plugin. Folder ini regen otomatis, JANGAN di-commit:
+ls .svelte-kit/
+# .svelte-kit/types/      -> tipe $types per-rute (PageLoad, PageData, dst.)
+# .svelte-kit/generated/  -> manifest rute & root component
+# .svelte-kit/tsconfig.json -> tsconfig turunan yang di-extend tsconfig-mu
+
+# Kalau tipe $types terasa "hilang"/basi tanpa menjalankan dev/build,
+# regen manual dengan perintah sync (satu-satunya sisa CLI svelte-kit):
+npx svelte-kit sync
+```
+
+## 4. Ringkasan API
+
+`@sveltejs/kit/vite` mengekspor tepat **satu** nilai runtime: fungsi `sveltekit`.
+
+### Ekspor
+
+| Ekspor | Jenis | Tanda tangan | Guna |
+| --- | --- | --- | --- |
+| `sveltekit` | fungsi (async) | `sveltekit(config?: KitConfig & Omit<SvelteConfig, 'onwarn'>): Promise<Plugin[]>` | Mengembalikan array plugin Vite milik SvelteKit. Dipasang di `plugins` pada `vite.config.js`. |
+
+```ts
+// Cara import-nya (selalu named import):
+import { sveltekit } from '@sveltejs/kit/vite';
+```
+
+### Parameter `config` (opsional, sejak 2.62.0)
+
+| Bagian tipe | Asal | Isi |
+| --- | --- | --- |
+| `KitConfig` | bagian `kit` dari svelte.config.js | `adapter`, `alias`, `files`, `prerender`, `csp`, `env`, `outDir`, dll. |
+| `Omit<SvelteConfig, 'onwarn'>` | sisa svelte.config.js (kecuali `onwarn`) | `preprocess`, `compilerOptions`, `extensions`, `kit`, `vitePlugin` |
+
+Jika `config` **diberikan**, `svelte.config.js` **diabaikan** dan semua konfigurasi diambil dari objek ini. Jika **tidak** diberikan (kasus paling umum), plugin membaca `svelte.config.js` seperti biasa.
+
+### Apa yang ditangani plugin yang dikembalikan
+
+| Tanggung jawab | Mode | Catatan |
+| --- | --- | --- |
+| Compile `.svelte` | dev + build | Sudah memuat `@sveltejs/vite-plugin-svelte` — jangan tambah `svelte()` lagi. |
+| Dev server SSR + HMR | `vite dev` | Middleware yang menjalankan `load` & render server tiap request. |
+| Scan rute + manifest | dev + build | Memindai `src/routes`, membuat manifest router. |
+| Generasi `.svelte-kit/` | dev + build | Tipe `$types`, `tsconfig` turunan, manifest. Regen via `svelte-kit sync`. |
+| Modul virtual | dev + build | `$app/*`, `$env/static/*`, `$env/dynamic/*`, `$lib`, `$service-worker` (env `PUBLIC_` saja yang ke klien). |
+| Build 2-tahap + adapter | `vite build` | Bundle klien → bundle server → panggil `kit.adapter`. |
+
+### Pembagian config: dua file
+
+| Konfigurasi | File | Contoh field |
+| --- | --- | --- |
+| SvelteKit & compiler Svelte | `svelte.config.js` | `kit.adapter`, `kit.alias`, `preprocess`, `compilerOptions` |
+| Vite | `vite.config.js` | `plugins`, `server`, `define`, `optimizeDeps`, `ssr`, `test` |
+
+<LegacyVsModern rows={[
+	{ legacy: 'svelte-kit dev', modern: 'vite dev', note: 'CLI svelte-kit untuk dev/build/preview sudah dihapus; pakai perintah Vite.' },
+	{ legacy: 'svelte-kit build', modern: 'vite build', note: 'Build kini lewat Vite; adapter dipanggil otomatis di akhir.' },
+	{ legacy: 'svelte-kit preview', modern: 'vite preview', note: 'Preview hasil build juga lewat Vite.' },
+	{ legacy: 'plugins: [svelte()]', modern: 'plugins: [sveltekit()]', note: 'Di proyek Kit, sveltekit() sudah memuat svelte() — jangan dobel.' }
+]} />
+
+<Callout type="legacy">
+Satu-satunya subperintah CLI <code>svelte-kit</code> yang <strong>masih ada</strong> adalah <code>svelte-kit sync</code> — ia menggenerasi ulang folder <code>.svelte-kit/</code> (tipe <code>$types</code> dkk.) tanpa menjalankan dev/build. Itu sebabnya proyek baru punya script <code>"prepare": "svelte-kit sync"</code> di <code>package.json</code>. Subperintah <code>dev</code>/<code>build</code>/<code>preview</code> versi lama sudah lama digantikan oleh <code>vite dev</code>/<code>vite build</code>/<code>vite preview</code>.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Susun vite.config.js yang benar">
+Tulis `vite.config.js` lengkap untuk proyek SvelteKit yang memenuhi empat syarat berikut, dan jelaskan singkat setiap baris non-trivial:
+
+1. Memasang plugin SvelteKit.
+2. Dev server berjalan di port `3000` dan mem-proxy `/api` ke `http://localhost:5000`.
+3. Sebuah library CommonJS bernama `legacy-chart` harus ikut di-bundle untuk SSR (bukan diperlakukan sebagai external Node).
+4. Menyediakan konstanta build-time `__BUILD_TIME__` berisi timestamp ISO.
+
+Bonus: jelaskan kenapa kamu **tidak** menambahkan `svelte()` dari `@sveltejs/vite-plugin-svelte`.
+
+{#snippet solution()}
+
+```js
+// vite.config.js
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	// (1) Plugin SvelteKit — sudah memuat compiler Svelte di dalamnya.
+	plugins: [sveltekit()],
+
+	server: {
+		port: 3000, // (2) ganti port dev (default 5173)
+		proxy: {
+			// (2) teruskan request /api ke backend terpisah saat dev
+			'/api': 'http://localhost:5000'
+		}
+	},
+
+	ssr: {
+		// (3) library CJS yang error saat dijadikan external -> paksa di-bundle utk SSR
+		noExternal: ['legacy-chart']
+	},
+
+	define: {
+		// (4) di-inline saat build. WAJIB JSON.stringify agar jadi literal string valid.
+		__BUILD_TIME__: JSON.stringify(new Date().toISOString())
+	}
+});
+```
+
+Penjelasan kunci:
+
+- `plugins: [sveltekit()]` — `sveltekit()` mengembalikan `Promise<Plugin[]>`; Vite menangani promise di dalam array, jadi tak perlu `await`.
+- `server.port` & `server.proxy` — murni opsi Vite (bukan SvelteKit). Proxy berguna agar fetch ke `/api` tidak kena CORS saat dev.
+- `ssr.noExternal` — secara default Vite menjadikan dependency `node_modules` sebagai *external* saat SSR. Untuk paket ESM/CJS bermasalah, masukkan ke `noExternal` agar ikut di-bundle.
+- `define.__BUILD_TIME__` — nilai di-`define` di-substitusi sebagai teks mentah ke kode, jadi string harus dibungkus `JSON.stringify` supaya menghasilkan literal `"..."` yang valid.
+
+**Bonus:** `sveltekit()` sudah menyertakan `@sveltejs/vite-plugin-svelte` (plugin `svelte()`) di dalam array yang dikembalikannya. Menambah `svelte()` sendiri berarti dua plugin mencoba meng-compile `.svelte` yang sama — memicu error atau output rusak. Plugin `svelte()` manual hanya untuk proyek Svelte **tanpa** SvelteKit.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menambahkan <code>svelte()</code> dari <code>@sveltejs/vite-plugin-svelte</code> di samping <code>sveltekit()</code>. Plugin SvelteKit <strong>sudah memuat</strong> compiler Svelte di dalam array yang dikembalikannya, jadi memasang keduanya membuat file <code>.svelte</code> yang sama di-compile dua kali — gejalanya error aneh saat dev atau bundle yang rusak. Plugin <code>svelte()</code> manual itu khusus proyek Svelte murni (tanpa Kit).
+</Callout>
+
+<Callout type="warning">
+Salah-taruh config adalah jebakan paling umum. Opsi <strong>SvelteKit</strong> (<code>adapter</code>, <code>alias</code>, <code>prerender</code>, <code>files</code>) hidup di <code>svelte.config.js</code> di bawah <code>kit</code> — atau dioper ke <code>sveltekit(&#123;...&#125;)</code> bila pakai inline config 2.62.0+. Opsi <strong>Vite</strong> (<code>server</code>, <code>define</code>, <code>optimizeDeps</code>, <code>ssr</code>, <code>test</code>) hidup di <code>vite.config.js</code>. Menaruh <code>adapter</code> longgar di <code>vite.config.js</code> tidak akan berpengaruh apa-apa.
+</Callout>
+
+<Callout type="tip">
+<code>sveltekit()</code> bersifat <strong>async</strong> (mengembalikan <code>Promise</code>). Untuk 99% kasus kamu tinggal menaruhnya di array <code>plugins</code> apa adanya — Vite paham promise di dalam array. Tapi kalau kamu perlu menghitung config Vite secara dinamis lebih dulu, kamu boleh menulis <code>export default defineConfig(async () =&gt; (&#123; plugins: [await sveltekit()] &#125;))</code>. Jarang dibutuhkan, tapi tahu ini menyelamatkanmu saat butuh.
+</Callout>
+
+<Callout type="warning">
+Beberapa opsi Vite <strong>dikuasai</strong> SvelteKit dan sebaiknya tidak kamu timpa: <code>appType</code>, tahap <code>build.ssr</code>, sebagian perilaku <code>publicDir</code>/output. Plugin mengaturnya agar build dua-tahap + SSR berjalan benar. Kalau kamu memaksa override hal-hal ini, dev/build bisa pecah dengan cara yang sulit didiagnosis. Batasi <code>vite.config.js</code>-mu pada opsi yang memang netral (server, alias, define, optimizeDeps, ssr.noExternal).
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/@sveltejs-kit-vite" label="@sveltejs/kit/vite — fungsi sveltekit()" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration" label="SvelteKit — Configuration (svelte.config.js / kit)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (tahap akhir yang dipanggil saat vite build)" />

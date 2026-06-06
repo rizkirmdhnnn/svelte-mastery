@@ -1,0 +1,256 @@
+---
+title: $env/dynamic/private
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 14
+status: reference
+description: Modul $env/dynamic/private SvelteKit — membaca environment variable privat saat runtime (setara process.env), hanya di server, beda dari $env/static, dan kapan sebaiknya dipakai.
+docs: https://svelte.dev/docs/kit/$env-dynamic-private
+keywords: [env, dynamic, private, runtime, process.env, server-only]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`$env/dynamic/private` adalah modul virtual SvelteKit yang memberimu **satu objek bernama `env`**, berisi environment variable **privat** yang dibaca **saat runtime** — bukan saat build. Di adapter Node (atau saat `vite preview`), objek ini pada dasarnya adalah **`process.env`** versi yang sudah disaring dan diamankan SvelteKit.
+
+Dua kata kunci di nama modulnya menjelaskan seluruh perilakunya:
+
+- **`dynamic`** — nilainya dibaca **saat proses sedang jalan**, dari environment yang disuntikkan platform tempatmu deploy (container, dashboard hosting, shell, atau file `.env` saat `dev`). Lawannya, `static`, membaca nilai **saat build** lalu "membakar" (inline) nilainya ke dalam kode.
+- **`private`** — modul ini **hanya boleh diimpor di kode server**. SvelteKit akan **menggagalkan build** jika kamu mengimpornya ke kode yang bisa berakhir di browser. Isinya adalah variabel yang **tidak** diawali `config.kit.env.publicPrefix` (default `PUBLIC_`). Variabel ber-prefix `PUBLIC_` justru sengaja **disembunyikan** dari modul ini — untuk itu ada `$env/dynamic/public`.
+
+Inti yang membedakan modul ini dari saudaranya, `$env/static/private`, adalah **kapan nilainya dikunci**. Static membaca `.env` sekali saat `vite build`, lalu nilainya beku di dalam artefak — mengubahnya butuh rebuild. Dynamic tidak menyentuh nilai apa pun saat build; ia membacanya **tiap kali kodemu jalan**, dari `process.env` proses yang sedang melayani request. Artinya **satu artefak build yang sama** bisa kamu jalankan di staging dan production dengan nilai berbeda, cukup dengan mengganti environment di masing-masing tempat. Inilah pola standar di dunia container/Docker: build sekali, jalankan di mana-mana dengan config berbeda.
+
+### Analogi: papan tulis di lobi vs brosur cetak
+
+Bayangkan environment variable sebagai informasi yang perlu dibaca aplikasimu.
+
+`$env/static/private` itu seperti **brosur yang dicetak sekali di pabrik**: isinya dibakar permanen ke kertas saat produksi (build). Cepat dibaca, bisa di-*tree-shake* (kalau ada brosur yang tak pernah dipakai, mesin cetak membuangnya), tapi kalau mau ganti isi kamu harus **cetak ulang** seluruh batch (rebuild + redeploy).
+
+`$env/dynamic/private` itu seperti **papan tulis di lobi kantor** yang **diisi ulang tiap pagi saat kantor buka** (saat proses server start / saat request datang). Kamu bisa menghapus dan menulis ulang kapan saja **tanpa mencetak apa pun** — ganti nilai di dashboard hosting, restart, beres. Tapi karena isinya baru ada saat "kantor buka", papan ini **tidak bisa dibaca saat pabrik masih memproduksi brosur** (saat build/prerender belum ada proses runtime, belum ada papan).
+
+Dan kata **`private`**? Papan ini ada **di ruang dalam yang terkunci** (server). Tamu yang datang (browser) tidak pernah diizinkan masuk ke ruang itu. Kalau ada karyawan nekat memotret papan dan menempelnya di etalase depan (mengimpor modul ini ke kode klien), **satpam di pintu menjegalnya** sebelum toko buka — build gagal dengan error yang jelas. Itu fitur, bukan gangguan.
+
+### Mengapa "dibaca saat runtime" itu penting
+
+Karena nilainya tidak diketahui saat build, dynamic punya konsekuensi nyata yang harus kamu sadari:
+
+- **Tidak bisa di-tree-shake.** Compiler tidak tahu isi `env.FEATURE_FLAG` saat build, jadi ia tidak bisa membuang cabang `if (env.FEATURE_FLAG === 'on')`. Bandingkan dengan static yang nilainya konstan dan bisa dihapus mati (dead-code elimination).
+- **Sedikit lebih mahal & tidak destructible secara statis.** Kamu mengakses lewat properti objek (`env.FOO`) yang dievaluasi runtime, bukan named import yang di-resolve saat build.
+- **Tergantung adapter saat produksi.** Di `dev`, `$env/dynamic` membaca `.env`. Di produksi, **dari mana** `env` terisi ditentukan oleh adaptermu (mis. `adapter-node` membacanya dari `process.env` sungguhan; platform serverless menyuntikkannya dengan cara masing-masing).
+
+Aturan praktisnya: **pakai `$env/static/private` sebagai default** untuk secret yang stabil per-deploy, dan **pilih `$env/dynamic/private` hanya saat kamu betul-betul butuh mengganti nilai tanpa rebuild** — atau saat nilainya memang baru disuntikkan platform pada saat runtime.
+
+## 2. Ringkasan API
+
+Modul `$env/dynamic/private` hanya mengekspor **satu nilai**: objek `env`.
+
+| Export | Tanda tangan (tipe) | Keterangan |
+| --- | --- | --- |
+| `env` | `Record<string, string \| undefined>` | Objek read-only berisi environment variable runtime yang **tidak** diawali `publicPrefix` (default `PUBLIC_`) **dan** diawali `privatePrefix` (default `''`, artinya semua). Mengakses key yang tak ada → `undefined`. Setara `process.env` pada `adapter-node`/`vite preview`. **Hanya server.** |
+
+Cara impornya selalu sama — named import objek `env`, lalu akses propertinya:
+
+```js
+import { env } from '$env/dynamic/private';
+
+const token = env.API_SECRET;        // string | undefined
+const region = env.AWS_REGION ?? 'ap-southeast-1'; // beri default bila perlu
+```
+
+Aturan penyaringan yang menentukan **apa yang masuk** ke objek `env` (default config):
+
+| Nama variabel di environment | Masuk `$env/dynamic/private`? | Alasan |
+| --- | --- | --- |
+| `DATABASE_URL` | Ya | Tidak diawali `PUBLIC_` → dianggap privat |
+| `API_SECRET` | Ya | Sama — privat |
+| `PUBLIC_API_BASE` | **Tidak** (`undefined`) | Diawali `PUBLIC_` → milik modul `public`, bukan `private` |
+
+<Callout type="tip">
+Cara cepat mengingat penyaringannya: modul <strong>private</strong> berisi <strong>semua yang BUKAN <code>PUBLIC_</code></strong>; modul <strong>public</strong> berisi <strong>hanya yang <code>PUBLIC_</code></strong>. Keduanya saling melengkapi dan tidak pernah tumpang tindih. Prefix ini bisa diubah lewat <code>config.kit.env.publicPrefix</code> / <code>privatePrefix</code> di <code>svelte.config.js</code>.
+</Callout>
+
+## 3. Contoh kode
+
+Kasus paling umum: membaca secret runtime di `+page.server.js` atau `hooks.server.js`.
+
+```js
+// src/routes/jobs/+page.server.js  (akhiran .server = HANYA jalan di server)
+// dynamic/private: dibaca dari process environment SAAT RUNTIME.
+import { env } from '$env/dynamic/private';
+
+export async function load({ fetch }) {
+	// env.X dievaluasi tiap kali load() jalan, BUKAN dibekukan saat build.
+	// Karena itu satu artefak build bisa dipakai di staging & prod dgn nilai beda.
+	const region = env.AWS_REGION ?? 'ap-southeast-1'; // default aman bila kosong
+	const res = await fetch(`https://${region}.queue.example.com/jobs`, {
+		// QUEUE_TOKEN ini secret -> aman karena file *.server.js tak masuk bundle klien.
+		headers: { authorization: `Bearer ${env.QUEUE_TOKEN}` }
+	});
+	return { jobs: await res.json() };
+}
+```
+
+Pola yang sering: bandingkan nilai env untuk menyalakan/mematikan perilaku. Karena dynamic dibaca runtime, blok ini **tidak** di-tree-shake — ia benar-benar dicek tiap request.
+
+```js
+// src/hooks.server.js  (server saja)
+import { env } from '$env/dynamic/private';
+
+export async function handle({ event, resolve }) {
+	// Nilai MAINTENANCE bisa diganti tanpa rebuild: cukup set env lalu restart.
+	if (env.MAINTENANCE === 'on') {
+		return new Response('Sedang pemeliharaan', { status: 503 });
+	}
+	return resolve(event);
+}
+```
+
+Dan inilah yang **dilarang** — mengimpor modul private ke kode yang bisa berakhir di browser:
+
+```svelte
+<!-- src/routes/+page.svelte  (komponen ini ikut ke browser!) -->
+<script>
+	// ERROR build: "Cannot import $env/dynamic/private into client-side code".
+	// SvelteKit menolak agar secret tak pernah bocor ke bundle klien.
+	import { env } from '$env/dynamic/private';
+</script>
+```
+
+<Callout type="tip">
+Solusi bila butuh nilai di klien: kalau nilainya memang publik, beri prefix <code>PUBLIC_</code> dan baca dari <code>$env/dynamic/public</code>. Kalau nilainya secret, <strong>jangan</strong> kirim ke klien sama sekali — lakukan operasinya di server (load/actions/endpoint) lalu kirim hanya hasilnya.
+</Callout>
+
+## 4. Coba sendiri
+
+Modul `$env/*` adalah modul **virtual milik SvelteKit** yang butuh proses server/build, jadi **tidak bisa** dijalankan di playground browser. Cara paling efektif "mencobanya" adalah memahami **alur nilai dari environment sampai ke kode** dan apa yang berubah saat kamu mengganti environment tanpa rebuild.
+
+```bash
+# .env  (di root project; jangan commit kalau berisi secret nyata!)
+# Saat `dev`, $env/dynamic membaca file ini. Saat produksi, sumbernya
+# ditentukan adapter (mis. adapter-node membaca process.env asli).
+DATABASE_URL="postgres://localhost:5432/app"   # privat (tanpa PUBLIC_)
+QUEUE_TOKEN="qt_dev_123"                        # privat
+MAINTENANCE="off"                               # privat, sering diubah runtime
+PUBLIC_API_BASE="http://localhost:5173"          # PUBLIC_ -> TIDAK masuk modul private
+```
+
+```js
+// src/routes/debug/+page.server.js  (server saja)
+import { env } from '$env/dynamic/private';
+
+export function load() {
+	return {
+		// Dibaca SAAT load() dipanggil (runtime), bukan saat build.
+		db: env.DATABASE_URL,            // -> nilai dari environment saat itu
+		maintenance: env.MAINTENANCE,    // -> "off" (atau apa pun env saat ini)
+		// PUBLIC_API_BASE TIDAK ada di modul private -> undefined.
+		publicLeak: env.PUBLIC_API_BASE  // -> undefined (disaring keluar)
+	};
+}
+```
+
+Eksperimen mental untuk memahami "dynamic": bayangkan kamu sudah `vite build` **sekali**, lalu menjalankan artefak yang sama dua kali dengan environment berbeda. Tidak ada rebuild di antara keduanya — hanya environment yang ganti:
+
+| Cara dijalankan | `env.MAINTENANCE` terbaca | Perlu rebuild? |
+| --- | --- | --- |
+| `MAINTENANCE=off node build` (run #1) | `"off"` | — |
+| `MAINTENANCE=on node build` (run #2) | `"on"` | **Tidak.** Cukup ganti env + restart |
+
+Bandingkan: kalau `MAINTENANCE` dibaca via `$env/static/private`, nilainya sudah "dibakar" saat build, sehingga mengubahnya **wajib** rebuild ulang. Itulah inti perbedaan static vs dynamic dalam satu tabel.
+
+<Callout type="tip">
+Walau belum ada nilainya saat deploy, tetap <strong>deklarasikan variabelnya di <code>.env</code></strong> (boleh kosong, mis. <code>QUEUE_TOKEN=</code>). SvelteKit memakai daftar itu untuk meng-generate <strong>tipe TypeScript</strong> objek <code>env</code>, sehingga <code>env.QUEUE_TOKEN</code> dikenali editor dan typo seperti <code>env.QEUE_TOKEN</code> lebih mudah ketahuan.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Pilih dynamic/private dan terapkan dengan benar">
+Kamu punya sebuah endpoint yang memanggil API pihak ketiga. Persyaratannya:
+
+1. `THIRDPARTY_KEY` adalah **secret** — tidak boleh bocor ke browser, dan nilainya **disuntikkan oleh platform hosting saat runtime** (satu image Docker dipakai di staging & prod dengan key berbeda).
+2. `THIRDPARTY_BASE` adalah base URL yang juga bisa berbeda per-environment saat runtime, dan **bukan** nilai publik (jangan diberi prefix `PUBLIC_`).
+3. Kalau salah satu env belum di-set, jangan crash diam-diam — beri pesan yang jelas.
+
+Tugas: tulis baris `.env` (untuk `dev`) dan `src/routes/api/quote/+server.js` yang membaca kedua nilai itu dengan modul env yang tepat, lalu memanggil `THIRDPARTY_BASE/quote` dengan header otorisasi.
+
+{#snippet solution()}
+
+  ```bash
+  # .env  (dipakai saat `dev`; di produksi nilai datang dari platform)
+  # Keduanya privat + runtime -> dynamic/private. TANPA prefix PUBLIC_.
+  THIRDPARTY_KEY="tp_dev_secret"
+  THIRDPARTY_BASE="https://sandbox.thirdparty.test"
+  ```
+
+  ```js
+  // src/routes/api/quote/+server.js  (endpoint = server saja)
+  import { env } from '$env/dynamic/private';
+  import { error, json } from '@sveltejs/kit';
+
+  export async function GET({ fetch }) {
+    // (3) Validasi eksplisit: kalau env belum di-set, gagalkan dengan jelas.
+    //     error() di SvelteKit 2 sudah melempar sendiri -> TANPA `throw` di depan.
+    if (!env.THIRDPARTY_KEY || !env.THIRDPARTY_BASE) {
+      error(500, 'Konfigurasi THIRDPARTY_* belum lengkap di environment');
+    }
+
+    // (1)(2) Dibaca runtime -> satu build, banyak environment tanpa rebuild.
+    const res = await fetch(`${env.THIRDPARTY_BASE}/quote`, {
+      headers: { authorization: `Bearer ${env.THIRDPARTY_KEY}` }
+    });
+
+    return json(await res.json());
+  }
+  ```
+
+  Kunci jawabannya: kedua nilai **privat** (tak boleh ke klien) dan **runtime** (disuntik platform, bisa beda per-environment tanpa rebuild) → `$env/dynamic/private`. File `+server.js` menjamin kode hanya jalan di server. Karena `env.X` bertipe `string | undefined`, validasi di langkah (3) penting agar kegagalan config terbaca jelas, bukan jadi `Bearer undefined` yang membingungkan.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan mengimpor <code>$env/dynamic/private</code> ke kode yang bisa berakhir di browser</strong> — mis. <code>+page.svelte</code>, <code>+page.js</code> (universal, jalan di klien juga), atau modul yang ikut diimpor file klien. SvelteKit akan menggagalkan build dengan error eksplisit. Taruh akses secret di <code>*.server.js</code> / <code>+page.server.js</code> / <code>+server.js</code> / <code>src/lib/server/**</code> agar pemisahannya terjamin.
+</Callout>
+
+<Callout type="warning">
+Variabel ber-prefix <code>PUBLIC_</code> <strong>tidak akan muncul</strong> di objek <code>env</code> modul ini — <code>env.PUBLIC_FOO</code> akan <code>undefined</code>. Itu disengaja: yang public ada di <code>$env/dynamic/public</code>. Kalau kamu kira sudah set nilainya tapi terbaca <code>undefined</code>, cek apakah namanya tak sengaja diawali <code>PUBLIC_</code> (atau prefix kustom di <code>config.kit.env</code>).
+</Callout>
+
+<Callout type="warning">
+Mode <strong>dynamic tidak bisa di-tree-shake</strong> dan sedikit lebih mahal daripada static. Kalau nilainya <strong>stabil per-deploy</strong> (mis. <code>DATABASE_URL</code> yang ikut di-set saat build), <code>$env/static/private</code> lebih hemat dan mendukung named import yang bisa di-eliminasi mati. Pakai dynamic hanya saat kamu butuh <strong>ganti nilai tanpa rebuild</strong> atau saat nilainya baru ada saat runtime.
+</Callout>
+
+<Callout type="warning">
+Dari mana <code>env</code> terisi <strong>tergantung adapter</strong>. Saat <code>dev</code>, ia membaca <code>.env</code>. Pada <code>adapter-node</code>/<code>vite preview</code> ia setara <code>process.env</code>. Pada platform serverless lain, mekanisme penyuntikannya bisa berbeda — jangan asumsikan <code>.env</code> ikut ter-deploy. Set variabel produksi lewat dashboard/secret manager platformmu.
+</Callout>
+
+<Callout type="legacy">
+Pola lama yang sebaiknya ditinggalkan: mengakses <code>process.env.FOO</code> langsung di kode SvelteKit. Itu tidak portabel ke semua adapter dan <strong>tidak punya perlindungan public/private</strong> — gampang tak sengaja membocorkan secret ke klien. Gunakan <code>$env/dynamic/private</code> yang sadar konteks server dan menolak impor dari klien. (Untuk hal build Vite, <code>import.meta.env</code> tetap ada — tapi untuk konfigurasi aplikasi, pakai <code>$env/*</code>.)
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Cara lama / lintas-framework"
+	modernLabel="SvelteKit ($env/dynamic/private)"
+	rows={[
+		{ legacy: "process.env.API_SECRET (runtime)", modern: "import { env } from '$env/dynamic/private'; env.API_SECRET", note: 'objek env, dibaca runtime, server-only terjamin' },
+		{ legacy: "process.env.DATABASE_URL (stabil per-deploy)", modern: "import { DATABASE_URL } from '$env/static/private'", note: 'lebih hemat: static di-inline saat build & bisa di-tree-shake' },
+		{ legacy: "process.env.NEXT_PUBLIC_FOO", modern: "import { env } from '$env/dynamic/public'; env.PUBLIC_FOO", note: 'untuk nilai PUBLIC_ runtime, pakai modul public — bukan private' }
+	]}
+/>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$env-dynamic-private" label="SvelteKit — $env/dynamic/private" />
+<DocsLink href="https://svelte.dev/docs/kit/$env-static-private" label="SvelteKit — $env/static/private (padanan build-time)" />
+<DocsLink href="https://svelte.dev/docs/kit/$env-dynamic-public" label="SvelteKit — $env/dynamic/public (untuk nilai PUBLIC_ runtime)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration#env" label="SvelteKit — config.kit.env (publicPrefix / privatePrefix)" />

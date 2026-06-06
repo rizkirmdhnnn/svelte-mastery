@@ -1,0 +1,241 @@
+---
+title: $props
+product: svelte
+section: runes
+sectionTitle: Runes
+sectionOrder: 2
+order: 5
+status: stable
+description: Menerima data dari parent lewat $props() dengan destructuring biasa — default value, rename, rest props, tipe TypeScript, dan $props.id().
+docs: https://svelte.dev/docs/svelte/$props
+keywords: [props, $props, destructuring, rest props, typescript, props.id]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Setiap komponen butuh cara untuk menerima data dari "orang tua"-nya (parent). Di React kamu kenal argumen `props` di fungsi komponen; di Vue kamu kenal `defineProps`. Di Svelte 5, pintu masuk itu satu rune: `$props()`.
+
+Yang menyenangkan: cara pakainya **murni JavaScript**. `$props()` mengembalikan sebuah objek berisi semua prop yang dikirim parent, lalu kamu **destructuring** objek itu seperti biasa:
+
+```svelte
+<script>
+	let { name, age = 18 } = $props();
+</script>
+```
+
+Karena ini destructuring biasa, semua fitur destructuring JS langsung berlaku tanpa API khusus: nilai default (`age = 18`), rename (`{ name: judul }`), dan rest (`...sisa`). Tidak ada yang baru untuk dihafal — kamu cuma perlu ingat satu rune, sisanya JS yang sudah kamu kuasai. Bandingkan dengan React, yang juga memakai destructuring argumen fungsi: konsepnya hampir kembar.
+
+### Analogi: paket kiriman dengan label
+
+Bayangkan komponen sebagai sebuah **rumah**, dan props sebagai **paket kiriman** yang diantar kurir dari parent. `$props()` adalah kotak besar berisi semua paket yang masuk hari itu. Saat kamu menulis `let { name, age } = $props()`, kamu seperti membuka kotak dan berkata: *"Ambilkan paket berlabel `name` dan `age`, taruh di meja."* Paket berlabel lain yang tak kamu sebut tetap di dalam kotak — kecuali kamu pasang `...rest`, yang artinya *"sisa paketnya kumpulkan jadi satu tumpukan bernama `rest`."*
+
+Yang penting: paket itu **milik parent**. Kamu boleh membacanya, tapi mengganti isinya tidak otomatis mengubah barang asli di gudang parent. Ini sama persis dengan React: aliran data satu arah, dari atas ke bawah.
+
+### Reaktivitas props
+
+Props dari `$props()` itu **reaktif**: kalau parent mengubah nilai yang ia kirim, variabel hasil destructuring di anak ikut berubah, dan UI anak otomatis diperbarui. Kamu tidak melakukan apa-apa untuk itu — berbeda dari destructuring objek biasa yang "memotret" nilai sekali saja. Compiler Svelte-lah yang menyulap agar binding hasil destructuring tetap hidup.
+
+Ada satu pengecualian halus yang sering bikin bingung: **fallback value tidak reaktif**. Kalau parent tidak mengirim sebuah prop dan nilai default yang dipakai, nilai default itu tidak dibungkus jadi reactive proxy. Selama parent memang mengirim nilainya, semuanya reaktif seperti biasa.
+
+### Props itu read-only by default
+
+Jangan **mutasi** props secara langsung. Menulis ulang prop biasa (mis. `name = 'baru'`) tidak mengalir balik ke parent, dan kalau prop itu berupa reactive state milik parent, Svelte akan memunculkan peringatan `ownership_invalid_mutation`. Anggap props sebagai *read-only by default* — persis filosofi React.
+
+Kalau butuh nilai turunan yang bisa kamu ubah lokal, salin ke state baru: `let lokal = $state(propTadi)`. Kalau perubahan memang harus sampai ke parent, gunakan **callback prop** (mis. kirim `onsave`) atau buka two-way binding lewat `$bindable()` (dibahas di modul tersendiri).
+
+### $props.id() — ID unik & stabil per instance
+
+`$props.id()` (sejak Svelte 5.20) menghasilkan string ID yang **unik dan stabil** untuk tiap instance komponen, dan konsisten antara render di server (SSR) dengan di client (hydration). Gunanya untuk menghubungkan elemen yang butuh `id` cocok — misalnya `<label for>` dengan `<input id>` — tanpa risiko bentrok kalau komponen dipakai berkali-kali di satu halaman. Ini mirip `useId()` di React. Catatan: ini **bukan** prop yang dikirim parent, melainkan ID yang di-generate untuk instance itu sendiri.
+
+## 2. Contoh kode
+
+Contoh lengkap yang merangkum default, rename, dan rest props:
+
+```svelte
+<!-- Greeting.svelte -->
+<script>
+	// Destructuring dari $props():
+	// - name      : prop wajib (tak ada default)
+	// - greeting  : prop dengan nilai default 'Halo'
+	// - ...rest   : kumpulkan SEMUA prop lain (mis. class, id, dll)
+	let { name, greeting = 'Halo', ...rest } = $props();
+</script>
+
+<!-- {...rest} menyebar sisa prop ke elemen, mirip {...props} di JSX -->
+<p {...rest}>{greeting}, {name}!</p>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Greeting from './Greeting.svelte';
+	let nama = $state('Rizki');
+</script>
+
+<!-- 'class' tidak dideklarasikan eksplisit di anak -> masuk ke ...rest -->
+<Greeting name={nama} class="sapaan" />
+
+<!-- Saat 'nama' berubah, prop di Greeting ikut reaktif -> teks ter-update -->
+<button onclick={() => (nama = 'Budi')}>Ganti nama</button>
+```
+
+**Rename** berguna saat nama prop bukan identifier JS yang valid (mis. ada tanda hubung) atau bentrok dengan keyword:
+
+```svelte
+<script>
+	// Parent mengirim prop bernama "class" (keyword) dan "data-id".
+	// Kita rename ke variabel lokal yang aman: className & dataId.
+	let { class: className, 'data-id': dataId } = $props();
+</script>
+
+<div class={className} data-id={dataId}>...</div>
+```
+
+Memberi **tipe TypeScript** dilakukan lewat anotasi pada hasil destructuring:
+
+```svelte
+<!-- Card.svelte -->
+<script lang="ts">
+	// Definisikan bentuk props lalu pasang sebagai tipe destructuring.
+	interface Props {
+		title: string;
+		subtitle?: string; // opsional
+		count?: number;
+		onselect?: (id: string) => void; // callback prop diberi tipe di sini juga
+	}
+
+	let { title, subtitle = '-', count = 0, onselect }: Props = $props();
+</script>
+
+<h3>{title}</h3>
+<p>{subtitle} ({count})</p>
+```
+
+## 3. Coba sendiri
+
+Karena props mengalir antara dua komponen (parent dan anak), playground ini menampilkan sisi **anak** yang berdiri sendiri. Tanpa parent yang mengirim, nilai **fallback** dipakai untuk `judul`. Sekaligus kita pakai `$props.id()` untuk menghubungkan `<label>` dengan `<input>` secara unik dan stabil. Coba ketik di kotak — dan perhatikan ID instance yang dipakai untuk `for`/`id`.
+
+<Playground code={`<script>
+	// Tak ada parent yang mengirim props di playground ini,
+	// jadi nilai fallback 'Form Pendaftaran' yang dipakai.
+	let { judul = 'Form Pendaftaran' } = $props();
+
+	// ID unik & stabil untuk instance ini (mirip useId di React).
+	const uid = $props.id();
+
+	let nama = $state('');
+</script>
+
+<h3>{judul}</h3>
+
+<label for={uid + '-nama'}>Nama kamu:</label>
+<input id={uid + '-nama'} bind:value={nama} placeholder='Ketik di sini' />
+
+<p>Halo, {nama || 'tamu'}!</p>
+<p style='opacity:0.6'>id yang dipakai label/input: {uid}-nama</p>`} />
+
+<Callout type="tip">
+Karena di playground tak ada parent, prop <code>judul</code> jatuh ke <strong>fallback</strong>-nya. Begitu komponen ini dipakai parent dengan <code>&lt;Anak judul="..." /&gt;</code>, nilai dari parent yang dipakai dan jadi reaktif.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Menerima props"
+	svelte={`<!-- Greeting.svelte -->
+<script>
+  let { name, greeting = 'Halo', ...rest } = $props();
+</script>
+
+<p {...rest}>{greeting}, {name}!</p>`}
+	react={`// Greeting.jsx
+function Greeting({ name, greeting = 'Halo', ...rest }) {
+  return <p {...rest}>{greeting}, {name}!</p>;
+}`}
+	vue={`<!-- Greeting.vue -->
+<script setup>
+const { name, greeting = 'Halo' } = defineProps(['name', 'greeting'])
+</script>
+
+<template>
+  <p>{{ greeting }}, {{ name }}!</p>
+</template>`}
+	diff={{ svelte: [3], react: [2], vue: [3] }}
+	note="React: props datang sebagai argumen fungsi, jadi default & rest pakai destructuring JS biasa — paling mirip Svelte. Vue: props dideklarasikan eksplisit lewat defineProps (atau generic + withDefaults di TS). Svelte: let { a, b = d, ...rest } = $props() — satu rune, lalu murni destructuring JS, tanpa makro/argumen khusus."
+/>
+
+## 5. Latihan
+
+<Exercise title="Komponen Button yang fleksibel">
+Buat `Button.svelte` yang: (1) punya prop `label` dengan default `'Klik'`, (2) menerima prop bernama `class` lewat **rename** menjadi variabel lokal `klass`, dan (3) meneruskan **sisa prop** (`...rest`) ke elemen `<button>` agar parent bisa mengirim `onclick`, `disabled`, `type`, dll. Tampilkan `label` sebagai isi tombol.
+
+{#snippet solution()}
+
+```svelte
+<!-- Button.svelte -->
+<script>
+	// 'class' adalah keyword -> rename ke 'klass'.
+	// ...rest menampung onclick, disabled, type, dan prop lain.
+	let { label = 'Klik', class: klass, ...rest } = $props();
+</script>
+
+<!-- {...rest} HARUS sebelum binding eksplisit kalau ingin
+     bisa ditimpa; di sini kita sebar lalu set class sendiri. -->
+<button class={klass} {...rest}>{label}</button>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Button from './Button.svelte';
+	let n = $state(0);
+</script>
+
+<!-- onclick & disabled & type masuk ke ...rest, lalu diteruskan -->
+<Button class="primary" type="button" onclick={() => n++}>
+</Button>
+<Button label="Naik ({n})" onclick={() => n++} />
+<Button label="Tak bisa diklik" disabled />
+```
+
+Intinya: `label` pakai default destructuring, `class` perlu **rename** karena keyword, dan `...rest` membuat komponen "transparan" terhadap atribut/handler bawaan tombol — pola yang sangat umum untuk komponen pembungkus elemen HTML.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan <strong>memutasi props</strong>. Menulis ulang prop biasa (mis. <code>name = 'baru'</code>) tidak mengalir balik ke parent; kalau prop berisi reactive state milik parent, Svelte memunculkan peringatan <code>ownership_invalid_mutation</code>. Butuh salinan yang bisa diubah lokal? Pakai <code>let lokal = $state(propTadi)</code>. Butuh perubahan sampai ke parent? Pakai callback prop atau <code>$bindable()</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Fallback value tidak reaktif.</strong> Nilai default (mis. <code>age = 18</code>) tidak dibungkus jadi reactive proxy. Selama parent mengirim nilainya, prop tetap reaktif seperti biasa — yang non-reaktif hanya kondisi saat fallback yang dipakai. Jangan mengandalkan mutasi pada objek/array fallback untuk memicu update.
+</Callout>
+
+<Callout type="tip">
+Untuk menghubungkan <code>&lt;label for&gt;</code> dan <code>&lt;input id&gt;</code> yang unik per instance, pakai <code>$props.id()</code>, bukan ID karangan sendiri. ID buatan tangan berisiko bentrok kalau komponen dipakai berkali-kali, dan ID acak biasa bisa mismatch antara SSR dan hydration. <code>$props.id()</code> stabil di kedua sisi (mirip <code>useId()</code> React).
+</Callout>
+
+<Callout type="legacy">
+API props lama Svelte 4 sudah <strong>tidak dipakai</strong> di kode runes. <code>export let name</code> diganti destructuring <code>$props()</code>, dan <code>$$props</code>/<code>$$restProps</code> diganti pola <code>...rest</code>. Kalau menemukannya di tutorial, itu tanda materi belum diperbarui ke Svelte 5.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'export let name', modern: 'let { name } = $props()', note: 'Prop kini lewat destructuring.' },
+	{ legacy: 'export let age = 18', modern: 'let { age = 18 } = $props()', note: 'Default jadi default destructuring biasa.' },
+	{ legacy: '$$restProps', modern: 'let { ...rest } = $props()', note: 'Sisa prop pakai rest operator.' },
+	{ legacy: '$$props', modern: 'let props = $props()', note: 'Akses seluruh objek props tanpa destructuring.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/$props" label="$props — dokumentasi resmi Svelte" />

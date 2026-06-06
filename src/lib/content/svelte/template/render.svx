@@ -1,0 +1,292 @@
+---
+title: "{@render ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 7
+status: stable
+description: Memanggil dan merender snippet (termasuk children) dengan {@render snippet(args)}, lengkap dengan render opsional dan ekspresi dinamis.
+docs: https://svelte.dev/docs/svelte/@render
+keywords: [render, snippet, children, optional, scope]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Kalau `{#snippet}` adalah cara **mendeklarasikan** sepotong markup yang bisa dipakai ulang, maka `{@render ...}` adalah cara **memanggilnya**. Keduanya selalu berpasangan: satu mendefinisikan, satu mengeksekusi. Tanpa `{@render}`, sebuah snippet hanya "tersimpan" — ia tidak akan pernah muncul di layar.
+
+Cara paling gampang memahaminya: anggap snippet sebagai **fungsi yang mengembalikan HTML**, dan `{@render}` sebagai **operator pemanggil**-nya — persis seperti tanda kurung `()` yang memanggil fungsi biasa di JavaScript.
+
+```js
+function sum(a, b) { return a + b; }
+sum(1, 2);   // memanggil fungsi -> menghasilkan nilai
+```
+
+```svelte
+{#snippet sum(a, b)}<p>{a + b}</p>{/snippet}
+{@render sum(1, 2)}   <!-- memanggil snippet -> menghasilkan markup -->
+```
+
+Bedanya cuma satu: fungsi biasa mengembalikan **nilai** (angka, string, objek), sedangkan snippet "mengembalikan" **potongan DOM**. Karena itu kamu tidak memanggilnya di dalam `<script>`, tapi di dalam markup, dengan pembungkus `{@render ...}`. Pembungkus itulah yang memberi tahu Svelte: "ambil hasil markup snippet ini, lalu tanam di posisi ini".
+
+### Analogi: tukang stempel
+
+Bayangkan snippet sebagai sebuah **stempel karet**. Bikin stempelnya sekali (`{#snippet}`), lalu setiap kali kamu menekan stempel ke kertas, muncul cap yang sama (`{@render}`). Mau dicap sepuluh kali? Tekan sepuluh kali. Mau tinta warna berbeda tiap cap? Itulah **argumen** — `{@render kartu(produkA)}`, `{@render kartu(produkB)}`: bentuk stempelnya identik, isinya yang berganti.
+
+Yang penting: **stempel = `{#snippet}`**, **menekan stempel = `{@render}`**. Punya stempel tapi tidak pernah menekannya berarti tidak ada cap yang muncul. Begitu juga snippet yang tidak pernah di-`{@render}`.
+
+### Argumen mengalir saat di-render
+
+Karena `{@render}` adalah pemanggilan, di situlah kamu mengoper argumen. Snippet `{#snippet kartu(item)}` mendeklarasikan parameter `item`; lalu `{@render kartu(buah)}` mengisinya dengan nilai konkret. Nilai itu **reaktif**: kalau `buah` adalah `$state` yang berubah, hasil render-nya otomatis ikut diperbarui — kamu tidak perlu memanggil ulang `{@render}` secara manual.
+
+### children: snippet yang di-render seperti snippet biasa
+
+Inilah bagian yang menggantikan `<slot>` dari Svelte 4. Saat sebuah komponen dipakai dan parent menaruh konten di antara tag buka dan tag tutupnya, konten itu **otomatis** menjadi snippet bernama `children` yang dikirim sebagai prop. Cara me-render-nya sama persis seperti snippet lain: `{@render children()}`.
+
+Jadi di dalam komponen anak, yang dulu adalah elemen `<slot>` — "lubang" tempat konten parent muncul — sekarang cukup jadi pemanggilan `{@render children()}`. Tidak ada API khusus, tidak ada elemen ajaib: `children` hanyalah snippet biasa yang namanya sudah disepakati dan pengirimannya implisit. Pola ini sejalan dengan `props.children` di React — kontennya sampai sebagai prop, lalu kamu yang memutuskan kapan dan di mana menampilkannya.
+
+### Render opsional: `{@render children?.()}`
+
+Karena `children` adalah prop biasa, ia **bisa saja tidak ada** — misalnya parent memakai `<Card />` tanpa isi apa pun. Memanggil `{@render children()}` saat `children` bernilai `undefined` akan **melempar error**. Solusinya ada dua, dan keduanya penting kamu kuasai:
+
+- **Optional chaining**: `{@render children?.()}` — kalau `children` ada, render; kalau tidak, lewati diam-diam tanpa error.
+- **Cek `{#if}` dengan fallback**: bungkus dengan `{#if children}...{:else}...{/if}` kalau kamu ingin menampilkan konten pengganti saat snippet kosong.
+
+Aturan praktisnya: pakai `?.()` kalau "tidak ada = tidak menampilkan apa-apa", pakai `{#if}/{:else}` kalau "tidak ada = tampilkan fallback".
+
+### Ekspresi dinamis di dalam `{@render}`
+
+Argumen di dalam `{@render ...}` tidak harus berupa nama snippet polos. Ia bisa **ekspresi JavaScript apa pun** yang menghasilkan sebuah snippet, lalu kamu panggil dengan `()` di belakangnya:
+
+```svelte
+{@render (kondisi ? snippetA : snippetB)()}
+```
+
+Ini berguna untuk memilih markup secara dinamis tanpa menulis `{#if}` panjang: simpan beberapa snippet, pilih salah satu lewat ekspresi, lalu render. Perhatikan tanda kurung pembungkus `(...)` dan `()` pemanggil di akhir — keduanya wajib karena kamu memanggil hasil dari ekspresi tersebut.
+
+## 2. Contoh kode
+
+Pasangan dasar `{#snippet}` + `{@render}` — deklarasi sekali, render berkali-kali dengan argumen berbeda.
+
+```svelte
+<script>
+	let buah = $state([
+		{ nama: 'Apel', harga: 5000 },
+		{ nama: 'Mangga', harga: 8000 }
+	]);
+</script>
+
+<!-- Deklarasi "stempel" bernama kartu, menerima 1 argumen: item -->
+{#snippet kartu(item)}
+	<div class="kartu">
+		<strong>{item.nama}</strong> — Rp{item.harga}
+	</div>
+{/snippet}
+
+<!-- {@render} = menekan stempel; dipanggil untuk tiap elemen -->
+{#each buah as b}
+	{@render kartu(b)}
+{/each}
+
+<!-- Bisa juga dipanggil manual dengan data lepas -->
+{@render kartu({ nama: 'Promo', harga: 0 })}
+```
+
+Merender `children` — konten antara tag komponen — beserta versi opsionalnya.
+
+```svelte
+<!-- Card.svelte -->
+<script>
+	// 'children' adalah snippet implisit: isi <Card>...</Card> dari parent.
+	let { children } = $props();
+</script>
+
+<div class="card">
+	<!-- Cara 1: optional chaining. Aman walau parent tak mengisi konten. -->
+	{@render children?.()}
+</div>
+
+<!-- Cara 2 (bila perlu fallback): -->
+<div class="card">
+	{#if children}
+		{@render children()}
+	{:else}
+		<em>Kartu kosong</em>
+	{/if}
+</div>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Card from './Card.svelte';
+</script>
+
+<!-- Apa pun di sini otomatis dikirim sebagai snippet 'children' -->
+<Card>
+	<h3>Judul</h3>
+	<p>Isi kartu ditaruh di sini.</p>
+</Card>
+
+<!-- Tanpa isi: {@render children?.()} aman, {#if} pakai fallback -->
+<Card />
+```
+
+Memilih snippet secara dinamis lewat ekspresi di dalam `{@render}`.
+
+```svelte
+<script>
+	let suka = $state(true);
+</script>
+
+{#snippet bagus()}<p>😎 keren</p>{/snippet}
+{#snippet biasa()}<p>😐 biasa saja</p>{/snippet}
+
+<!-- Ekspresi memilih snippet, lalu () memanggilnya -->
+{@render (suka ? bagus : biasa)()}
+
+<button onclick={() => (suka = !suka)}>Toggle</button>
+```
+
+## 3. Coba sendiri
+
+Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan `{@render}` tanpa butuh dua file. Perhatikan tiga hal: stempel `baris` ditekan untuk tiap produk lewat argumen, stempel `badge` dipanggil **dari dalam** stempel lain, dan tombol di bawah memilih snippet ringkasan secara dinamis lewat ekspresi `{@render (...)()}`. Ubah datanya dan lihat semua hasil render ikut bereaksi.
+
+<Playground code={`<script>
+	let produk = $state([
+		{ nama: 'Kopi', stok: 3 },
+		{ nama: 'Teh', stok: 0 },
+		{ nama: 'Gula', stok: 12 }
+	]);
+	let ringkas = $state(false);
+	function tambahStok() {
+		produk = produk.map((p) => ({ ...p, stok: p.stok + 1 }));
+	}
+</script>
+
+<h3>Daftar Produk</h3>
+
+<!-- stempel kecil: badge status, menerima argumen 'ada' -->
+{#snippet badge(ada)}
+	{#if ada}
+		<span style='color: green'>tersedia</span>
+	{:else}
+		<span style='color: red'>habis</span>
+	{/if}
+{/snippet}
+
+<!-- stempel baris me-render stempel badge di dalamnya -->
+{#snippet baris(item)}
+	<li>
+		<strong>{item.nama}</strong> (stok: {item.stok}) -
+		{@render badge(item.stok > 0)}
+	</li>
+{/snippet}
+
+<!-- dua versi ringkasan, dipilih dinamis lewat ekspresi -->
+{#snippet ringkasPanjang()}
+	<p>Total {produk.length} produk dalam daftar.</p>
+{/snippet}
+{#snippet ringkasPendek()}
+	<p>{produk.length} produk</p>
+{/snippet}
+
+<ul>
+	{#each produk as p}
+		{@render baris(p)}
+	{/each}
+</ul>
+
+{@render (ringkas ? ringkasPendek : ringkasPanjang)()}
+
+<button onclick={tambahStok}>Tambah stok semua</button>
+<button onclick={() => (ringkas = !ringkas)}>Toggle ringkasan</button>`} />
+
+<Callout type="tip">
+Di dalam satu scope, snippet boleh me-`&#123;@render&#125;` snippet lain — lihat `baris` yang memanggil `badge`. Ini cara natural memecah markup besar jadi bagian-bagian kecil tanpa harus membuat file komponen baru.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Render children dengan aman + judul opsional">
+Buat komponen `Panel.svelte` yang menerima dua prop snippet: `children` (konten utama) dan `judul` (opsional, snippet untuk bagian header). Komponen merender sebuah `<section>`. Untuk `judul`: kalau ada, render di dalam `<header>`; kalau tidak ada, render teks fallback "Tanpa Judul". Untuk `children`: render dengan optional chaining supaya aman bila parent tidak mengisi konten. Lalu buat parent yang memakai `Panel` dengan mengirim snippet `judul` dan beberapa paragraf sebagai konten.
+
+{#snippet solution()}
+
+```svelte
+<!-- Panel.svelte -->
+<script>
+	// keduanya snippet prop; 'children' = konten implisit, 'judul' = opsional
+	let { children, judul } = $props();
+</script>
+
+<section>
+	<header>
+		<!-- judul opsional: pakai {#if}/{:else} karena butuh fallback -->
+		{#if judul}
+			{@render judul()}
+		{:else}
+			<em>Tanpa Judul</em>
+		{/if}
+	</header>
+
+	<!-- children: optional chaining, aman walau parent tak mengisi -->
+	{@render children?.()}
+</section>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Panel from './Panel.svelte';
+</script>
+
+<Panel>
+	<!-- snippet bernama 'judul' -> otomatis jadi prop judul -->
+	{#snippet judul()}
+		<h2>Pengumuman</h2>
+	{/snippet}
+
+	<!-- konten di luar snippet bernama -> jadi snippet children -->
+	<p>Baris pertama isi panel.</p>
+	<p>Baris kedua isi panel.</p>
+</Panel>
+```
+
+Kuncinya ada di sisi render: `judul` butuh fallback maka pakai `{#if}/{:else}`, sedangkan `children` cukup "ada atau tidak" maka pakai `{@render children?.()}`. Memilih pola render yang tepat untuk tiap snippet itulah inti modul ini.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Memanggil snippet yang bernilai `undefined` akan **melempar error saat render**. Untuk snippet yang mungkin tidak dikirim (terutama `children` dan prop snippet opsional), jangan tulis `&#123;@render children()&#125;` polos. Pakai optional chaining `&#123;@render children?.()&#125;`, atau bungkus dengan `&#123;#if children&#125;...&#123;:else&#125;...&#123;/if&#125;` bila butuh fallback.
+</Callout>
+
+<Callout type="pitfall">
+Snippet hanya bisa di-`&#123;@render&#125;` dari dalam **scope** tempat ia "terlihat". Snippet yang dideklarasikan di dalam `&#123;#each&#125;` atau `&#123;#if&#125;` tidak bisa dipanggil dari luar blok itu. Kalau sebuah snippet perlu dipanggil di banyak tempat, deklarasikan di level teratas komponen (atau kirim sebagai prop), bukan di dalam blok bersarang.
+</Callout>
+
+<Callout type="warning">
+Saat me-render lewat ekspresi, jangan lupa tanda kurung pemanggil di akhir: `&#123;@render (cool ? a : b)()&#125;`. Tanpa `()` terakhir, kamu hanya menyebut snippet-nya, bukan memanggilnya — dan markup tidak akan muncul. Ingat analoginya: menyebut nama stempel bukan berarti menekannya.
+</Callout>
+
+<Callout type="legacy">
+`&#123;@render&#125;` adalah pengganti API <strong>slot</strong> dari Svelte 4. Kalau kamu menemukan <code>&lt;slot&gt;</code> di tutorial lama, itu API lama. Padanannya: <code>&lt;slot /&gt;</code> menjadi <code>&#123;@render children()&#125;</code>, dan <code>&lt;slot name="x" /&gt;</code> menjadi <code>&#123;@render x()&#125;</code> yang dipasangkan dengan snippet prop bernama.
+</Callout>
+
+<Callout type="tip">
+`&#123;@render&#125;` itu reaktif: kamu cukup memanggilnya sekali di markup. Saat argumen yang kamu oper (mis. nilai `$state`) berubah, Svelte otomatis memperbarui hasil render-nya. Tidak perlu "memanggil ulang" seperti memanggil fungsi imperatif.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/@render" label={`{@render} — dokumentasi resmi Svelte`} />
+<DocsLink href="https://svelte.dev/docs/svelte/snippet" label={`{#snippet} — pasangan dari {@render}`} />

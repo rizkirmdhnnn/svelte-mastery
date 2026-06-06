@@ -1,0 +1,246 @@
+---
+title: <svelte:document>
+product: svelte
+section: special-elements
+sectionTitle: Special elements
+sectionOrder: 5
+order: 3
+status: stable
+description: Menempelkan event listener dan binding (readonly) ke objek document secara deklaratif — visibilitychange, selectionchange, activeElement, dan lainnya — tanpa addEventListener manual.
+docs: https://svelte.dev/docs/svelte/svelte-document
+keywords: [svelte-document, visibilitychange, selectionchange, activeElement, special-elements]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Sebagian besar markup yang kamu tulis di Svelte memetakan ke elemen DOM nyata — `<div>`, `<button>`, `<input>`. Tapi `document` itu bukan elemen yang kamu render; ia objek global yang sudah ada sejak halaman dibuka. Kamu tidak bisa "membuat" `document`, yang bisa kamu lakukan hanyalah **menempel listener** dan **membaca beberapa propertinya**. `<svelte:document>` adalah cara deklaratif untuk melakukan itu.
+
+Kalau kamu datang dari React, naluri pertamamu pasti: `useEffect(() => { document.addEventListener('visibilitychange', fn); return () => document.removeEventListener('visibilitychange', fn); }, [])`. Di Vue kira-kira `onMounted`/`onUnmounted`, atau langsung pakai `@vueuse/core`. Pola itu benar, tapi penuh ritual: kamu wajib ingat membersihkan listener di cleanup, dan kalau lupa, listener menumpuk tiap komponen mount ulang. `<svelte:document>` menghapus seluruh ritual itu — kamu cukup *mendeklarasikan* niatmu di markup, dan Svelte yang memasang listener saat komponen mount lalu mencopotnya saat unmount.
+
+### Analogi: papan pengumuman di lobi gedung
+
+Bayangkan komponenmu sebuah kamar kos. Tembok, meja, kasur — itu DOM milikmu, bebas kamu cat (itu `<div>` dan `<button>` biasa). Sementara `window` itu seperti **gerbang depan gedung** (urusan viewport, scroll halaman, resize). Lalu `document` itu **papan pengumuman di lobi**: tempat tertempel info tentang isi gedung — siapa yang sedang "fokus" di meja resepsionis (`activeElement`), apakah lampu lobi sedang menyala atau gedung lagi ditinggal (`visibilityState`), teks mana yang sedang dilingkari orang di papan (`selectionchange`).
+
+Kamu tidak boleh membongkar papan itu, tapi kamu boleh menempel stiker: "kalau ada yang melingkari teks, kabari aku". Saat kamu pindah kos (komponen unmount), Svelte otomatis mencopot stikermu — tidak ada sampah listener yang tertinggal.
+
+### Kenapa butuh `<svelte:document>` kalau sudah ada `<svelte:window>`?
+
+Ini pertanyaan yang sehat. Jawabannya: **beberapa event hanya hidup di `document`, tidak ada di `window`.** Kalau kamu pasang listener-nya di `window`, ia tidak akan pernah terpanggil. Yang paling sering kamu butuhkan:
+
+- **`visibilitychange`** — terpicu saat user pindah tab atau minimize. Inti dari banyak fitur: pause video saat tab tak aktif, stop polling saat halaman di-background, lanjut lagi saat user kembali.
+- **`selectionchange`** — terpicu tiap kali seleksi teks berubah. Dasar dari "floating toolbar" ala Medium/Notion yang muncul saat kamu blok teks.
+- **`fullscreenchange`** / **`pointerlockchange`** — untuk fitur fullscreen dan game yang mengunci kursor.
+- **`scroll`** dengan opsi capture untuk menangkap scroll elemen mana pun di dokumen (bukan cuma scroll halaman).
+
+`<svelte:window>` mengurus level viewport (ukuran layar, scroll halaman, keyboard global). `<svelte:document>` mengurus level dokumen (fokus, seleksi, visibilitas tab). Mereka pelengkap, bukan pengganti.
+
+### Bindings-nya semua readonly
+
+Ini bagian yang penting dan beda dari `<svelte:window>`. Di `<svelte:window>`, `bind:scrollY` itu **dua arah** — set nilainya, halaman ikut scroll. Tapi semua binding di `<svelte:document>` **readonly**: kamu hanya boleh *membacanya*, mengubah variabelnya tidak akan mengubah `document`. Wajar saja — "elemen mana yang sedang fokus" itu konsekuensi dari interaksi user, bukan sesuatu yang masuk akal kamu paksakan lewat assignment variabel.
+
+Empat properti yang bisa di-`bind`:
+
+| Binding | Berisi | Kegunaan umum |
+| --- | --- | --- |
+| `activeElement` | elemen DOM yang sedang fokus (sama dengan `document.activeElement`) | tahu input mana yang aktif, deteksi user lagi mengetik di field lain |
+| `visibilityState` | `'visible'` atau `'hidden'` | turunan dari `visibilitychange`, tapi langsung reaktif tanpa handler |
+| `fullscreenElement` | elemen yang sedang fullscreen, atau `null` | tahu apakah sedang mode fullscreen & elemen mana |
+| `pointerLockElement` | elemen yang mengunci pointer, atau `null` | umumnya untuk game / kontrol kanvas |
+
+## 2. Contoh kode
+
+Event listener — sintaksnya sama persis seperti `onclick` di elemen biasa, hanya targetnya `document`:
+
+```svelte
+<script>
+	let count = $state(0);
+
+	function handleVisibility() {
+		// terpicu saat user pindah/kembali tab. document.visibilityState
+		// bernilai 'hidden' saat tab di-background, 'visible' saat aktif.
+		if (document.visibilityState === 'hidden') {
+			count += 1; // mis. hitung berapa kali user "kabur" dari tab ini
+		}
+	}
+</script>
+
+<!-- listener otomatis dipasang saat mount, dilepas saat unmount.
+     Tidak ada addEventListener / removeEventListener yang perlu kamu tulis. -->
+<svelte:document onvisibilitychange={handleVisibility} />
+
+<p>Kamu meninggalkan tab ini sebanyak {count} kali.</p>
+```
+
+Binding readonly — perhatikan kamu **membaca**, bukan menulis. Mengubah `active` di sini tidak akan memindah fokus:
+
+```svelte
+<script>
+	let active = $state(null);
+	let visibility = $state('visible');
+
+	// reaktif: berubah otomatis tiap fokus berpindah, tanpa event handler
+	let activeTag = $derived(active ? active.tagName.toLowerCase() : 'tidak ada');
+</script>
+
+<svelte:document bind:activeElement={active} bind:visibilityState={visibility} />
+
+<p>Tag elemen yang sedang fokus: {activeTag}</p>
+<p>Status tab: {visibility}</p>
+
+<input placeholder="klik aku, lalu lihat 'activeElement' berubah" />
+<button>atau klik aku</button>
+```
+
+Kombinasi event + binding untuk fitur "floating toolbar" ala editor teks (muncul saat user menyorot teks):
+
+```svelte
+<script>
+	let selectedText = $state('');
+
+	function handleSelectionChange() {
+		// selectionchange HANYA ada di document — pasang di window tak akan jalan.
+		// getSelection() mengembalikan objek Selection; .toString() jadi teks polos.
+		const sel = document.getSelection();
+		selectedText = sel ? sel.toString() : '';
+	}
+</script>
+
+<svelte:document onselectionchange={handleSelectionChange} />
+
+<article>
+	<p>Sorot kalimat mana pun di paragraf ini dengan mouse.</p>
+</article>
+
+{#if selectedText}
+	<div class="toolbar">
+		Kamu memilih: "{selectedText}"
+		<button>Bold</button>
+		<button>Salin</button>
+	</div>
+{/if}
+```
+
+<Callout type="tip">
+`&lt;svelte:document&gt;` juga menerima <strong>attachment</strong> lewat `&#123;@attach fn&#125;` (API attachment Svelte 5), persis seperti elemen biasa. Berguna kalau kamu butuh setup imperatif sekali jalan terhadap `document` yang juga mengikuti daur hidup komponen.
+</Callout>
+
+## 3. Coba sendiri
+
+Satu komponen di bawah ini memakai `<svelte:document>` untuk tiga hal sekaligus: mendengar `selectionchange` (sorot teksnya), mendengar `visibilitychange` (pindah tab lalu kembali), dan `bind:activeElement` (klik input vs tombol). Tidak ada satu pun `addEventListener` yang kamu tulis — semua dideklarasikan di markup.
+
+<Playground code={`<script>
+	let selection = $state('');
+	let active = $state(null);
+	let leaveCount = $state(0);
+
+	function onselectionchange() {
+		const sel = document.getSelection();
+		selection = sel ? sel.toString() : '';
+	}
+
+	function onvisibilitychange() {
+		if (document.visibilityState === 'hidden') leaveCount += 1;
+	}
+
+	let activeTag = $derived(active ? active.tagName.toLowerCase() : 'tidak ada');
+</script>
+
+<svelte:document
+	{onselectionchange}
+	{onvisibilitychange}
+	bind:activeElement={active}
+/>
+
+<h3>Demo svelte:document</h3>
+
+<p>1) Sorot (drag) teks kalimat ini dengan mouse-mu untuk memicu selectionchange.</p>
+
+<p>2) Klik salah satu kontrol untuk melihat activeElement berubah:</p>
+<input placeholder="klik aku" />
+<button>atau klik tombol ini</button>
+
+<p>3) Pindah ke tab browser lain lalu kembali untuk memicu visibilitychange.</p>
+
+<div style="margin-top: 12px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px;">
+	<p>Teks tersorot: <strong>{selection || '(belum ada)'}</strong></p>
+	<p>Elemen aktif: <strong>&lt;{activeTag}&gt;</strong></p>
+	<p>Jumlah kamu meninggalkan tab: <strong>{leaveCount}</strong></p>
+</div>`} />
+
+## 4. Latihan
+
+<Exercise title="Auto-pause saat tab tidak aktif">
+Banyak aplikasi musik/video melakukan ini: begitu user pindah tab, pemutaran "pause" otomatis; begitu kembali, status ditampilkan lagi. Simulasikan dengan satu komponen `App.svelte`:
+
+1. Simpan state `playing` (`$state(true)`) dan sebuah penghitung `pausedCount` (`$state(0)`).
+2. Pakai `&lt;svelte:document&gt;` dengan `onvisibilitychange`. Saat tab menjadi `hidden` dan `playing` sedang `true`, set `playing = false` dan naikkan `pausedCount`.
+3. Tampilkan teks status "Sedang diputar" / "Dijeda", plus tombol "Putar lagi" yang mengembalikan `playing = true`.
+4. Bonus: tambahkan `bind:visibilityState` dan tampilkan nilainya untuk membuktikan ia readonly tapi reaktif.
+
+Petunjuk: di handler, cek `if (document.visibilityState === 'hidden' && playing)` sebelum mengubah state.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let playing = $state(true);
+	let pausedCount = $state(0);
+	let visibility = $state('visible');
+
+	function handleVisibility() {
+		// hanya auto-pause kalau sedang diputar — supaya pausedCount akurat
+		if (document.visibilityState === 'hidden' && playing) {
+			playing = false;
+			pausedCount += 1;
+		}
+	}
+</script>
+
+<!-- onvisibilitychange untuk aksi, bind:visibilityState untuk pembacaan reaktif.
+     Keduanya readonly-aman: kita tak pernah mencoba menulis ke document. -->
+<svelte:document
+	onvisibilitychange={handleVisibility}
+	bind:visibilityState={visibility}
+/>
+
+<p>Status: <strong>{playing ? 'Sedang diputar' : 'Dijeda'}</strong></p>
+<p>visibilityState (readonly): {visibility}</p>
+<p>Dijeda otomatis sebanyak {pausedCount} kali.</p>
+
+{#if !playing}
+	<button onclick={() => (playing = true)}>Putar lagi</button>
+{/if}
+```
+
+Inti jawabannya: `onvisibilitychange` menggantikan seluruh pola `useEffect` + `addEventListener` + cleanup, dan pengecekan `playing` di dalam handler memastikan kita hanya menjeda saat relevan. `bind:visibilityState` membuktikan binding `document` bersifat readonly tapi tetap reaktif — kamu membacanya, bukan menulisnya.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+`&lt;svelte:document&gt;` harus berada di <strong>top-level</strong> komponen — tidak boleh dibungkus di dalam blok `&#123;#if&#125;`, `&#123;#each&#125;`, atau di dalam elemen lain. Kalau kamu butuh listener yang kondisional, jangan bungkus tag-nya; pasang selalu `&lt;svelte:document onvisibilitychange=&#123;handler&#125; /&gt;` lalu beri logika kondisi <em>di dalam</em> handler (mis. `if (aktif) ...`). Membungkusnya akan memicu error compile.
+</Callout>
+
+<Callout type="warning">
+Semua binding `&lt;svelte:document&gt;` (`activeElement`, `visibilityState`, `fullscreenElement`, `pointerLockElement`) bersifat <strong>readonly</strong>. Ini beda dari `&lt;svelte:window bind:scrollY&gt;` yang dua arah. Mengubah variabel hasil bind di sini tidak akan mengubah `document` — assignment-nya diam-diam tak berefek. Anggap binding ini sebagai "jendela kaca": boleh dilihat, tidak bisa didorong.
+</Callout>
+
+<Callout type="pitfall">
+Jangan salah pilih target. Event seperti `selectionchange`, `visibilitychange`, `fullscreenchange`, dan `pointerlockchange` hanya hidup di `document` — kalau kamu memasangnya di `&lt;svelte:window&gt;`, handler tidak akan pernah terpanggil dan kamu akan bingung kenapa "tidak terjadi apa-apa". Sebaliknya, event resize/scroll halaman lebih cocok di `&lt;svelte:window&gt;`. Kalau ragu, ingat: fokus & seleksi & visibilitas = `document`; viewport & scroll halaman = `window`.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4, event ditulis dengan sintaks directive `on:` — mis. `&lt;svelte:document on:visibilitychange=&#123;fn&#125; /&gt;`. Di Svelte 5 ini menjadi atribut event biasa: `&lt;svelte:document onvisibilitychange=&#123;fn&#125; /&gt;` (tanpa titik dua). Sintaks `on:` sudah usang; gunakan bentuk `onevent` di semua kode baru.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-document" label="&lt;svelte:document&gt; — dokumentasi resmi Svelte" />

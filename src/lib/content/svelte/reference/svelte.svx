@@ -1,0 +1,395 @@
+---
+title: svelte
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 1
+status: reference
+description: Referensi lengkap modul inti 'svelte' — mount, unmount, hydrate, render, tick, untrack, flushSync, context API, createRawSnippet, dan tipe seperti Component & Snippet.
+docs: https://svelte.dev/docs/svelte/svelte
+keywords: [mount, hydrate, context, snippet, tick, untrack]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Hampir semua kode Svelte yang kamu tulis hidup **di dalam** komponen `.svelte`: runes, template, `{@render}`, dan teman-temannya. Tapi ada satu lapisan di "luar" komponen — fungsi-fungsi yang kamu impor langsung `from 'svelte'`. Modul `'svelte'` ini adalah **API publik bertingkat aplikasi**: alat untuk menyalakan aplikasi, menjembatani Svelte dengan dunia non-Svelte, mengatur waktu update, dan beberapa utilitas tingkat lanjut.
+
+Analoginya begini. Komponen `.svelte` itu seperti ruangan ber-AC yang nyaman — di dalamnya reaktivitas berjalan otomatis, kamu tinggal menulis `$state` dan semuanya hidup. Modul `'svelte'` adalah **panel kontrol di lorong gedung**: tombol untuk menyalakan ruangan (`mount`), mematikannya (`unmount`), menyambungkan ruangan yang sudah dirakit pabrik ke listrik gedung (`hydrate`), dan saklar-saklar teknis untuk kasus khusus. Kamu jarang menyentuhnya setiap hari — tapi saat butuh, tidak ada gantinya.
+
+Mari kelompokkan isinya berdasarkan tugas, supaya tidak terasa seperti daftar acak.
+
+### Kelompok 1 — Menyalakan & mematikan aplikasi: `mount`, `unmount`, `hydrate`
+
+Di React kamu menulis `createRoot(el).render(<App />)`. Di Vue, `createApp(App).mount('#app')`. Di Svelte 5, padanannya adalah **`mount(App, { target })`**. Inilah pintu masuk aplikasi — biasanya satu baris di `main.js`/`main.ts`:
+
+`mount` mengambil sebuah komponen, menempelkannya ke elemen DOM target, lalu mengembalikan **exports** komponen itu (apa pun yang di-`export` dari blok `<script>` modul komponen). `unmount` membongkar kembali komponen yang sudah di-`mount`. `hydrate` mirip `mount`, tapi dipakai saat HTML-nya **sudah ada** (dikirim dari server sebagai SSR) — alih-alih membuat DOM dari nol, Svelte "menghidupkan" markup yang ada dengan memasang event listener dan state. Kalau kamu memakai SvelteKit, semua ini dilakukan untukmu di balik layar; kamu memanggilnya manual hanya saat menyematkan Svelte ke dalam aplikasi lain (mis. widget Svelte di dalam halaman WordPress atau aplikasi React).
+
+<Callout type="legacy">
+Di Svelte 4, komponen adalah <strong>class</strong>: kamu menulis <code>const app = new App(&#123; target, props &#125;)</code> lalu <code>app.$destroy()</code>. Di Svelte 5 komponen <strong>bukan class lagi</strong> — ia berupa fungsi. Maka <code>new App(...)</code> tidak lagi berlaku; gunakan <code>mount(App, ...)</code> dan <code>unmount(app)</code>. Method instance lama (<code>$set</code>, <code>$on</code>, <code>$destroy</code>) juga hilang.
+</Callout>
+
+### Kelompok 2 — Mengatur waktu update: `tick`, `flushSync`
+
+Reaktivitas Svelte itu **asinkron dan ter-batch**: kalau kamu mengubah lima `$state` dalam satu event handler, Svelte tidak memperbarui DOM lima kali — ia menunggu, menggabungkannya, lalu menulis ke DOM sekali di "mikro-tugas" berikutnya. Efisien, tapi artinya: tepat setelah kamu mengubah state, DOM **belum** berubah.
+
+- **`tick()`** mengembalikan sebuah Promise yang selesai begitu perubahan tertunda sudah diterapkan ke DOM. Ini persis seperti `await nextTick()` di Vue. Pakai saat kamu butuh membaca/mengatur DOM *setelah* update (mis. menghitung tinggi elemen, scroll ke bawah).
+- **`flushSync()`** lebih keras: ia memaksa semua update tertunda diproses **sekarang juga, secara sinkron** (tanpa `await`). Berguna di test, atau saat sebuah API browser menuntut DOM sudah final pada baris berikutnya. Pakai hemat — memaksa flush sinkron menggugurkan optimasi batching.
+
+### Kelompok 3 — Jalan pintas reaktivitas: `untrack`
+
+Di dalam `$derived` atau `$effect`, setiap state yang kamu **baca** otomatis menjadi dependensi — efek akan jalan ulang kalau nilai itu berubah. Kadang kamu ingin membaca sebuah nilai **tanpa** berlangganan padanya. `untrack(fn)` melakukan itu: apa pun yang dibaca di dalam `fn` tidak dihitung sebagai dependensi. Bayangkan kamu sedang mengisi daftar belanja (dependensi); `untrack` adalah "melirik harga di rak sebelah tanpa memasukkannya ke daftar". Mirip semangat `.peek()` di beberapa signal library atau membaca `ref.current` di React tanpa memicu render.
+
+### Kelompok 4 — Context API: `setContext`, `getContext`, `hasContext`, `getAllContexts`
+
+Context adalah cara mengalirkan data dari komponen induk ke seluruh keturunannya **tanpa** mengoper props berlapis-lapis (prop drilling). Ini padanan langsung dari React Context (`createContext` + `useContext`) dan Vue `provide`/`inject`.
+
+- `setContext(key, value)` — induk menaruh nilai di bawah sebuah `key`.
+- `getContext(key)` — keturunan mana pun mengambilnya kembali.
+- `hasContext(key)` — cek apakah `key` ada.
+- `getAllContexts()` — ambil seluruh peta context (jarang dipakai; untuk meneruskan context saat `mount` komponen anak secara manual).
+
+`key` boleh apa saja (string, atau lebih aman sebuah `Symbol` supaya tak bentrok). Aturan emasnya: **panggil saat inisialisasi komponen** (sinkron, di bagian atas `<script>`), bukan di dalam event handler atau callback async. Dan context mengalir **ke bawah saja** — anak hanya bisa membaca context yang sudah di-`set` oleh induk sebelum anak itu dibuat.
+
+### Kelompok 5 — Tingkat lanjut: `createRawSnippet`
+
+Snippet (`{#snippet}`) biasanya kamu tulis di template. `createRawSnippet` membuat snippet **secara programatik dari JavaScript** — kamu sendiri yang menyediakan string HTML dan logika setup imperatif. Ini alat untuk **penulis library** yang butuh menghasilkan potongan UI dinamis tanpa file `.svelte`. Mayoritas pengembang aplikasi tidak akan pernah menyentuhnya, tapi penting ada di referensi.
+
+### Kelompok 6 — Tipe TypeScript: `Component`, `Snippet`, `ComponentProps`, …
+
+Modul ini juga mengekspor **tipe** untuk menulis kode yang type-safe: `Component` (tipe sebuah komponen Svelte 5, yang kini berupa fungsi), `Snippet` (tipe sebuah snippet, untuk mengetik prop snippet), `ComponentProps` (mengekstrak tipe props dari sebuah komponen), `MountOptions`, dan lainnya.
+
+<Callout type="warning">
+<strong>Catatan penting soal <code>render</code>:</strong> fungsi <code>render()</code> untuk server-side rendering <strong>tidak</strong> diekspor dari <code>'svelte'</code>, melainkan dari <code>'svelte/server'</code>. Ia hanya berjalan di lingkungan server (Node, edge) dan mengembalikan objek <code>&#123; head, body &#125;</code> berisi string HTML. Kalau kamu mengimpor <code>render</code> dari <code>'svelte'</code>, kamu akan dapat error. Kita bahas singkat di bawah karena topiknya berdampingan, tapi ingat alamat impornya berbeda.
+</Callout>
+
+## 2. Contoh kode
+
+```js
+// main.js — titik masuk aplikasi Svelte 5 (pengganti `new App(...)` lama)
+import { mount, unmount } from 'svelte';
+import App from './App.svelte';
+
+// mount(Component, options) menempelkan komponen ke DOM dan
+// MENGEMBALIKAN exports komponen (hasil `export` di <script module>/<script>).
+const app = mount(App, {
+	target: document.getElementById('app'), // wajib: elemen tujuan
+	props: { judul: 'Halo dunia' }, // opsional: props awal
+	// events: { selesai: (e) => ... }, // opsional: tangkap event komponen lama (interop API)
+	// context: new Map([[kunci, nilai]]), // opsional: context awal
+	intro: true // putar transisi saat render pertama (default true)
+});
+
+// Membongkar kembali. Kembalikan Promise; pakai { outro: true } untuk
+// menunggu transisi keluar selesai sebelum elemen benar-benar dilepas.
+// await unmount(app, { outro: true });
+```
+
+```svelte
+<!-- ThemeProvider.svelte — induk MENARUH context -->
+<script>
+	import { setContext } from 'svelte';
+	import { themeKey } from './theme-key.js'; // Symbol bersama (lihat catatan)
+	import Toolbar from './Toolbar.svelte';
+
+	let { children } = $props();
+
+	// setContext dipanggil saat init (sinkron, di atas). Nilainya bisa
+	// berupa objek reaktif ($state) supaya anak ikut update saat berubah.
+	const tema = $state({ warna: 'teal', mode: 'terang' });
+	setContext(themeKey, tema);
+
+	function toggle() {
+		tema.mode = tema.mode === 'terang' ? 'gelap' : 'terang';
+	}
+</script>
+
+<button onclick={toggle}>Ganti mode</button>
+<Toolbar />
+{@render children?.()}
+```
+
+```svelte
+<!-- DeepButton.svelte — keturunan (sedalam apa pun) MEMBACA context -->
+<script>
+	import { getContext, hasContext } from 'svelte';
+	import { themeKey } from './theme-key.js';
+
+	// getContext mengembalikan objek yang SAMA dengan yang di-set induk.
+	// Karena tadi objeknya $state, perubahan tema otomatis tercermin di sini.
+	const tema = hasContext(themeKey) ? getContext(themeKey) : { warna: 'gray' };
+</script>
+
+<button style="color: {tema.warna}">Mode: {tema.mode}</button>
+```
+
+```js
+// theme-key.js — kunci context sebaiknya Symbol agar tak bentrok
+// dengan key lain. Diekspor agar induk & anak memakai referensi yang sama.
+export const themeKey = Symbol('theme');
+```
+
+## 3. Coba sendiri
+
+Modul ini bekerja di tingkat aplikasi/DOM dan sebagian butuh server (`hydrate`, `render`), jadi tidak ada live playground di sini. Pelajari contoh statis beranotasi berikut — masing-masing menyoroti satu fungsi inti.
+
+**a) `tick()` — menunggu DOM selesai diperbarui sebelum men-scroll.**
+
+```svelte
+<script>
+	import { tick } from 'svelte';
+
+	let pesan = $state([]);
+	let kotak; // bind ke elemen daftar
+
+	async function kirim(teks) {
+		pesan.push(teks);
+		// PENTING: di baris ini DOM BELUM diperbarui — Svelte mem-batch update.
+		// Kalau kita scroll sekarang, tingginya masih tinggi lama.
+		await tick(); // tunggu sampai elemen <li> baru benar-benar ada di DOM
+		kotak.scrollTop = kotak.scrollHeight; // sekarang scroll ke item terbaru
+	}
+</script>
+
+<div bind:this={kotak} style="height: 200px; overflow: auto;">
+	{#each pesan as p}
+		<li>{p}</li>
+	{/each}
+</div>
+<button onclick={() => kirim('Halo ' + Date.now())}>Kirim</button>
+```
+
+**b) `untrack()` — membaca state tanpa menjadikannya dependensi.**
+
+```svelte
+<script>
+	import { untrack } from 'svelte';
+
+	let nilai = $state(0);
+	let pemicu = $state(0);
+
+	$effect(() => {
+		// Efek ini SENGAJA hanya berlangganan `pemicu`.
+		// `nilai` dibaca lewat untrack -> perubahannya TIDAK menjalankan ulang efek.
+		console.log('pemicu berubah jadi', pemicu, 'snapshot nilai =', untrack(() => nilai));
+	});
+</script>
+
+<button onclick={() => nilai++}>nilai++ (tidak memicu efek)</button>
+<button onclick={() => pemicu++}>pemicu++ (memicu efek)</button>
+```
+
+**c) `flushSync()` — memaksa DOM final secara sinkron (sering di test/integrasi).**
+
+```js
+import { flushSync, mount } from 'svelte';
+import Counter from './Counter.svelte';
+
+const app = mount(Counter, { target: document.body });
+
+// Anggap Counter punya tombol yang menaikkan angka.
+document.querySelector('button').click();
+
+// Tanpa flushSync, DOM mungkin belum menampilkan angka baru di baris ini.
+flushSync(); // proses semua update tertunda SEKARANG, sinkron, tanpa await.
+
+console.log(document.querySelector('button').textContent); // sudah ter-update
+```
+
+**d) `createRawSnippet()` — membuat snippet dari JavaScript murni (untuk penulis library).**
+
+```js
+import { createRawSnippet } from 'svelte';
+
+// Parameter datang sebagai GETTER (fungsi), bukan nilai langsung —
+// inilah cara raw snippet melacak perubahan secara reaktif.
+const tebal = createRawSnippet((teks) => {
+	return {
+		// render() dipanggil sekali; HARUS mengembalikan string dengan SATU elemen root.
+		render: () => `<strong>${teks()}</strong>`,
+		// setup() opsional: dipanggil sekali dengan elemen DOM root.
+		// Pakai $effect untuk memperbarui isi saat parameter berubah.
+		setup(node) {
+			$effect(() => {
+				node.textContent = teks();
+			});
+		}
+	};
+});
+// `tebal` kini bertipe Snippet<[string]> dan bisa dipakai lewat {@render tebal(nama)}.
+```
+
+## 4. Ringkasan API
+
+Tabel di bawah memuat seluruh ekspor utama modul `'svelte'`. Tanda tangan disederhanakan agar mudah dibaca; tanda tangan TypeScript lengkap menyusul di blok kode setelah setiap tabel.
+
+### Fungsi
+
+| Export | Tanda tangan singkat | Mengembalikan | Kegunaan |
+|---|---|---|---|
+| `mount` | `mount(Component, options)` | `Exports` | Pasang komponen ke DOM target, kembalikan exports-nya. |
+| `unmount` | `unmount(app, options?)` | `Promise<void>` | Bongkar komponen hasil `mount`/`hydrate`. |
+| `hydrate` | `hydrate(Component, options)` | `Exports` | Hidupkan HTML hasil SSR (pasang state + listener). |
+| `tick` | `tick()` | `Promise<void>` | Tunggu sampai update DOM tertunda diterapkan. |
+| `flushSync` | `flushSync(fn?)` | hasil `fn` / `void` | Paksa proses update tertunda secara sinkron. |
+| `untrack` | `untrack(fn)` | hasil `fn` | Baca state di dalam `fn` tanpa jadi dependensi. |
+| `setContext` | `setContext(key, value)` | `value` | Taruh context di bawah `key` (saat init). |
+| `getContext` | `getContext(key)` | `value` | Ambil context dari induk terdekat (saat init). |
+| `hasContext` | `hasContext(key)` | `boolean` | Cek apakah `key` ada di rantai context. |
+| `getAllContexts` | `getAllContexts()` | `Map` | Ambil seluruh peta context. |
+| `createRawSnippet` | `createRawSnippet(fn)` | `Snippet` | Buat snippet secara programatik dari JS. |
+
+Tanda tangan TypeScript lengkapnya:
+
+```ts
+// — Bootstrapping —
+function mount<Props, Exports>(
+	component: Component<Props, Exports, any>,
+	options: MountOptions<Props>
+): Exports;
+
+function unmount(
+	component: Record<string, any>,
+	options?: { outro?: boolean }
+): Promise<void>;
+
+function hydrate<Props, Exports>(
+	component: Component<Props, Exports, any>,
+	options: {
+		target: Document | Element | ShadowRoot;
+		props?: Props;
+		events?: Record<string, (e: any) => any>;
+		context?: Map<any, any>;
+		intro?: boolean;       // putar transisi intro (default: false saat hydrate)
+		recover?: boolean;     // coba pulih jika HTML server tak cocok (default: true)
+		transformError?: (error: unknown) => unknown;
+	}
+): Exports;
+
+// — Penjadwalan / waktu update —
+function tick(): Promise<void>;
+function flushSync<T = void>(fn?: () => T): T;
+
+// — Reaktivitas —
+function untrack<T>(fn: () => T): T;
+
+// — Context API (panggil saat inisialisasi komponen) —
+function setContext<T>(key: any, context: T): T;
+function getContext<T>(key: any): T;
+function hasContext(key: any): boolean;
+function getAllContexts<T extends Map<any, any> = Map<any, any>>(): T;
+
+// — Tingkat lanjut —
+function createRawSnippet<Params extends unknown[]>(
+	fn: (...params: Getters<Params>) => {
+		render: () => string;                       // satu elemen root
+		setup?: (element: Element) => void | (() => void);
+	}
+): Snippet<Params>;
+```
+
+`MountOptions` (opsi untuk `mount`):
+
+```ts
+type MountOptions<Props extends Record<string, any> = {}> = {
+	target: Document | Element | ShadowRoot;   // WAJIB: tujuan render
+	props?: Props;                             // props awal (wajib jika Props punya field non-opsional)
+	anchor?: Node;                             // sisipkan SEBELUM node ini (opsional)
+	events?: Record<string, (e: any) => any>;  // tangkap event komponen (interop API lama)
+	context?: Map<any, any>;                   // context awal untuk pohon ini
+	intro?: boolean;                           // putar transisi intro (default: true)
+	transformError?: (error: unknown) => unknown;
+};
+```
+
+### Tipe
+
+| Tipe | Bentuk | Untuk apa |
+|---|---|---|
+| `Component` | `Component<Props, Exports, Bindings>` | Tipe sebuah komponen Svelte 5 (kini fungsi, bukan class). |
+| `Snippet` | `Snippet<Params>` | Tipe sebuah snippet; dipakai untuk mengetik prop snippet. |
+| `ComponentProps` | `ComponentProps<Comp>` | Ekstrak tipe `props` dari sebuah komponen. |
+| `MountOptions` | `MountOptions<Props>` | Bentuk argumen kedua `mount`. |
+| `ComponentInternals` | (opaque) | Metadata internal yang dioper ke fungsi komponen; jangan diutak-atik. |
+| `SvelteComponent` | class | Tipe basis komponen LAMA (Svelte 4); ada untuk kompatibilitas/legacy. |
+
+```ts
+// Tipe komponen modern: fungsi dengan Props, Exports, dan daftar prop yang bisa di-bind.
+interface Component<
+	Props extends Record<string, any> = {},
+	Exports extends Record<string, any> = {},
+	Bindings extends keyof Props | '' = string
+> {
+	(internals: ComponentInternals, props: Props): Exports;
+}
+
+// Snippet: hanya bisa dipanggil lewat {@render ...}, dengan parameter berjenis tuple.
+interface Snippet<Parameters extends unknown[] = []> { /* opaque */ }
+
+// Utility: ambil tipe props dari sebuah komponen (mis. untuk membungkusnya).
+type ComponentProps<Comp extends SvelteComponent | Component<any, any>> = /* Props */;
+```
+
+<Callout type="tip">
+<code>ComponentProps</code> sangat berguna saat menulis komponen pembungkus (wrapper) yang harus meneruskan semua props ke komponen di dalamnya: <code>let &#123; ...rest &#125;: ComponentProps&lt;typeof Inner&gt; = $props()</code>. Ini menjaga type-safety tanpa menyalin daftar props secara manual.
+</Callout>
+
+### `render` — kerabat dari `svelte/server` (bukan dari `'svelte'`)
+
+Karena sering ditanyakan berdampingan: SSR memakai `render` dari modul **`svelte/server`**.
+
+```ts
+// HANYA berjalan di server. Impor dari 'svelte/server', BUKAN 'svelte'.
+import { render } from 'svelte/server';
+import App from './App.svelte';
+
+const { head, body } = render(App, {
+	props: { judul: 'Halo' },
+	context: new Map() // opsional
+});
+// Sisipkan `head` ke <head> dokumen dan `body` ke tempat root,
+// lalu di klien panggil hydrate(App, { target }) untuk menghidupkannya.
+```
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<strong>Jangan lagi <code>new Component(...)</code>.</strong> Itu pola Svelte 4 (komponen = class). Di Svelte 5, komponen adalah fungsi bertipe <code>Component</code>, dan kamu menyalakannya dengan <code>mount(Component, options)</code>. Membongkarnya dengan <code>unmount(app)</code>, bukan <code>app.$destroy()</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "new App({ target, props })", modern: "mount(App, { target, props })", note: 'Komponen kini fungsi, bukan class.' },
+	{ legacy: "app.$destroy()", modern: "unmount(app)", note: 'unmount mengembalikan Promise; { outro: true } menunggu transisi keluar.' },
+	{ legacy: "app.$set({ x })", modern: "props reaktif via $state / reassign", note: 'Tak ada $set; oper props reaktif saat mount atau pakai store/$state.' },
+	{ legacy: "app.$on('ev', fn)", modern: "events: { ev: fn } di mount, atau prop callback", note: 'Pola modern: callback prop (mis. onselesai), bukan event.' },
+	{ legacy: "import { render } from 'svelte'", modern: "import { render } from 'svelte/server'", note: 'render untuk SSR hidup di svelte/server.' }
+]} />
+
+<Callout type="pitfall">
+<code>getContext</code> dan <code>setContext</code> <strong>hanya boleh dipanggil saat inisialisasi komponen</strong> — yaitu sinkron, di bagian atas <code>&lt;script&gt;</code>. Memanggilnya di dalam event handler, <code>setTimeout</code>, atau callback async akan gagal/keliru karena Svelte tidak lagi tahu "komponen mana" yang sedang aktif. Kalau butuh nilai dinamis, panggil <code>getContext</code> sekali saat init lalu simpan ke variabel, dan buat nilainya berupa objek <code>$state</code> agar perubahannya tetap reaktif.
+</Callout>
+
+<Callout type="pitfall">
+Context mengalir <strong>satu arah, ke bawah</strong>, dan hanya terlihat oleh keturunan yang dibuat <em>setelah</em> <code>setContext</code> dipanggil. Ia bukan state global — dua sub-pohon yang berbeda bisa punya nilai context berbeda untuk key yang sama. Kalau kamu butuh state yang dibagi ke seluruh aplikasi tanpa hubungan induk-anak, ekspor <code>$state</code> dari file <code>.svelte.ts</code>, bukan context.
+</Callout>
+
+<Callout type="warning">
+Tepat setelah mengubah <code>$state</code>, DOM <strong>belum</strong> diperbarui (Svelte mem-batch update). Jadi membaca ukuran/posisi elemen atau mengatur <code>scrollTop</code> di baris berikutnya akan memakai nilai lama. Sisipkan <code>await tick()</code> lebih dulu (atau <code>flushSync()</code> bila tak bisa async) agar DOM sudah final.
+</Callout>
+
+<Callout type="tip">
+Hemat memakai <code>flushSync()</code>. Ia memaksa update sinkron dan menggugurkan batching, jadi pemakaian berlebihan bisa menurunkan performa. Tempat paling wajarnya adalah di <strong>test</strong> (memastikan DOM sudah final sebelum assertion) atau saat berinteraksi dengan API browser yang menuntut tata letak final segera. Untuk kebutuhan biasa "lakukan setelah render", <code>tick()</code> lebih tepat.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte" label="svelte — referensi modul inti (mount, hydrate, context, dll.)" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-server" label="svelte/server — render() untuk SSR" />
+<DocsLink href="https://svelte.dev/docs/svelte/context" label="Panduan: Context API ($lib setContext/getContext)" />
+<DocsLink href="https://svelte.dev/docs/svelte/imperative-component-api" label="Imperative component API — mount/unmount/hydrate" />

@@ -1,0 +1,215 @@
+---
+title: "{@html ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 8
+status: stable
+description: "Menyuntik string HTML mentah ke DOM lewat tag @html, memahami risiko XSS dan cara menyanitasi, plus menata hasilnya dengan :global."
+docs: https://svelte.dev/docs/svelte/@html
+keywords: [html, xss, innerHTML, sanitize, DOMPurify]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Hampir sepanjang waktu kamu menulis nilai di markup dengan satu pasang kurawal biasa: `{nama}`, `{harga * 2}`. Saat Svelte menemui ini, ia membuat **text node** — artinya apa pun isinya diperlakukan sebagai *teks*, bukan markup. Kalau `nama` kebetulan berisi string `<b>halo</b>`, yang muncul di layar adalah tulisan literal `<b>halo</b>`, bukan kata "halo" yang ditebalkan. Svelte meng-**escape** karakter spesial (`<`, `>`, `&`) secara otomatis. Ini bukan kebetulan: escape-by-default adalah lapis pertahanan pertama terhadap serangan injeksi. Browser jadi tidak pernah salah mengira data sebagai instruksi.
+
+Tapi sesekali kamu memang punya string yang *isinya HTML sungguhan* dan kamu ingin browser merendernya sebagai elemen, bukan teks — misalnya artikel yang sudah kamu render dari Markdown, atau potongan rich-text dari CMS-mu sendiri. Untuk kasus itu Svelte menyediakan tag `{@html string}`.
+
+### Analogi: menempel kliping koran yang sudah tercetak
+
+Bayangkan kamu mengisi buku tempel. Menulis `{teks}` itu seperti **menyalin tulisan dengan tangan**: apa pun yang kamu tulis muncul sebagai huruf, titik tetap titik, tanda kurung tetap tanda kurung — tidak ada yang "berubah jadi format". Sedangkan `{@html string}` seperti **menggunting kliping koran yang sudah tercetak rapi lalu menempelnya apa adanya**: judul tebal, paragraf, gambar — semuanya langsung muncul dengan formatnya, karena kamu menempel "hasil cetak", bukan teks mentah.
+
+Masalahnya muncul kalau kliping itu datang dari **orang asing**. Kalau ada yang menyodorkan "kliping" berisi perintah tersembunyi, kamu menempelnya bulat-bulat tanpa membaca — dan perintah itu ikut aktif. Itulah inti bahaya `{@html}`.
+
+### Padanan di React & Vue
+
+Buat kamu yang datang dari React, `{@html ...}` adalah saudara kembar `dangerouslySetInnerHTML={{ __html: str }}`. Kata "dangerously" di nama React itu sengaja dipasang sebagai rambu — peringatan yang persis sama berlaku di Svelte, hanya saja namanya lebih kalem. Di Vue, padanannya adalah direktif `v-html`. Ketiganya bekerja dengan mekanisme yang sama persis di balik layar: menyetel properti `innerHTML` sebuah elemen.
+
+### Empat fakta mekanis yang wajib kamu ingat
+
+Karena `{@html}` pada dasarnya cuma `node.innerHTML = string`, ada empat konsekuensi yang sering bikin orang bingung:
+
+1. **String-nya harus HTML utuh yang valid.** Kamu tidak bisa memakai `{@html}` untuk menyuntik *potongan* tag — misalnya hanya `</div>` untuk "menutup" elemen yang dibuka di markup. Browser mem-parse string itu sebagai dokumen mandiri, jadi tag yang menggantung akan diperbaiki/diabaikan, bukan disambung ke markup sekitarnya.
+2. **Svelte tidak mengompilasi isinya.** Kalau di dalam string-mu ada `{nama}` atau `onclick={...}`, itu **tidak** akan diproses Svelte — hanya jadi teks/atribut HTML biasa. `{@html}` bukan pintu untuk "menyuntik template Svelte dinamis".
+3. **CSS scoped komponenmu tidak menjangkaunya.** Elemen hasil `{@html}` tidak mendapat hash scoping Svelte, jadi aturan style biasa di `<style>` komponen tidak berlaku ke sana (kita bahas solusinya di bagian styling).
+4. **Tag `<script>` di dalam string tidak akan jalan, tapi handler event jalan.** Browser memang tidak mengeksekusi `<script>` yang dimasukkan via `innerHTML` — tapi ini **bukan** pelindung. Atribut seperti `onerror`, `onload`, `onmouseover` tetap dieksekusi. Jadi `<img src=x onerror="...">` adalah payload XSS klasik yang lolos meski `<script>` diblokir.
+
+## 2. Contoh kode
+
+Pertama, bandingkan langsung antara render normal (escaped) dan `{@html}`:
+
+```svelte
+<script>
+	// Sumber TEPERCAYA: HTML ini kamu yang kontrol (mis. hasil render
+	// Markdown milikmu sendiri), bukan ketikan orang asing.
+	let artikel = $state('<h2>Judul</h2><p>Paragraf <strong>tebal</strong>.</p>');
+</script>
+
+<!-- Render normal: di-escape -> tag tampil sebagai TEKS literal -->
+<p>{artikel}</p>
+<!-- Hasil di layar: <h2>Judul</h2><p>Paragraf <strong>tebal</strong>.</p> -->
+
+<!-- @html: string dirender sebagai HTML ASLI -> h2/p/strong jadi elemen nyata -->
+<div class="konten">{@html artikel}</div>
+<!-- Hasil di layar: "Judul" sebagai heading, paragraf dengan kata tebal -->
+```
+
+Kalau string-nya tidak kamu kontrol (komentar, bio user, data API pihak ketiga), **sanitasi dulu**. Library de-facto untuk ini adalah `DOMPurify`. Pasangkan dengan `$derived` supaya hasil bersihnya ikut ter-update saat sumbernya berubah:
+
+```svelte
+<script>
+	import DOMPurify from 'dompurify';
+
+	// Anggap ini datang dari user / API -> TIDAK tepercaya.
+	let komentarKotor = $state('<img src=x onerror="alert(1)"> <b>Hai!</b>');
+
+	// $derived: tiap 'komentarKotor' berubah, versi bersih dihitung ulang.
+	// DOMPurify membuang onerror, <script>, dan atribut berbahaya lain,
+	// menyisakan markup aman seperti <b>.
+	let komentarBersih = $derived(DOMPurify.sanitize(komentarKotor));
+</script>
+
+<!-- yang ditempel ke @html adalah hasil yang SUDAH disanitasi -->
+<div class="komentar">{@html komentarBersih}</div>
+```
+
+Karena CSS scoped tidak menjangkau isi `{@html}`, gunakan `:global` untuk menatanya. Svelte 5 punya bentuk blok `:global { ... }` yang bisa bersarang, selain bentuk klasik `:global(selector)`:
+
+```svelte
+<script>
+	let artikel = $state('<p>Kunjungi <a href="/">beranda</a> kami.</p><img src="/foto.jpg" alt="" />');
+</script>
+
+<article>{@html artikel}</article>
+
+<style>
+	/* Tanpa :global, dua aturan di bawah TIDAK akan kena elemen <a>/<img>
+	   hasil @html, karena mereka tak punya atribut hash scoping Svelte. */
+
+	/* Bentuk baru (Svelte 5.x): blok :global bersarang di bawah .article */
+	article :global {
+		a { color: hotpink; }
+		img { width: 100%; border-radius: 8px; }
+	}
+
+	/* Bentuk klasik (selector tunggal) — juga valid:
+	   article :global(a) { color: hotpink; } */
+</style>
+```
+
+## 3. Coba sendiri
+
+Ketik HTML di kotak input dan bandingkan dua kotak preview: yang **tanpa** `{@html}` menampilkan tag-mu sebagai teks (escaped), yang **dengan** `{@html}` merendernya jadi elemen. Klik "Isi konten aman" untuk melihat formatting bekerja, lalu klik "Coba payload berbahaya" untuk membuktikan bahwa `onerror` benar-benar dieksekusi — itulah XSS dalam aksi (di sini efeknya kita buat tidak berbahaya, cuma mengganti gambar dengan tulisan). Perhatikan juga `<style>` di bawah memakai `:global` agar tautan & teks tebal di dalam `{@html}` ikut tertata.
+
+<Playground code={`<script>
+	let raw = $state('<strong>Tebal</strong>, <em>miring</em>, dan <a href="#">sebuah tautan</a>.');
+
+	function isiAman() {
+		raw = '<h4>Judul Artikel</h4><p>Paragraf dengan <strong>kata tebal</strong> dan <a href="#">tautan</a>.</p>';
+	}
+
+	function isiBerbahaya() {
+		// Catatan: <script> TIDAK jalan via innerHTML, tapi onerror IYA.
+		// String hasilnya kita encode dengan fromCharCode hanya untuk
+		// menghindari tanda kutip bersarang -> teks 'XSS jalan!'.
+		raw = '<img src=x onerror="this.replaceWith(document.createTextNode(String.fromCharCode(88,83,83,32,106,97,108,97,110,33)))">';
+	}
+</script>
+
+<input bind:value={raw} style="width: 100%; padding: 6px;" />
+
+<h4>1. Tanpa @html (di-escape, aman):</h4>
+<p style="background:#f5f5f5; padding:8px;">{raw}</p>
+
+<h4>2. Dengan @html (HTML asli):</h4>
+<div class="konten" style="border:1px solid #ccc; padding:8px; min-height:32px;">
+	{@html raw}
+</div>
+
+<div style="margin-top:10px; display:flex; gap:8px;">
+	<button onclick={isiAman}>Isi konten aman</button>
+	<button onclick={isiBerbahaya}>Coba payload berbahaya</button>
+</div>
+
+<style>
+	/* :global menembus batas scoped agar isi @html bisa ditata */
+	.konten :global(a) { color: hotpink; font-weight: bold; }
+	.konten :global(strong) { background: gold; }
+</style>`} />
+
+<Callout type="tip">
+Di playground ini string <code>raw</code> kita kontrol sendiri lewat input, jadi aman buat eksperimen. Di aplikasi nyata, anggap semua input dari luar sebagai tidak tepercaya — lihat bagian Pitfalls.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Komponen komentar yang aman">
+Buat komponen `Komentar.svelte` yang menerima prop `html` berisi string HTML dari user (tidak tepercaya), lalu menampilkannya **dengan aman**:
+
+1. Terima prop lewat `$props()`.
+2. Sanitasi string memakai `DOMPurify` (asumsikan sudah ter-install) di dalam `$derived`, supaya hasil bersih ikut ter-update saat prop berubah.
+3. Render hasil bersih dengan `{@html ...}` di dalam sebuah `<div class="isi">`.
+4. Tata tautan di dalamnya (warna) memakai `:global`, karena CSS scoped tidak menjangkau isi `{@html}`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import DOMPurify from 'dompurify';
+
+	// 1. ambil prop 'html' (string tak tepercaya dari user)
+	let { html } = $props();
+
+	// 2. $derived: hasil sanitasi ikut berubah kalau 'html' berubah.
+	//    DOMPurify membuang onerror/<script>/atribut berbahaya.
+	let bersih = $derived(DOMPurify.sanitize(html));
+</script>
+
+<!-- 3. tempel HASIL SANITASI, bukan string mentahnya -->
+<div class="isi">{@html bersih}</div>
+
+<style>
+	/* 4. :global agar <a> di dalam @html tetap tertata */
+	.isi :global(a) { color: hotpink; }
+	.isi :global(img) { max-width: 100%; }
+</style>
+```
+
+Inti pelajarannya: yang masuk ke `{@html}` **bukan** `html` mentah, melainkan `bersih`. Dengan menaruh `DOMPurify.sanitize()` di `$derived`, kamu mendapat pola "sanitasi sekali, reaktif otomatis" tanpa perlu `$effect` manual. Tata letak isi memakai `:global` karena elemen hasil `{@html}` tidak mendapat scoping Svelte.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>JANGAN PERNAH</strong> memasukkan string dari user (komentar, nama, bio, isi form, data API yang tak kamu kendalikan) langsung ke <code>&#123;@html&#125;</code>. Itu pintu masuk <strong>XSS</strong>: penyerang bisa menyelipkan <code>&lt;img src=x onerror=...&gt;</code> atau handler event lain untuk menjalankan JavaScript di browser korban (mencuri cookie, token sesi, dll). Kalau harus merender HTML dari user, sanitasi dulu dengan <code>DOMPurify</code> — idealnya di sisi server saat menyimpan, atau minimal di klien sebelum menempel.
+</Callout>
+
+<Callout type="warning">
+Jangan terkecoh oleh fakta bahwa <code>&lt;script&gt;</code> tidak dieksekusi saat dimasukkan via <code>innerHTML</code>. Itu <strong>bukan</strong> proteksi. Atribut handler seperti <code>onerror</code>, <code>onload</code>, dan <code>onmouseover</code> tetap berjalan, dan ada lusinan vektor XSS lain. Satu-satunya jawaban yang benar adalah <strong>sanitasi</strong>, bukan mengandalkan perilaku parser tertentu.
+</Callout>
+
+<Callout type="warning">
+String untuk <code>&#123;@html&#125;</code> harus berupa <strong>HTML utuh yang valid dan berdiri sendiri</strong>. Kamu tidak bisa memakainya untuk menyuntik potongan tag (mis. hanya <code>&lt;/div&gt;</code>) demi "menutup" elemen di markup — browser mem-parse string itu sebagai unit tersendiri. Ingat juga: ekspresi Svelte seperti <code>&#123;nama&#125;</code> atau direktif di dalam string <strong>tidak</strong> diproses, hanya jadi teks/atribut biasa.
+</Callout>
+
+<Callout type="tip">
+CSS scoped di <code>&lt;style&gt;</code> komponen <strong>tidak</strong> menjangkau elemen hasil <code>&#123;@html&#125;</code>, karena elemen itu tak punya atribut hash scoping Svelte. Untuk menatanya, bungkus dengan elemen ber-kelas lalu pakai <code>:global</code> — bentuk blok <code>article :global &#123; a &#123; ... &#125; &#125;</code> (Svelte 5.x) atau bentuk klasik <code>:global(.konten a)</code>.
+</Callout>
+
+<Callout type="tip">
+Sebelum meraih <code>&#123;@html&#125;</code>, tanyakan dulu: apakah benar butuh HTML mentah? Sering kali komponen biasa, <code>&#123;#each&#125;</code>, atau snippet lebih aman dan lebih mudah dirawat. <code>&#123;@html&#125;</code> paling pas untuk konten kaya yang sudah jadi (hasil render Markdown, output editor WYSIWYG) — dan tetap disanitasi bila sumbernya tak sepenuhnya kamu kontrol.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/@html" label="&#123;@html ...&#125; — dokumentasi resmi Svelte" />

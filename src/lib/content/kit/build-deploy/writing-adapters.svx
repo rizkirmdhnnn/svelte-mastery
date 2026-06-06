@@ -1,0 +1,386 @@
+---
+title: Writing adapters
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 11
+status: stable
+description: Membuat adapter SvelteKit sendiri — kontrak Adapter (adapt/emulate/supports), helper dari objek builder, dan kapan kamu benar-benar perlu menulisnya.
+docs: https://svelte.dev/docs/kit/writing-adapters
+keywords: [adapter, builder, adapt, emulate, supports, deployment]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di modul adapter sebelumnya kita memakai adapter resmi (`adapter-node`, `adapter-static`, `adapter-vercel`, dst.) sebagai "adaptor travel" yang mencolokkan aplikasimu ke stop kontak platform tertentu. Di modul ini kita naik satu level: **kamu yang membuat adaptornya sendiri**. Ini diperlukan saat platform tujuanmu belum punya adapter resmi/komunitas — misalnya runtime serverless internal perusahaan, sebuah PaaS niche, Deno Deploy versi kustom, atau sebuah edge runtime baru.
+
+Untuk paham cara menulis adapter, ingat dulu apa yang sudah disiapkan SvelteKit untukmu. Saat `vite build` jalan, SvelteKit menghasilkan output **netral platform**: bundel klien (JS/CSS yang dikirim ke browser), bundel server (sebuah kelas `Server` yang tahu cara mengubah satu `Request` standar menjadi satu `Response` standar), plus daftar halaman hasil prerender. Yang BELUM ada adalah "lem" yang menghubungkan output netral itu ke cara platform tujuanmu menerima request dan mengirim response. Adapter adalah lem itu.
+
+### Analogi: menulis device driver
+
+Cara paling pas memandang adapter: ia seperti **device driver**. Sistem operasi (platform deploy-mu) bicara dengan "bahasa" sendiri — Cloudflare mengirimkan objek `Request` Web standar lewat sebuah `fetch handler`, server Node mengirim `IncomingMessage`/`ServerResponse`, AWS Lambda mengirim objek event JSON yang aneh. Di sisi lain, SvelteKit hanya tahu satu bahasa universal: `Request` dan `Response` Web standar lewat `server.respond()`.
+
+Driver (adapter) duduk di tengah dan menerjemahkan dua arah: dari format request platform → `Request` standar (lalu panggil `server.respond()`), dan dari `Response` standar → format response platform. Sama seperti vendor OS memberi pembuat driver sebuah SDK, SvelteKit memberimu sebuah **toolbox bernama `builder`** untuk membangun driver itu — lengkap dengan fungsi untuk menyalin aset, menulis bundel server, dan men-generate manifest.
+
+### Kontrak Adapter
+
+Sebuah adapter SvelteKit, pada intinya, hanyalah sebuah **factory function**: kamu memanggilnya di `svelte.config.js` (`adapter: myAdapter(options)`) dan ia mengembalikan sebuah objek `Adapter`. Objek itu punya empat anggota — satu wajib, sisanya opsional:
+
+| Anggota | Wajib? | Peran |
+| --- | --- | --- |
+| `name` | ya | Nama paket adapter (string). Dipakai untuk pesan log & debugging. |
+| `adapt(builder)` | ya | Fungsi `async` inti: di sinilah kamu membangun output siap-deploy memakai helper dari `builder`. |
+| `emulate()` | tidak | Mengembalikan objek `platform` agar `event.platform` terisi saat `dev`, `build`, dan `preview` — meniru lingkungan produksi secara lokal. |
+| `supports` | tidak | Objek berisi fungsi yang memberi tahu SvelteKit fitur apa yang didukung target (mis. `read` dari `$app/server`, instrumentation). |
+
+Kerangka paling minimalnya:
+
+```js
+// adapter-myplatform/index.js
+export default function (options = {}) {
+	/** @type {import('@sveltejs/kit').Adapter} */
+	const adapter = {
+		name: 'adapter-myplatform', // muncul di log build
+		async adapt(builder) {
+			// di sini semua pekerjaan terjadi (lihat Bagian 2)
+		}
+	};
+	return adapter;
+}
+```
+
+### Apa saja yang harus dilakukan `adapt()`
+
+Dokumentasi resmi merangkum tugas `adapt(builder)` jadi beberapa langkah yang hampir selalu sama di semua adapter:
+
+1. **Bersihkan direktori build** (`builder.rimraf(out)`) supaya tidak ada sisa build lama.
+2. **Tulis output SvelteKit** dengan `builder.writeClient()`, `builder.writeServer()`, dan `builder.writePrerendered()`.
+3. **Generate manifest** (`builder.generateManifest()`) — peta rute yang dibutuhkan kelas `Server` saat runtime.
+4. **Tulis entry point** untuk platform: kode yang meng-import `Server`, membuat instansnya, lalu untuk tiap request: mengubah request platform → `Request` standar, memanggil `server.respond()`, dan mengubah `Response` standar kembali ke format platform.
+5. **Bundle & taruh file** di tempat yang platform harapkan (mis. folder `functions/`, `dist/`, atau apa pun), dan salin aset statis ke lokasi yang benar.
+6. Bila perlu, **shim `fetch`** global agar bekerja di runtime target, dan **ekspos info platform** ke aplikasi lewat opsi `platform`.
+
+### Helper dari objek `builder` (toolbox-mu)
+
+`builder` adalah satu-satunya argumen `adapt()` dan berisi semua yang kamu butuhkan. Berikut yang paling sering dipakai:
+
+| Helper | Tanda tangan (disederhanakan) | Kegunaan |
+| --- | --- | --- |
+| `builder.log` | `log(msg)` + `log.success/error/warn/minor/info(msg)` | Mencetak pesan ke konsol build dengan gaya konsisten. |
+| `builder.rimraf(dir)` | `(dir: string) => void` | Hapus direktori beserta isinya (bersih-bersih). |
+| `builder.mkdirp(dir)` | `(dir: string) => void` | Buat direktori (rekursif, aman bila sudah ada). |
+| `builder.config` | objek config tervalidasi | Akses `kit.paths`, `kit.appDir`, dll. |
+| `builder.prerendered` | `{ pages, assets, redirects, paths }` (Map) | Info halaman & redirect hasil prerender. |
+| `builder.routes` | `RouteDefinition[]` | Daftar rute — berguna untuk membelah jadi banyak fungsi serverless. |
+| `builder.writeClient(dest)` | `(dest) => string[]` | Tulis aset klien (JS/CSS/aset publik) ke `dest`; balikkan daftar file. |
+| `builder.writeServer(dest)` | `(dest) => string[]` | Tulis bundel server (kelas `Server`) ke `dest`. |
+| `builder.writePrerendered(dest)` | `(dest) => string[]` | Tulis halaman & aset hasil prerender ke `dest`. |
+| `builder.generateManifest(opts)` | `({ relativePath, routes? }) => string` | Hasilkan **kode** (string JS) yang mengevaluasi jadi manifest server. |
+| `builder.generateFallback(dest)` | `(dest) => Promise<void>` | Buat halaman fallback SPA (untuk adapter mode SPA). |
+| `builder.getBuildDirectory(name)` | `(name) => string` | Path direktori kerja sementara (di `.svelte-kit/`). |
+| `builder.getClientDirectory()` | `() => string` | Path direktori aset klien hasil build. |
+| `builder.getServerDirectory()` | `() => string` | Path direktori bundel server hasil build. |
+| `builder.getAppPath()` | `() => string` | Path internal app (mis. `_app`), menghormati `kit.paths.base`. |
+| `builder.copy(from, to, opts?)` | `(from, to, { replace? }) => string[]` | Salin file/folder; `replace` menukar placeholder teks di file (untuk template entry). |
+| `builder.compress(dir)` | `(dir) => Promise<void>` | Pra-kompres aset jadi `.gz`/`.br` (precompress). |
+| `builder.findServerAssets(routes)` | `(routes) => string[]` | Cari aset yang di-`import` server (mis. via `read`) untuk rute tertentu. |
+
+<Callout type="tip">
+Pakai `builder.getBuildDirectory('nama-adaptermu')` untuk file sementara, dan tulis output FINAL ke folder publik (mis. `build/`). Jangan pernah hardcode path internal SvelteKit (`.svelte-kit/...`) — nama & struktur folder itu bisa berubah antar versi; helper `builder` melindungimu dari perubahan itu.
+</Callout>
+
+### `emulate()` — meniru platform saat dev/preview
+
+Kalau platform target memberi data khusus ke aplikasi lewat `event.platform` (mis. Cloudflare menaruh KV/D1/R2 bindings di `platform.env`), maka saat development data itu belum ada — kamu tidak sedang berjalan di Cloudflare. `emulate()` menutup celah ini: ia mengembalikan objek dengan fungsi `platform({ config, prerender })`, dan apa pun yang ia balikkan menjadi `event.platform` selama `dev`, `build`, dan `preview`. Jadi tim bisa develop lokal dengan tiruan bindings yang realistis.
+
+### `supports` — deklarasi kemampuan runtime
+
+Beberapa fitur SvelteKit tidak bisa jalan di semua runtime. Contoh: `read()` dari `$app/server` membaca file aset dari disk — gampang di Node, tapi tidak semua edge runtime mengizinkannya. Lewat `supports.read({ config, route })` kamu mengembalikan `true`/`false`; kalau `false` dan ada rute yang memanggil `read()`, SvelteKit melempar error saat build (gagal-cepat) alih-alih membiarkan aplikasi crash di produksi. Ada juga `supports.instrumentation()` untuk dukungan `instrumentation.server.js`.
+
+## 2. Contoh kode
+
+Berikut adapter lengkap-tapi-disederhanakan untuk sebuah platform Node-like hipotetis. Perhatikan alurnya: bersih-bersih → tulis output → generate manifest → tulis entry dari template. Ini pola yang dipakai hampir semua adapter resmi.
+
+```js
+// adapter-myplatform/index.js
+import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+/** @param {{ out?: string }} [options] */
+export default function (options = {}) {
+	const out = options.out ?? 'build';
+
+	/** @type {import('@sveltejs/kit').Adapter} */
+	const adapter = {
+		name: 'adapter-myplatform',
+
+		async adapt(builder) {
+			// Direktori kerja sementara (di dalam .svelte-kit/) — aman & otomatis dibersihkan.
+			const tmp = builder.getBuildDirectory('myplatform-tmp');
+
+			// 1) Bersih-bersih output lama
+			builder.rimraf(out);
+			builder.rimraf(tmp);
+			builder.mkdirp(tmp);
+
+			// 2) Tulis tiga jenis output SvelteKit
+			builder.log.minor('Menyalin aset klien & halaman prerender');
+			builder.writeClient(`${out}/client`); // JS/CSS untuk browser
+			builder.writePrerendered(`${out}/prerendered`); // HTML hasil prerender
+			builder.writeServer(`${tmp}/server`); // bundel server (kelas Server)
+
+			// 3) Generate manifest sebagai MODUL JS.
+			//    generateManifest mengembalikan STRING kode, bukan objek —
+			//    kita bungkus jadi `export const manifest = ...`.
+			builder.log.minor('Membuat manifest');
+			writeFileSync(
+				`${tmp}/manifest.js`,
+				`export const manifest = ${builder.generateManifest({ relativePath: './server' })};\n`
+			);
+
+			// 4) Salin template entry point & ganti placeholder.
+			//    File template berisi tulisan harfiah SERVER & MANIFEST yang
+			//    di-`replace` jadi path asli — sehingga entry tahu apa yang di-import.
+			builder.log.minor('Menulis entry point');
+			builder.copy(fileURLToPath(new URL('./files', import.meta.url)), out, {
+				replace: {
+					SERVER: `${tmp}/server/index.js`,
+					MANIFEST: `${tmp}/manifest.js`
+				}
+			});
+
+			builder.log.success('Selesai. Output ada di folder ' + out);
+		},
+
+		// OPSIONAL: isi event.platform saat dev/build/preview agar mirip produksi.
+		async emulate() {
+			return {
+				platform({ config, prerender }) {
+					// kembalikan objek App.Platform tiruan, mis. { env: { MY_KV: fakeKV } }
+					return {};
+				}
+			};
+		},
+
+		// OPSIONAL: deklarasikan kemampuan runtime target.
+		supports: {
+			// Misal platform ini bisa baca file aset dari disk -> izinkan read().
+			read: ({ config, route }) => true
+		}
+	};
+
+	return adapter;
+}
+```
+
+Dan inilah file template entry point-nya. Tulisan `SERVER` dan `MANIFEST` di-`replace` oleh `builder.copy` di atas. Inti driver ada di sini: terjemahkan request platform ke `Request` standar, panggil `server.respond()`, lalu terjemahkan balik.
+
+```js
+// adapter-myplatform/files/index.js  (TEMPLATE — SERVER & MANIFEST diganti saat build)
+import { Server } from 'SERVER';
+import { manifest } from 'MANIFEST';
+
+// Buat instans server SEKALI (di-reuse antar request).
+const server = new Server(manifest);
+
+// init() menyiapkan env (variabel lingkungan, dll.) — panggil sekali sebelum melayani.
+await server.init({ env: process.env });
+
+/**
+ * Handler yang dipanggil platform untuk SETIAP request.
+ * Bentuk `platformRequest` & `reply` mengikuti API platform target.
+ */
+export default async function handler(platformRequest, reply) {
+	// (a) platform-spesifik -> Request Web standar
+	const request = new Request(platformRequest.url, {
+		method: platformRequest.method,
+		headers: platformRequest.headers,
+		body: platformRequest.body
+	});
+
+	// (b) serahkan ke SvelteKit — ini bagian universal & netral platform
+	const response = await server.respond(request, {
+		// SvelteKit butuh tahu IP klien (untuk getClientAddress()):
+		getClientAddress: () => platformRequest.ip,
+		// apa pun di sini menjadi event.platform di aplikasi:
+		platform: { /* bindings, ctx, dll. */ }
+	});
+
+	// (c) Response Web standar -> format response platform
+	reply.status(response.status);
+	for (const [key, value] of response.headers) reply.setHeader(key, value);
+	reply.send(await response.text());
+}
+```
+
+<Callout type="warning">
+`builder.generateManifest()` mengembalikan <strong>string kode</strong> (sebuah ekspresi JS), bukan objek manifest yang sudah jadi. Itulah sebabnya kita menuliskannya ke file dengan template literal <code>export const manifest = $&#123;...&#125;</code>. Kalau kamu mencoba <code>JSON.stringify</code> hasilnya atau memperlakukannya sebagai objek, akan rusak — ia memang sengaja berupa kode yang baru dievaluasi saat runtime server.
+</Callout>
+
+## 3. Coba sendiri
+
+Adapter berjalan di tahap **build** (Node, bukan browser), jadi tidak ada live preview. Sebagai gantinya, telusuri "peta keputusan" berikut dan pelajari pola memecah aplikasi jadi banyak fungsi serverless — kebutuhan umum untuk adapter platform serverless.
+
+```text
+APAKAH KAMU PERLU MENULIS ADAPTER SENDIRI?
+──────────────────────────────────────────
+Platform tujuanmu = Vercel / Netlify / Cloudflare / Node / situs statis?
+   -> TIDAK perlu. Pakai adapter resmi yang sudah ada.
+
+Ada adapter KOMUNITAS untuk platformmu (Deno, Bun, Firebase, dll.)?
+   -> Coba itu dulu; menulis dari nol itu effort besar + perlu perawatan.
+
+Platform internal/niche TANPA adapter mana pun, dan kamu paham
+cara platform menerima request & mengirim response?
+   -> BARU di sini menulis adapter sendiri masuk akal.
+
+Cuma butuh menambah header / tweak output kecil?
+   -> Mungkin cukup hook `handle` atau post-build script, BUKAN adapter baru.
+```
+
+Banyak platform serverless menalokasikan **satu fungsi per rute** alih-alih satu server besar. Untuk itu, `builder` menyediakan pola memecah `builder.routes`:
+
+```js
+// Pola "satu fungsi per rute" (disederhanakan) di dalam adapt(builder)
+async adapt(builder) {
+	const fnDir = 'functions';
+	builder.rimraf(fnDir);
+	builder.mkdirp(fnDir);
+
+	// Untuk tiap rute, buat satu fungsi terpisah dengan manifest yang
+	// HANYA berisi rute tersebut (lebih kecil = cold start lebih cepat).
+	for (const route of builder.routes) {
+		if (route.prerender === true) continue; // rute prerender -> file statis, bukan fungsi
+
+		const name = route.id === '/' ? 'index' : route.id.slice(1).replace(/\//g, '-');
+		const manifest = builder.generateManifest({
+			relativePath: '../server',
+			routes: [route] // <-- kunci: manifest per-rute
+		});
+
+		// ...tulis manifest + entry point untuk fungsi ini ke `${fnDir}/${name}` ...
+		builder.log.minor('Membuat fungsi: ' + name);
+	}
+
+	// Aset statis & prerendered tetap ditulis sekali untuk seluruh app:
+	builder.writeClient('static');
+	builder.writePrerendered('static');
+	builder.writeServer('server');
+}
+```
+
+```js
+// Mengisi event.platform lewat emulate() + opsi platform di entry.
+// Contoh: platform menyuntik sebuah "cache binding".
+//
+// Di adapter:
+async emulate() {
+	return {
+		platform() {
+			// versi TIRUAN untuk dev/preview lokal
+			const store = new Map();
+			return { cache: { get: (k) => store.get(k), set: (k, v) => store.set(k, v) } };
+		}
+	};
+}
+//
+// Di aplikasi (+page.server.js), platform jadi tersedia:
+export async function load({ platform }) {
+	const cached = platform?.cache.get('home'); // sama API-nya di dev & produksi
+	return { cached };
+}
+```
+
+<Callout type="tip">
+Saat memecah jadi banyak fungsi, beri tiap fungsi manifest seminimal mungkin via <code>generateManifest(&#123; routes: [route] &#125;)</code>. Manifest kecil = bundel kecil = cold start lebih cepat. Tapi jangan berlebihan: terlalu banyak fungsi bisa kena limit jumlah fungsi platform. Banyak adapter resmi malah meng-<em>grup</em> rute yang mirip jadi satu fungsi sebagai kompromi.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Lengkapi adapter minimal dan identifikasi langkah yang hilang">
+Seorang rekan menulis draf `adapt()` di bawah untuk platform Node-like, tapi ada **dua langkah penting yang hilang** sehingga build menghasilkan output yang tidak bisa dijalankan. Temukan apa yang hilang, lalu tulis versi `adapt()` yang benar. (Petunjuk: pikirkan apa yang dibutuhkan kelas `Server` saat runtime, dan bagaimana platform tahu cara memanggil aplikasi.)
+
+```js
+// DRAF RUSAK
+async adapt(builder) {
+	const out = 'build';
+	builder.rimraf(out);
+	builder.writeClient(`${out}/client`);
+	builder.writeServer(`${out}/server`);
+	builder.log.success('Selesai');
+}
+```
+
+{#snippet solution()}
+
+Dua yang hilang: (1) **generate manifest** — tanpa ini kelas `Server` tidak punya peta rute untuk `server.respond()`; dan (2) **entry point** — tanpa file yang meng-import `Server`, membuat instans, dan menerjemahkan request/response platform, tidak ada yang bisa "menyalakan" aplikasi. (Halaman prerender via `writePrerendered` juga sebaiknya ditambahkan agar lengkap.)
+
+  ```js
+  import { writeFileSync } from 'node:fs';
+  import { fileURLToPath } from 'node:url';
+
+  async adapt(builder) {
+  	const out = 'build';
+  	const tmp = builder.getBuildDirectory('myplatform-tmp');
+
+  	builder.rimraf(out);
+  	builder.rimraf(tmp);
+  	builder.mkdirp(tmp);
+
+  	// output SvelteKit (termasuk prerendered yang tadi terlewat)
+  	builder.writeClient(`${out}/client`);
+  	builder.writePrerendered(`${out}/prerendered`);
+  	builder.writeServer(`${tmp}/server`);
+
+  	// (1) MANIFEST — wajib agar Server tahu peta rute
+  	writeFileSync(
+  		`${tmp}/manifest.js`,
+  		`export const manifest = ${builder.generateManifest({ relativePath: './server' })};\n`
+  	);
+
+  	// (2) ENTRY POINT — driver yang dipanggil platform tiap request
+  	builder.copy(fileURLToPath(new URL('./files', import.meta.url)), out, {
+  		replace: {
+  			SERVER: `${tmp}/server/index.js`,
+  			MANIFEST: `${tmp}/manifest.js`
+  		}
+  	});
+
+  	builder.log.success('Selesai. Output di folder ' + out);
+  }
+  ```
+
+  Inti: `adapt()` belum selesai sampai ada (a) manifest yang menjelaskan rute, dan (b) entry point yang membuat instans `Server` lalu memanggil `server.respond()` dengan `Request` standar.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menulis adapter sendiri sebelum yakin tidak ada adapter resmi/komunitas yang cocok. Menulis adapter berarti kamu menanggung beban perawatan: setiap kali SvelteKit memperbarui interface <code>builder</code> atau bentuk output server, adaptermu bisa rusak. Untuk sekadar menambah header atau memodifikasi response, hook <code>handle</code> di <code>hooks.server.js</code> atau script post-build biasanya jauh lebih murah daripada adapter baru.
+</Callout>
+
+<Callout type="warning">
+Selalu pakai helper <code>builder</code> (<code>getServerDirectory()</code>, <code>getClientDirectory()</code>, <code>getBuildDirectory()</code>) alih-alih meng-hardcode path seperti <code>.svelte-kit/output/server</code>. Struktur folder internal SvelteKit adalah <strong>detail implementasi</strong> dan bisa berubah tanpa pemberitahuan antar versi minor. Adapter yang menebak path internal akan diam-diam rusak setelah update.
+</Callout>
+
+<Callout type="tip">
+Pakai <code>builder.log.minor()</code> untuk langkah-langkah detail dan <code>builder.log.success()</code> di akhir. Output log yang konsisten membuat adaptermu terasa "resmi" dan memudahkan pengguna men-debug build yang gagal — mereka bisa melihat persis langkah mana yang berhenti.
+</Callout>
+
+<Callout type="warning">
+Kalau platform target adalah edge runtime (bukan Node penuh), entry point-mu mungkin perlu <strong>men-shim <code>fetch</code> global</strong> atau menghindari Node API (<code>fs</code>, <code>node:crypto</code>, dll.). Implementasikan <code>supports.read()</code> dengan jujur: kembalikan <code>false</code> bila runtime tidak bisa membaca file aset, supaya SvelteKit menggagalkan build (gagal-cepat) ketimbang membiarkan <code>read()</code> dari <code>$app/server</code> crash di produksi.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/writing-adapters" label="SvelteKit — Writing adapters (Adapter API: adapt/emulate/supports)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (daftar adapter resmi)" />
+<DocsLink href="https://svelte.dev/docs/kit/single-page-apps" label="SvelteKit — Single-page apps (generateFallback untuk mode SPA)" />

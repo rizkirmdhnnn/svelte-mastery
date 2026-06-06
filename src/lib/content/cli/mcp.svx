@@ -1,0 +1,201 @@
+---
+title: mcp
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 4
+status: stable
+description: Memasang server Model Context Protocol Svelte lewat `sv add mcp` supaya AI coding assistant menulis kode Svelte 5 yang akurat dan ter-update.
+docs: https://svelte.dev/docs/cli/mcp
+keywords: [mcp, sv add, model context protocol, ai tooling, autofixer, claude code]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Pernah minta tolong AI (Claude, Copilot, Cursor) menulis komponen Svelte, lalu hasilnya pakai `export let`, `on:click`, dan `$:` — sintaks Svelte 4 yang sudah usang? Itu bukan kebetulan. Model bahasa belajar dari data sampai tanggal *cutoff*-nya, dan Svelte 5 (runes) jauh lebih baru daripada kebanyakan kode Svelte yang pernah ada di internet. Jadi "ingatan" model condong ke gaya lama. Inilah masalah yang dipecahkan oleh add-on **`mcp`**.
+
+### Apa itu MCP, dalam satu analogi
+
+**MCP** (Model Context Protocol) adalah standar terbuka untuk menghubungkan AI assistant ke "alat" eksternal. Analogi paling pas: **MCP itu seperti port USB-C untuk AI**. Dulu tiap perangkat butuh colokan sendiri-sendiri; USB-C menyatukannya jadi satu lubang universal. Begitu pula MCP — satu protokol yang membuat *client* mana pun (Claude Code, Cursor, VS Code, Gemini CLI) bisa "mencolok" ke *server* alat mana pun, tanpa integrasi khusus per pasangan.
+
+**Svelte MCP server** adalah salah satu "perangkat" yang kamu colok. Tugasnya: menyuapi AI-mu konteks Svelte yang benar dan terkini, lalu mengoreksi jebakan-jebakan umum AI. Bayangkan model bahasamu sebagai **anak magang pintar tapi pelupa**, yang belajar Svelte dari buku cetakan dua tahun lalu. Tanpa bantuan, ia menebak dari ingatan (dan menebaknya salah). MCP memberi si magang tiga hal:
+
+1. **Hotline ke tim dokumentasi resmi** — ia bisa membaca docs Svelte versi *hari ini*, bukan dari ingatan basi.
+2. **Senior reviewer** — sebelum menyerahkan kode, ada yang mengecek "eh, `export let` itu gaya lama, ganti `$props()`".
+3. **Sandbox untuk uji coba** — link playground siap-pakai untuk membuktikan kodenya benar-benar jalan.
+
+### Di mana posisi add-on `mcp`?
+
+Penting dipahami: `sv add mcp` **bukan** servernya itu sendiri. Servernya sudah ada (jalan lokal via paket `@sveltejs/mcp`, atau remote di `https://mcp.svelte.dev/mcp`). Yang dilakukan add-on hanyalah **menuliskan file konfigurasi yang benar** untuk IDE pilihanmu, supaya kamu tidak perlu mengingat format JSON tiap editor. Ibarat memasang perabot IKEA: servernya adalah lemarinya, dan `sv add mcp` adalah teknisi yang datang memasang serta menyetel bautnya sesuai ruanganmu.
+
+Selain konfigurasi, add-on ini juga menjatuhkan satu file **`agents.md`** di proyekmu — sebuah README *untuk AI*, bukan untuk manusia. Fungsinya mirip `CLAUDE.md` atau `.cursorrules`: memberi tahu agent kapan dan bagaimana memakai tool-tool MCP tadi. Tanpa instruksi ini, banyak agent lupa bahwa tool-nya tersedia.
+
+### Empat tool yang diberikan server
+
+Setelah tercolok, AI-mu mendapat empat kemampuan baru:
+
+- **`list-sections`** — meminta daftar seluruh bagian dokumentasi Svelte yang tersedia (semacam daftar isi). Murah dan cepat; dipakai agent untuk tahu "halaman mana yang relevan".
+- **`get-documentation`** — mengambil isi *penuh dan terbaru* dari section yang dipilih, langsung dari `svelte.dev/docs`. Ini "hotline" tadi.
+- **`svelte-autofixer`** — menjalankan *static analysis* atas kode yang baru ditulis AI, lalu mengembalikan daftar masalah/saran. Hebatnya, ini bisa dipanggil dalam *loop*: model memperbaiki, autofixer mengecek lagi, sampai bersih. Ini "senior reviewer" tadi.
+- **`playground-link`** — membuat link Svelte Playground sementara yang sudah berisi kode hasil generate (kodenya ditanam di dalam URL). Berguna saat kode belum ditulis ke file proyek tapi kamu ingin langsung mengetesnya di browser.
+
+## 2. Contoh kode
+
+Add-on dipasang lewat satu perintah. Sama seperti add-on `sv` lainnya (`tailwindcss`, `drizzle`), ia interaktif secara default tapi bisa di-skrip:
+
+```bash
+# Interaktif: CLI menanyakan IDE & mode setup (local/remote)
+npx sv add mcp
+
+# Non-interaktif: pilih satu atau beberapa IDE sekaligus
+#   ide yang didukung: claude-code, cursor, gemini, opencode, vscode, other
+npx sv add mcp="ide:cursor,vscode"
+
+# Non-interaktif: tentukan mode setup secara eksplisit
+npx sv add mcp="setup:local"     # jalankan server di mesin sendiri (stdio)
+npx sv add mcp="setup:remote"    # cukup tunjuk ke endpoint HTTP resmi
+```
+
+Hasil tulisan add-on bergantung pada mode yang kamu pilih. Untuk **remote**, konfigurasinya hanya berupa satu URL HTTP — paling ringan, tanpa instalasi:
+
+```jsonc
+// Contoh konfig remote (mis. .cursor/mcp.json untuk Cursor)
+{
+  "mcpServers": {
+    "svelte": {
+      // Endpoint resmi; selalu mengikuti docs terbaru, tidak perlu update manual
+      "url": "https://mcp.svelte.dev/mcp"
+    }
+  }
+}
+```
+
+Untuk **local**, server dijalankan di mesinmu lewat paket `@sveltejs/mcp` melalui *stdio* (bukan HTTP). IDE memanggil sebuah command, bukan URL:
+
+```jsonc
+// Contoh konfig local (mis. .vscode/mcp.json atau .cursor/mcp.json)
+{
+  "mcpServers": {
+    "svelte": {
+      // npx -y mengunduh & menjalankan server saat dibutuhkan
+      "command": "npx",
+      "args": ["-y", "@sveltejs/mcp"]
+    }
+  }
+}
+```
+
+Khusus **Claude Code**, registrasi server lebih enak lewat CLI-nya sendiri daripada mengedit JSON. Add-on `sv` bisa menyiapkan ini untukmu, tapi setara dengan menjalankan:
+
+```bash
+# Remote (transport HTTP)
+claude mcp add -t http -s project svelte https://mcp.svelte.dev/mcp
+
+# Local (transport stdio); perhatikan "--" sebelum command server
+claude mcp add -t stdio -s project svelte -- npx -y @sveltejs/mcp
+
+# -s (scope) bisa: user (semua proyekmu), project (proyek ini, ikut ke repo),
+#                  atau local (mesin ini saja, tidak di-commit)
+```
+
+## 3. Coba sendiri
+
+Karena MCP berjalan di balik layar IDE/agent (bukan di browser), tidak ada yang bisa di-*preview* langsung di sini. Sebagai gantinya, mari telusuri **satu sesi agent** secara konseptual — apa yang terjadi di belakang layar saat kamu minta "buatkan counter Svelte" pada AI yang sudah tercolok server MCP:
+
+```text
+KAMU   : "Buatkan komponen counter Svelte."
+
+AGENT  : (memutuskan butuh konteks terbaru)
+         -> panggil  list-sections
+         <- dapat daftar: "$state", "$derived", "Event handlers", ...
+
+AGENT  : (memilih yang relevan)
+         -> panggil  get-documentation  { sections: ["$state", "Event handlers"] }
+         <- dapat teks docs TERBARU: pakai $state(), pakai onclick (bukan on:click)
+
+AGENT  : (menulis draf kode, lalu mengecek diri sendiri)
+         -> panggil  svelte-autofixer  { code: "<draf kode>" }
+         <- balasan: "Issue: 'export let' itu API lama. Saran: 'let { } = $props()'."
+
+AGENT  : (memperbaiki, lalu cek lagi — INI loop-nya)
+         -> panggil  svelte-autofixer  { code: "<kode revisi>" }
+         <- balasan: "Tidak ada masalah."
+
+AGENT  : (ingin kamu bisa langsung menjajal tanpa setup)
+         -> panggil  playground-link  { code: "<kode final>" }
+         <- balasan: "https://svelte.dev/playground/...#<kode-terenkode-di-URL>"
+
+AGENT  : "Ini counter-nya, sudah saya verifikasi lewat autofixer. Coba di sini: <link>"
+```
+
+Perhatikan poin kuncinya: **autofixer dipanggil berulang dalam sebuah loop** sampai bersih. Di sinilah nilai terbesarnya — model tidak sekadar menebak sekali, tapi diberi *umpan balik mekanis* yang memaksanya konvergen ke Svelte 5 yang benar.
+
+Inilah jenis koreksi yang dilakukan `svelte-autofixer` secara otomatis — persis padanan lama → modern yang sering tertukar oleh AI:
+
+<LegacyVsModern legacyLabel="Yang sering ditulis AI (Svelte 4)" modernLabel="Yang dikoreksi autofixer (Svelte 5)" rows={[
+	{ legacy: 'export let name', modern: 'let { name } = $props()', note: 'deklarasi prop gaya lama ditandai' },
+	{ legacy: 'on:click={fn}', modern: 'onclick={fn}', note: 'event directive jadi property biasa' },
+	{ legacy: '$: doubled = n * 2', modern: 'let doubled = $derived(n * 2)', note: 'reactive statement jadi rune' },
+	{ legacy: 'createEventDispatcher()', modern: 'prop callback, mis. onsave', note: 'pola event lama diganti callback prop' }
+]} />
+
+## 4. Latihan
+
+<Exercise title="Pilih mode & kenali tool yang tepat">
+Tim kamu pakai dua editor: kamu pakai **Claude Code**, rekanmu pakai **Cursor**. Kalian ingin konfigurasi MCP ikut ter-*commit* ke repo supaya seragam, dan ingin setup paling ringan (tanpa menginstal apa pun di tiap mesin).
+
+1. Perintah `sv add` apa yang kamu jalankan, dan mode setup mana yang dipilih?
+2. Untuk Claude Code, tulis perintah registrasi server-nya dengan scope yang ikut ke repo.
+3. Saat AI rekanmu tetap menulis `export let`, **tool MCP mana** yang seharusnya menangkap dan memperbaikinya?
+
+{#snippet solution()}
+
+```bash
+# 1) Pasang add-on untuk kedua IDE, mode REMOTE (paling ringan, tanpa instalasi):
+npx sv add mcp="ide:cursor,claude-code"
+#    lalu pilih setup:remote   (atau: npx sv add mcp="setup:remote")
+#    -> remote cukup menunjuk ke https://mcp.svelte.dev/mcp, selalu up-to-date.
+
+# 2) Claude Code, scope "project" = file konfig ikut di-commit ke repo:
+claude mcp add -t http -s project svelte https://mcp.svelte.dev/mcp
+
+# 3) Tool yang menangkap "export let" gaya lama adalah:  svelte-autofixer
+#    (static analysis; bisa dipanggil berulang dalam loop sampai bersih).
+#    Sementara get-documentation memberi konteks docs terbaru agar
+#    sejak awal model cenderung menulis $props().
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="tip">
+Cara tercepat mulai: pilih <strong>setup remote</strong>. Ia hanya butuh satu URL (<code>https://mcp.svelte.dev/mcp</code>), tidak ada paket yang diinstal, dan otomatis mengikuti docs terbaru. Pilih <strong>local</strong> (<code>npx -y @sveltejs/mcp</code>) kalau kamu mau mengunci versi server, atau tidak nyaman agent menembak endpoint pihak ketiga.
+</Callout>
+
+<Callout type="warning">
+MCP <em>menambah konteks</em>, bukan menjamin kebenaran. <code>svelte-autofixer</code> hanya <em>static analysis</em> — ia tangkas menangkap API usang dan kesalahan sintaksis, tapi tidak memahami apakah logika bisnismu benar. Tetap baca dan uji kode hasil AI seperti biasa; anggap autofixer sebagai linter pintar, bukan QA.
+</Callout>
+
+<Callout type="pitfall">
+Setelah <code>sv add mcp</code> menulis konfig, banyak orang heran "kok AI-nya belum pakai tool MCP?". Dua sebab umum: (1) IDE perlu di-<strong>reload/restart</strong> agar server MCP terbaca, dan (2) agent baru memakai tool kalau "tahu" tool itu ada — itulah gunanya file <code>agents.md</code> yang ikut dibuat. Jangan hapus <code>agents.md</code>, dan pastikan editor benar-benar memuat ulang server-nya.
+</Callout>
+
+<Callout type="pitfall">
+Hati-hati memilih <strong>scope</strong> saat registrasi (<code>user</code> vs <code>project</code> vs <code>local</code>). Scope <code>project</code> menulis konfig yang ikut ter-commit — bagus untuk tim, tapi jangan taruh kredensial di situ. Scope <code>local</code> hanya berlaku di mesinmu dan tidak masuk repo. Salah scope = rekan tim tidak kebagian setting, atau sebaliknya, konfig pribadimu bocor ke repo.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/mcp" label="sv add mcp — referensi add-on (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/ai/overview" label="Svelte AI — overview MCP server, tools, skills & subagents" />

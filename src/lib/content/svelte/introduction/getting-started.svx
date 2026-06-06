@@ -1,0 +1,252 @@
+---
+title: Getting started
+product: svelte
+section: introduction
+sectionTitle: Introduction
+sectionOrder: 1
+order: 2
+status: stable
+description: Membuat proyek Svelte/SvelteKit dari nol dengan npx sv create, memahami template & struktur folder, dev server Vite, tooling editor, dan alternatif (Vite plugin & playground).
+docs: https://svelte.dev/docs/svelte/getting-started
+keywords: [sv create, sveltekit, vite, npm run dev, struktur proyek, tooling]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sebelum menulis satu baris reactivity pun, kita perlu **rumah** buat kodenya. Di dunia React kamu terbiasa dengan `create-next-app` atau `npm create vite@latest`; di Vue ada `npm create vue@latest`. Svelte punya padanannya: **`npx sv create`** — sebuah CLI resmi (`sv`, singkatan dari "Svelte") yang menyiapkan proyek lengkap dengan tooling-nya dalam hitungan detik.
+
+### Svelte vs SvelteKit dulu, biar nggak bingung
+
+Ini pertanyaan pertama hampir semua pendatang. Bedakan dengan analogi sederhana:
+
+- **Svelte** adalah *mesin* — sebuah compiler bahasa komponen. Ia mengubah file `.svelte` menjadi JavaScript yang efisien. Posisinya mirip **React (library)**: tahu cara membuat komponen reaktif, tapi tidak tahu apa-apa soal routing, server, atau cara mem-bundle aplikasimu.
+- **SvelteKit** adalah *mobil utuh* yang dibangun di sekeliling mesin itu — framework aplikasi lengkap: routing berbasis file, server-side rendering (SSR), data loading, form actions, sampai build untuk deploy. Posisinya analog dengan **Next.js** (untuk React) atau **Nuxt** (untuk Vue).
+
+Jadi kalau React itu mesin dan Next.js mobilnya, maka **Svelte itu mesin dan SvelteKit mobilnya**. Docs resmi pun menyebut SvelteKit sebagai "the official application framework from the Svelte team", dan ia *powered by Vite*. Perintah `npx sv create` adalah pintu masuk untuk membuat keduanya.
+
+<Callout type="tip">
+Rekomendasi resmi: untuk membuat sebuah *aplikasi*, hampir selalu pilih SvelteKit — sama seperti kebanyakan orang membuat app React lewat Next.js daripada Vite kosong. Pilih jalur "Svelte saja" (lihat bagian Alternatif) hanya kalau kamu menulis library komponen atau menempelkan Svelte ke proyek lain.
+</Callout>
+
+### Kenapa `sv`, bukan `degit` atau `create-svelte`?
+
+Kamu mungkin menemukan tutorial lama yang menyuruh `npm create svelte@latest` atau `npx degit sveltejs/template`. Itu **API lama**. Sejak akhir 2024, perkakas resminya disatukan menjadi satu CLI bernama `sv`. Selain `sv create`, ada `sv add` (menambahkan integrasi seperti Tailwind, Drizzle, Playwright tanpa setup manual) dan `sv check` (type-checking dari terminal). Anggap `sv` seperti `ng` di Angular atau `nx` di monorepo: satu pintu untuk scaffolding dan maintenance.
+
+### Vite: dapur di belakang dev server
+
+Saat kamu jalankan `npm run dev`, yang sebenarnya menyalakan server adalah **Vite** — build tool yang sama yang dipakai Vue dan banyak proyek React modern. Analogi: Vite itu seperti **dapur restoran dengan jalur cepat**. Alih-alih memasak (mem-bundle) *seluruh* menu sebelum buka, Vite hanya memasak hidangan yang sedang kamu pesan (modul yang sedang dibuka di browser), memanfaatkan native ES modules. Itu sebabnya dev server-nya menyala hampir instan, dan **HMR** (Hot Module Replacement) menukar komponen yang berubah tanpa reload halaman penuh — state-mu tetap utuh. Untuk produksi (`npm run build`), Vite ganti topi menjadi bundler dan mengemas semuanya rapi untuk di-deploy.
+
+## 2. Contoh kode
+
+Empat baris ini — persis seperti yang ada di docs resmi — sudah cukup untuk membuat dan menjalankan proyek dari nol:
+
+```bash
+# 1. Scaffolding. "myapp" = nama folder proyek.
+#    Pakai titik (.) untuk scaffold di folder yang sedang aktif.
+npx sv create myapp
+
+# 2. Masuk ke folder, pasang dependensi, nyalakan dev server
+cd myapp
+npm install
+npm run dev        # buka URL yang muncul, biasanya http://localhost:5173
+```
+
+Saat `npx sv create` jalan, ia menanyakan beberapa hal lewat prompt interaktif. **Inilah momen "memilih template":**
+
+```bash
+┌  Welcome to the Svelte CLI!
+│
+◇  Which template would you like?
+│  ● SvelteKit minimal   (kerangka kosong — paling sering dipakai)
+│  ○ SvelteKit demo      (app contoh + sample, bagus buat belajar)
+│  ○ Svelte library      (untuk mem-publish komponen ke npm)
+│
+◇  Add type checking with TypeScript?
+│  ● Yes, using TypeScript syntax
+│  ○ Yes, using JavaScript with JSDoc comments
+│  ○ No
+│
+◇  What would you like to add to your project? (spasi = pilih, enter = lanjut)
+│  ◻ prettier   ◻ eslint   ◻ vitest   ◻ playwright
+│  ◻ tailwindcss   ◻ sveltekit-adapter   ◻ drizzle   ◻ lucia   ...
+│
+◇  Which package manager? ── npm | pnpm | yarn | bun
+```
+
+Tidak perlu menebak semuanya sekarang: apa pun yang kamu lewatkan bisa ditambahkan belakangan dengan `sv add`, tanpa mengedit config secara manual:
+
+```bash
+# Menambahkan integrasi kapan pun setelah proyek jadi.
+# sv add tahu cara menyentuh svelte.config.js, vite.config, dan file lain untukmu.
+npx sv add tailwindcss
+npx sv add drizzle
+```
+
+Struktur folder yang dihasilkan template **SvelteKit minimal** (bagian penting saja):
+
+```bash
+myapp/
+├─ src/
+│  ├─ routes/              # ROUTING berbasis file. Tiap folder = satu URL.
+│  │  ├─ +page.svelte      # UI untuk route "/" (analog app/page.tsx di Next.js)
+│  │  └─ +layout.svelte    # kerangka bersama (header/footer) untuk anak-anaknya
+│  ├─ lib/                 # kode reusable. Di-import via alias "$lib/..."
+│  │  └─ index.ts
+│  ├─ app.html             # template HTML root (ada placeholder %sveltekit.head% dll)
+│  └─ app.d.ts             # tipe global SvelteKit (App.Locals, App.PageData, dsb.)
+├─ static/                 # aset statis disajikan apa adanya (favicon, gambar)
+├─ svelte.config.js        # konfigurasi Svelte + SvelteKit (preprocessor, adapter)
+├─ vite.config.ts          # konfigurasi Vite (plugin, server, dsb.)
+└─ package.json            # script: dev, build, preview, check
+```
+
+Isi `+page.svelte` paling sederhana — ini komponen Svelte 5 biasa, bukan sesuatu yang ajaib:
+
+```svelte
+<script>
+	// Svelte 5: state pakai rune $state (bukan let biasa + label $: gaya Svelte 4)
+	let name = $state('dunia');
+</script>
+
+<h1>Halo, {name}!</h1>
+<input bind:value={name} placeholder="ketik namamu" />
+```
+
+<Callout type="tip">
+Konvensi nama berawalan <code>+</code> (seperti <code>+page.svelte</code>, <code>+layout.svelte</code>, <code>+page.server.ts</code>) adalah cara SvelteKit membedakan file <em>routing khusus</em> dari komponen biasa. Mirip konvensi <code>page.tsx</code> / <code>layout.tsx</code> di Next.js App Router, hanya saja diberi tanda <code>+</code> agar mudah dikenali sekilas.
+</Callout>
+
+## 3. Coba sendiri
+
+Scaffolding dan dev server berjalan di terminal, bukan di browser, jadi tidak ada live preview di sini. Tapi kamu bisa menelusuri "siklus hidup" proyek baru lewat sesi terminal beranotasi berikut — jalankan di mesinmu untuk mengikuti:
+
+```bash
+# (1) Buat proyek. Jawab promptnya: pilih "SvelteKit minimal" + TypeScript.
+npx sv create myapp
+cd myapp
+
+# (2) Nyalakan dev server. Perhatikan dua hal di output:
+#     - URL lokal (http://localhost:5173) -> buka di browser
+#     - "ready in ... ms" yang sangat cepat -> itu efek Vite native ESM
+npm run dev
+
+# (3) Uji HMR: biarkan dev server tetap jalan, buka src/routes/+page.svelte,
+#     ubah teks <h1>, lalu SIMPAN. Browser memperbarui SEKETIKA tanpa reload
+#     penuh — inilah Hot Module Replacement yang dijanjikan Vite.
+
+# (4) Cek tipe & error tanpa perlu editor (cocok untuk CI):
+npm run check          # menjalankan svelte-check di balik layar
+# atau langsung lewat CLI sv:
+npx sv check
+
+# (5) Build untuk produksi lalu jalankan hasilnya secara lokal:
+npm run build
+npm run preview        # menyajikan output build, bukan dev server
+```
+
+Annotasi penting yang sering terlewat:
+
+- **`npm run dev`** dipakai saat *mengembangkan* (HMR, source map, pesan error ramah). **`npm run preview`** menyajikan hasil `build` untuk mengecek perilaku produksi sebelum benar-benar deploy — keduanya berbeda peran.
+- **`static/`** disajikan apa adanya. File `static/favicon.png` bisa diakses di URL `/favicon.png`. Tidak ada proses bundling untuknya.
+- **`$lib`** adalah alias bawaan menuju `src/lib`. Menulis `import x from '$lib/utils'` lebih stabil daripada `../../lib/utils` saat file dipindah-pindah.
+
+## 4. Alternatif: tanpa SvelteKit (atau tanpa install sama sekali)
+
+`npx sv create` adalah jalur utama, tapi ada dua alternatif resmi yang berguna pada situasi tertentu:
+
+**a) Vite plugin (`vite-plugin-svelte`) — Svelte tanpa SvelteKit.** Kalau kamu cuma butuh Svelte sebagai library UI di atas SPA polos (atau menempelkannya ke proyek Vite yang sudah ada), pakai Vite langsung:
+
+```bash
+npm create vite@latest        # lalu pilih framework: "Svelte"
+```
+
+Ini menghasilkan proyek tanpa lapisan SvelteKit: `npm run build` mengeluarkan HTML, JS, dan CSS ke folder `dist/`. Konsekuensinya — seperti dicatat docs — kamu **memilih sendiri routing library**-nya, karena tidak ada routing berbasis file bawaan. Trade-off-nya: lebih ringan dan bebas, tapi kamu kehilangan SSR, data loading, dan form actions yang "gratis" di SvelteKit.
+
+**b) Playground / REPL di browser — tanpa install apa pun.** Untuk eksperimen cepat, belajar satu konsep, atau membuat *reproduksi bug* yang bisa di-share lewat link, buka playground resmi di `svelte.dev/playground`. Tidak perlu Node, tidak perlu terminal — mirip CodeSandbox/StackBlitz tapi khusus Svelte. Cocok untuk mencoba potongan kode sebelum menempelkannya ke proyek sungguhan.
+
+<Callout type="tip">
+Butuh bantuan saat tersendat? Komunitas resmi Svelte aktif di server <strong>Discord</strong>, dan pertanyaan ber-tag <code>svelte</code> di Stack Overflow biasanya cepat dijawab. Untuk reproduksi bug, sertakan link <em>playground</em> — itu cara tercepat agar orang lain bisa menjalankan kasusmu.
+</Callout>
+
+## 5. Editor & tooling
+
+Pengalaman ngoding Svelte jadi jauh lebih enak dengan dukungan editor yang benar:
+
+- **VS Code:** pasang ekstensi resmi **"Svelte for VS Code"** (dari tim Svelte). Memberi syntax highlighting, autocomplete, go-to-definition, dan type-checking di dalam blok `<script>` maupun markup — termasuk pemahaman runes seperti `$state` dan `$derived`.
+- **Zed / Neovim / editor lain:** pakai **`svelte-language-server`** lewat protokol LSP. Mesin pintar yang sama dengan ekstensi VS Code, dipakai ulang oleh editor mana pun yang berbicara LSP.
+- **Tanpa editor (CI / pre-commit):** `npm run check` (atau `npx sv check`) menjalankan **`svelte-check`** yang memindai seluruh proyek untuk error tipe dan markup. Inilah yang kamu pasang di pipeline CI agar PR tidak lolos dengan error diam-diam.
+
+## 6. Latihan
+
+<Exercise title="Petakan perintah, file, dan alternatif ke perannya">
+Tanpa melihat ke atas, jawab empat hal berikut (cocokkan dengan padanan React/Vue yang kamu tahu):
+
+1. Perintah apa untuk **membuat** proyek baru, dan perintah apa untuk **menyalakan dev server**?
+2. File `src/routes/+page.svelte` setara dengan file apa di Next.js App Router?
+3. Folder mana yang isinya bisa di-`import` lewat alias `$lib`, dan folder mana yang aset-nya disajikan apa adanya tanpa diproses?
+4. Kapan kamu memilih `npm create vite@latest` (Vite plugin) ketimbang `npx sv create` (SvelteKit)?
+
+{#snippet solution()}
+
+```svelte
+<!--
+1. Membuat proyek : npx sv create myapp   (lalu cd myapp && npm install)
+   Dev server     : npm run dev           (default http://localhost:5173)
+   -> Analog: "npx sv create" ~ "create-next-app"; "npm run dev" sama persis.
+
+2. src/routes/+page.svelte  ==  app/page.tsx di Next.js App Router.
+   Keduanya UI untuk URL "/".  (+layout.svelte == layout.tsx)
+
+3. import via $lib  -> isi folder  src/lib/
+   aset apa adanya  -> folder      static/   (mis. /favicon.png)
+
+4. Pilih Vite plugin (npm create vite@latest -> Svelte) saat butuh SPA polos
+   atau library UI tanpa SSR/routing bawaan -> kamu pilih router sendiri.
+   Untuk aplikasi penuh dengan SSR, data loading, form actions: pakai SvelteKit.
+-->
+```
+
+{/snippet}
+</Exercise>
+
+## 7. Tips & Pitfalls
+
+<Callout type="legacy">
+Tutorial lama menyuruh <code>npm create svelte@latest</code>, <code>npx degit sveltejs/template</code>, atau paket <code>create-svelte</code>. Semua itu sudah usang. CLI resmi sekarang adalah <code>sv</code>: pakai <code>npx sv create</code> untuk scaffold dan <code>npx sv add</code> untuk menambah integrasi.
+</Callout>
+
+<Callout type="warning">
+Pilih <strong>satu</strong> package manager saat scaffolding dan pakai itu secara konsisten. Mencampur <code>npm install</code> lalu <code>pnpm install</code> di proyek yang sama akan membuat dua lockfile (<code>package-lock.json</code> vs <code>pnpm-lock.yaml</code>) dan bisa memicu bug dependensi yang sulit dilacak.
+</Callout>
+
+<Callout type="pitfall">
+Jangan menaruh rahasia (API key, koneksi DB) di folder <code>static/</code> atau di <code>+page.svelte</code> biasa — semuanya terkirim ke browser. Rahasia hanya boleh hidup di file server SvelteKit (mis. <code>+page.server.ts</code>, <code>+server.ts</code>, atau modul <code>$env/static/private</code>). Aturannya mirip "jangan akses <code>process.env</code> rahasia di Client Component" pada Next.js.
+</Callout>
+
+<Callout type="tip">
+Kalau <code>npm run dev</code> error soal versi Node, cek <code>engines</code> di <code>package.json</code> dan pastikan Node-mu cukup baru (Svelte 5 / SvelteKit 2 menargetkan Node LTS aktif). Pakai <code>nvm use</code> agar versi Node konsisten antar mesin tim.
+</Callout>
+
+Rangkuman cepat perubahan tooling dari lama ke baru:
+
+<LegacyVsModern legacyLabel="Cara lama (Svelte 4)" modernLabel="Cara baru (sv, 2025+)" rows={[
+	{ legacy: 'npm create svelte@latest', modern: 'npx sv create', note: 'CLI resmi disatukan jadi "sv"' },
+	{ legacy: 'npx degit sveltejs/template', modern: 'npx sv create', note: 'degit tidak lagi direkomendasikan' },
+	{ legacy: 'setup Tailwind manual', modern: 'npx sv add tailwindcss', note: 'integrasi otomatis lewat sv add' },
+	{ legacy: 'svelte-check (skrip manual)', modern: 'npx sv check', note: 'type-check terpadu di CLI sv' }
+]} />
+
+## 8. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/getting-started" label="Getting Started — Svelte (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-create" label="sv create — referensi CLI lengkap" />
+
+<DocsLink href="https://svelte.dev/playground" label="Svelte Playground — coba tanpa install" />

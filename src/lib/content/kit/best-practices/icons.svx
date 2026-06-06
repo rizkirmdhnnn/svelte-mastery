@@ -1,0 +1,350 @@
+---
+title: Icons
+product: kit
+section: best-practices
+sectionTitle: Best practices
+sectionOrder: 5
+order: 3
+status: stable
+description: Strategi mengirim icon di SvelteKit — SVG inline, sprite, unplugin-icons, dan Iconify via CSS — beserta trade-off ukuran bundle dan aksesibilitasnya.
+docs: https://svelte.dev/docs/kit/icons
+keywords: [icons, svg, sprite, iconify, unplugin-icons, a11y]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Icon kelihatannya sepele — gambar kecil di samping teks. Tapi *cara* kamu mengirimnya ke browser diam-diam menentukan ukuran bundle, kecepatan dev server, kemudahan mewarnai, dan apakah pengguna screen reader paham maksudnya. Di SvelteKit pertanyaannya bukan "icon apa", melainkan **"strategi pengiriman icon yang mana"**, karena tiap strategi punya plus-minus yang nyata.
+
+Pertama, kenapa hampir selalu **SVG**, bukan font-icon atau `<img>`? SVG adalah vektor: tajam di ukuran berapa pun (Retina, zoom 200%). SVG mewarisi warna teks lewat `currentColor`, jadi satu icon bisa ikut berubah warna saat hover/dark-mode tanpa file baru. Dan SVG itu markup biasa — bisa dianimasi, diberi `<title>`, diatur per-`path`. Font-icon (era Font Awesome 4) menempelkan glyph ke karakter teks: rawan FOUT (icon "kedip" sebelum font termuat), susah multi-warna, dan secara a11y berisiko (screen reader bisa membacakan karakter privat-use yang aneh). `<img src="icon.svg">` memang menampilkan SVG, tapi kamu kehilangan `currentColor` dan kontrol per-path.
+
+Jadi anggap "SVG" sebagai *format*-nya yang sudah pasti. Yang kita pilih sekarang adalah **mekanisme distribusi**-nya.
+
+### Analogi: empat cara membawa foto ke pesta
+
+Bayangkan kamu perlu menampilkan banyak foto (icon) di sebuah pesta (halaman):
+
+- **Inline SVG** = mencetak ulang tiap foto setiap kali dibutuhkan dan menempelnya langsung ke dinding. Kontrol penuh (bisa coret, warnai, animasi), tapi kalau foto yang sama muncul 50 kali, kamu mencetak 50 lembar — markup membengkak.
+- **SVG sprite** = satu album foto besar yang dipajang sekali; di tiap dinding kamu cuma menempel catatan "lihat foto #home di album". Hemat banget dan album-nya di-cache browser, tapi mewarnai tiap foto secara individual jadi terbatas.
+- **unplugin-icons** = mesin yang, *saat membangun pesta* (build time), hanya mencetak foto yang benar-benar kamu minta — tak ada stok berlebih. Hemat seperti album tapi senyaman mencetak sendiri.
+- **Iconify via CSS** = motif wallpaper yang dipanggang ke dinding lewat instruksi cat (CSS). Tak perlu meng-`import` tiap foto ke file komponen; cukup tempel kelas CSS.
+
+Mari bedah keempatnya.
+
+### Strategi 1 — Inline SVG sebagai komponen
+
+Tulis SVG langsung di komponen Svelte kecil yang menerima props. Ini pendekatan paling transparan: tidak ada dependency, kamu lihat persis apa yang dikirim, dan `currentColor` membuat pewarnaan otomatis. Kekurangannya: setiap pemakaian menulis ulang seluruh `path` SVG ke output, jadi kalau satu icon dipakai puluhan kali di banyak komponen, markup-nya berulang (walau gzip menumpulkan dampaknya).
+
+Ini setara dengan menulis komponen `Icon.jsx` sendiri di React, atau memakai inline `<svg>` di Vue SFC. Pola dan trade-off-nya identik lintas framework.
+
+### Strategi 2 — SVG sprite
+
+Kamu kumpulkan semua icon ke **satu** file `sprite.svg` berisi banyak `<symbol id="...">`, lalu di markup cukup mereferensikan id-nya lewat `<use href="/sprite.svg#home" />`. Browser mengunduh sprite **sekali**, lalu meng-cache-nya; pemakaian berikutnya nyaris gratis. Ini juara untuk aplikasi dengan banyak icon yang dipakai berulang. Harganya: mewarnai bagian-bagian icon secara individual lebih kaku (mono-`currentColor` aman, multi-warna per-instance susah), dan kamu perlu langkah membangun sprite-nya.
+
+### Strategi 3 — Icon library (per-`.svelte`-file)
+
+Library seperti `lucide-svelte` menyediakan **satu file `.svelte` per icon**, jadi kamu tinggal `import { Home } from 'lucide-svelte'`. Enak untuk prototyping. Tapi docs SvelteKit secara eksplisit **menyarankan menghindari** library model ini: library semacam itu bisa berisi **ribuan file `.svelte`**, dan itu memperlambat **dependency optimization Vite** (pre-bundling) saat dev. Ini "especially pathological" kalau icon di-import lewat **dua gaya sekaligus** — umbrella import (`from 'lucide-svelte'`) dan subpath import (`from 'lucide-svelte/icons/home'`) — karena Vite jadi memproses dua peta dependency raksasa.
+
+### Strategi 4 — unplugin-icons (build-time, on-demand)
+
+`unplugin-icons` adalah jalan tengah favorit: ia mengubah `import IconHome from '~icons/mdi/home'` menjadi komponen SVG inline **saat build**, dan **hanya** untuk icon yang benar-benar kamu import (tree-shaken). Datanya diambil dari set Iconify (`@iconify/json`) — puluhan ribu icon dari ratusan set — tanpa satu pun file `.svelte` mengotori dependency optimization. DX-nya senyaman library tapi bundle-nya sehemat inline manual. Padanannya di ekosistem lain: `unplugin-icons` juga jalan di React/Vue/Nuxt.
+
+### Strategi 5 — Iconify via CSS (rekomendasi docs)
+
+Pendekatan yang **direkomendasikan docs SvelteKit**: pakai **Iconify lewat CSS**. Lewat plugin Tailwind (`@iconify/tailwind`) atau preset UnoCSS, icon menjadi sebuah kelas — mis. `<span class="icon-[mdi--home]"></span>` — yang dirender sebagai mask/background CSS. Keunggulan terbesarnya: **tidak perlu meng-`import` tiap icon ke file `.svelte`**, jadi tak ada beban dependency optimization sama sekali, dan kamu langsung punya akses ke semua set Iconify. Trade-off: icon dirender via `mask`/`currentColor`, jadi sangat pas untuk icon **mono-warna** (ikut warna teks), tapi icon multi-warna kompleks kurang fleksibel.
+
+### Ringkasan trade-off
+
+| Strategi | Cara kerja | Dampak bundle | Pewarnaan | Caching | Cocok untuk |
+|---|---|---|---|---|---|
+| Inline SVG (komponen) | SVG ditulis langsung di markup | Naik seiring pengulangan markup | Penuh (`currentColor`, multi-path) | Ikut HTML/JS | Beberapa icon kunci, butuh animasi/kontrol penuh |
+| SVG sprite | Satu file `symbol`, di-`use` by id | Sangat kecil (1 file, di-cache) | `currentColor` ok, multi-warna kaku | Sangat baik (file terpisah) | Banyak icon dipakai berulang |
+| unplugin-icons | Build-time → SVG inline on-demand | Hanya icon yang di-import | Penuh | Ikut JS | DX enak + bundle hemat |
+| Iconify via CSS | Icon sebagai mask/bg CSS | Hanya CSS icon terpakai | `currentColor` (mono) | Baik (CSS) | Banyak set, tanpa import per file |
+| Per-`.svelte`-file lib | 1 file `.svelte` per icon | Berisiko lambat di **dev** (Vite dep-opt) | Penuh | Ikut JS | Prototyping cepat (hati-hati) |
+
+### Aksesibilitas: icon punya dua "kepribadian"
+
+Sebelum menyentuh kode, pegang satu prinsip a11y yang menentukan semua: **apakah icon ini dekoratif atau bermakna?**
+
+- **Dekoratif** — teks di sebelahnya sudah menjelaskan ("⬇ Unduh"). Icon-nya cuma hiasan. Sembunyikan dari screen reader: `aria-hidden="true"` (plus `focusable="false"` untuk Edge/IE lama). Membacakannya hanya bikin berisik.
+- **Bermakna** — icon **satu-satunya** pembawa makna (tombol "X" tanpa teks, ikon hati untuk "suka"). Icon-nya **wajib** punya nama yang bisa diakses. Cara paling andal: beri `aria-label` pada **tombol** pembungkusnya dan tetap `aria-hidden` pada SVG-nya. Alternatif: `<title>` di dalam `<svg>` + `role="img"`.
+
+Aturan emas: **jangan biarkan icon penting tanpa nama, dan jangan biarkan icon dekoratif berisik.** Sisi baiknya, compiler Svelte sering menegurmu soal a11y saat dev (mis. handler klik di elemen non-interaktif) — manfaatkan peringatan itu.
+
+## 2. Contoh kode
+
+Strategi 1 — inline SVG sebagai komponen reusable dengan props (Svelte 5 runes):
+
+```svelte
+<!-- src/lib/icons/IconHeart.svelte
+     Komponen icon mandiri: ukuran & warna dikontrol via props + currentColor. -->
+<script>
+	// $props() menggantikan `export let` (Svelte 4). Beri default yang masuk akal.
+	let {
+		size = 24, // px; satu sumber kebenaran untuk width & height
+		filled = false, // hati penuh vs garis
+		title = '' // jika diisi -> icon "bermakna"; jika kosong -> dekoratif
+	} = $props();
+</script>
+
+<svg
+	width={size}
+	height={size}
+	viewBox="0 0 24 24"
+	fill={filled ? 'currentColor' : 'none'}
+	stroke="currentColor"
+	stroke-width="2"
+	role={title ? 'img' : undefined}
+	aria-hidden={title ? undefined : 'true'}
+	focusable="false"
+>
+	<!-- <title> memberi nama yang dibacakan screen reader (mode "bermakna") -->
+	{#if title}<title>{title}</title>{/if}
+	<path d="M12 21s-7-4.5-9.5-9C1 8 3 5 6 5c2 0 3 1.5 4 3 1-1.5 2-3 4-3 3 0 5 3 3.5 7-2.5 4.5-9.5 9-9.5 9z" />
+</svg>
+```
+
+```svelte
+<!-- Pemakaian: warna otomatis ikut `color` induk berkat currentColor -->
+<script>
+	import IconHeart from '$lib/icons/IconHeart.svelte';
+</script>
+
+<!-- Dekoratif: teks "Suka" sudah menjelaskan, jadi title dibiarkan kosong -->
+<button style="color:#e11d48">
+	<IconHeart filled size={20} /> Suka
+</button>
+
+<!-- Bermakna: tombol icon-only -> beri aria-label pada TOMBOL -->
+<button aria-label="Tambah ke favorit" style="color:#e11d48">
+	<IconHeart size={20} />
+</button>
+```
+
+Strategi 2 — SVG sprite: satu file berisi banyak `symbol`, direferensikan via `<use>`.
+
+```svelte
+<!-- File sprite (mis. static/sprite.svg) berisi banyak <symbol id="...">.
+     Di markup kita cukup menunjuk id-nya. Browser mengunduh sprite SEKALI. -->
+<svg width="24" height="24" aria-hidden="true" focusable="false">
+	<!-- SvelteKit 2: pakai href (BUKAN xlink:href yang sudah usang) -->
+	<use href="/sprite.svg#home" />
+</svg>
+
+<!-- currentColor di dalam <symbol> tetap berlaku -> icon ikut warna teks -->
+<span style="color:#2563eb">
+	<svg width="24" height="24" aria-hidden="true" focusable="false">
+		<use href="/sprite.svg#settings" />
+	</svg>
+</span>
+```
+
+Strategi 4 — `unplugin-icons`: daftarkan plugin sekali, lalu import icon apa pun on-demand.
+
+```js
+// vite.config.js — tambahkan plugin unplugin-icons untuk compiler Svelte.
+// Install dulu: npm i -D unplugin-icons @iconify/json
+import { sveltekit } from '@sveltejs/kit/vite';
+import Icons from 'unplugin-icons/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	plugins: [
+		sveltekit(),
+		// compiler:'svelte' -> tiap import ~icons/* jadi komponen Svelte saat build
+		Icons({ compiler: 'svelte' })
+	]
+});
+```
+
+```svelte
+<!-- Pemakaian: import dari ~icons/<set>/<nama>. Hanya icon ini yang masuk bundle. -->
+<script>
+	// Set 'mdi' (Material Design Icons) berasal dari @iconify/json — tree-shaken.
+	import IconHome from '~icons/mdi/home';
+	import IconClose from '~icons/mdi/close';
+</script>
+
+<IconHome style="font-size:1.5rem" aria-hidden="true" />
+
+<button aria-label="Tutup">
+	<IconClose aria-hidden="true" />
+</button>
+```
+
+Strategi 5 — Iconify via CSS (pendekatan yang direkomendasikan docs), contoh dengan plugin Tailwind:
+
+```js
+// tailwind.config.js — daftarkan plugin Iconify (npm i -D @iconify/tailwind @iconify/json)
+import { addDynamicIconSelectors } from '@iconify/tailwind';
+
+export default {
+	content: ['./src/**/*.{html,js,svelte,ts}'],
+	plugins: [
+		// addDynamicIconSelectors membuat kelas icon-[set--nama] tersedia on-demand
+		addDynamicIconSelectors()
+	]
+};
+```
+
+```svelte
+<!-- Icon = sebuah elemen kosong dengan kelas. Tak ada import per icon.
+     Format kelas: icon-[<set>--<nama>] (perhatikan dua tanda minus). -->
+<span class="icon-[mdi--home]" aria-hidden="true"></span>
+
+<!-- Ukuran & warna lewat utilitas CSS biasa; icon ikut currentColor -->
+<span class="icon-[mdi--cog] text-2xl text-blue-600" aria-hidden="true"></span>
+
+<button aria-label="Hapus">
+	<span class="icon-[mdi--trash-can]" aria-hidden="true"></span>
+</button>
+```
+
+## 3. Coba sendiri
+
+Karena strategi seperti sprite, `unplugin-icons`, dan Iconify-CSS butuh konfigurasi build/aset di luar satu komponen, kita tidak memakai live playground di sini. Sebagai gantinya, pelajari komponen inline-SVG beranotasi berikut — ini pola yang paling sering kamu tulis sendiri, dan tiap baris menjelaskan keputusan ukuran, warna, serta a11y-nya. Salin ke proyekmu, lalu ubah `color` induknya dan amati bagaimana `currentColor` membawa warna itu ke icon tanpa menyentuh SVG.
+
+```svelte
+<!-- DemoIcon.svelte — satu komponen, dua "kepribadian" a11y (dekoratif & bermakna) -->
+<script>
+	let liked = $state(false); // state lokal: status suka
+	let size = $state(28); // ukuran icon (px), dikontrol slider di bawah
+</script>
+
+<div style="display:flex; align-items:center; gap:1rem; color:#e11d48">
+	<!-- TOMBOL semantik: keyboard + screen reader langsung jalan.
+	     aria-pressed mengumumkan status on/off; aria-label memberi nama tombol
+	     (mode "bermakna") karena icon ini pembawa makna utama. -->
+	<button
+		onclick={() => (liked = !liked)}
+		aria-pressed={liked}
+		aria-label={liked ? 'Batalkan suka' : 'Suka'}
+		style="display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .8rem; border:1px solid currentColor; border-radius:8px; background:transparent; color:inherit; cursor:pointer"
+	>
+		<!-- aria-hidden: SVG-nya disembunyikan dari screen reader karena
+		     nama sudah disuplai oleh aria-label tombol. fill ikut state. -->
+		<svg
+			width={size}
+			height={size}
+			viewBox="0 0 24 24"
+			fill={liked ? 'currentColor' : 'none'}
+			stroke="currentColor"
+			stroke-width="2"
+			aria-hidden="true"
+			focusable="false"
+		>
+			<path d="M12 21s-7-4.5-9.5-9C1 8 3 5 6 5c2 0 3 1.5 4 3 1-1.5 2-3 4-3 3 0 5 3 3.5 7-2.5 4.5-9.5 9-9.5 9z" />
+		</svg>
+		<!-- Teks ini membuat icon di sebelahnya cukup "dekoratif" secara visual -->
+		<span>{liked ? 'Disukai' : 'Suka'}</span>
+	</button>
+
+	<label style="color:#111; font-size:.9rem">
+		Ukuran
+		<input type="range" min="16" max="48" bind:value={size} />
+		{size}px
+	</label>
+</div>
+```
+
+Yang penting diperhatikan: SVG memakai `fill="currentColor"`/`stroke="currentColor"` sehingga warnanya otomatis mengikuti `color` induk — ubah warna teks, icon ikut berubah tanpa menyentuh SVG. Inilah alasan SVG sering menang dibanding font-icon atau `<img>`: satu sumber warna, kontrol penuh, dan bebas dianimasi.
+
+## 4. Latihan
+
+<Exercise title="Pilih strategi icon & buat komponen yang accessible">
+Sebuah dashboard SvelteKit punya: (a) puluhan icon navigasi mono-warna yang sama dipakai berulang di sidebar, dan (b) satu tombol "tutup modal" yang hanya berisi icon (tanpa teks).
+
+Jawab dan implementasikan:
+
+1. **Strategi**: strategi pengiriman mana yang paling pas untuk banyak icon mono-warna berulang yang ingin minim-bundle dan minim-import, dan kenapa? (Sebut satu alternatif build-time yang juga valid.)
+2. **Komponen inline**: buat komponen `IconClose.svelte` (inline SVG, Svelte 5 runes) dengan prop `size`. Pastikan a11y-nya benar untuk tombol icon-only.
+3. **Pakai**: render tombol "tutup" yang accessible memakai komponen itu.
+
+{#snippet solution()}
+
+  ```text
+  1) Untuk BANYAK icon mono-warna berulang + minim import:
+     -> Iconify via CSS (rekomendasi docs). Tidak ada import per-icon,
+        tak membebani dependency optimization Vite, ikut `currentColor`.
+     Alternatif build-time yang valid: unplugin-icons (tree-shaken,
+        hanya icon yang di-import yang masuk bundle).
+     Yang DIHINDARI: library per-.svelte-file (mis. lucide-svelte umbrella import)
+        karena ribuan file .svelte memperlambat pre-bundling Vite.
+  ```
+
+  ```svelte
+  <!-- 2) src/lib/icons/IconClose.svelte -->
+  <script>
+    let { size = 24 } = $props();
+  </script>
+
+  <!-- aria-hidden: nama akan disuplai oleh tombol pembungkus (lihat no.3),
+       jadi SVG cukup disembunyikan dari screen reader. -->
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+  ```
+
+  ```svelte
+  <!-- 3) Pemakaian: tombol icon-only -> aria-label di TOMBOL -->
+  <script>
+    import IconClose from '$lib/icons/IconClose.svelte';
+  </script>
+
+  <button type="button" aria-label="Tutup" onclick={() => close()}>
+    <IconClose size={20} />
+  </button>
+  ```
+
+  Inti: pilih strategi sesuai pola pakai (Iconify-CSS / unplugin-icons untuk skala besar, inline untuk kontrol penuh), dan untuk tombol icon-only, nama yang diakses ada di tombol (`aria-label`) sementara SVG-nya `aria-hidden="true"`.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+Hindari library icon yang menyediakan <strong>satu file <code>.svelte</code> per icon</strong> (mis. pola umbrella import dari beberapa library). Library begini bisa berisi <strong>ribuan file <code>.svelte</code></strong> yang memperlambat <em>dependency optimization</em> Vite saat dev. Ini makin parah kalau icon di-import lewat <strong>dua gaya sekaligus</strong>: umbrella (<code>from 'lucide-svelte'</code>) dan subpath (<code>from 'lucide-svelte/icons/home'</code>). Kalau tetap memakainya, pilih <strong>satu</strong> gaya import yang konsisten; lebih baik lagi, pindah ke <code>unplugin-icons</code> atau Iconify-CSS.
+</Callout>
+
+<Callout type="pitfall">
+Jangan biarkan icon penting tanpa nama. Tombol icon-only (mis. "X" untuk tutup) yang tidak punya <code>aria-label</code> akan dibacakan screen reader sebagai "button" tanpa konteks — tak bisa dipakai. Pola yang benar: <code>aria-label</code> di <strong>tombol</strong>, dan <code>aria-hidden="true"</code> di SVG-nya. Sebaliknya, icon dekoratif (teks sudah menjelaskan) <strong>harus</strong> <code>aria-hidden="true"</code> agar tidak menambah kebisingan.
+</Callout>
+
+<Callout type="tip">
+Untuk SVG sprite, pakai atribut <code>href</code> pada <code>&lt;use&gt;</code>, bukan <code>xlink:href</code> yang sudah usang. Letakkan <code>sprite.svg</code> di folder <code>static/</code> agar disajikan apa adanya dan di-cache browser — satu unduhan untuk semua icon, pemakaian berikutnya nyaris gratis.
+</Callout>
+
+<Callout type="tip">
+Pilih berdasarkan pola pakai, bukan tren: <strong>inline SVG</strong> untuk segelintir icon yang butuh animasi/kontrol penuh; <strong>Iconify-CSS</strong> atau <strong>unplugin-icons</strong> begitu jumlah icon tumbuh dan kamu ingin bundle ramping. Untuk pewarnaan, biasakan SVG memakai <code>currentColor</code> supaya satu icon otomatis menyesuaikan tema terang/gelap tanpa file tambahan.
+</Callout>
+
+Sebagai penutup, ini peta "lama vs sekarang" soal pengiriman icon di web (bukan API Svelte yang usang, tapi pendekatan yang sebaiknya ditinggalkan):
+
+<LegacyVsModern rows={[
+  { legacy: 'Font-icon (glyph @ karakter)', modern: 'SVG (inline / sprite / Iconify)', note: 'SVG: tajam, currentColor, a11y lebih aman, bebas FOUT' },
+  { legacy: 'img src="icon.svg"', modern: 'inline <svg> / <use href=...>', note: 'Inline -> currentColor + kontrol per-path; img kehilangan keduanya' },
+  { legacy: 'xlink:href pada <use>', modern: 'href pada <use>', note: 'xlink:href sudah deprecated' },
+  { legacy: "Umbrella import lib per-.svelte-file", modern: 'unplugin-icons / Iconify-CSS', note: 'Hindari ribuan file .svelte yang memperlambat Vite dep-opt' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/icons" label="SvelteKit — Icons (strategi & rekomendasi Iconify)" />
+<DocsLink href="https://svelte.dev/docs/kit/images" label="SvelteKit — Images (enhanced-img, untuk gambar non-icon)" />

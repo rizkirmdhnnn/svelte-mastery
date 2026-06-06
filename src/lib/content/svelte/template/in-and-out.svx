@@ -1,0 +1,255 @@
+---
+title: 'in: and out:'
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 16
+status: stable
+description: Memberi animasi masuk dan keluar yang berbeda dengan in:/out:, dua directive terpisah yang berjalan independen — bukan saling membalik seperti transition:.
+docs: https://svelte.dev/docs/svelte/in-and-out
+keywords: [in, out, transition, masuk, keluar, animasi]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di React dan Vue, ada satu kenyataan yang sering bikin frustrasi: **menambah elemen ke DOM itu gampang, tapi menghapusnya dengan mulus itu susah.** Begitu kamu set sebuah `&#123;#if&#125;` jadi `false`, elemennya hilang **seketika** — tidak ada kesempatan untuk fade-out atau slide-out. Itu sebabnya React butuh library seperti Framer Motion (`AnimatePresence`) hanya untuk menganimasikan elemen yang *keluar*.
+
+Svelte menyelesaikan ini lewat directive transition. Kamu sudah kenal `transition:` di modul sebelumnya — **satu** directive yang mengurus dua sisi: animasi masuk saat elemen ditambahkan, dan animasi keluar saat elemen dihapus. Modul ini soal saudaranya: `in:` dan `out:`, yaitu cara **memecah** dua sisi itu jadi dua directive terpisah.
+
+### Kenapa perlu dipecah?
+
+Karena `transition:` punya batasan tersembunyi: **animasi keluar selalu kebalikan dari animasi masuk.** Kalau kamu tulis `transition:fly=&#123;&#123; y: 20 &#125;&#125;`, maka:
+
+- Masuk = melayang naik dari `y: 20` ke posisi (0).
+- Keluar = melayang turun lagi ke `y: 20`. Persis film yang diputar mundur.
+
+Itu bagus untuk banyak kasus. Tapi sering kamu mau perilaku yang **asimetris**: kartu notifikasi yang *meluncur masuk dari kanan* tapi *cukup memudar* saat ditutup. Atau modal yang *zoom-in* saat muncul tapi *slide-down* saat hilang. `transition:` tidak bisa itu — ia cuma punya satu resep yang dimainkan maju/mundur.
+
+`in:` dan `out:` memberi kamu **dua resep terpisah**:
+
+```svelte
+<!-- masuk: terbang dari bawah; keluar: memudar. Dua animasi BERBEDA. -->
+<div in:fly={{ y: 200 }} out:fade>flies in, fades out</div>
+```
+
+Di sini `in:fly` dan `out:fade` sama sekali tidak tahu satu sama lain. Yang satu mengurus kedatangan, yang satu mengurus kepergian. Titik.
+
+### Analogi: pintu putar vs. dua pintu terpisah
+
+Bayangkan sebuah ruangan.
+
+`transition:` itu seperti **satu pintu putar** (revolving door). Kamu masuk dan keluar lewat pintu yang sama, gerakannya simetris. Dan karena cuma satu pintu, kalau kamu berubah pikiran di tengah jalan — baru setengah masuk lalu mau keluar lagi — kamu tinggal balik arah dengan mulus. Pintu itu **reversible**.
+
+`in:` dan `out:` itu seperti **dua pintu berbeda**: satu pintu khusus masuk di depan, satu pintu khusus keluar di belakang. Bentuk dan gayanya boleh beda total — pintu masuk megah berhias, pintu keluar pintu darurat polos. Tapi konsekuensinya: kalau kamu sudah mulai jalan ke pintu keluar lalu berubah pikiran, kamu **tidak bisa mundur lewat pintu keluar itu**. Kamu harus muter balik dan masuk lewat pintu masuk dari awal lagi. Inilah sifat penting `in:`/`out:` yang sering bikin kaget.
+
+### Sifat krusial: in:/out: TIDAK reversible
+
+Ini bedanya yang paling penting dengan `transition:`, dan paling sering bikin orang bingung.
+
+- **`transition:`** — kalau elemen di-toggle di tengah animasi (misal lagi fade-out 50%, lalu kamu munculkan lagi), animasinya **berbalik halus** dari titik di mana ia berada. Tidak ada lompatan.
+- **`in:`/`out:`** — keduanya berjalan **independen sampai tuntas**. Kalau sebuah elemen lagi menjalankan `out:` (keluar) lalu tiba-tiba ditambahkan lagi, transition `in:` akan **diputar bareng** transition `out:` yang sedang jalan — bukan membalik. Dan kalau sebuah transition diinterupsi, ia **mulai lagi dari nol**, tidak melanjutkan dari posisi terakhir.
+
+Konsekuensi praktisnya: untuk konten yang di-toggle **cepat dan bolak-balik** (mis. tooltip yang muncul/hilang saat hover), `transition:` biasanya terasa lebih halus karena reversible. `in:`/`out:` paling pas untuk elemen yang masuk lalu keluar **sekali jalan** (toast, item list yang ditambah/dihapus, notifikasi) — di mana kamu memang mau dua animasi berbeda dan tidak akan sering menginterupsinya di tengah.
+
+### Yang tetap sama dengan transition:
+
+Supaya tidak salah kira, `in:`/`out:` mewarisi banyak hal dari `transition:`:
+
+- **Fungsi & params yang sama.** Kamu pakai `fade`, `fly`, `slide`, `scale`, `blur`, `draw` dari `svelte/transition`, atau custom transition buatan sendiri. Params seperti `duration`, `delay`, `easing` juga sama.
+- **Svelte tetap menahan elemen yang keluar** di DOM sampai `out:` selesai, baru benar-benar melepasnya. Kamu tidak perlu library tambahan.
+- **Modifier `|local` / `|global` berlaku.** Default di Svelte 5 adalah `local` (animasi hanya jalan kalau blok pembungkus langsung yang berubah). Tulis `in:fly|global` kalau mau animasi tetap jalan walau yang berubah adalah blok parent.
+
+## 2. Contoh kode
+
+Contoh inti: masuk dan keluar yang berbeda. Ini langsung dari docs resmi, dengan anotasi.
+
+```svelte
+<script>
+	// dua fungsi transition berbeda dari modul bawaan
+	import { fade, fly } from 'svelte/transition';
+
+	let visible = $state(false);
+</script>
+
+<label>
+	<input type="checkbox" bind:checked={visible} />
+	visible
+</label>
+
+{#if visible}
+	<!-- in:  -> dijalankan saat elemen MASUK (fly dari y: 200, naik ke posisi)
+	     out: -> dijalankan saat elemen KELUAR (fade, memudar di tempat)
+	     Keduanya independen. out BUKAN kebalikan dari in. -->
+	<div in:fly={{ y: 200 }} out:fade>flies in, fades out</div>
+{/if}
+```
+
+Bandingkan dengan kalau kamu pakai `transition:` — keluarnya akan *terbang turun lagi* (kebalikan dari `fly`), bukan memudar:
+
+```svelte
+<!-- VERSI transition: keluar = kebalikan masuk -->
+<div transition:fly={{ y: 200 }}>fly masuk, fly keluar (mundur)</div>
+
+<!-- VERSI in:/out: keluar bisa beda total -->
+<div in:fly={{ y: 200 }} out:fade>fly masuk, fade keluar</div>
+```
+
+Kamu juga boleh kasih params berbeda untuk masing-masing arah — misal masuknya cepat, keluarnya lambat:
+
+```svelte
+<script>
+	import { fly } from 'svelte/transition';
+	let visible = $state(true);
+</script>
+
+{#if visible}
+	<!-- masuk cepat & tegas (200ms), keluar lambat & lembut (600ms).
+	     Walau pakai fungsi yang sama (fly), durasinya dipisah per arah. -->
+	<div
+		in:fly={{ x: 100, duration: 200 }}
+		out:fly={{ x: -100, duration: 600 }}
+	>
+		Masuk dari kiri cepat, keluar ke kanan pelan.
+	</div>
+{/if}
+```
+
+`in:`/`out:` juga bekerja berdampingan dengan `animate:flip` pada elemen yang sama di dalam `&#123;#each&#125;` — `in:`/`out:` mengurus item yang ditambah/dihapus, sementara `animate:flip` mengurus item lama yang bergeser posisi:
+
+```svelte
+<script>
+	import { fly, fade } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
+
+	let nextId = 1;
+	let toasts = $state([]);
+
+	function add() {
+		toasts = [...toasts, { id: nextId, text: 'Toast #' + nextId }];
+		nextId++;
+	}
+	function close(id) {
+		toasts = toasts.filter((t) => t.id !== id);
+	}
+</script>
+
+<button onclick={add}>Tambah</button>
+
+<ul>
+	<!-- key (toast.id) wajib: jadi acuan untuk flip & out: -->
+	{#each toasts as toast (toast.id)}
+		<li
+			in:fly={{ x: 200, duration: 300 }}
+			out:fade={{ duration: 200 }}
+			animate:flip={{ duration: 250 }}
+		>
+			{toast.text}
+			<button onclick={() => close(toast.id)}>Tutup</button>
+		</li>
+	{/each}
+</ul>
+```
+
+## 3. Coba sendiri
+
+Toggle kotak di bawah. Perhatikan: saat **muncul**, kartu meluncur masuk dari kiri (`in:fly`). Saat **hilang**, ia tidak meluncur balik ke kiri — ia mengecil sambil memudar (`out:scale`). Dua animasi yang sama sekali berbeda, dari dua directive terpisah.
+
+Coba juga klik toggle **cepat berkali-kali**: kamu akan lihat sifat "tidak reversible" — animasi keluar yang sedang jalan tidak membalik halus seperti `transition:`, melainkan animasi baru mulai dari nol.
+
+<Playground code={`<script>
+	import { fly, scale } from 'svelte/transition';
+
+	let visible = $state(true);
+</script>
+
+<label style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
+	<input type="checkbox" bind:checked={visible} />
+	tampilkan kartu
+</label>
+
+{#if visible}
+	<div
+		in:fly={{ x: -150, duration: 400 }}
+		out:scale={{ start: 0.6, duration: 400 }}
+		style="padding:24px; border-radius:12px; background:#ffedd5; color:#9a3412; font-weight:600; width:200px;"
+	>
+		Masuk: meluncur dari kiri.
+		Keluar: mengecil + memudar.
+	</div>
+{/if}`} />
+
+## 4. Latihan
+
+<Exercise title="Modal: zoom masuk, slide keluar">
+Buat sebuah modal sederhana yang dikontrol satu boolean `open`. Ketika dibuka, modal harus **zoom-in** (gunakan `scale`). Ketika ditutup, modal harus **meluncur turun lalu memudar** (gunakan `fly` dengan `y` positif). Pastikan kamu memakai dua directive terpisah, bukan `transition:`.
+
+Petunjuk: `in:scale=&#123;&#123; ... &#125;&#125;` dan `out:fly=&#123;&#123; y: 200, ... &#125;&#125;` pada elemen modal di dalam blok `&#123;#if open&#125;`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { scale, fly } from 'svelte/transition';
+
+	let open = $state(false);
+</script>
+
+<button onclick={() => (open = true)}>Buka modal</button>
+
+{#if open}
+	<!-- masuk: zoom dari 0.8 -> 1 (scale)
+	     keluar: meluncur turun + memudar (fly y positif)
+	     dua resep beda = wajib in:/out:, bukan transition: -->
+	<div
+		class="modal"
+		in:scale={{ start: 0.8, duration: 250 }}
+		out:fly={{ y: 200, duration: 300 }}
+	>
+		<p>Halo, aku modal.</p>
+		<button onclick={() => (open = false)}>Tutup</button>
+	</div>
+{/if}
+
+<style>
+	.modal {
+		padding: 24px;
+		border-radius: 12px;
+		background: white;
+		box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+	}
+</style>
+```
+
+Kuncinya: karena animasi masuk (`scale`) berbeda total dari animasi keluar (`fly`), kamu **tidak bisa** memakai satu `transition:`. `transition:scale` akan membuat modal mengecil lagi saat keluar (kebalikan masuk), bukan meluncur turun. Memisah jadi `in:` dan `out:` lah yang membuka perilaku asimetris ini.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan pasang <code>transition:</code> bersama <code>in:</code> atau <code>out:</code> pada elemen yang sama. <code>transition:</code> sudah mencakup kedua arah, jadi menumpuknya dengan <code>in:</code>/<code>out:</code> bikin konflik. Pilih salah satu pendekatan: <strong>satu</strong> <code>transition:</code> kalau masuk = kebalikan keluar, atau <strong>pasangan</strong> <code>in:</code>/<code>out:</code> kalau keduanya beda.
+</Callout>
+
+<Callout type="warning">
+<code>in:</code>/<code>out:</code> <strong>tidak reversible</strong>. Kalau elemen di-toggle cepat bolak-balik, transition keluar yang sedang berjalan tidak akan membalik mulus — animasi masuk yang baru malah diputar berbarengan, dan transition yang diinterupsi mulai lagi dari nol. Untuk konten yang sering di-toggle cepat (tooltip, dropdown hover), pertimbangkan <code>transition:</code> yang reversible. Pakai <code>in:</code>/<code>out:</code> untuk elemen yang masuk lalu keluar sekali jalan (toast, item list).
+</Callout>
+
+<Callout type="tip">
+Kamu boleh memberi <strong>params berbeda</strong> ke <code>in:</code> dan <code>out:</code> walau fungsinya sama. Misal <code>in:fly=&#123;&#123; duration: 200 &#125;&#125;</code> dan <code>out:fly=&#123;&#123; duration: 600 &#125;&#125;</code> untuk "masuk cepat, keluar lembut". Ini pola umum yang terasa natural: kedatangan sebaiknya gesit, kepergian boleh lebih sabar.
+</Callout>
+
+<Callout type="tip">
+Modifier <code>|global</code> dan <code>|local</code> tetap berlaku: <code>in:fade|global</code>. Default Svelte 5 adalah <code>local</code> (animasi hanya jalan kalau blok pembungkus langsung yang berubah). Kalau <code>in:</code> tidak muncul saat parent/halaman dirender, tambahkan <code>|global</code> — tapi seperlunya, supaya tidak banjir animasi serentak.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/in-and-out" label="in: dan out: directive — dokumentasi resmi Svelte" />

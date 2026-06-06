@@ -1,0 +1,305 @@
+---
+title: '<svelte:component>'
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 10
+status: legacy
+description: Elemen khusus Svelte 4 untuk merender komponen dinamis — dan kenapa di Svelte 5 cukup render `<Comp />` langsung karena komponen kini nilai biasa.
+docs: https://svelte.dev/docs/svelte/legacy-svelte-component
+keywords: [svelte-component, dynamic-component, legacy, svelte-4, runes, this]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+<Callout type="legacy">
+<strong>Ini API lama (Svelte 4).</strong> <code>&lt;svelte:component this=&#123;...&#125;&gt;</code> dipakai untuk merender komponen yang dipilih saat runtime. Di <strong>Svelte 5</strong> elemen ini <em>tidak diperlukan lagi</em> — komponen sudah jadi nilai biasa, jadi cukup tulis <code>&lt;Comp /&gt;</code>. Halaman ini supaya kamu bisa <em>membaca</em> kode lama dan tahu padanan modernnya. Jangan menulis komponen baru dengan pola ini.
+</Callout>
+
+## 1. Konsep
+
+Kadang kamu tidak tahu saat menulis kode komponen *mana* yang harus dirender — itu baru ditentukan saat aplikasi berjalan. Contoh klasik: sistem tab di mana isi tiap tab adalah komponen berbeda, renderer notifikasi yang memilih ikon berdasarkan tipe pesan, atau halaman builder yang menyusun blok dari konfigurasi. Inilah yang disebut **komponen dinamis**: target render-nya disimpan di sebuah variabel yang bisa berubah.
+
+Di sinilah Svelte 4 dan Svelte 5 berbeda secara mendasar — dan perbedaannya bukan soal sintaks, tapi soal **apa itu sebuah komponen**.
+
+### Kenapa Svelte 4 butuh elemen khusus
+
+Di Svelte 4, sebuah komponen **bukan nilai kelas satu (first-class value)**. Saat compiler melihat `<Home />`, ia memperlakukan `Home` sebagai *nama tetap* yang di-resolve **saat kompilasi**, bukan sebagai variabel yang bisa kamu tukar saat runtime. Akibatnya, kalau kamu menulis:
+
+```svelte
+<script>
+	let current = Home; // nanti diubah jadi Settings
+</script>
+
+<current />  <!-- Svelte 4: ini DIANGGAP elemen HTML <current>, atau dipatok ke nilai awal -->
+```
+
+…itu tidak bekerja seperti harapanmu. Svelte 4 tidak akan menukar komponen ketika `current` berubah. Untuk benar-benar merender komponen dari sebuah variabel, kamu **wajib** memakai elemen khusus:
+
+```svelte
+<svelte:component this={current} />
+```
+
+Anggap `<svelte:component>` sebagai **"adaptor"** yang memberi tahu compiler: "isi `this` ini adalah sebuah komponen yang kuanggap sebagai data; tolong pantau, dan kalau nilainya berubah, **hancurkan instance lama lalu buat ulang** instance yang baru." Kata kuncinya *destroy-and-recreate*: tiap kali `this` berubah, komponen lama dibongkar total dan komponen baru di-mount dari nol (bukan sekadar re-render).
+
+### Analogi: nama yang dicat di pintu vs. kunci yang kamu pegang
+
+Bayangkan komponen di Svelte 4 seperti **ruangan dengan nama dicat di pintunya** — "Dapur", "Kamar" — ditentukan saat rumah dibangun (compile time). Kamu tidak bisa menukar isi ruangan hanya dengan menunjuk papan namanya. Untuk berpindah ruangan secara dinamis, kamu perlu **pintu putar khusus** (`<svelte:component>`) yang sengaja dipasang untuk menukar ruangan saat dibutuhkan.
+
+Svelte 5 mengubah filosofi ini: komponen sekarang seperti **kunci yang bisa kamu pegang dan oper**. Sebuah komponen *adalah* nilai biasa — bisa disimpan di variabel, dimasukkan ke array, di-`$derived`, dioper sebagai prop. Karena ia nilai biasa, kamu cukup "menunjuknya" langsung: `<Current />`. Tidak perlu pintu putar khusus lagi.
+
+### Hubungannya dengan React & Vue
+
+Kalau kamu datang dari **React**, model Svelte 5 akan terasa langsung familiar — di React komponen memang sudah nilai biasa sejak awal:
+
+```jsx
+const Current = cond ? Home : Settings;
+return <Current />;
+```
+
+Svelte 5 persis seperti itu. Sebaliknya, `<svelte:component this={...}>` di Svelte 4 adalah padanan dekat dari **Vue**: `<component :is="...">`. Jadi bisa dibilang: Svelte 4 mengikuti gaya Vue (elemen khusus untuk komponen dinamis), sementara Svelte 5 bergeser ke gaya React (komponen = nilai, render langsung).
+
+Satu syarat penting di Svelte 5: variabel yang menampung komponen harus **berhuruf kapital** (`Current`, bukan `current`), atau berupa *member expression* yang mengandung titik (`item.Comp`). Alasannya sederhana — compiler membedakan `<current />` (huruf kecil = elemen HTML biasa) dari `<Current />` (huruf kapital = komponen). Aturan ini sama dengan React (JSX juga mewajibkan komponen berhuruf kapital).
+
+## 2. Contoh kode
+
+Kasus paling umum: memilih komponen tab berdasarkan state. Perhatikan bagaimana pola yang sama luruh dari "elemen khusus + label reaktif" menjadi "variabel kapital + render langsung".
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — Tabs.svelte -->
+<script>
+	import Home from './Home.svelte';
+	import Settings from './Settings.svelte';
+	import Profile from './Profile.svelte';
+
+	let tab = 'home';
+
+	// label reaktif menghitung komponen mana yang aktif
+	$: current =
+		tab === 'home' ? Home :
+		tab === 'settings' ? Settings :
+		Profile;
+</script>
+
+<nav>
+	<button on:click={() => (tab = 'home')}>Home</button>
+	<button on:click={() => (tab = 'settings')}>Settings</button>
+	<button on:click={() => (tab = 'profile')}>Profile</button>
+</nav>
+
+<!-- WAJIB <svelte:component>; menulis <current /> tidak akan reaktif di Svelte 4 -->
+<svelte:component this={current} />
+```
+
+```svelte
+<!-- ✅ GAYA BARU (Svelte 5 runes) — Tabs.svelte -->
+<script>
+	import Home from './Home.svelte';
+	import Settings from './Settings.svelte';
+	import Profile from './Profile.svelte';
+
+	let tab = $state('home');
+
+	// $derived menghasilkan komponen terpilih (komponen = nilai biasa).
+	// Namai dengan huruf KAPITAL supaya bisa dirender sebagai <Current />.
+	let Current = $derived(
+		tab === 'home' ? Home :
+		tab === 'settings' ? Settings :
+		Profile
+	);
+</script>
+
+<nav>
+	<button onclick={() => (tab = 'home')}>Home</button>
+	<button onclick={() => (tab = 'settings')}>Settings</button>
+	<button onclick={() => (tab = 'profile')}>Profile</button>
+</nav>
+
+<!-- cukup render variabel kapital langsung; tidak perlu <svelte:component> -->
+<Current />
+```
+
+Komponen dinamis tetap bisa menerima props dan children seperti komponen biasa — tidak ada yang istimewa:
+
+```svelte
+<!-- ✅ Svelte 5 — props & children pada komponen dinamis -->
+<script>
+	let { Komponen, judul } = $props(); // 'Komponen' kapital → dianggap komponen
+</script>
+
+<!-- oper props seperti biasa, bahkan dengan children -->
+<Komponen title={judul} class="kartu">
+	<p>Ini children untuk komponen dinamis.</p>
+</Komponen>
+```
+
+## 3. Coba sendiri
+
+> Contoh ini butuh beberapa file komponen terpisah (`Home.svelte`, dst.), jadi tidak ada playground live. Pelajari contoh statis beranotasi berikut.
+
+Ada dua kasus "tepi" yang sering bikin bingung saat migrasi dari `<svelte:component>`. Pahami keduanya supaya kamu tidak terjebak.
+
+**Kasus 1 — variabel huruf kecil atau dari dalam objek/array.** Karena Svelte 5 memperlakukan tag huruf kecil sebagai elemen HTML, kamu tidak bisa menulis `<comp />`. Solusinya: rebind ke nama kapital lewat `{@const}`, atau pakai *member expression* (yang punya titik) yang otomatis dianggap komponen.
+
+```svelte
+<!-- ❌ Svelte 4 — daftar blok dinamis -->
+<script>
+	let blocks = [
+		{ type: 'text', component: TextBlock },
+		{ type: 'image', component: ImageBlock }
+	];
+</script>
+
+{#each blocks as block}
+	<svelte:component this={block.component} />
+{/each}
+```
+
+```svelte
+<!-- ✅ Svelte 5 — dua cara setara -->
+<script>
+	let blocks = [
+		{ type: 'text', component: TextBlock },
+		{ type: 'image', component: ImageBlock }
+	];
+</script>
+
+{#each blocks as block}
+	<!-- Cara A: member expression (ada titik) → langsung dianggap komponen.
+	     Catatan: kunci objeknya tetap huruf kecil 'component' tidak masalah,
+	     karena yang dilihat compiler adalah bentuk 'sesuatu.sesuatu'. -->
+	<block.component />
+
+	<!-- Cara B: rebind ke nama kapital lewat {@const} -->
+	{@const Block = block.component}
+	<Block />
+{/each}
+```
+
+**Kasus 2 — nilainya bisa kosong (`null` / `undefined`).** Di Svelte 4, `<svelte:component this={falsy} />` aman: kalau `this` falsy, ia tidak merender apa-apa. Di Svelte 5, merender `<Current />` saat `Current` bukan komponen yang valid bisa **melempar error**. Jadi jaga dengan `{#if}`.
+
+```svelte
+<!-- ✅ Svelte 5 — jaga nilai yang mungkin kosong -->
+<script>
+	let { Current } = $props(); // bisa undefined
+</script>
+
+<!-- Svelte 4 diam saja kalau falsy; di Svelte 5 jagalah eksplisit -->
+{#if Current}
+	<Current />
+{:else}
+	<p>Belum ada komponen terpilih.</p>
+{/if}
+```
+
+## 4. Latihan
+
+<Exercise title="Migrasikan renderer notifikasi dinamis ke Svelte 5">
+
+Komponen `<Notification>` gaya **Svelte 4** di bawah memilih komponen ikon berdasarkan `type`, lalu merendernya dengan `<svelte:component>`. Tulis ulang ke **Svelte 5 (runes)**. Yang harus berubah:
+
+- `export let` → `$props()`
+- label reaktif `$:` yang menghitung komponen → `$derived` dengan **variabel kapital**
+- `<svelte:component this={icon} />` → render variabel langsung
+- jaga kasus tipe tak dikenal (`Icon` bisa `undefined`) dengan `{#if}`
+- bonus: `on:click` → `onclick`
+
+```svelte
+<!-- ❌ Notification.svelte (Svelte 4) -->
+<script>
+	import Success from './icons/Success.svelte';
+	import Error from './icons/Error.svelte';
+	import Info from './icons/Info.svelte';
+
+	export let type = 'info';
+	export let message;
+	export let ondismiss;
+
+	$: icon =
+		type === 'success' ? Success :
+		type === 'error' ? Error :
+		type === 'info' ? Info :
+		null;
+</script>
+
+<div class="toast {type}">
+	<svelte:component this={icon} />
+	<span>{message}</span>
+	<button on:click={ondismiss}>×</button>
+</div>
+```
+
+{#snippet solution()}
+
+```svelte
+<!-- ✅ Notification.svelte (Svelte 5 runes) -->
+<script>
+	import Success from './icons/Success.svelte';
+	import Error from './icons/Error.svelte';
+	import Info from './icons/Info.svelte';
+
+	// export let → satu destructuring dari $props()
+	let { type = 'info', message, ondismiss } = $props();
+
+	// $: → $derived; namai KAPITAL ('Icon') supaya bisa dirender langsung.
+	// Tetap boleh bernilai null untuk tipe tak dikenal.
+	let Icon = $derived(
+		type === 'success' ? Success :
+		type === 'error' ? Error :
+		type === 'info' ? Info :
+		null
+	);
+</script>
+
+<div class="toast {type}">
+	<!-- <svelte:component this={icon} /> → render <Icon /> langsung,
+	     dijaga {#if} karena Icon bisa null (di Svelte 4 falsy diam saja). -->
+	{#if Icon}
+		<Icon />
+	{/if}
+	<span>{message}</span>
+	<!-- on:click → onclick -->
+	<button onclick={ondismiss}>×</button>
+</div>
+```
+
+Catatan: kunci migrasinya adalah mengubah nama variabel `icon` (huruf kecil) menjadi `Icon` (kapital). Tanpa itu, `<icon />` akan dianggap elemen HTML, bukan komponen. Dan karena Svelte 5 tidak "diam" saat nilainya falsy, penjagaan `{#if Icon}` menggantikan perilaku toleran `<svelte:component>` lama.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>&lt;svelte:component&gt;</code> adalah API <strong>legacy</strong>. Compiler Svelte 5 masih menerimanya demi kompatibilitas mode lama, tapi di komponen <em>runes</em> ia sudah <strong>deprecated</strong> dan tak diperlukan — render <code>&lt;Comp /&gt;</code> langsung. Migration script <code>npx sv migrate svelte-5</code> mengubah pola ini otomatis.
+</Callout>
+
+<Callout type="warning">
+Variabel komponen di Svelte 5 <strong>harus berhuruf kapital</strong> (<code>Current</code>, bukan <code>current</code>) atau berupa <em>member expression</em> bertitik (<code>item.Comp</code>). Tag huruf kecil seperti <code>&lt;current /&gt;</code> akan diperlakukan sebagai elemen HTML <code>&lt;current&gt;</code> dan komponenmu tidak akan muncul — tanpa error yang jelas. Ini jebakan paling sering saat migrasi.
+</Callout>
+
+<Callout type="pitfall">
+<code>&lt;svelte:component this=&#123;falsy&#125;&gt;</code> di Svelte 4 <em>diam</em> (tidak merender apa-apa) kalau <code>this</code> bernilai <code>null</code>/<code>undefined</code>. Di Svelte 5, merender <code>&lt;Current /&gt;</code> saat <code>Current</code> bukan komponen valid bisa <strong>melempar error runtime</strong>. Kalau nilainya mungkin kosong, bungkus dengan <code>&#123;#if Current&#125;...&#123;/if&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+Ingat sifat <em>destroy-and-recreate</em>: setiap kali komponen dinamis berganti (baik <code>&lt;svelte:component&gt;</code> Svelte 4 maupun <code>&lt;Current /&gt;</code> Svelte 5), instance lama dibongkar total dan instance baru dibuat dari nol — state internalnya hilang. Kalau kamu butuh mempertahankan state lintas pergantian, angkat state itu ke parent (lewat prop atau store), jangan simpan di dalam komponen yang ditukar.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '<svelte:component this={Comp} />', modern: '<Comp />', note: 'Komponen kini nilai biasa; render variabel kapital langsung.' },
+	{ legacy: '$: Comp = map[type]', modern: 'let Comp = $derived(map[type])', note: 'Pilih komponen lewat $derived (huruf kapital).' },
+	{ legacy: '<svelte:component this={obj.comp} />', modern: '<obj.comp />', note: 'Member expression bertitik dianggap komponen tanpa rebind.' },
+	{ legacy: '<svelte:component this={maybeNull} />', modern: '{#if C}<C />{/if}', note: 'Svelte 5 tidak diam saat falsy; jaga dengan {#if}.' },
+	{ legacy: 'this={cond ? A : B}', modern: '{@const C = cond ? A : B} <C />', note: 'Rebind inline ke nama kapital lewat {@const}.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-svelte-component" label="Legacy: <svelte:component> — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/v5-migration-guide" label="Svelte 5 Migration Guide — komponen dinamis & svelte:component" />

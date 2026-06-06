@@ -1,0 +1,225 @@
+---
+title: sveltekit-adapter
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 10
+status: stable
+description: Add-on `sv add sveltekit-adapter` untuk memilih & memasang adapter deploy resmi (node/static/cloudflare/vercel/netlify/auto) lewat satu perintah.
+docs: https://svelte.dev/docs/cli/sveltekit-adapter
+keywords: [sv add, sveltekit-adapter, adapter, node, static, cloudflare]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sveltekit-adapter` adalah salah satu **add-on** resmi dari CLI `sv`. Tugasnya satu dan spesifik: memasang serta mengonfigurasi **adapter deploy** SvelteKit untukmu — yaitu paket yang menentukan ke platform mana aplikasimu nanti di-build (server Node, situs statis, Cloudflare, Vercel, Netlify, atau deteksi otomatis).
+
+Supaya jelas, ada dua hal yang berbeda di sini:
+
+- **Adapter** itu sendiri adalah paket npm (mis. `@sveltejs/adapter-node`) yang dipasang di `kit.adapter` dalam `svelte.config.js`. Adapter-lah yang benar-benar menerjemahkan output `vite build` ke bentuk yang dimengerti platform tujuan.
+- **`sv add sveltekit-adapter`** adalah *robot pemasang*-nya. Ia bukan adapter; ia perkakas yang **menginstal paket adapter yang kamu pilih** lalu **menyunting `svelte.config.js`** secara otomatis — mengganti import dan pemanggilan `adapter()` agar benar.
+
+Jadi modul ini bukan tentang "apa itu adapter" (itu konsep deploy), melainkan tentang **cara cepat & anti-typo memasang adapter** lewat CLI, alih-alih mengetik manual.
+
+### Analogi: tukang pasang stop kontak
+
+Bayangkan aplikasimu butuh dicolok ke "listrik" platform tujuan. Tiap platform punya bentuk stop kontak berbeda — Node, Cloudflare, Vercel, dan seterusnya — dan untuk tiap bentuk kamu butuh **adaptor colokan** (itulah si adapter). Kamu *bisa* memasang adaptor itu sendiri: beli paketnya, buka `svelte.config.js`, ganti kabelnya dengan tangan.
+
+`sv add sveltekit-adapter` adalah **tukang yang datang ke rumah**: kamu cukup bilang "aku mau colokan Node", lalu ia yang membeli (instal `@sveltejs/adapter-node`), mencabut adaptor lama, dan memasang yang baru dengan rapi di tempat yang benar. Hasil akhirnya sama dengan memasang manual, tapi tanpa risiko salah kabel (salah nama import, lupa hapus adapter lama, salah opsi).
+
+### Apa yang sebenarnya dikerjakan add-on ini
+
+Saat kamu menjalankannya, add-on melakukan tiga langkah:
+
+1. **Memilih adapter** — lewat prompt interaktif, atau lewat flag bila kamu sudah tahu (`adapter:node`, `adapter:static`, dst.).
+2. **Menginstal paket-nya** — menambah `@sveltejs/adapter-<pilihan>` ke `devDependencies` dengan package manager proyekmu (npm/pnpm/bun).
+3. **Menulis ulang `svelte.config.js`** — mengganti baris `import adapter from '...'` dan memastikan `kit.adapter` menunjuk ke adapter baru. Jika sebelumnya `adapter-auto` (default proyek baru), ia akan menggantinya.
+
+### Kenapa pakai add-on, bukan pasang manual?
+
+Karena ini pekerjaan yang **gampang salah kalau dikerjakan tangan**: nama paket mirip-mirip, kamu harus ingat menghapus adapter lama dari `devDependencies`, dan import di `svelte.config.js` harus persis. Add-on membuat langkah itu deterministik dan idempoten — aman dijalankan ulang untuk berganti target. Untuk yang datang dari ekosistem lain: anggap ini seperti `nuxi module add` di Nuxt, bedanya khusus untuk urusan adapter deploy.
+
+## 2. Contoh kode
+
+Add-on dipanggil lewat perintah `sv add`. Mode paling sederhana: interaktif — `sv` akan bertanya adapter mana yang kamu mau.
+
+```bash
+# Mode interaktif: sv menampilkan menu pilihan adapter.
+# Jalankan di root proyek SvelteKit yang sudah ada.
+npx sv add sveltekit-adapter
+
+# Setelah memilih (mis. "node"), sv akan:
+#  - menginstal @sveltejs/adapter-node
+#  - menyunting svelte.config.js (import + kit.adapter)
+#  - (opsional) menampilkan langkah lanjutan di terminal
+```
+
+Kalau kamu sudah tahu targetnya, lewati prompt dengan menulis pilihan langsung di argumen. Sintaksnya `nama-addon="key:value"`.
+
+```bash
+# Non-interaktif: langsung pilih adapter Node.
+npx sv add sveltekit-adapter="adapter:node"
+
+# Static site generator (SSG) / cocok untuk mode SPA juga.
+npx sv add sveltekit-adapter="adapter:static"
+
+# Vercel & Netlify — polanya identik, beda nilai saja.
+npx sv add sveltekit-adapter="adapter:vercel"
+npx sv add sveltekit-adapter="adapter:netlify"
+```
+
+Khusus **Cloudflare**, ada opsi kedua: `cfTarget` untuk memilih antara Cloudflare **Workers** atau **Pages**. Gabungkan beberapa opsi dengan tanda `+`.
+
+```bash
+# Cloudflare Workers (target modern).
+npx sv add sveltekit-adapter="adapter:cloudflare+cfTarget:workers"
+
+# Cloudflare Pages.
+npx sv add sveltekit-adapter="adapter:cloudflare+cfTarget:pages"
+```
+
+Setelah add-on selesai, hasilnya tampak di `svelte.config.js`. Misalnya bila kamu memilih `node`, file-mu menjadi seperti ini — persis seperti kalau kamu mengetik manual, tapi tanpa risiko salah:
+
+```js
+// svelte.config.js — HASIL setelah `sv add sveltekit-adapter="adapter:node"`
+import adapter from '@sveltejs/adapter-node'; // <- baris ini ditulis ulang oleh add-on
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(),
+	kit: {
+		// kit.adapter sekarang menunjuk ke adapter-node.
+		// Opsi spesifik (out, precompress, dll.) silakan kamu tambah sendiri.
+		adapter: adapter()
+	}
+};
+```
+
+## 3. Coba sendiri
+
+Karena add-on ini bekerja di tahap **scaffold/konfigurasi** (mengubah file & `package.json`), bukan sesuatu yang bisa dirender di playground browser. Latih intuisimu dengan memetakan kebutuhan deploy ke flag yang tepat, lalu jalankan langsung di proyek lokalmu.
+
+```text
+PETA KEPUTUSAN: mau deploy ke mana -> flag sv add apa
+──────────────────────────────────────────────────────
+
+Belum tahu / deploy via Git ke Vercel/Netlify/CF Pages
+   -> sv add sveltekit-adapter="adapter:auto"   (default; auto-deteksi di CI)
+
+Punya VPS / Docker / butuh proses Node penuh
+   -> sv add sveltekit-adapter="adapter:node"
+
+Situs statis (docs/blog/landing) atau mode SPA
+   -> sv add sveltekit-adapter="adapter:static"
+
+Edge global, ekosistem Cloudflare (Workers)
+   -> sv add sveltekit-adapter="adapter:cloudflare+cfTarget:workers"
+
+Edge global, Cloudflare Pages
+   -> sv add sveltekit-adapter="adapter:cloudflare+cfTarget:pages"
+
+Sudah pakai Vercel (ISR/edge/regions)
+   -> sv add sveltekit-adapter="adapter:vercel"
+
+Sudah pakai Netlify (Functions/Edge)
+   -> sv add sveltekit-adapter="adapter:netlify"
+```
+
+```bash
+# Latihan cepat: ganti adapter default jadi adapter-node, lalu uji build.
+# 1) Pasang adapter via add-on (non-interaktif):
+npx sv add sveltekit-adapter="adapter:node"
+
+# 2) Lihat perubahannya — paket masuk ke devDependencies & config tersunting:
+git diff svelte.config.js package.json
+
+# 3) Build & jalankan server hasilnya:
+npm run build      # vite build + adapter-node -> folder build/
+node build         # buka http://localhost:3000
+
+# 4) Coba berganti target: jalankan add-on lagi dengan adapter:static.
+#    Add-on idempoten — aman menimpa konfigurasi sebelumnya.
+npx sv add sveltekit-adapter="adapter:static"
+```
+
+<Callout type="tip">
+Add-on hanya <strong>memasang & menghubungkan</strong> adapter; ia tidak mengisi opsi spesifik tiap adapter (mis. <code>precompress</code> untuk node, <code>fallback: '200.html'</code> untuk mode SPA di static, atau <code>runtime</code>/<code>regions</code> untuk vercel). Setelah add-on selesai, buka <code>svelte.config.js</code> dan tambahkan opsi yang kamu perlukan secara manual.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Pilih perintah sv add yang tepat untuk tiap skenario">
+Untuk tiap skenario, tulis **satu** perintah `sv add sveltekit-adapter` (mode non-interaktif) yang paling tepat, lalu jelaskan singkat alasannya dan langkah lanjutan (jika ada) yang perlu kamu lakukan manual di `svelte.config.js`.
+
+1. Situs dokumentasi statis yang akan dihosting di GitHub Pages.
+2. Aplikasi SaaS dengan SSR penuh, dijalankan di dalam container Docker di server sendiri.
+3. Aplikasi yang akan berjalan sebagai Cloudflare Worker di edge.
+
+{#snippet solution()}
+
+  ```bash
+  # 1) Docs statis -> static (SSG). File HTML siap diunggah ke GitHub Pages.
+  npx sv add sveltekit-adapter="adapter:static"
+  # Lanjutan manual: aktifkan prerender untuk seluruh situs di
+  # src/routes/+layout.js  ->  export const prerender = true;
+  ```
+
+  ```bash
+  # 2) SaaS SSR penuh di Docker -> node (server Node mandiri).
+  npx sv add sveltekit-adapter="adapter:node"
+  # Lanjutan manual (opsional): atur opsi di svelte.config.js
+  #   adapter: adapter({ out: 'build', precompress: true })
+  # Deploy: `npm run build` lalu `node build` di dalam container.
+  ```
+
+  ```bash
+  # 3) Cloudflare Worker di edge -> cloudflare dengan target workers.
+  npx sv add sveltekit-adapter="adapter:cloudflare+cfTarget:workers"
+  # Catatan: edge runtime BUKAN Node penuh — hindari Node API seperti `fs`.
+  ```
+
+  Intinya: pilih `adapter:` sesuai bentuk runtime tujuan, lalu tambahkan opsi
+  adapter / page option (prerender, ssr, dst.) secara manual karena add-on
+  hanya memasang dan menyambungkan adapternya.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Proyek baru dari <code>sv create</code> sudah memakai <code>@sveltejs/adapter-auto</code>. <code>adapter-auto</code> praktis untuk demo tapi <strong>tidak bisa dikonfigurasi</strong> (tak ada opsi <code>runtime</code>, <code>regions</code>, <code>out</code>) dan tidak bisa dijalankan sebagai server lokal. Begitu target deploy-mu jelas, jalankan <code>sv add sveltekit-adapter</code> untuk berganti ke adapter spesifik — jangan biarkan <code>adapter-auto</code> di produksi yang serius.
+</Callout>
+
+<Callout type="warning">
+Add-on hanya menyunting <code>svelte.config.js</code> dan <code>package.json</code>. Ia <strong>tidak</strong> mengubah kode aplikasimu, dan <strong>tidak</strong> memvalidasi apakah aplikasimu cocok dengan runtime target. Memilih <code>adapter:static</code> tetap akan <em>gagal build</em> kalau ada rute dinamis yang tak bisa di-prerender; memilih <code>adapter:cloudflare</code> bisa <em>crash saat runtime</em> kalau kodemu memakai Node API yang tak ada di edge. Add-on memasang colokan; memastikan listriknya cocok tetap tugasmu.
+</Callout>
+
+<Callout type="tip">
+Add-on ini <strong>idempoten</strong> — aman dijalankan berkali-kali. Mau pindah dari <code>node</code> ke <code>vercel</code>? Cukup jalankan ulang dengan flag baru; add-on akan menukar paket dan menulis ulang import di <code>svelte.config.js</code>. Tidak perlu menghapus adapter lama secara manual.
+</Callout>
+
+<Callout type="legacy">
+Tutorial lama mungkin menyuruh <code>npm i -D @sveltejs/adapter-node</code> lalu mengedit <code>svelte.config.js</code> dengan tangan, atau menyebut perintah <code>npm create svelte</code> yang sudah tergantikan. Di toolchain modern, CLI resmi adalah <code>sv</code> dan cara idiomatis menambah adapter adalah <code>sv add sveltekit-adapter</code>. Pemasangan manual masih valid dan kadang perlu untuk adapter komunitas (dari SvelteSociety) yang belum didukung add-on — tapi untuk enam adapter resmi, add-on lebih cepat dan anti-typo.
+</Callout>
+
+Sebagai rangkuman perbandingan cara lama vs cara dengan add-on:
+
+<LegacyVsModern rows={[
+	{ legacy: 'npm i -D @sveltejs/adapter-node', modern: 'npx sv add sveltekit-adapter="adapter:node"', note: 'add-on sekaligus menyunting svelte.config.js' },
+	{ legacy: 'edit svelte.config.js manual (import + kit.adapter)', modern: 'add-on menulis ulang otomatis', note: 'anti salah nama import / lupa hapus adapter lama' },
+	{ legacy: 'npm create svelte@latest', modern: 'npx sv create', note: 'sv adalah CLI resmi terbaru' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/sveltekit-adapter" label="sv — Add-on sveltekit-adapter (memilih & memasang adapter deploy)" />
+<DocsLink href="https://svelte.dev/docs/cli/sv-add" label="sv add — perintah umum untuk menambah add-on" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (konsep deploy & opsi tiap adapter)" />

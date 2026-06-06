@@ -1,0 +1,287 @@
+---
+title: "{#if ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 2
+status: stable
+description: Merender markup secara kondisional dengan blok {#if}/{:else if}/{:else} di template Svelte.
+docs: https://svelte.dev/docs/svelte/if
+keywords: [if, else, conditional, template, branching]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Setiap framework UI butuh cara untuk berkata: "tampilkan markup ini **hanya kalau** sesuatu bernilai benar". Pertanyaannya cuma: di mana logika kondisi itu ditulis?
+
+React menaruhnya **di dalam JavaScript**. Karena JSX sebenarnya hanyalah ekspresi JS, kamu memakai trik bahasa: `kondisi && <markup>`, atau ternary `kondisi ? <a> : <b>`. Tidak ada "fitur if" khusus — kamu meminjam operator JS biasa.
+
+Vue menaruhnya **sebagai atribut elemen**: `v-if`, `v-else-if`, `v-else`. Logikanya menempel di tag, tersembunyi sebagai direktif.
+
+Svelte memilih jalan ketiga: **blok template eksplisit**. Kamu membuka blok dengan `{#if ...}` dan menutupnya dengan `{/if}`, dengan cabang opsional `{:else if ...}` dan `{:else}` di tengahnya.
+
+```svelte
+{#if answer === 42}
+	<p>Apa pertanyaannya?</p>
+{/if}
+```
+
+Tiga simbol kunci yang perlu kamu hafal sekali saja, lalu berlaku untuk **semua** blok Svelte (`{#each}`, `{#await}`, `{#key}`, dst.):
+
+- `#` artinya **buka blok** (`{#if}`).
+- `/` artinya **tutup blok** (`{/if}`).
+- `:` artinya **cabang/lanjutan di dalam blok yang sama** (`{:else if}`, `{:else}`).
+
+### Analogi: blok if itu seperti tag pembuka-penutup HTML
+
+Kamu sudah terbiasa menulis `<ul>...</ul>`. Otakmu otomatis tahu di mana list mulai dan berakhir karena ada pasangan tag pembuka dan penutup. Blok `{#if}` bekerja persis sama: `{#if ...}` adalah "tag pembuka", `{/if}` adalah "tag penutup", dan apa pun di antaranya adalah isi yang dirender saat kondisi benar.
+
+Bedanya dengan JSX: di React, batas kondisi sering kabur. Saat kamu membaca `{user && <Profile />}` di tengah pohon JSX yang besar, kamu harus menelusuri ekspresi JS untuk tahu sampai mana cakupan kondisinya. Di Svelte, batasnya **terlihat di markup** — `{#if}` di atas, `{/if}` di bawah, jelas seperti kurung HTML. Compiler juga membaca struktur eksplisit ini untuk menghasilkan kode update DOM yang presisi tanpa Virtual DOM: saat kondisi berubah dari `false` ke `true`, ia tahu persis blok mana yang harus dibuat, tanpa men-diff seluruh pohon.
+
+### Mengapa bukan ekspresi JS murni seperti JSX?
+
+Ini keputusan desain yang sengaja. Karena `{#if}` bukan ekspresi JS biasa, kamu **tidak bisa** menumpuk ternary tanpa batas atau menulis logika rumit di tengah markup. Itu justru kelebihannya: template tetap dangkal dan mudah dibaca. Kalau logikamu mulai berbelit, Svelte mendorongmu memindahkannya ke `<script>` (misalnya ke variabel `$derived`), sehingga markup tetap fokus pada "apa yang tampil", bukan "bagaimana menghitungnya".
+
+Catatan penting: ekspresi di dalam `{#if expr}` adalah **JavaScript biasa**. Apa pun yang bernilai *truthy* memenuhi syarat, jadi aturan `0`, `''`, `null`, `undefined`, `NaN` sebagai *falsy* tetap berlaku sama persis seperti di JS. Karena Svelte 5 reaktif lewat runes, blok akan otomatis dievaluasi ulang setiap kali nilai `$state`/`$derived` yang dipakai di dalam kondisi berubah.
+
+## 2. Contoh kode
+
+```svelte
+<script>
+	let count = $state(3);
+	let user = $state({ loggedIn: false });
+</script>
+
+<!--
+	Bentuk lengkap: {#if} -> {:else if} -> {:else}
+	Dievaluasi berurutan dari atas; cabang PERTAMA yang benar yang dipakai,
+	sisanya dilewati — persis seperti if/else if/else di JavaScript.
+-->
+{#if count > 5}
+	<p>Banyak ({count})</p>
+{:else if count > 0}
+	<p>Sedikit ({count})</p>
+{:else}
+	<p>Kosong</p>
+{/if}
+
+<!--
+	{#if} tanpa else juga sah — ini padanan `kondisi && <markup>` di JSX.
+	Saat user.loggedIn false, tidak ada apa pun yang dirender (bukan string kosong).
+-->
+{#if user.loggedIn}
+	<button>Logout</button>
+{/if}
+```
+
+Ekspresi kondisi boleh apa saja yang menghasilkan nilai — perbandingan, pemanggilan fungsi, properti objek, hasil `$derived`:
+
+```svelte
+<script>
+	let items = $state([]);
+
+	// Lebih bersih: hitung kondisi sekali di script, pakai di markup.
+	let isEmpty = $derived(items.length === 0);
+</script>
+
+<!-- Kondisi berupa variabel $derived — markup tetap rapi & dangkal -->
+{#if isEmpty}
+	<p>Belum ada data.</p>
+{:else}
+	<p>Ada {items.length} item.</p>
+{/if}
+```
+
+`{#if}` bisa **dibersarangkan** (nested) sebebas yang kamu mau, dan boleh membungkus elemen maupun sekadar potongan teks di dalam sebuah elemen:
+
+```svelte
+<script>
+	let role = $state('admin');
+	let online = $state(true);
+</script>
+
+<p>
+	Status:
+	<!-- {#if} membungkus teks inline, bukan harus elemen utuh -->
+	{#if online}aktif{:else}offline{/if}
+</p>
+
+<!-- Nesting: if di dalam if -->
+{#if role === 'admin'}
+	<section>
+		<h2>Panel Admin</h2>
+		{#if online}
+			<button>Kelola pengguna</button>
+		{:else}
+			<p>Sambungkan dulu untuk mengelola.</p>
+		{/if}
+	</section>
+{/if}
+```
+
+## 3. Coba sendiri
+
+Mainkan blok `{#if}/{:else if}/{:else}` di bawah. Tambah/kurangi `suhu` dan amati cabang mana yang aktif. Toggle `login` untuk melihat `{#if}` tanpa `else` (markup muncul/hilang total). Perhatikan: kamu tidak menulis logika apa pun untuk "menghapus" elemen — Svelte yang melakukannya saat kondisi berubah.
+
+<Playground code={`<script>
+	let suhu = $state(36);
+	let login = $state(false);
+</script>
+
+<h3>Cek suhu air</h3>
+<p>Suhu sekarang: {suhu} derajat</p>
+
+{#if suhu > 100}
+	<p>Mendidih, terlalu panas!</p>
+{:else if suhu >= 40}
+	<p>Hangat, pas untuk diseduh.</p>
+{:else if suhu > 0}
+	<p>Masih dingin.</p>
+{:else}
+	<p>Membeku.</p>
+{/if}
+
+<button onclick={() => suhu += 20}>Panaskan +20</button>
+<button onclick={() => suhu -= 20}>Dinginkan -20</button>
+
+<hr />
+
+{#if login}
+	<button onclick={() => login = false}>Logout</button>
+{:else}
+	<button onclick={() => login = true}>Login</button>
+{/if}`} />
+
+<Callout type="tip">
+Coba ubah salah satu cabang <code>&#123;:else if&#125;</code> jadi kondisi yang juga benar untuk nilai yang sama. Kamu akan lihat hanya cabang <strong>pertama</strong> yang benar yang muncul — urutan penulisan menentukan prioritas, sama seperti <code>if/else if</code> di JavaScript.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Rendering kondisional"
+	svelte={`<script>
+  let status = $state('loading');
+</script>
+
+{#if status === 'loading'}
+  <p>Memuat...</p>
+{:else if status === 'error'}
+  <p>Gagal memuat.</p>
+{:else}
+  <p>Selesai!</p>
+{/if}`}
+	react={`function View() {
+  const [status] = useState('loading');
+
+  // Tidak ada "fitur if" — pakai ternary bersarang
+  // atau kondisi && di tengah JSX.
+  return (
+    <>
+      {status === 'loading' ? (
+        <p>Memuat...</p>
+      ) : status === 'error' ? (
+        <p>Gagal memuat.</p>
+      ) : (
+        <p>Selesai!</p>
+      )}
+    </>
+  );
+}`}
+	vue={`<script setup>
+import { ref } from 'vue';
+const status = ref('loading');
+</script>
+
+<template>
+  <p v-if="status === 'loading'">Memuat...</p>
+  <p v-else-if="status === 'error'">Gagal memuat.</p>
+  <p v-else>Selesai!</p>
+</template>`}
+	diff={{ react: [6, 7, 8, 9, 10, 11, 12], vue: [8, 9, 10] }}
+	note="React tidak punya konstruksi if khusus di markup: kamu meminjam `&&` atau ternary `? :` dari JavaScript, yang jadi sulit dibaca saat cabang lebih dari dua. Vue memakai direktif atribut `v-if`/`v-else-if`/`v-else` yang menempel pada elemen — ringkas, tapi tiap cabang harus elemen. Svelte memakai blok `&#123;#if&#125;`/`&#123;:else if&#125;`/`&#123;:else&#125;` dengan batas pembuka-penutup yang jelas dan bisa membungkus teks maupun banyak elemen sekaligus. Ketiganya sama benar; bedanya: ekspresi JS (React) vs direktif (Vue) vs blok template (Svelte)."
+/>
+
+<Callout type="tip">
+Perbedaan praktis yang paling terasa: di React, rantai kondisi tiga cabang atau lebih sering jadi ternary bersarang yang berat dibaca (lihat baris yang ditandai). Svelte dan Vue sama-sama menyediakan <code>&#123;:else if&#125;</code> / <code>v-else-if</code> yang membuat rantai banyak cabang tetap rata dan mudah dipindai. Tidak ada yang "lebih benar" — ini soal seberapa eksplisit kamu ingin batas kondisi terlihat di markup.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Badge status pesanan">
+Buat komponen dengan satu variabel `status` (bertipe string) yang bisa bernilai `'pending'`, `'dikirim'`, `'selesai'`, atau `'batal'`. Render sebuah `<span>` badge yang teksnya berubah sesuai status memakai rantai `&#123;#if&#125;` / `&#123;:else if&#125;` / `&#123;:else&#125;`:
+
+- `pending` &rarr; "Menunggu pembayaran"
+- `dikirim` &rarr; "Dalam perjalanan"
+- `selesai` &rarr; "Pesanan selesai"
+- selainnya &rarr; "Dibatalkan"
+
+Lalu, di bawahnya, tampilkan tombol "Lacak" **hanya** ketika status bernilai `'dikirim'` (pakai `&#123;#if&#125;` tanpa `&#123;:else&#125;`). Tambahkan beberapa tombol untuk mengganti `status` agar bisa kamu uji.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let status = $state('pending');
+</script>
+
+<!-- Rantai if/else if/else: hanya cabang pertama yang benar yang dirender -->
+<span>
+	{#if status === 'pending'}
+		Menunggu pembayaran
+	{:else if status === 'dikirim'}
+		Dalam perjalanan
+	{:else if status === 'selesai'}
+		Pesanan selesai
+	{:else}
+		Dibatalkan
+	{/if}
+</span>
+
+<!-- {#if} tanpa else: tombol hanya muncul saat status 'dikirim' -->
+{#if status === 'dikirim'}
+	<button>Lacak</button>
+{/if}
+
+<div>
+	<button onclick={() => status = 'pending'}>pending</button>
+	<button onclick={() => status = 'dikirim'}>dikirim</button>
+	<button onclick={() => status = 'selesai'}>selesai</button>
+	<button onclick={() => status = 'batal'}>batal</button>
+</div>
+```
+
+Catatan: tombol "Lacak" memakai `{#if}` terpisah, bukan cabang dari rantai badge. Ini sengaja — kondisi "tampilkan badge apa" dan "tampilkan tombol lacak atau tidak" adalah dua keputusan berbeda, jadi lebih jelas ditulis sebagai dua blok `{#if}` mandiri daripada dipaksakan jadi satu.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Hati-hati dengan nilai <em>falsy</em> non-boolean.</strong> Kondisi <code>&#123;#if items.length&#125;</code> aman karena <code>0</code> bersifat falsy. Tapi <code>&#123;#if user.name&#125;</code> akan menyembunyikan blok saat <code>name</code> berisi string kosong <code>''</code> — kadang itu yang kamu mau, kadang bukan. Kalau ragu, tulis kondisi yang eksplisit seperti <code>&#123;#if user.name != null&#125;</code> atau <code>&#123;#if items.length > 0&#125;</code> agar maksudmu jelas.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Jangan jejalkan logika berat ke dalam ekspresi <code>&#123;#if&#125;</code>.</strong> Secara teknis <code>&#123;#if a &amp;&amp; b || c.filter(...).length&#125;</code> sah, tapi markup jadi sulit dibaca dan tujuannya kabur. Pindahkan ke <code>let bisaTampil = $derived(...)</code> di <code>&lt;script&gt;</code>, lalu tulis <code>&#123;#if bisaTampil&#125;</code>. Template Svelte paling enak dibaca saat dangkal.
+</Callout>
+
+<Callout type="warning">
+<strong>Setiap blok wajib ditutup.</strong> Lupa menulis <code>&#123;/if&#125;</code>, atau salah urutan saat nesting (menutup blok dalam sebelum blok luar), akan langsung memunculkan error compiler. Anggap saja seperti tag HTML: tiap <code>&#123;#if&#125;</code> butuh pasangan <code>&#123;/if&#125;</code>-nya. Auto-format/editor Svelte sangat membantu menjaga pasangan ini tetap rapi.
+</Callout>
+
+<Callout type="tip">
+<strong>Butuh "tampilkan A kalau benar, B kalau salah"?</strong> Pakai <code>&#123;#if&#125;</code> + <code>&#123;:else&#125;</code>, bukan dua blok <code>&#123;#if&#125;</code> dengan kondisi berlawanan (<code>&#123;#if x&#125;</code> lalu <code>&#123;#if !x&#125;</code>). Versi <code>&#123;:else&#125;</code> lebih ringkas, lebih sulit jadi tidak sinkron, dan menyatakan niatmu ("ini dua sisi dari satu keputusan") dengan jelas.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/if" label="&#123;#if ...&#125; — dokumentasi resmi Svelte" />

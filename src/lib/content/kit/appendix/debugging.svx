@@ -1,0 +1,268 @@
+---
+title: Breakpoint Debugging
+product: kit
+section: appendix
+sectionTitle: Appendix
+sectionOrder: 6
+order: 3
+status: stable
+description: Menghentikan kode SvelteKit di tengah jalan dengan breakpoint — setup VS Code (launch.json), flag --inspect, beda debug server vs klien, dan peran source maps.
+docs: https://svelte.dev/docs/kit/debugging
+keywords: [debugging, breakpoint, launch.json, inspect, source maps, vscode]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Cara debugging paling populer di dunia adalah `console.log`. Murah, cepat, tahan banting — dan diam-diam paling lambat. Tiap kali kamu menebak "mungkin variabel ini salah", kamu menyisipkan satu `console.log`, simpan, reload, lihat terminal/console, lalu hapus lagi. Kalau tebakanmu meleset, ulang dari awal. Untuk bug yang dalam, kamu bisa menghabiskan 20 menit cuma menanam dan mencabut `console.log`.
+
+**Breakpoint** membalik permainan ini. Alih-alih bertanya "tolong cetakkan variabel X buat saya", kamu bilang ke runtime: **"berhenti tepat di baris ini, dan biarkan saya melihat-lihat sendiri."** Saat eksekusi mencapai breakpoint, seluruh program **membeku**. Pada momen beku itu kamu bisa: melihat *semua* variabel lokal sekaligus (bukan cuma yang kebetulan kamu `console.log`), menengok *call stack* (siapa yang memanggil fungsi ini, dari mana), mengevaluasi ekspresi apa pun di "watch", lalu **melangkah maju satu baris demi satu baris** (step over / step into / step out) untuk melihat alur sebenarnya.
+
+### Analogi: tombol jeda di film, bukan catatan tempel
+
+Bayangkan kamu menyelidiki sebuah adegan film yang janggal. `console.log` itu seperti menempel sticky note di beberapa frame: "di sini gelasnya penuh", "di sini gelasnya kosong". Kamu cuma tahu hal-hal yang sempat kamu tandai, dan kalau ternyata yang penting adalah frame di antaranya, kamu harus menempel ulang dan memutar filmnya lagi.
+
+**Breakpoint adalah tombol jeda.** Film berhenti di satu frame, dan sekarang kamu boleh memeriksa **apa pun** dalam frame itu — ekspresi tokoh, posisi tangan, jam di dinding — tanpa harus memutuskan lebih dulu apa yang mau kamu lihat. Lalu kamu bisa maju **satu frame** dan melihat persis apa yang berubah. Itu bedanya antara menebak dan mengamati.
+
+Buat yang datang dari React/Vue: konsep ini identik. Debugger Chrome, `debugger` statement, dan `.vscode/launch.json` di Next.js bekerja dengan prinsip yang sama. Yang khas di SvelteKit (dan framework full-stack mana pun) adalah pertanyaan berikutnya: **breakpoint ini jeda-nya di mana?**
+
+### Dua runtime: kode yang sama, dua "mesin" berbeda
+
+Inilah inti yang harus kamu pahami sebelum debugging SvelteKit. Aplikasimu **tidak** berjalan di satu tempat. Ia hidup di **dua runtime**:
+
+- **Proses Node (server)** — di sinilah `+page.server.js`, `+server.js`, `hooks.server.js`, dan `load` server berjalan. Mesinnya adalah Node.js yang `npm run dev` jalankan di terminal.
+- **Browser (klien)** — di sinilah komponen `.svelte` yang sudah ter-hydrate, event handler (`onclick`), efek (`$effect`), dan universal `load` saat navigasi klien berjalan. Mesinnya adalah engine JavaScript di Chrome/Firefox/Safari.
+
+Dan sebagian kode menjalani **kedua dunia**: komponen `.svelte` dirender sekali di server (SSR, menghasilkan HTML) lalu "hidup lagi" di browser (hydration). Universal `load` (`+page.js`) juga begitu — jalan di server pada request pertama, lalu di browser pada navigasi berikutnya.
+
+#### Analogi: dapur dan ruang makan
+
+Anggap resep masakanmu adalah kode. Resep itu dimasak di **dua tempat**: di **dapur** (server/Node) untuk pesanan pertama, lalu di **meja saji** (browser) saat pelanggan mengaduk-aduknya sendiri. Resepnya sama, tapi dapurnya beda.
+
+Konsekuensinya tegas: **satu debugger hanya bisa mengawasi satu dapur.** Kalau bug-nya terjadi saat memasak di dapur (mis. query database di `+page.server.js`), memasang breakpoint di DevTools browser tidak akan pernah kena — browser tidak pernah melihat kode itu. Sebaliknya, bug di event handler tombol tidak akan kena kalau kamu cuma mengawasi proses Node. **Pasang debugger di runtime yang benar.** Kabar baiknya: VS Code "JavaScript Debug Terminal" bisa mengawasi **keduanya** sekaligus, dan itulah kenapa ia jadi cara yang direkomendasikan.
+
+Buat yang dari Next.js: ini persis dilema "Server Component / `getServerSideProps` jalan di Node, Client Component jalan di browser". Mental model-nya sama persis.
+
+### Source maps: kenapa breakpoint bisa "mendarat" di kodemu
+
+Kode yang kamu tulis bukan kode yang dijalankan. Vite (lewat Svelte compiler + esbuild) mengubah `.svelte` dan TypeScript-mu jadi JavaScript biasa, sering di-bundle dan ditransformasi. Kalau debugger cuma melihat hasil akhir itu, breakpoint-mu akan mendarat di baris JavaScript asing yang tak kamu kenali.
+
+**Source map** adalah jembatannya: sebuah "kamus" yang memetakan baris di kode hasil-transformasi kembali ke baris di file aslimu (`.svelte`, `.ts`). Berkat source map, kamu klik breakpoint di `+page.svelte` baris 12, dan debugger tahu baris itu sebenarnya baris berapa di bundle yang sedang berjalan — lalu menghentikannya di sana, tapi **menampilkannya** kembali sebagai baris 12 `.svelte`-mu.
+
+#### Analogi: kamus penerjemah
+
+Kode yang dieksekusi itu seperti terjemahan dokumenmu ke bahasa lain (di-bundle, kadang di-minify). Source map adalah **kamus dwibahasa**-nya. Tanpa kamus, debugger menunjukkan kalimat asing; dengan kamus, ia bisa bilang "kalimat asing ini = paragraf 3 di naskah aslimu" dan membawamu langsung ke sana. Saat development, Vite menyajikan source map secara otomatis, jadi biasanya kamu tidak perlu mengatur apa pun — tapi kalau breakpoint mendarat di kode aneh, source map-lah tersangka pertama.
+
+## 2. Contoh kode
+
+Cara termudah dan paling lengkap: jalankan dev server lewat **JavaScript Debug Terminal** VS Code. Tidak butuh file konfigurasi sama sekali — buka command palette (`CMD/Ctrl + Shift + P`), cari **"Debug: JavaScript Debug Terminal"**, lalu jalankan dev server di terminal itu:
+
+```bash
+# Jalankan PERINTAH INI di dalam "JavaScript Debug Terminal" VS Code,
+# bukan di terminal biasa. VS Code otomatis meng-attach debugger-nya
+# ke proses Node yang dijalankan dari terminal ini — dan juga ke
+# browser yang dibuka darinya. Breakpoint di kode server MAUPUN klien
+# akan kena.
+npm run dev
+```
+
+Kalau kamu lebih suka tombol `F5` ketimbang mengetik di terminal khusus, simpan konfigurasi ini. SvelteKit punya basis Vite + Node, jadi tipe `node-terminal` adalah yang pas:
+
+```json
+// .vscode/launch.json
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			// "node-terminal" = jalankan perintah di terminal terintegrasi
+			// sambil meng-attach debugger. Cocok untuk Vite dev server.
+			"type": "node-terminal",
+			"request": "launch",
+			"name": "Run development server",
+			// Perintah yang dijalankan saat kamu tekan F5.
+			"command": "npm run dev"
+		}
+	]
+}
+```
+
+Setelah file ini ada: buka panel **"Run and Debug"**, di menu "Run" pilih konfigurasi **"Run development server"** (atau pilih "Node.js..." lalu "Run script: dev"), tekan `F5`. Sekarang pasang breakpoint dengan mengklik selokan di kiri nomor baris — di file server **atau** klien.
+
+Berikut contoh konkret di mana breakpoint mendarat, supaya "dua runtime" itu nyata. Perhatikan komentar `// [SERVER]` vs `// [KLIEN]`:
+
+```js
+// src/routes/produk/+page.server.js
+// File *.server.js HANYA jalan di proses Node. Breakpoint di sini
+// HANYA kena lewat debugger yang mengawasi Node (Debug Terminal /
+// F5 dari launch.json) — TIDAK pernah dari DevTools browser.
+export async function load({ fetch, params }) {
+	const res = await fetch('/api/produk'); // [SERVER] breakpoint di sini -> kena di Node
+	const data = await res.json();
+
+	// `debugger` statement: breakpoint "dalam kode", tak perlu klik di editor.
+	// Berhenti di runtime mana pun yang punya debugger ter-attach saat baris ini jalan.
+	debugger; // [SERVER]
+
+	return { data };
+}
+```
+
+```svelte
+<!-- src/routes/produk/+page.svelte -->
+<script>
+	let { data } = $props();
+	let dipilih = $state(null);
+
+	function pilih(item) {
+		// [KLIEN] Handler ini jalan saat user mengklik di BROWSER.
+		// Breakpoint di sini HANYA kena dari debugger yang mengawasi browser
+		// (DevTools, atau Debug Terminal yang membuka tab tsb).
+		dipilih = item;
+	}
+</script>
+
+<!-- Markup komponen dirender DI SERVER (SSR) lalu hidup lagi DI KLIEN.
+     Breakpoint di dalam <script> bisa kena di salah satu / keduanya. -->
+<ul>
+	{#each data.data as item}
+		<li><button onclick={() => pilih(item)}>{item.nama}</button></li>
+	{/each}
+</ul>
+```
+
+Untuk debugging **khusus sisi klien lewat DevTools browser** (tanpa VS Code), jalankan Vite dengan flag `--inspect` lewat `NODE_OPTIONS`:
+
+```bash
+# Memulai dev server dengan inspector Node aktif.
+# Catatan penting (dari docs): jalur DevTools-browser ini hanya bekerja
+# untuk men-debug source map sisi-KLIEN SvelteKit.
+NODE_OPTIONS="--inspect" npm run dev
+```
+
+Lalu buka situsmu (biasanya `localhost:5173`), buka DevTools, klik ikon **"Open dedicated DevTools for Node.js"** (logo Node hijau di pojok kiri-atas DevTools). Alternatifnya, buka langsung `chrome://inspect` di Chrome atau `edge://inspect` di Edge.
+
+## 3. Coba sendiri
+
+Modul ini butuh proyek SvelteKit sungguhan (dev server, proses Node, browser) sehingga tidak ada live playground. Sebagai gantinya, ikuti **resep langkah demi langkah** ini di proyek lokalmu, lalu pakai tabel keputusan di bawah untuk memilih jalur debug yang benar.
+
+```text
+RESEP A — Debug server + klien sekaligus (paling direkomendasikan)
+──────────────────────────────────────────────────────────────────
+1. CMD/Ctrl + Shift + P  ->  "Debug: JavaScript Debug Terminal"
+2. Di terminal khusus itu, ketik:  npm run dev
+3. Klik selokan kiri nomor baris di +page.server.js  (breakpoint server)
+   dan di +page.svelte handler                       (breakpoint klien)
+4. Buka http://localhost:5173 dari browser
+5. Picu aksinya (muat halaman / klik tombol) -> eksekusi MEMBEKU di breakpoint
+6. Periksa: panel Variables, Watch, Call Stack. Lalu Step Over (F10) /
+   Step Into (F11) untuk maju baris demi baris.
+
+RESEP B — Tanpa ketik, pakai tombol F5
+──────────────────────────────────────────────────────────────────
+1. Buat .vscode/launch.json (lihat Bagian 2)
+2. Run and Debug pane -> pilih "Run development server" -> F5
+3. Sama seperti langkah 3-6 di atas.
+
+RESEP C — Khusus klien, lewat DevTools browser
+──────────────────────────────────────────────────────────────────
+1. NODE_OPTIONS="--inspect" npm run dev
+2. Buka localhost:5173, buka DevTools, klik ikon "dedicated DevTools
+   for Node.js"  (atau chrome://inspect / edge://inspect)
+3. Tab Sources -> buka file .svelte ASLIMU (berkat source map) -> klik baris.
+```
+
+Tabel keputusan — "bug-nya di mana, pakai jalur mana":
+
+```text
+Kode yang dicurigai                         Runtime     Jalur yang kena
+──────────────────────────────────────────  ──────────  ─────────────────
++page.server.js / +server.js / load server  Node        Resep A atau B
+hooks.server.js (handle, handleError)        Node        Resep A atau B
+onclick / $effect / $derived setelah load    Browser     Resep A atau C
++page.js universal load (request pertama)    Node        Resep A atau B
++page.js universal load (navigasi klien)     Browser     Resep A atau C
+Komponen .svelte saat SSR (render awal)      Node        Resep A atau B
+Komponen .svelte setelah hydration           Browser     Resep A atau C
+```
+
+Trik praktis: kalau ragu runtime-nya, tanam `debugger;` di baris yang dicurigai lalu pakai **Resep A**. Karena Debug Terminal mengawasi Node dan tab browser yang dibukanya, statement itu akan berhenti di mana pun ia benar-benar dieksekusi — dan panel Call Stack langsung memberitahumu kamu sedang di dapur (Node) atau di meja saji (browser).
+
+## 4. Latihan
+
+<Exercise title="Siapkan debugging + tangkap bug di runtime yang tepat">
+Kamu punya halaman yang menampilkan profil user. `load` server kadang mengembalikan `user` bernilai `null` padahal seharusnya ada, dan tombol "Refresh" di klien kadang tidak meng-update tampilan. Kerjakan tiga hal:
+
+1. Buat `.vscode/launch.json` dengan satu konfigurasi `node-terminal` bernama "Run development server" yang menjalankan `npm run dev`.
+2. Untuk bug `user === null`, sebutkan: ini runtime apa, dan di file mana kamu pasang breakpoint? Tambahkan satu `debugger;` di tempat yang tepat untuk memeriksa nilai sebelum di-`return`.
+3. Untuk bug tombol "Refresh" yang tidak meng-update UI, sebutkan: runtime apa, dan jalur debug (Resep A/B/C) mana yang **pasti** bisa menangkapnya.
+
+{#snippet solution()}
+
+  ```json
+  // (1) .vscode/launch.json
+  {
+  	"version": "0.2.0",
+  	"configurations": [
+  		{
+  			"type": "node-terminal",
+  			"request": "launch",
+  			"name": "Run development server",
+  			"command": "npm run dev"
+  		}
+  	]
+  }
+  ```
+
+  ```js
+  // (2) Bug user === null -> RUNTIME: Node (server).
+  // load server jalan di proses Node, jadi pasang breakpoint di file ini.
+  // src/routes/profil/+page.server.js
+  export async function load({ locals }) {
+  	const user = await getUser(locals.session); // <- klik selokan: breakpoint server
+  	debugger; // periksa `user` di sini SEBELUM di-return; lihat panel Variables.
+  	return { user };
+  }
+  ```
+
+  ```text
+  (3) Bug tombol "Refresh" -> RUNTIME: Browser (klien).
+  Handler tombol baru jalan setelah hydration, di browser.
+  Jalur yang PASTI menangkap: Resep A (JavaScript Debug Terminal,
+  mengawasi server + klien) ATAU Resep C (DevTools browser, --inspect).
+  Resep B saja (F5 / launch.json node-terminal) berfokus ke proses Node,
+  jadi untuk handler murni-klien andalkan A atau C.
+  ```
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Breakpoint <strong>tidak kena</strong> = sering kali kamu mengawasi <strong>runtime yang salah</strong>. Memasang breakpoint di <code>+page.server.js</code> lalu mencarinya di DevTools browser tidak akan pernah berhasil — kode <code>*.server.js</code> tidak pernah dikirim ke browser. Aturannya: kode server (<code>+page.server.js</code>, <code>+server.js</code>, <code>hooks.server.js</code>, <code>load</code> server) di-debug dari proses <strong>Node</strong> (Debug Terminal / F5); event handler &amp; efek di-debug dari <strong>browser</strong>. Saat ragu, pakai "JavaScript Debug Terminal" yang mengawasi keduanya.
+</Callout>
+
+<Callout type="pitfall">
+Breakpoint mendarat di kode JavaScript <strong>asing</strong> (ter-minify / tak kamu kenali) artinya <strong>source map</strong> bermasalah. Penyebab tersering: kamu men-debug hasil <code>vite build</code> / produksi, yang sengaja di-minify. Debug-lah di mode <strong>dev</strong> (<code>npm run dev</code>), tempat Vite menyajikan source map ke file <code>.svelte</code>/<code>.ts</code> aslimu secara otomatis. Kalau memang harus menelusuri build, pastikan source map produksi dihasilkan dan ter-load.
+</Callout>
+
+<Callout type="warning">
+Jalur DevTools-browser lewat <code>NODE_OPTIONS="--inspect"</code> (ikon "dedicated DevTools for Node.js" / <code>chrome://inspect</code>) menurut docs <strong>hanya bekerja untuk men-debug source map sisi-klien</strong> SvelteKit. Untuk pengalaman penuh server + klien dalam satu tempat, "JavaScript Debug Terminal" VS Code lebih andal. Jangan habiskan waktu memaksa satu jalur menangani runtime yang bukan bagiannya.
+</Callout>
+
+<Callout type="tip">
+Daripada menanam-mencabut <code>console.log</code>, kenali dua fitur breakpoint yang menghemat banyak waktu: <strong>conditional breakpoint</strong> (klik kanan selokan baris -&gt; "Add Conditional Breakpoint", mis. berhenti hanya saat <code>item.id === 42</code>) dan <strong>logpoint</strong> (mencetak ekspresi ke Debug Console <strong>tanpa</strong> mengubah kode sumber, jadi tak ada yang perlu dihapus lagi). Keduanya ada di VS Code maupun DevTools Chrome.
+</Callout>
+
+<Callout type="tip">
+Statement <code>debugger;</code> adalah "breakpoint portabel": ia berhenti di runtime mana pun yang punya debugger ter-attach saat baris itu dieksekusi, tanpa perlu mengklik di editor. Sangat berguna untuk kode yang sulit dijangkau (mis. di dalam callback atau loop). Cuma ingat untuk <strong>menghapusnya</strong> sebelum commit — kalau lolos ke produksi tanpa devtools terbuka ia memang diabaikan, tapi tetap bukan kebiasaan baik.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/debugging" label="SvelteKit — Debugging (Debug Terminal, launch.json, --inspect)" />
+<DocsLink href="https://code.visualstudio.com/docs/nodejs/nodejs-debugging" label="VS Code — Node.js Debugging (JavaScript Debug Terminal & launch.json)" />

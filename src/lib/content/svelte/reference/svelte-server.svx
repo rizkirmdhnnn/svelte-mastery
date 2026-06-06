@@ -1,0 +1,257 @@
+---
+title: svelte/server
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 12
+status: reference
+description: Modul svelte/server berisi fungsi render() untuk mengubah komponen Svelte menjadi string HTML (head + body) di sisi server untuk SSR.
+docs: https://svelte.dev/docs/svelte/svelte-server
+keywords: [svelte/server, render, SSR, head, body, hydrate]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Selama ini komponen Svelte yang kamu tulis berjalan di **browser**: ia membuat node DOM, memasang event listener, dan bereaksi terhadap perubahan `$state`. Tapi ada satu situasi di mana belum ada browser sama sekali: di **server**, saat kamu ingin mengirim HTML yang sudah jadi ke klien sebelum JavaScript apa pun dimuat. Untuk itulah `svelte/server` ada. Modulnya kecil — isinya praktis cuma satu fungsi: `render`.
+
+`render(Component, { props })` mengambil sebuah komponen, "menjalankannya" satu kali di memori server, lalu mengembalikan **string HTML**, bukan DOM. Tidak ada elemen hidup, tidak ada interaktivitas, tidak ada `onclick` yang benar-benar bisa diklik — hanya teks HTML yang siap kamu sisipkan ke dalam respons HTTP.
+
+**Analogi:** anggap komponen Svelte normal itu seperti aktor di panggung — bergerak, merespons penonton. `render` itu seperti **memotret** panggung pada detik pertama pertunjukan: kamu dapat satu foto diam (HTML) dari keadaan awal. Foto itu enak dikirim lewat pos (jaringan) dan langsung kelihatan saat dibuka, tapi aktornya tidak bergerak sampai versi "hidup" komponen mengambil alih di browser (proses **hydration**). Atau, kalau kamu suka analogi lain: `render` adalah tombol "Print to PDF" untuk komponen — tampilannya beku, tombolnya tidak menekan apa-apa.
+
+### Buat pengguna React / Vue
+
+Konsepnya kamu sudah kenal, hanya nama paketnya beda:
+
+- **React:** `renderToString` / `renderToStaticMarkup` dari `react-dom/server` (atau `renderToPipeableStream` untuk streaming).
+- **Vue:** `renderToString` dari `@vue/server-renderer`.
+- **Svelte:** `render` dari `svelte/server`.
+
+Bedanya yang paling kentara: React/Vue mengembalikan **satu** string markup. Svelte mengembalikan **objek** `{ head, body }` (plus `html` yang sudah deprecated). Kenapa dipisah? Karena komponen Svelte bisa menyumbang isi ke `<head>` dokumen lewat `<svelte:head>` (judul halaman, meta tag, dll.). `render` memisahkan kontribusi `<head>` itu dari markup utama supaya kamu bisa menaruh masing-masing di tempat yang benar saat merakit dokumen HTML.
+
+### Kapan kamu benar-benar memanggil `render` sendiri?
+
+Jujur: **kalau kamu pakai SvelteKit, hampir tidak pernah.** SvelteKit sudah memanggil `render` untuk-mu di balik layar setiap kali sebuah halaman di-SSR. Kamu cukup menulis `+page.svelte` dan SvelteKit yang merakit dokumen, menyisipkan `head`/`body`, lalu menyiapkan hydration.
+
+`render` langsung berguna ketika kamu berada **di luar** alur SvelteKit, misalnya:
+
+- **Server custom** — kamu membangun framework SSR sendiri (di atas Hono/Express/Node) dan ingin merender komponen Svelte sebagai view engine.
+- **Render email** — komponen `.svelte` adalah cara yang nyaman menulis template email; `render` mengubahnya jadi string HTML untuk dikirim lewat penyedia email.
+- **Generate HTML statis / snapshot** — menghasilkan potongan HTML untuk testing, dokumentasi, atau halaman statis tanpa klien.
+
+### Hal penting yang sering bikin bingung
+
+1. **`render` hanya bisa dipanggil dari komponen yang dikompilasi mode server.** Compiler Svelte punya dua mode output: `client` (membuat DOM) dan `server` (membuat string). `render` butuh versi server. Di SvelteKit / Vite SSR ini diurus otomatis; di skrip Node polos tanpa build step yang tepat, impor `.svelte` tidak akan langsung jalan.
+2. **Hanya keadaan AWAL yang dirender.** `$effect`, `onMount`, dan interaksi tidak berjalan di server. Jadi semua data harus sudah siap **sebelum** kamu memanggil `render` dan dioper lewat `props`. Tidak ada "tunggu data lalu re-render" di sisi server `render`.
+3. **`render` itu sinkron** — ia mengembalikan `RenderOutput` langsung, bukan `Promise`. (Streaming/async adalah urusan lapisan di atasnya seperti SvelteKit, bukan fungsi `render` ini.)
+4. **`render` (server) berpasangan dengan `hydrate` (klien).** `render` menghasilkan HTML; di browser, `hydrate` dari paket `svelte` "menghidupkan" HTML yang sama itu — memasang event listener tanpa membuang dan membangun ulang DOM-nya. Keduanya harus memakai `props` awal yang sama agar markup-nya cocok.
+
+## 2. Contoh kode
+
+```js
+// render-dasar.js — pemakaian paling sederhana di lingkungan server
+import { render } from 'svelte/server';
+import App from './App.svelte'; // dikompilasi mode server oleh Vite/SvelteKit
+
+// render() menjalankan komponen sekali, lalu mengembalikan STRING, bukan DOM.
+const result = render(App, {
+	props: { name: 'Dunia' } // wajib diisi kalau komponen punya prop wajib
+});
+
+// result berbentuk { head, body, html(deprecated) }
+console.log(result.head); // isi <svelte:head>: <title>, <meta>, dll.
+console.log(result.body); // markup komponen, untuk ditaruh di dalam <body>
+```
+
+```js
+// rakit-dokumen.js — merakit HTML lengkap dari hasil render
+import { render } from 'svelte/server';
+import App from './App.svelte';
+
+export function htmlUntuk(url) {
+	const { head, body } = render(App, { props: { url } });
+
+	// Sisipkan `head` ke dalam <head> dan `body` ke dalam <body>.
+	// Lupa menaruh `head` = isi <svelte:head> (judul/meta) HILANG diam-diam.
+	return `<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    ${head}
+  </head>
+  <body>
+    <div id="app">${body}</div>
+  </body>
+</html>`;
+}
+```
+
+```js
+// opsi-lengkap.js — context & idPrefix
+import { render } from 'svelte/server';
+import Halaman from './Halaman.svelte';
+
+// context: Map yang menyemai nilai getContext() dari LUAR komponen.
+const ctx = new Map();
+ctx.set('tema', 'gelap');
+
+const { head, body } = render(Halaman, {
+	props: { user: { nama: 'Rizki' } },
+	context: ctx,
+	// idPrefix: awalan untuk id yang dibuat $props.id(), supaya UNIK
+	// kalau kamu merender beberapa komponen ke dalam satu halaman.
+	idPrefix: 'halaman-1'
+});
+```
+
+```js
+// email.js — render komponen .svelte menjadi string HTML email
+import { render } from 'svelte/server';
+import WelcomeEmail from './WelcomeEmail.svelte';
+
+export function renderWelcomeEmail(nama) {
+	// Untuk email biasanya kita hanya butuh `body` (markup),
+	// karena email tidak punya <head> dokumen seperti halaman web.
+	const { body } = render(WelcomeEmail, { props: { nama } });
+	return body;
+}
+```
+
+## 3. Coba sendiri
+
+Modul ini berjalan di **server** (butuh build SSR + respons HTTP), jadi tidak bisa dicoba di live playground browser. Sebagai gantinya, berikut contoh lengkap beranotasi: sebuah handler SSR minimal beserta pasangannya di klien (`hydrate`). Perhatikan bagaimana `render` (server) dan `hydrate` (klien) memakai **komponen dan props awal yang sama** — inilah inti SSR + hydration.
+
+```js
+// src/server.js — handler SSR minimal (mis. dipasang di Node/Hono/Express)
+import { render } from 'svelte/server';
+import App from './App.svelte'; // Vite mengkompilasi ini ke mode SERVER (string)
+
+export function handler(req, res) {
+	// 1) render: komponen -> string HTML. Tidak ada DOM, tidak ada interaktivitas.
+	//    Semua data harus sudah siap di sini; tidak ada onMount/$effect di server.
+	const { head, body } = render(App, {
+		props: { url: req.url }
+	});
+
+	// 2) rakit dokumen HTML lengkap.
+	//    `head` WAJIB ikut, kalau tidak isi <svelte:head> (judul/meta) hilang.
+	const page = `<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    ${head}
+  </head>
+  <body>
+    <div id="app">${body}</div>
+    <!-- skrip klien yang akan meng-hydrate markup di atas -->
+    <script type="module" src="/src/entry-client.js"></script>
+  </body>
+</html>`;
+
+	res.setHeader('content-type', 'text/html');
+	res.end(page);
+}
+```
+
+```js
+// src/entry-client.js — pasangan di BROWSER
+import { hydrate } from 'svelte'; // dari paket utama, BUKAN svelte/server
+import App from './App.svelte'; // di sini Vite mengkompilasi ke mode CLIENT (DOM)
+
+// hydrate() TIDAK membuang lalu membangun ulang DOM hasil SSR.
+// Ia "menempel" ke markup yang sudah ada dan memasang event listener.
+// props awal harus SAMA dengan yang dipakai render() di server agar cocok.
+hydrate(App, {
+	target: document.getElementById('app'),
+	props: { url: location.pathname }
+});
+```
+
+<Callout type="tip">
+Alur di atas persis seperti yang dikerjakan SvelteKit untuk-mu, hanya saja SvelteKit menambah banyak hal (routing, <code>load</code>, serialisasi data, code-splitting). Kalau tujuanmu membuat aplikasi web SSR utuh, pakai SvelteKit — jangan tulis ulang handler ini sendiri. Pelajari <code>render</code> langsung kalau kamu butuh kasus khusus: render email, view engine custom, atau snapshot HTML.
+</Callout>
+
+## 4. Ringkasan API
+
+Modul `svelte/server` hanya mengekspor satu fungsi, `render`. Berikut detail lengkap tanda tangan, parameter, dan bentuk nilai kembaliannya.
+
+### Tanda tangan `render`
+
+```ts
+import type { Component, ComponentProps, SvelteComponent } from 'svelte';
+
+function render<
+	Comp extends SvelteComponent<any> | Component<any>,
+	Props extends ComponentProps<Comp> = ComponentProps<Comp>
+>(
+	component: Comp,
+	options?: {
+		props?: Omit<Props, '$$slots' | '$$events'>;
+		context?: Map<any, any>;
+		idPrefix?: string;
+	}
+): RenderOutput;
+```
+
+Catatan generik: tipe `Props` diturunkan dari komponen lewat `ComponentProps`. Kalau komponen punya prop **wajib**, TypeScript memaksa `props` ikut diisi (opsi `options` tidak lagi opsional); kalau semua prop opsional, `options` boleh dihilangkan.
+
+### Export modul
+
+| Export | Jenis | Tanda tangan ringkas | Keterangan |
+| --- | --- | --- | --- |
+| `render` | function | `render(component, options?) => RenderOutput` | Merender komponen ke string HTML untuk SSR. Sinkron (bukan `Promise`). |
+
+### Parameter
+
+| Parameter | Tipe | Wajib? | Fungsi |
+| --- | --- | --- | --- |
+| `component` | `SvelteComponent` \| `Component` | ya | Komponen yang dirender (impor default `.svelte`), **bukan** instance — jangan pakai `new`. |
+| `options.props` | objek props (tanpa `$$slots`/`$$events`) | wajib bila komponen punya prop wajib | Nilai prop awal yang dioper ke komponen. |
+| `options.context` | `Map<any, any>` | opsional | Menyemai nilai `getContext()` dari luar komponen (mis. tema, locale, user). |
+| `options.idPrefix` | `string` | opsional | Awalan untuk id yang dihasilkan `$props.id()`, agar unik saat banyak komponen dirender ke satu halaman. |
+
+### Nilai kembalian: `RenderOutput`
+
+| Properti | Tipe | Keterangan |
+| --- | --- | --- |
+| `head` | `string` | HTML untuk disisipkan ke dalam `<head>` dokumen — isi dari `<svelte:head>` (judul, meta) dan style yang relevan. |
+| `body` | `string` | Markup komponen, untuk disisipkan di suatu tempat di dalam `<body>`. |
+| `html` | `string` | **Deprecated** — alias lama untuk `body`. Gunakan `body`. |
+
+<LegacyVsModern rows={[
+	{ legacy: 'const html = render(App).html', modern: 'const { body } = render(App)', note: 'Properti .html sudah deprecated; pakai .body.' },
+	{ legacy: 'svelte/server di Svelte 4 (App.render(props), API berbeda)', modern: "import { render } from 'svelte/server'", note: 'Svelte 5: render() adalah fungsi, mengembalikan { head, body }.' }
+]} />
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Lupa menyisipkan <code>head</code> saat merakit dokumen, lalu bingung kenapa judul halaman / meta tag dari <code>&lt;svelte:head&gt;</code> tidak muncul. <code>render</code> sengaja memisahkan kontribusi <code>&lt;head&gt;</code> ke properti <code>head</code> — kalau kamu cuma memakai <code>body</code>, semua isi <code>&lt;svelte:head&gt;</code> ikut hilang. Untuk dokumen HTML penuh, selalu tempel <code>head</code> ke dalam <code>&lt;head&gt;</code> dan <code>body</code> ke dalam <code>&lt;body&gt;</code>.
+</Callout>
+
+<Callout type="pitfall">
+Mengandalkan <code>onMount</code>, <code>$effect</code>, atau interaksi untuk mengisi data saat <code>render</code> berjalan. Di server, efek dan lifecycle klien <strong>tidak dijalankan</strong> — hanya keadaan awal komponen yang dirender. Semua data (hasil fetch, query DB) harus sudah selesai dan dioper lewat <code>props</code> <em>sebelum</em> memanggil <code>render</code>.
+</Callout>
+
+<Callout type="warning">
+<code>render</code> butuh komponen yang dikompilasi <strong>mode server</strong>. Mengimpor file <code>.svelte</code> di skrip Node polos tanpa build step yang mengaktifkan output server akan gagal atau menghasilkan versi DOM yang salah. Gunakan Vite SSR / SvelteKit (yang mengurus dua mode kompilasi: <code>client</code> dan <code>server</code>) agar <code>render</code> mendapat versi yang benar.
+</Callout>
+
+<Callout type="warning">
+<code>render</code> ada di paket <code>svelte/server</code>, sedangkan <code>hydrate</code> (dan <code>mount</code>) ada di paket utama <code>svelte</code>. Jangan tertukar: server memakai <code>render</code> untuk menghasilkan string, browser memakai <code>hydrate</code> untuk menghidupkan string itu. Keduanya harus memakai komponen dan props awal yang sama supaya markup cocok dan hydration tidak "loncat".
+</Callout>
+
+<Callout type="tip">
+Properti <code>html</code> pada hasil render sudah <strong>deprecated</strong>. Selalu destrukturisasi <code>{`{ head, body }`}</code> dan gunakan <code>body</code>. Ini menghindari peringatan dan menyiapkan kodemu untuk versi Svelte mendatang yang bisa menghapus alias lama itu.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-server" label="svelte/server — fungsi render() untuk SSR" />
+<DocsLink href="https://svelte.dev/docs/svelte/imperative-component-api" label="Imperative component API — mount & hydrate (pasangan klien)" />

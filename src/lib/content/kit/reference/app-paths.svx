@@ -1,0 +1,360 @@
+---
+title: $app/paths
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 9
+status: reference
+description: Modul $app/paths — base, assets, resolve()/resolveRoute, dan asset() untuk membangun URL & path yang tetap benar walau app dipasang di sub-path atau CDN.
+docs: https://svelte.dev/docs/kit/$app-paths
+keywords: [app-paths, base, assets, resolve, resolveRoute, asset]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/paths` adalah modul virtual SvelteKit yang isinya cuma soal **satu hal**: bagaimana menyusun URL & path yang tetap benar, di mana pun app-mu nanti dipasang. Kedengarannya sepele — "ya tinggal tulis `/about` to?" — tapi justru di sinilah salah satu bug deploy paling klasik bersembunyi: app jalan mulus di `localhost` waktu dev, lalu rusak total begitu di-deploy ke `situs.com/dokumentasi/` karena semua link-nya hardcode mulai dari root `/`.
+
+Akar masalahnya: **SvelteKit tidak otomatis menambahkan prefix base ke `href` yang kamu tulis.** Kalau app dipasang di sub-path `/dokumentasi` dan kamu menulis `<a href="/about">`, browser akan pergi ke `situs.com/about` — bukan `situs.com/dokumentasi/about`. Yang pertama tidak ada, jadi 404. `$app/paths` ada untuk memberimu **sumber kebenaran tunggal** tentang prefix itu, supaya kamu tidak pernah menebak.
+
+### Analogi: alamat di dalam komplek perumahan ber-gerbang
+
+Bayangkan rute-rute aplikasimu (`/about`, `/blog/halo`) seperti **nomor rumah**: Blok A No. 3, Blok B No. 7. Nomor rumah ini stabil — tidak berubah.
+
+Yang berubah adalah **di komplek mana** rumah-rumah itu berada.
+
+- Saat dev di `localhost`, app-mu "berdiri sendiri" di tanah lapang — alamat lengkapnya ya cukup nomor rumah: `/about`. Di sini `base` kosong (`''`).
+- Saat deploy ke `situs.com/dokumentasi/`, semua rumahmu pindah ke dalam **komplek bernama `/dokumentasi`**. Alamat lengkap sekarang jadi `/dokumentasi/about`. Di sini `base` bernilai `'/dokumentasi'`.
+
+`base` adalah **nama komplek** itu. Kalau kamu menulis alamat tanpa menyebut komplek (`/about` langsung), kurir akan nyasar. Maka aturannya: **selalu tempel `base` di depan nomor rumah** saat menyusun alamat internal — atau lebih baik lagi, pakai fungsi `resolve()` yang mengurus tempel-menempel itu untukmu.
+
+`assets` analoginya beda lagi: ia **alamat gudang barang** (gambar, font, file statis). Kadang gudang ada di dalam komplek yang sama; kadang kamu menyewa gudang terpisah di kota lain (CDN seperti `https://cdn.situs.com`). `assets` menyimpan alamat gudang itu, dan `asset()` menyusun alamat lengkap ke satu barang di dalamnya.
+
+### Dua generasi API dalam satu modul
+
+Penting dipahami karena `$app/paths` sedang dalam masa transisi. Ada **dua cara** melakukan hal yang sama:
+
+| Generasi | Konstanta/fungsi | Cara pakai |
+| --- | --- | --- |
+| Lama (masih jalan, kini didepresiasi sejak 2.26) | `base`, `assets`, `resolveRoute` | tempel sendiri: `{base}/about` |
+| Baru (disarankan, sejak 2.26) | `resolve()`, `asset()` | otomatis & **type-safe**: `resolve('/about')` |
+
+Keduanya menghasilkan output yang sama persis. Bedanya, generasi baru:
+
+1. **Type-safe** — `resolve('/blog/[slug]', { slug })` tahu rute apa saja yang ada di project-mu dan parameter apa yang dibutuhkan; salah ketik nama rute langsung ketahuan saat compile.
+2. **Mengurus base/assets otomatis** — kamu tidak perlu ingat menempel `base`.
+
+Modul ini membahas keduanya: generasi lama karena masih dominan di kode & tutorial yang ada, dan generasi baru karena ke sanalah arah SvelteKit. Untuk kode baru: **pakai `resolve()` dan `asset()`.**
+
+### Mengapa `base` bukan sekadar string biasa
+
+Satu kejutan buat pendatang dari Next.js/Nuxt: di SvelteKit dengan `paths.relative: true` (default), saat **prerender/SSR**, `base` bisa bernilai path **relatif** seperti `..` atau `../..`, bukan selalu `''` atau `/dokumentasi`. Ini supaya output statis bisa di-host di sub-folder mana pun tanpa konfigurasi ulang. Konsekuensinya: **jangan pernah membandingkan atau memanipulasi string `base` secara manual** (mis. `base === ''`); perlakukan ia sebagai kotak hitam yang kamu tempel di depan path, atau cukup serahkan ke `resolve()`.
+
+## 2. Tabel API
+
+Semua export `$app/paths` bisa dipakai di klien maupun server. Konstanta dievaluasi dari `config.kit.paths` di `svelte.config.js`.
+
+| Export | Tanda tangan | Mengembalikan | Status | Sejak |
+| --- | --- | --- | --- | --- |
+| `base` | `const base` | path dasar app, mis. `''` atau `'/docs'` | aktif, didepresiasi (→ `resolve`) | awal |
+| `assets` | `const assets` | path absolut folder aset | aktif, didepresiasi (→ `asset`) | awal |
+| `resolve` | `resolve(pathname)` atau `resolve(routeId, params)` | `ResolvedPathname` (string) | **disarankan** | 2.26 |
+| `asset` | `asset(file)` | `string` | **disarankan** | 2.26 |
+| `resolveRoute` | `resolveRoute(id, params)` | `string` | didepresiasi (→ `resolve`) | awal |
+| `match` | `match(url)` | `Promise<{ id, params } \| null>` | modern | 2.52 |
+
+Tanda tangan lengkap dengan tipe:
+
+```ts
+// === Konstanta: dibaca dari config.kit.paths ===
+
+// base: cocok dengan config.kit.paths.base.
+// '' kalau app di root, atau `/${string}` kalau di sub-path (mis. '/docs').
+const base: '' | `/${string}`;
+
+// assets: cocok dengan config.kit.paths.assets.
+// '' (sama dengan origin), atau URL absolut CDN, atau '/_svelte_kit_assets'
+// (nilai sementara yang dipakai SvelteKit saat dev/preview bila assets di-set ke URL eksternal).
+const assets: '' | `https://${string}` | `http://${string}` | '/_svelte_kit_assets';
+
+// === Fungsi modern (disarankan) ===
+
+// resolve: dua bentuk pemakaian dalam satu fungsi (overload).
+// 1) Beri pathname literal -> ditempeli base.
+// 2) Beri route ID + params -> segmen dinamis [slug] diisi, lalu ditempeli base.
+// Keduanya type-safe terhadap daftar rute project-mu.
+function resolve(pathname: ResolvedPathname): ResolvedPathname;
+function resolve<T extends RouteId>(route: T, params: RouteParams<T>): ResolvedPathname;
+
+// asset: menyusun URL ke file di folder /static, ditempeli assets (atau base).
+// `Asset` adalah tipe ter-generate berisi daftar file di /static -> type-safe.
+function asset(file: Asset): string;
+
+// === Fungsi lama (didepresiasi) ===
+
+// resolveRoute: pendahulu resolve(); fungsinya identik untuk bentuk route ID + params.
+function resolveRoute(id: string, params: Record<string, string | undefined>): string;
+
+// === match (sejak 2.52): kebalikan dari resolve ===
+
+// Cocokkan sebuah URL/path ke route ID dan ekstrak parameternya.
+// Mengembalikan null kalau tidak ada rute yang cocok. Async karena bisa
+// menjalankan matcher param custom.
+function match(
+	url: Pathname | URL | string
+): Promise<{ id: RouteId; params: Record<string, string> } | null>;
+```
+
+<Callout type="tip">
+Cara cepat mengingat arah masing-masing: <code>resolve()</code> = <strong>dari route ID ke URL</strong> (menyusun link). <code>match()</code> = <strong>dari URL ke route ID</strong> (membongkar link). <code>base</code>/<code>assets</code> = bahan mentah prefix; <code>asset()</code> = <code>resolve()</code>-nya file statis.
+</Callout>
+
+## 3. Contoh kode
+
+```js
+// svelte.config.js — di sinilah base & assets dikonfigurasi.
+const config = {
+	kit: {
+		paths: {
+			// base HARUS diawali '/' dan TIDAK boleh diakhiri '/'.
+			// '/docs' -> valid. '/docs/' -> error. 'docs' -> error.
+			base: '/docs',
+
+			// assets: '' artinya aset diserve dari origin yang sama.
+			// Isi URL absolut bila aset ditaruh di CDN/bucket terpisah:
+			// assets: 'https://cdn.situs.com'
+			assets: '',
+
+			// relative (default true): saat SSR/prerender, base & assets jadi
+			// path relatif supaya output bisa di-host di sub-folder mana pun.
+			relative: true
+		}
+	}
+};
+
+export default config;
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — menyusun link internal dengan BENAR -->
+<script>
+	// Cara MODERN (disarankan, sejak 2.26): resolve() otomatis menempel base.
+	import { resolve } from '$app/paths';
+	// Cara LAMA (masih jalan): tempel base secara manual.
+	import { base } from '$app/paths';
+</script>
+
+<nav>
+	<!-- MODERN: type-safe, base ditempel otomatis. Hasil di /docs -> /docs/about -->
+	<a href={resolve('/about')}>About</a>
+
+	<!-- MODERN dengan route dinamis: segmen [slug] diisi dari params -->
+	<a href={resolve('/blog/[slug]', { slug: 'halo-dunia' })}>Halo Dunia</a>
+
+	<!-- LAMA: harus tempel {base} sendiri. Lupa = link nyasar saat di sub-path. -->
+	<a href="{base}/about">About (cara lama)</a>
+
+	<!-- Link ke ROOT app: JANGAN tulis href="/" mentah saat ada base.
+	     Pakai resolve('/') atau, cara lama, {base}/ -->
+	<a href={resolve('/')}>Beranda</a>
+</nav>
+```
+
+```svelte
+<!-- src/routes/+page.svelte — menampilkan file statis dari /static -->
+<script>
+	// asset(): menyusun URL ke file di folder /static, sadar base & assets/CDN.
+	import { asset } from '$app/paths';
+	// Cara lama: import { assets } lalu tempel manual.
+	import { assets } from '$app/paths';
+</script>
+
+<!-- File ada di /static/logo.png -->
+<!-- MODERN: type-safe terhadap isi folder /static. -->
+<img src={asset('/logo.png')} alt="Logo" />
+
+<!-- LAMA: tempel {assets} sendiri. Saat assets='' hasilnya sama dengan base. -->
+<img src="{assets}/logo.png" alt="Logo (cara lama)" />
+```
+
+```js
+// src/routes/+page.server.js — goto/redirect & penyusunan URL di luar <a href>
+import { redirect } from '@sveltejs/kit';
+import { resolve } from '$app/paths';
+
+export function load({ url }) {
+	// Saat menyusun URL DI LUAR atribut href biasa (redirect, goto, fetch internal),
+	// kamu WAJIB melewati base. resolve() melakukannya untukmu.
+	if (url.pathname.endsWith('/lama')) {
+		// redirect() di SvelteKit 2: dipanggil TANPA `throw` di depannya.
+		redirect(307, resolve('/baru'));
+	}
+}
+```
+
+```js
+// src/hooks.server.js — match(): membongkar URL menjadi route ID + params
+import { match } from '$app/paths';
+
+export async function handle({ event, resolve }) {
+	// Catatan: 'resolve' di sini adalah resolve milik HOOK (memproses request),
+	// BUKAN resolve dari $app/paths. Jangan tertukar namanya.
+	const matched = await match(event.url.pathname);
+
+	if (matched?.id === '/admin/[section]') {
+		// matched.params.section berisi nilai segmen dinamis.
+		console.log('Akses area admin:', matched.params.section);
+	}
+
+	return resolve(event);
+}
+```
+
+## 4. Coba sendiri
+
+Modul ini menyentuh konfigurasi build & runtime SvelteKit, jadi tidak ada live playground. Sebagai gantinya, mari telusuri **bug sub-path paling sering terjadi** beserta perbaikannya — kasus yang hampir pasti kamu temui saat pertama deploy ke GitHub Pages atau sub-folder.
+
+Skenario: app di-deploy ke `https://user.github.io/proyek-saya/`, jadi `base` kamu set ke `'/proyek-saya'`.
+
+```svelte
+<!-- ❌ SALAH — jalan di dev, RUSAK di produksi -->
+<script>
+	import { goto } from '$app/navigation';
+</script>
+
+<!-- Saat base='/proyek-saya', link ini menuju /about (bukan /proyek-saya/about) -> 404 -->
+<a href="/about">About</a>
+
+<!-- goto juga butuh base; ini melempar ke /dashboard yang tidak ada -->
+<button onclick={() => goto('/dashboard')}>Dashboard</button>
+
+<!-- Gambar ini dicari di /logo.png, padahal aslinya di /proyek-saya/logo.png -->
+<img src="/logo.png" alt="Logo" />
+```
+
+```svelte
+<!-- ✅ BENAR — resolve()/asset() menempel base otomatis, aman di mana pun -->
+<script>
+	import { goto } from '$app/navigation';
+	import { resolve, asset } from '$app/paths';
+</script>
+
+<!-- resolve('/about') -> '/proyek-saya/about' di produksi, '/about' di dev -->
+<a href={resolve('/about')}>About</a>
+
+<!-- goto dengan resolve(): selalu menuju path yang benar -->
+<button onclick={() => goto(resolve('/dashboard'))}>Dashboard</button>
+
+<!-- asset() tahu base/assets, jadi gambar selalu ketemu -->
+<img src={asset('/logo.png')} alt="Logo" />
+```
+
+Hal yang membuat bug ini licik: di `localhost` semuanya hijau karena `base` kosong, jadi `/about` kebetulan benar. Bug baru muncul setelah deploy. Cara mencegahnya cuma satu — **biasakan tidak pernah menulis path internal mentah**; selalu lewat `resolve()`/`asset()` (atau minimal `{base}/...`).
+
+```svelte
+<!-- Variasi cara lama yang masih banyak ditemui (pra-2.26): -->
+<script>
+	import { base, assets } from '$app/paths';
+</script>
+
+<a href="{base}/about">About</a>
+<a href="{base}/blog/halo">Halo</a>
+<img src="{assets}/logo.png" alt="Logo" />
+
+<!-- Untuk link ke beranda, JANGAN href="{base}/" lalu mengira hasilnya '/'.
+     Saat base kosong hasilnya '/', saat base='/docs' hasilnya '/docs/'. Itu memang benar.
+     Yang salah adalah menulis href="/" telanjang -> mengabaikan base. -->
+<a href="{base}/">Beranda</a>
+```
+
+## 5. Latihan
+
+<Exercise title="Migrasikan link lama ke resolve()/asset()">
+Kamu mewarisi sebuah `+layout.svelte` yang dibuat sebelum SvelteKit 2.26. App akan di-deploy ke sub-path `/wiki`. Komponennya seperti ini:
+
+```svelte
+<script>
+	import { base, assets } from '$app/paths';
+	let { data } = $props();
+</script>
+
+<header>
+	<a href="/"><img src="/brand.svg" alt="Beranda" /></a>
+	<nav>
+		<a href="/articles">Artikel</a>
+		{#each data.tags as tag}
+			<a href={'/tag/' + tag.slug}>{tag.name}</a>
+		{/each}
+	</nav>
+</header>
+```
+
+Tugas:
+
+1. Perbaiki **semua** path agar tahan sub-path (saat ini semuanya mentah dari `/` — akan 404 di `/wiki`).
+2. Pakai API **modern** (`resolve()` + `asset()`), bukan menempel `base` manual.
+3. Untuk link tag yang dinamis, manfaatkan bentuk route ID `resolve()` agar type-safe.
+
+{#snippet solution()}
+
+  ```svelte
+  <script>
+  	// Cukup import resolve & asset; base/assets tidak lagi diperlukan.
+  	import { resolve, asset } from '$app/paths';
+  	let { data } = $props();
+  </script>
+
+  <header>
+  	<!-- resolve('/') untuk beranda, asset('/brand.svg') untuk file statis -->
+  	<a href={resolve('/')}><img src={asset('/brand.svg')} alt="Beranda" /></a>
+  	<nav>
+  		<a href={resolve('/articles')}>Artikel</a>
+  		{#each data.tags as tag}
+  			<!-- Bentuk route ID: SvelteKit mengisi [slug] dari objek params.
+  			     Type-safe: salah ketik '/tag/[slug]' langsung error saat compile. -->
+  			<a href={resolve('/tag/[slug]', { slug: tag.slug })}>{tag.name}</a>
+  		{/each}
+  	</nav>
+  </header>
+  ```
+
+  Kunci: tidak ada satu pun path mentah yang dimulai dari `/` tanpa melewati `resolve()`/`asset()`. Di produksi semua otomatis jadi `/wiki/...`; di dev tetap `/...`. Untuk segmen dinamis, bentuk `resolve(routeId, params)` lebih aman daripada merangkai string `'/tag/' + tag.slug` karena dicek terhadap daftar rute nyata.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Double-prefix base.</strong> Karena <code>resolve()</code> SUDAH menempel <code>base</code>, jangan menambahkannya lagi: <code>resolve(base + '/about')</code> akan menghasilkan <code>/docs/docs/about</code> saat base=<code>'/docs'</code>. Pilih SATU gaya per path — <code>resolve('/about')</code> (modern) ATAU <code>{`{base}/about`}</code> (lama) — jangan dicampur.
+</Callout>
+
+<Callout type="warning">
+<strong>Jangan otak-atik string <code>base</code> secara manual.</strong> Dengan <code>paths.relative: true</code> (default), saat prerender <code>base</code> bisa bernilai path relatif seperti <code>..</code> — bukan <code>''</code> atau <code>'/docs'</code>. Maka <code>{`if (base === '')`}</code> atau <code>base.startsWith('/docs')</code> rapuh. Perlakukan <code>base</code> sebagai prefix tak-transparan, atau lebih baik serahkan semua ke <code>resolve()</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>SvelteKit tidak menambahkan base ke <code>href</code> untukmu.</strong> Menulis <code>{`<a href="/about">`}</code> saat ada base path akan menghasilkan link yang nyasar ke root domain, bukan ke dalam app. Ini bug "jalan di dev, mati di prod" yang paling umum. Solusinya: selalu <code>resolve('/about')</code> (atau minimal <code>{`{base}/about`}</code>).
+</Callout>
+
+<Callout type="tip">
+Untuk file di folder <code>/static</code>, pakai <code>asset()</code>, bukan <code>resolve()</code>. <code>resolve()</code> untuk <em>rute</em> (halaman/endpoint), sedangkan <code>asset()</code> sadar terhadap <code>config.kit.paths.assets</code> — jadi kalau suatu hari kamu pindahkan aset ke CDN, cukup ubah satu baris config dan semua <code>asset('/...')</code> ikut menunjuk ke CDN tanpa menyentuh komponen.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "import { base }; href=\"{base}/about\"", modern: "import { resolve }; href={resolve('/about')}", note: 'resolve menempel base otomatis & type-safe' },
+	{ legacy: "href={'/blog/' + slug}", modern: "resolve('/blog/[slug]', { slug })", note: 'bentuk route ID dicek terhadap rute nyata' },
+	{ legacy: "import { assets }; src=\"{assets}/logo.png\"", modern: "import { asset }; src={asset('/logo.png')}", note: 'asset sadar CDN & isi folder /static' },
+	{ legacy: "resolveRoute('/x/[id]', { id })", modern: "resolve('/x/[id]', { id })", note: 'nama baru, perilaku sama' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-paths" label="SvelteKit — $app/paths (base, assets, resolve, asset, match)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration#paths" label="SvelteKit — Konfigurasi paths.base / paths.assets / paths.relative" />

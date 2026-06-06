@@ -1,0 +1,287 @@
+---
+title: Service workers
+product: kit
+section: advanced
+sectionTitle: Advanced
+sectionOrder: 4
+order: 5
+status: stable
+description: Memakai service worker bawaan SvelteKit lewat src/service-worker.js dan modul $service-worker untuk caching, dukungan offline, dan registrasi otomatis.
+docs: https://svelte.dev/docs/kit/service-workers
+keywords: [service-worker, offline, cache, pwa, $service-worker]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+**Analogi: service worker = pelayan yang mengingat pesananmu.** Bayangkan kamu langganan di sebuah kafe. Pertama kali datang, pelayan mencatat pesananmu dan mengambilnya dari dapur (jaringan). Tapi pelayan yang baik *mengingat* pesanan itu. Lain kali, bahkan ketika dapur sedang tutup (kamu offline), dia tetap bisa menyajikan kopi yang sudah dia simpan di laci belakang (cache). Aplikasimu tetap jalan, tetap tampil, walau koneksi internet putus. Itulah inti **service worker**: sepotong skrip yang duduk di antara aplikasimu dan jaringan, mencegat setiap request, dan bisa menjawabnya dari simpanan lokal alih-alih selalu menelepon server.
+
+Secara teknis, service worker adalah jenis [web worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API): sebuah skrip JavaScript yang dijalankan browser **di thread terpisah**, di background, lepas dari halaman. Karena terpisah dari halaman, ia tetap hidup walau tab ditutup, dan bisa mencegat request jaringan dari semua tab yang berada di scope-nya. Kemampuan mencegat inilah yang membuatnya jadi fondasi aplikasi yang bisa jalan offline — yang biasa disebut **PWA (Progressive Web App)**.
+
+**Kenapa "mengapa"-nya penting, bukan cuma "bagaimana".** Tanpa service worker, setiap aset (HTML, JS, CSS, gambar) selalu harus diambil dari server. Kalau jaringan lambat atau mati, aplikasi blank. Dengan service worker, kamu bisa bilang: "file inti app-ku tidak berubah selama versi yang sama — jadi simpan saja, dan sajikan dari cache. Cepat, dan tahan offline." Ini bukan sekadar optimasi kecepatan; ini perubahan model mental: app kamu jadi punya **salinan dirinya sendiri** di perangkat user.
+
+**Apa yang SvelteKit kerjakan untukmu.** Menulis service worker dari nol itu ribet: kamu harus tahu nama setiap file hasil build (yang namanya ber-hash dan berubah tiap deploy), meregistrasikannya secara manual, dan mengelola versi cache. SvelteKit memangkas semua itu jadi dua hal:
+
+1. **Konvensi file** — kalau ada file `src/service-worker.js` (atau `.ts`, atau `src/service-worker/index.js`), SvelteKit otomatis mem-bundle-nya dan **menyuntikkan kode registrasi** ke app-mu. Kamu tidak perlu menulis `navigator.serviceWorker.register(...)` sendiri.
+2. **Modul `$service-worker`** — modul virtual ajaib yang hanya bisa di-import *di dalam* service worker. Ia memberi tahu, saat build, daftar persis semua aset yang perlu kamu cache, plus string versi yang unik per deploy. Jadi kamu tak perlu menebak nama file ber-hash.
+
+Modul `$service-worker` mengekspor lima hal. Inilah jantung modul ini, jadi hafalkan perannya:
+
+| Export | Tipe | Arti & kegunaan |
+| --- | --- | --- |
+| `build` | `string[]` | URL semua file yang dihasilkan Vite (chunk JS/CSS aplikasimu, ber-hash). Inilah "tubuh" app-mu. Cocok untuk `cache.addAll(build)`. |
+| `files` | `string[]` | URL semua file di folder `static` (atau `config.kit.files.assets`) — favicon, gambar, font, dll. |
+| `prerendered` | `string[]` | Pathname halaman & endpoint yang di-prerender. **Kosong saat `vite dev`**, terisi saat build production. |
+| `version` | `string` | String unik per build (lihat `config.kit.version`). Dipakai untuk **menamai cache** agar deploy baru otomatis meng-invalidasi cache lama. |
+| `base` | `string` | Base path deployment. Berguna kalau app-mu dipasang di subdirektori (mis. `/app`). |
+
+Kalau kamu datang dari React atau Vue: konsepnya **sama persis** karena service worker itu API browser, bukan fitur framework. Bedanya, di Create React App dulu ada `service-worker.js` template Workbox; di Next.js dan Nuxt kamu pasang plugin/modul PWA. SvelteKit memilih jalan tengah: dukungan bawaan yang *sederhana dan eksplisit* (kamu menulis logika cache sendiri), tapi tetap menyodorkan `$service-worker` agar kamu tak perlu berkutat dengan nama file build. Untuk kebutuhan canggih, ekosistem yang sama (Workbox, `@vite-pwa/sveltekit`) tetap tersedia.
+
+## 2. Contoh kode
+
+Ini service worker lengkap dan layak-produksi — pola yang sama dengan contoh resmi SvelteKit, dengan strategi **precache + cache-first untuk aset app, network-first untuk sisanya**. Baca komentarnya; tiap blok event punya peran berbeda.
+
+```js
+// src/service-worker.js
+// Baris reference ini memberi tipe yang benar (env service worker) ke editor.
+/// <reference types="@sveltejs/kit" />
+import { build, files, version } from '$service-worker';
+
+// `version` unik tiap deploy -> nama cache ikut berganti tiap deploy.
+// Akibatnya: deploy baru = cache baru, cache lama gampang dibersihkan.
+const CACHE = `cache-${version}`;
+
+// Semua yang ingin di-precache: "tubuh" app (build) + aset statis (files).
+const ASSETS = [
+	...build, // chunk JS/CSS hasil Vite
+	...files // isi folder static
+];
+
+self.addEventListener('install', (event) => {
+	// INSTALL terjadi sekali saat versi service worker baru pertama diunduh.
+	// Saat inilah kita borong semua aset ke cache (precache).
+	async function addFilesToCache() {
+		const cache = await caches.open(CACHE);
+		await cache.addAll(ASSETS); // unduh & simpan semua sekaligus
+	}
+	// waitUntil menahan fase install sampai precache selesai.
+	event.waitUntil(addFilesToCache());
+});
+
+self.addEventListener('activate', (event) => {
+	// ACTIVATE terjadi setelah install, saat SW baru mengambil alih.
+	// Saat inilah kita buang cache versi LAMA agar disk tidak menumpuk.
+	async function deleteOldCaches() {
+		for (const key of await caches.keys()) {
+			if (key !== CACHE) await caches.delete(key); // sisakan cache versi ini
+		}
+	}
+	event.waitUntil(deleteOldCaches());
+});
+
+self.addEventListener('fetch', (event) => {
+	// FETCH mencegat SETIAP request jaringan dari halaman dalam scope SW.
+	// Hanya tangani GET; biarkan POST/PUT/DELETE lewat apa adanya ke jaringan.
+	if (event.request.method !== 'GET') return;
+
+	async function respond() {
+		const url = new URL(event.request.url);
+		const cache = await caches.open(CACHE);
+
+		// 1) Aset app & static SELALU boleh dari cache (cache-first):
+		//    isinya tetap untuk versi ini -> cepat & langsung offline-ready.
+		if (ASSETS.includes(url.pathname)) {
+			const response = await cache.match(url.pathname);
+			if (response) return response;
+		}
+
+		// 2) Sisanya (mis. data API, halaman dinamis): coba jaringan dulu
+		//    (network-first), simpan hasilnya, jatuh ke cache kalau offline.
+		try {
+			const response = await fetch(event.request);
+
+			// Saat offline, fetch bisa mengembalikan nilai yang BUKAN Response;
+			// nilai itu tak boleh diberikan ke respondWith -> tangani eksplisit.
+			if (!(response instanceof Response)) {
+				throw new Error('invalid response from fetch');
+			}
+
+			if (response.status === 200) {
+				cache.put(event.request, response.clone()); // simpan utk nanti
+			}
+			return response;
+		} catch (err) {
+			// Jaringan gagal -> layani dari cache kalau ada.
+			const response = await cache.match(event.request);
+			if (response) return response;
+
+			// Tidak ada di cache & tidak ada jaringan -> menyerah.
+			throw err;
+		}
+	}
+
+	event.respondWith(respond());
+});
+```
+
+Itu saja. Kamu **tidak menulis kode registrasi** — SvelteKit menyuntikkannya otomatis. Secara internal, kode yang disuntik kira-kira begini (kamu tidak perlu menyalinnya, ini hanya untuk paham apa yang terjadi):
+
+```js
+// Disuntik SvelteKit secara OTOMATIS — kamu tidak menulis ini.
+if ('serviceWorker' in navigator) {
+	addEventListener('load', function () {
+		navigator.serviceWorker.register('./path/to/service-worker.js');
+	});
+}
+```
+
+Kalau pakai TypeScript dan ingin tipe yang ketat (mis. agar `self` dikenali sebagai `ServiceWorkerGlobalScope`), tambahkan deret reference ini di paling atas dan beri alias tipe pada `self`:
+
+```ts
+// src/service-worker.ts
+/// <reference no-default-lib="true"/>
+/// <reference lib="esnext" />
+/// <reference lib="webworker" />
+/// <reference types="@sveltejs/kit" />
+
+// `self` di env service worker bertipe khusus; beri tahu TypeScript.
+const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
+
+import { build, files, version } from '$service-worker';
+// ...lanjutkan seperti contoh di atas, pakai `sw.addEventListener(...)`
+```
+
+## 3. Coba sendiri
+
+Service worker butuh build SvelteKit sungguhan dan (idealnya) HTTPS, jadi tak bisa dijalankan di playground browser. Sebagai gantinya, ikuti alur uji lokal ini langkah demi langkah — inilah cara paling cepat melihat caching & offline benar-benar bekerja.
+
+```bash
+# 1) Buat file service worker minimal di src/service-worker.js
+#    (salin contoh di bagian 2).
+
+# 2) Service worker TIDAK aktif di `vite dev` secara default.
+#    Build & jalankan mode production lokal:
+npm run build
+npm run preview        # menyajikan hasil build di http://localhost:4173
+
+# 3) Buka app di browser, lalu buka DevTools.
+#    Tab "Application" > "Service Workers" -> harus terdaftar & "activated".
+#    Tab "Application" > "Cache Storage" -> ada cache bernama "cache-<version>".
+
+# 4) Uji OFFLINE: di DevTools > Network, centang "Offline" (atau matikan WiFi),
+#    lalu reload. Kalau caching benar, app tetap tampil dari cache.
+
+# 5) Uji INVALIDASI: ubah sedikit kode, `npm run build` lagi (version berubah),
+#    reload. Cache lama "cache-<versiLama>" dibuang saat activate,
+#    cache baru dibuat. Periksa di Cache Storage.
+```
+
+Kalau kamu butuh service worker aktif **saat development** (untuk debugging cepat), kamu bisa registrasi manual dengan opsi `type` yang menyesuaikan dev/production. Saat dev, file disajikan sebagai ES module, jadi perlu `type: 'module'`:
+
+```js
+// Registrasi manual (hanya jika kamu mematikan registrasi otomatis;
+// lihat Pitfalls di bawah). `dev` dari $app/environment.
+import { dev } from '$app/environment';
+
+navigator.serviceWorker.register('/service-worker.js', {
+	type: dev ? 'module' : 'classic'
+});
+```
+
+<Callout type="warning">
+Saat <code>vite dev</code>, array <code>build</code> dan <code>prerendered</code> dari <code>$service-worker</code> <strong>kosong</strong> (file belum dibangun & belum di-hash). Hanya <code>files</code> dan <code>version</code> yang terisi. Karena itu, andalkan <code>npm run build</code> + <code>npm run preview</code> untuk menguji perilaku cache yang sebenarnya — jangan menyimpulkan dari mode dev.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Bedakan strategi cache & tangani offline">
+Kamu membangun aplikasi berita. Ada dua jenis request yang ingin kamu tangani berbeda di dalam `fetch` handler service worker:
+
+1. **Aset inti app** (`build` + `files`) — isinya tetap untuk satu versi. Maunya: secepat mungkin, dan harus jalan offline.
+2. **Endpoint data berita** `GET /api/headlines` — datanya berubah-ubah. Maunya: selalu coba ambil yang terbaru dari jaringan, tapi kalau offline, sajikan versi terakhir yang tersimpan agar user tetap melihat sesuatu.
+
+Tulis `fetch` handler yang: (a) melayani aset di `ASSETS` dengan **cache-first**; (b) melayani `/api/headlines` dengan **network-first** (jaringan dulu, fallback ke cache); (c) menjelaskan singkat kenapa kamu TIDAK mau cache-first untuk endpoint berita.
+
+{#snippet solution()}
+
+  ```js
+  // src/service-worker.js (potongan fetch handler)
+  /// <reference types="@sveltejs/kit" />
+  import { build, files, version } from '$service-worker';
+
+  const CACHE = `cache-${version}`;
+  const ASSETS = [...build, ...files];
+
+  self.addEventListener('fetch', (event) => {
+  	if (event.request.method !== 'GET') return;
+
+  	async function respond() {
+  		const url = new URL(event.request.url);
+  		const cache = await caches.open(CACHE);
+
+  		// (a) Aset inti: CACHE-FIRST. Tetap untuk versi ini -> cepat & offline.
+  		if (ASSETS.includes(url.pathname)) {
+  			const cached = await cache.match(url.pathname);
+  			if (cached) return cached;
+  		}
+
+  		// (b) Data berita: NETWORK-FIRST. Coba jaringan, simpan, fallback cache.
+  		if (url.pathname === '/api/headlines') {
+  			try {
+  				const fresh = await fetch(event.request);
+  				if (fresh instanceof Response && fresh.status === 200) {
+  					cache.put(event.request, fresh.clone());
+  				}
+  				return fresh;
+  			} catch {
+  				const cached = await cache.match(event.request);
+  				if (cached) return cached; // offline -> berita terakhir yg tersimpan
+  				throw new Error('offline & belum ada berita tersimpan');
+  			}
+  		}
+
+  		// Default untuk sisanya: jaringan, fallback cache.
+  		try {
+  			return await fetch(event.request);
+  		} catch {
+  			const cached = await cache.match(event.request);
+  			if (cached) return cached;
+  			throw new Error('offline & tidak ada di cache');
+  		}
+  	}
+
+  	event.respondWith(respond());
+  });
+  ```
+
+  **Kenapa bukan cache-first untuk `/api/headlines`?** Kalau berita di-cache-first, user akan terus melihat headline LAMA selama masih ada di cache, walau jaringan sebenarnya hidup dan ada berita baru. Untuk data yang berubah-ubah, "data basi bisa lebih buruk daripada loading sebentar". Network-first memberi yang terbaru saat online, sambil tetap punya jaring pengaman (cache) saat offline. Cache-first hanya tepat untuk hal yang memang tidak berubah dalam satu versi — yaitu aset di `build`/`files`.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Service worker tidak aktif di <code>vite dev</code> secara default.</strong> Banyak yang bingung "kenapa cache-ku tidak jalan" padahal mereka masih di mode dev. Ini sengaja, agar service worker tidak mengganggu hot-reload. Untuk benar-benar menguji caching & offline, pakai <code>npm run build</code> lalu <code>npm run preview</code>. Selain itu, service worker hanya berjalan di <strong>HTTPS</strong> — dengan pengecualian <code>localhost</code>, yang dianggap aman untuk development.
+</Callout>
+
+<Callout type="warning">
+<strong>Cache-first untuk SEGALANYA bisa menjebak user di versi lama.</strong> Kalau kamu menyajikan semua request dari cache tanpa mekanisme update, user mungkin tak pernah melihat deploy baru. Pertahankan pola di contoh: namai cache dengan <code>version</code> dari <code>$service-worker</code>, lalu hapus cache lama di event <code>activate</code>. Dengan begitu tiap deploy menghasilkan nama cache baru dan yang lama otomatis dibersihkan. Untuk data dinamis, pilih network-first (seperti di Latihan), bukan cache-first.
+</Callout>
+
+<Callout type="tip">
+<strong>Jangan cache aset raksasa.</strong> Browser otomatis mengosongkan Cache Storage saat penuh, dan caching file besar (video, dataset) bisa memicu pembersihan yang membuang aset penting lainnya. Precache hanya yang inti (HTML/JS/CSS dan ikon), dan tangani media besar dengan network-first atau biarkan saja lewat ke jaringan. Ingat juga prinsip "stale data might be worse than no data": cache agresif tidak selalu = UX lebih baik.
+</Callout>
+
+<Callout type="tip">
+<strong>Butuh kontrol penuh atas registrasi?</strong> Matikan registrasi otomatis lewat <code>svelte.config.js</code> dengan <code>kit.serviceWorker.register = false</code>, lalu registrasi manual sendiri (lihat contoh <code>type: dev ? 'module' : 'classic'</code> di bagian 3). Kamu juga bisa membatasi file mana dari <code>static</code> yang masuk ke <code>files</code> lewat <code>kit.serviceWorker.files</code>. Untuk strategi offline yang lebih canggih (background sync, runtime caching berbasis rute), banyak tim memilih <code>@vite-pwa/sveltekit</code> (berbasis Workbox) ketimbang menulis semuanya manual — plus-minusnya: lebih sedikit kode, tapi satu dependensi & abstraksi tambahan untuk dipelajari.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/service-workers" label="SvelteKit — Service workers (src/service-worker.js, registrasi otomatis, strategi cache)" />
+<DocsLink href="https://svelte.dev/docs/kit/$service-worker" label="SvelteKit — Modul $service-worker (build, files, prerendered, version, base)" />

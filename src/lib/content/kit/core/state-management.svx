@@ -1,0 +1,359 @@
+---
+title: State management
+product: kit
+section: core
+sectionTitle: Core concepts
+sectionOrder: 2
+order: 5
+status: stable
+description: Cara menyimpan state dengan aman di SvelteKit — kenapa variabel bersama di server bocor, dan pola aman lewat locals, context, page data, URL, dan snapshots.
+docs: https://svelte.dev/docs/kit/state-management
+keywords: [state-management, ssr, context, locals, url-state, snapshots]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Di app React/Vue murni (SPA), kamu terbiasa menaruh state di mana saja: variabel module-level, store global (Redux, Pinia, Zustand), atau singleton. Itu aman karena setiap pengguna membuka **tab browser-nya sendiri** — setiap orang menjalankan salinan JavaScript-nya masing-masing di mesinnya sendiri. Tidak ada yang dibagi.
+
+Di SvelteKit ada satu lapisan baru yang mengubah aturan main: **server**. Saat SSR (dan di dalam `load`, `hooks`, `+server`, form actions), kode-mu berjalan di Node/Worker yang **dipakai bersama oleh semua pengunjung secara bersamaan**. Server itu **stateless by design** — ia menerima request, menghasilkan response, lalu lupa. Begitu kamu mencoba "mengingat" sesuatu di antara request lewat variabel bersama, di situlah jebakan paling berbahaya dan paling mudah terlewat di SvelteKit muncul.
+
+### Analogi: buku catatan pribadi vs papan tulis kantor
+
+Bayangkan setiap pengunjung situsmu adalah tamu yang datang ke kantor.
+
+- **Di browser (klien)**, setiap tamu memegang **buku catatan pribadi**. Apa pun yang tamu A tulis di bukunya tidak terlihat oleh tamu B. Aman menulis apa saja.
+- **Di server**, hanya ada **satu papan tulis besar** yang dipakai bergantian oleh semua tamu. Kalau tamu A menulis "user = Budi" di papan tulis, lalu tamu B datang membaca papan itu sebelum dihapus, tamu B akan mengira dirinya adalah Budi. **Itu kebocoran data antar-pengguna.**
+
+Variabel di level module (`let user = ...` di luar fungsi, pada file yang jalan di server) adalah **papan tulis bersama** itu. Karena module di Node hanya di-evaluasi **sekali** lalu dipakai ulang untuk semua request, menyimpan data per-pengguna di sana berarti membagikannya ke semua orang.
+
+Skenario nyata yang sering bikin orang merinding: form yang menyimpan input ke variabel module.
+
+> Kalau Alice mengirim rahasia memalukan lewat form, lalu Bob membuka halaman itu setelahnya, Bob bisa **melihat rahasia Alice** — karena keduanya membaca papan tulis yang sama.
+
+### Empat tempat menyimpan state (dan kapan memakainya)
+
+Inti modul ini: pindahkan state dari "papan tulis bersama" ke tempat yang benar. Ada empat tempat aman, masing-masing untuk umur hidup yang berbeda:
+
+| Tempat | Umur hidup | Untuk apa |
+| --- | --- | --- |
+| `event.locals` + `load` → `page.data` | satu request | data per-pengguna dari server (user login, izin) |
+| Context API (`setContext`/`getContext`) | satu pohon render (per-request saat SSR) | state komponen yang dibagi lintas anak tanpa prop drilling |
+| URL (search params) | bertahan reload & bisa di-share | filter, sort, halaman pagination, query pencarian |
+| Snapshots | satu sesi navigasi (hilang saat reload) | UI sementara: accordion terbuka, draft komentar, scroll |
+
+Pemetaan mental dari yang sudah kamu tahu:
+
+- **React Server Components / Next.js**: aturan "jangan simpan state per-pengguna di module scope server" itu identik. Module di server adalah singleton lintas request.
+- **Pinia di SSR (Nuxt/Vue)**: makanya Pinia dibuat **per request** (`createPinia()` di tiap request), bukan satu instance global — alasan yang persis sama dengan kenapa store module-level rawan di SvelteKit.
+- **Context API Svelte** ≈ React Context / Vue `provide`/`inject`. Bedanya di SvelteKit: ini juga jadi cara **menghindari kebocoran SSR**, bukan cuma menghindari prop drilling.
+
+### Kenapa side-effect di top-level berbahaya
+
+Kode di level atas module dijalankan **sekali saat module pertama di-import**, bukan setiap request. Jadi:
+
+```js
+// BAHAYA: dijalankan sekali, hasilnya dibagikan ke semua request
+let currentUser = null; // <- papan tulis bersama
+```
+
+Aturan turunannya: **`load` harus murni (pure).** Jangan menulis ke store global atau variabel bersama dari dalam `load` — kembalikan datanya saja. Kalau `load` menulis `user.set(...)` ke store yang di-`export` dari module, kamu menaruh data satu pengguna di tempat yang dilihat semua pengguna. Sama persis dengan papan tulis. Simpan inisialisasi yang bergantung request **di dalam** fungsi dan kembalikan hasilnya, bukan menyetel variabel luar.
+
+## 2. Contoh kode
+
+**Pertama**, kontras langsung antara state bersama yang **bocor** dan state aman per-request lewat `locals` + `load`.
+
+```ts
+// src/lib/server/store.ts
+// ❌ JANGAN: variabel module-level = papan tulis bersama semua pengguna
+export let currentUser: { id: string } | null = null;
+// Saat SSR, request pengguna B bisa membaca currentUser milik pengguna A.
+```
+
+```ts
+// src/hooks.server.ts
+import type { Handle } from '@sveltejs/kit';
+
+// ✅ locals dibuat ULANG untuk setiap request — buku catatan pribadi
+export const handle: Handle = async ({ event, resolve }) => {
+	const sessionId = event.cookies.get('session_id');
+	// state per-request di event.locals, BUKAN di variabel module
+	event.locals.user = sessionId ? await lookupUser(sessionId) : null;
+	return resolve(event);
+};
+```
+
+```ts
+// src/routes/+layout.server.ts
+import type { LayoutServerLoad } from './$types';
+
+// ✅ load mengembalikan data per-request; aman diakses sebagai page.data
+export const load: LayoutServerLoad = async ({ locals }) => {
+	return { user: locals.user };
+};
+```
+
+**Kedua**, anti-pola side-effect di dalam `load` dan cara benarnya — kembalikan, jangan setel.
+
+```ts
+// ❌ JANGAN: load menulis ke store/variabel bersama (side-effect)
+import { user } from '$lib/user';
+
+export async function load({ fetch }) {
+	const res = await fetch('/api/user');
+	user.set(await res.json()); // <- menaruh data 1 pengguna ke tempat global
+}
+```
+
+```ts
+// ✅ load itu pure: ambil data, lalu KEMBALIKAN
+export async function load({ fetch }) {
+	const res = await fetch('/api/user');
+	return { user: await res.json() };
+}
+```
+
+**Ketiga**, state per-pengguna di sisi komponen lewat **Context** (bukan store module-level), supaya tidak ada kebocoran saat SSR. Perhatikan trik penting: yang dimasukkan ke `setContext` adalah **fungsi getter**, bukan nilainya langsung — supaya tetap reaktif saat `data` berubah karena navigasi.
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script lang="ts">
+	import { setContext } from 'svelte';
+
+	let { data, children } = $props();
+
+	// Masukkan getter, bukan data.user langsung.
+	// Context terikat ke POHON render instance ini — bukan ke module global —
+	// jadi setiap request SSR punya salinannya sendiri (tidak bocor).
+	setContext('user', () => data.user);
+</script>
+
+{@render children()}
+```
+
+```svelte
+<!-- komponen anak mana pun di bawah layout itu -->
+<script lang="ts">
+	import { getContext } from 'svelte';
+
+	// panggil getter-nya untuk membaca nilai terkini secara reaktif
+	const user = getContext<() => { name: string }>('user');
+</script>
+
+<p>Halo, {user()?.name ?? 'tamu'}</p>
+```
+
+<Callout type="warning">
+<strong>Aliran state itu satu arah saat SSR.</strong> Perubahan state di komponen yang lebih dalam <strong>tidak</strong> memengaruhi komponen di atasnya yang sudah selesai dirender di server. Selalu alirkan state ke <strong>bawah</strong> (parent → child). Kalau kamu menyetel state ke atas saat render SSR, kamu bisa kena "flashing" saat hydration: server merender satu nilai, klien menghitung nilai lain.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini banyak menyentuh server (`load`, `hooks.server`, `event.locals`) yang **tidak bisa** dijalankan di playground klien, jadi kita pakai contoh statis beranotasi. Ada dua perilaku SvelteKit yang sering bikin bingung pendatang dari React/Vue — keduanya soal *state yang bertahan saat navigasi*.
+
+**(a) Komponen di-reuse saat navigasi — nilai yang dihitung sekali tidak ikut update.** Saat pindah dari `/blog/short` ke `/blog/long` di bawah layout yang sama, SvelteKit **memakai ulang** komponen (tidak destroy + recreate), jadi kode yang jalan sekali waktu inisialisasi **tidak dihitung ulang**.
+
+```svelte
+<script lang="ts">
+	let { data } = $props();
+
+	// ❌ dihitung SEKALI; saat navigasi ke post lain, angka ini basi
+	const wordCount = data.content.split(' ').length;
+	const readingTime = wordCount / 250;
+
+	// ✅ $derived dihitung ULANG tiap kali data berubah (termasuk saat navigasi)
+	let wordCountOk = $derived(data.content.split(' ').length);
+	let readingTimeOk = $derived(wordCountOk / 250);
+</script>
+```
+
+Kalau kamu benar-benar ingin komponen di-mount ulang dari nol setiap pindah halaman (mis. ada animasi enter, atau library yang butuh fresh mount), bungkus dengan keyed block:
+
+```svelte
+<!-- ganti key → komponen di-destroy lalu dibuat ulang -->
+{#key page.url.pathname}
+	<BlogPost title={data.title} content={data.content} />
+{/key}
+```
+
+Untuk kode yang wajib jalan tiap selesai pindah halaman (mis. analytics, reset scroll), pakai `afterNavigate` / `beforeNavigate` dari `$app/navigation` — bukan `onMount`, karena `onMount` tidak jalan lagi pada komponen yang di-reuse.
+
+**(b) State sementara per-sesi lewat snapshots.** Untuk UI sementara yang sayang hilang saat tombol back/forward, tapi tak perlu masuk URL atau database — pakai snapshots. Ekspor objek `snapshot` dengan `capture` + `restore` dari `+page.svelte`:
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script lang="ts">
+	let comment = $state('');
+
+	// SvelteKit memanggil capture() saat kamu meninggalkan halaman,
+	// dan restore(value) saat kamu kembali via back/forward.
+	// Nilainya disimpan di history entry — hilang saat reload penuh.
+	export const snapshot = {
+		capture: () => comment,
+		restore: (value: string) => (comment = value)
+	};
+</script>
+
+<textarea bind:value={comment}></textarea>
+```
+
+## 4. Latihan
+
+<Exercise title="Pindahkan state bocor ke pola yang aman">
+
+Sebuah app punya file ini, dan pengembang mengeluh "kadang pengguna melihat profil orang lain":
+
+```ts
+// src/lib/server/auth.ts
+let currentUser: { id: string; name: string } | null = null;
+
+export function setUser(u: { id: string; name: string }) {
+	currentUser = u;
+}
+export function getUser() {
+	return currentUser;
+}
+```
+
+Pertanyaan:
+
+1. Kenapa kode ini bisa membuat pengguna A melihat data pengguna B saat SSR?
+2. Tulis ulang agar aman: pasang user per-request di `hooks.server.ts` (pakai `event.locals`), lalu sediakan ke halaman lewat `+layout.server.ts`. Asumsikan ada `lookupUser(sessionId)`.
+
+{#snippet solution()}
+
+1. `currentUser` adalah variabel module-level. Di server, module hanya dievaluasi sekali dan **dibagikan ke semua request bersamaan**. Saat request A memanggil `setUser`, nilainya tersimpan global; request B yang masuk berbarengan akan membaca `currentUser` milik A. Itu papan tulis bersama, bukan buku catatan pribadi.
+
+2. Simpan di `event.locals` yang dibuat ulang tiap request:
+
+```ts
+// src/app.d.ts — beri tipe pada locals
+declare global {
+	namespace App {
+		interface Locals {
+			user: { id: string; name: string } | null;
+		}
+	}
+}
+export {};
+```
+
+```ts
+// src/hooks.server.ts
+import type { Handle } from '@sveltejs/kit';
+import { lookupUser } from '$lib/server/db';
+
+export const handle: Handle = async ({ event, resolve }) => {
+	const sid = event.cookies.get('session_id');
+	// per-request: tidak ada state yang bocor antar pengguna
+	event.locals.user = sid ? await lookupUser(sid) : null;
+	return resolve(event);
+};
+```
+
+```ts
+// src/routes/+layout.server.ts
+import type { LayoutServerLoad } from './$types';
+
+export const load: LayoutServerLoad = async ({ locals }) => {
+	// data dari load aman diakses sebagai page.data / props data
+	return { user: locals.user };
+};
+```
+
+Tidak ada lagi variabel module mutable yang menyimpan data per-pengguna.
+
+{/snippet}
+</Exercise>
+
+<Exercise title="Filter yang bertahan saat reload (state di URL)">
+
+Kamu punya daftar produk dengan dropdown sort. Sekarang sort disimpan di `let sort = $state('price')` lokal — tapi PM minta: "kalau di-reload atau link-nya di-share, urutannya harus sama". Pindahkan state sort ke URL.
+
+Tunjukkan: (a) cara membaca sort di `load`, dan (b) cara mengubahnya dari komponen.
+
+{#snippet solution()}
+
+State yang harus bertahan reload & bisa di-share = simpan di **URL search params**, bukan `$state` lokal.
+
+```ts
+// src/routes/products/+page.server.ts
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async ({ url }) => {
+	// baca dari URL: /products?sort=price
+	const sort = url.searchParams.get('sort') ?? 'price';
+	const products = await getProducts({ sort });
+	return { products, sort };
+};
+```
+
+```svelte
+<!-- src/routes/products/+page.svelte -->
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+
+	let { data } = $props();
+
+	function setSort(value: string) {
+		const params = new URLSearchParams(page.url.searchParams);
+		params.set('sort', value);
+		// navigasi ke URL baru → load jalan lagi dengan sort baru
+		goto('?' + params.toString());
+	}
+</script>
+
+<select value={data.sort} onchange={(e) => setSort(e.currentTarget.value)}>
+	<option value="price">Harga</option>
+	<option value="name">Nama</option>
+</select>
+```
+
+Sekarang URL `?sort=name` bisa di-reload, di-bookmark, dan di-share — server merender urutan yang benar sejak request pertama. Sebagai bonus, kamu bisa pakai `<a href="?sort=name">` biasa untuk hal yang sama tanpa JS.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Variabel module-level di file server = bocor antar-pengguna.</strong> Module di Node dievaluasi sekali dan dipakai ulang untuk semua request. Menyimpan data per-pengguna di <code>let x = ...</code> top-level berarti membagikannya ke semua orang saat SSR. Taruh state per-request di <code>event.locals</code> (di hooks) atau di dalam fungsi <code>load</code>, lalu persist ke database/cookie kalau perlu bertahan.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Store yang di-<code>export</code> dari module juga rawan saat SSR.</strong> Yang aman di SPA React/Vue belum tentu aman di SvelteKit. Untuk state per-pengguna di sisi komponen, pakai <strong>Context API</strong> (<code>setContext</code>/<code>getContext</code>) yang terikat ke pohon render, bukan store global module. Dan masukkan <strong>getter</strong> (<code>() => data.user</code>) ke <code>setContext</code> agar tetap reaktif.
+</Callout>
+
+<Callout type="warning">
+<strong>Jangan side-effect di <code>load</code> atau di top-level module.</strong> <code>load</code> harus pure: <strong>kembalikan</strong> data, jangan menyetel store/variabel luar. Kode di luar fungsi berjalan sekali saat import, lepas dari request mana pun — memanggil API atau menulis variabel mutable di sana memberi hasil tak terduga dan bisa bocor antar pengguna.
+</Callout>
+
+<Callout type="tip">
+<strong>Pilih tempat state sesuai umur hidupnya.</strong> Per-request → <code>locals</code> + <code>load</code>. Lintas komponen tanpa prop drilling → Context. Harus bertahan reload / bisa di-share → URL. UI sementara yang sayang hilang saat back/forward → snapshots. Salah tempat biasanya jadi sumber bug "kok nilainya basi / kok ke-reset / kok bocor".
+</Callout>
+
+<Callout type="warning">
+<strong>Komponen di-reuse saat navigasi.</strong> Nilai yang dihitung sekali di inisialisasi (<code>const x = data.foo</code>) tidak ikut update saat pindah halaman di bawah layout yang sama. Pakai <code>$derived</code> agar dihitung ulang, atau <code>{`{#key ...}`}</code> untuk paksa remount, atau <code>afterNavigate</code> untuk kode yang wajib jalan tiap navigasi.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Pola lama / tidak aman"
+	modernLabel="Pola aman di SvelteKit 2 + Svelte 5"
+	rows={[
+		{ legacy: "let user = null (module-level di server)", modern: "event.locals.user (per-request di hooks)", note: "module dibagi semua request; locals dibuat ulang tiap request" },
+		{ legacy: "user.set(...) di dalam load", modern: "return { user } dari load", note: "load harus pure; akses lewat page.data / props data" },
+		{ legacy: "export const store dari module untuk state pengguna", modern: "setContext('user', () => data.user)", note: "Context terikat ke pohon render, aman saat SSR" },
+		{ legacy: "import { page } from '$app/stores' lalu $page", modern: "import { page } from '$app/state'", note: "SvelteKit 2.12+: page tanpa store subscription" }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/state-management" label="SvelteKit — State Management (docs resmi)" />

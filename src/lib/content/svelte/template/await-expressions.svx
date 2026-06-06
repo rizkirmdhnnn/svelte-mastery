@@ -1,0 +1,328 @@
+---
+title: await (expressions)
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 20
+status: stable
+description: Memakai await langsung di script, $derived, dan markup (Async Svelte) — lengkap dengan $effect.pending dan <svelte:boundary> untuk loading yang konsisten.
+docs: https://svelte.dev/docs/svelte/await-expressions
+keywords: [await, async, derived, effect-pending, boundary, settled]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Modul sebelumnya membahas blok `{#await}` — cara klasik Svelte menangani satu `Promise` di markup. Itu sudah enak dibanding React lama (yang butuh `useEffect` + tiga potong `useState`), tapi punya satu batas struktural: **satu blok hanya bisa membungkus satu Promise**. Begitu kamu butuh menggabungkan dua-tiga sumber asinkron, atau menaruh hasil `await` di tengah perhitungan, blok `{#await}` mulai jadi piramida bersarang yang berantakan.
+
+Mulai versi **5.36**, Svelte 5 menjawab itu dengan fitur yang jauh lebih ambisius: **`await` bisa dipakai langsung** di tiga tempat yang dulu dilarang.
+
+1. Di **top-level `<script>`** komponen — `let data = await loadData();` langsung, tanpa `onMount`.
+2. Di dalam **`$derived`** — `let total = $derived(await hitung(x));`.
+3. Di dalam **markup** — `<p>{await add(a, b)}</p>`.
+
+Komunitas menyebut paket fitur ini **"Async Svelte"**. Ia masih *experimental* dan harus diaktifkan lewat flag compiler (dibahas di bagian Tips), tapi arahnya jelas: menulis kode asinkron yang tampak seperti kode sinkron biasa.
+
+### Analogi: dapur yang menahan piring sampai semua matang
+
+Bayangkan kamu pesan nasi goreng + es teh. Ada dua filosofi pelayan:
+
+- **Pelayan "secepatnya" (async biasa / `useState` di React):** begitu es teh siap, langsung diantar; nasi goreng menyusul lima menit kemudian. Sesaat di mejamu ada es teh tapi piring nasi goreng masih kosong — *state campur aduk*. UI bisa tampil setengah jadi: sebagian data baru, sebagian masih lama.
+
+- **Pelayan "satu nampan" (Async Svelte):** ia menunggu nasi goreng DAN es teh matang, baru mengantar semuanya sekaligus dalam satu nampan. Mejamu tidak pernah berada di kondisi "setengah update".
+
+Inilah ide inti yang membedakan `await` Svelte dari async biasa: **UI tidak diperbarui sampai semua pekerjaan asinkron yang terkait selesai**. Saat kamu mengubah `$state` yang memicu `await`, tampilan lama bertahan sampai nilai baru benar-benar siap, lalu berpindah mulus dalam satu tarikan napas — tidak ada kedipan layar kosong di tengah-tengah.
+
+Satu nuansa penting dari docs: **update boleh saling menyusul (overlap)**. Kalau kamu memicu perubahan cepat sementara perubahan lambat sebelumnya masih jalan, hasil cepat itu boleh ditampilkan duluan begitu siap. Jadi "satu nampan" berlaku per-update, bukan berarti semua update antre kaku di belakang yang paling lambat.
+
+### Kapan `{#await}` dan kapan `await` expression?
+
+Keduanya tetap hidup berdampingan dan tidak saling menggantikan total:
+
+- **`{#await promise}`** cocok ketika kamu punya **satu Promise** dan ingin tiga fase (pending / then / catch) eksplisit di satu tempat lokal.
+- **`await` expression** cocok ketika kamu ingin menulis async **seperti kode sinkron**, menggabungkan banyak sumber data, atau menaruh `await` di tengah ekspresi `$derived`. Untuk loading & error-nya, kamu tidak menulis cabang per-Promise; kamu membungkus area yang lebih luas dengan `<svelte:boundary>`.
+
+Untuk menampilkan loading, `await` expression bersandar pada dua alat baru: snippet `pending` di `<svelte:boundary>` (untuk load pertama), dan rune `$effect.pending()` (untuk update berikutnya yang masih berjalan).
+
+## 2. Contoh kode
+
+Pertama, `await` langsung di markup. Ini bentuk paling mencolok — terasa seperti menempel `await` di tempat yang "seharusnya tidak boleh":
+
+```svelte
+<script>
+	let a = $state(1);
+	let b = $state(2);
+
+	async function add(x, y) {
+		// pura-pura ini panggilan jaringan yang butuh waktu
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		return x + y;
+	}
+</script>
+
+<input type="number" bind:value={a} />
+<input type="number" bind:value={b} />
+
+<!--
+	`await` dipakai LANGSUNG di tengah markup.
+	Saat kamu mengetik di input, baris "{a} + {b} = ..." yang LAMA tetap tampil
+	sampai add() resolve — UI tidak pernah menampilkan hasil setengah jadi.
+-->
+<p>{a} + {b} = {await add(a, b)}</p>
+```
+
+`await` juga boleh hidup di dalam `$derived`, sehingga sebuah nilai turunan bisa berasal dari proses asinkron. Bedanya dengan menaruh `await` langsung di markup: nilai turunan bisa dipakai ulang di banyak tempat dan hanya dievaluasi sekali per perubahan dependensi.
+
+```svelte
+<script>
+	let id = $state(1);
+
+	async function loadUser(userId) {
+		const res = await fetch('/api/users/' + userId);
+		return res.json();
+	}
+
+	// `user` adalah nilai turunan asinkron: tiap kali `id` berubah,
+	// loadUser dipanggil ulang dan `user` diperbarui SETELAH resolve.
+	// Sebelum resolve, `user` tetap memegang nilai lama (bukan undefined).
+	let user = $derived(await loadUser(id));
+</script>
+
+<p>Nama: {user.name}</p>
+```
+
+Untuk loading dan error, bungkus area asinkron dengan `<svelte:boundary>`. Snippet `pending` tampil saat **pembuatan awal** (initial load), dan error apa pun di dalamnya naik (bubble) ke snippet `failed`:
+
+```svelte
+<script>
+	async function fetchData() {
+		const res = await fetch('/api/data');
+		if (!res.ok) throw new Error('Gagal memuat');
+		return res.json();
+	}
+</script>
+
+<svelte:boundary>
+	<!-- konten utama: boleh memakai `await` bebas di dalamnya -->
+	<p>Data: {JSON.stringify(await fetchData())}</p>
+
+	{#snippet pending()}
+		<p>Memuat…</p>
+	{/snippet}
+
+	{#snippet failed(error, reset)}
+		<p style="color:red">Error: {error.message}</p>
+		<button onclick={reset}>Coba lagi</button>
+	{/snippet}
+</svelte:boundary>
+```
+
+<Callout type="warning">
+Snippet <code>pending</code> hanya tampil pada <strong>pembuatan awal</strong> boundary, bukan setiap kali nilai diperbarui. Saat update berikutnya (misal kamu ganti <code>id</code>), tampilan lama bertahan sampai data baru siap — itulah perilaku "satu nampan". Untuk indikator kecil selama update berlangsung, gunakan <code>$effect.pending()</code>.
+</Callout>
+
+`$effect.pending()` mengembalikan `true` selama ada pekerjaan asinkron yang sedang berjalan di boundary saat ini (setelah initial load). Cocok untuk spinner halus atau status "validating", bukan layar loading penuh:
+
+```svelte
+<script>
+	let query = $state('');
+	let results = $derived(await search(query));
+
+	// true selama search(query) untuk query baru masih berjalan
+	let validating = $effect.pending();
+</script>
+
+<input bind:value={query} />
+{#if validating}<span>mencari…</span>{/if}
+<ul>
+	{#each results as r}<li>{r}</li>{/each}
+</ul>
+```
+
+## 3. Coba sendiri
+
+Karena `await` di dalam komponen masih **fitur eksperimental** (harus diaktifkan dengan `experimental.async: true`), contoh di sini sengaja ditampilkan sebagai **kode statis** — playground live di situs ini tidak menjalankannya supaya tidak bergantung pada API yang masih bisa berubah dan butuh konfigurasi compiler khusus. Salin ke proyekmu (dengan async diaktifkan) untuk mencobanya:
+
+```svelte
+<script>
+	let a = $state(2);
+	let b = $state(3);
+
+	async function add(x, y) {
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		return x + y;
+	}
+</script>
+
+<label>a: <input type="number" bind:value={a} /></label>
+<label>b: <input type="number" bind:value={b} /></label>
+
+<!-- <svelte:boundary> menahan tampilan sampai promise pertama selesai;
+     snippet `pending` hanya muncul saat load pertama -->
+<svelte:boundary>
+	<p>{a} + {b} = {await add(a, b)}</p>
+
+	{#snippet pending()}
+		<p>Menghitung pertama kali…</p>
+	{/snippet}
+</svelte:boundary>
+```
+
+Eksperimen yang menarik dicoba: ubah `a` lalu cepat-cepat ubah `b` sebelum 600ms selesai. Perhatikan bahwa baris hasil yang lama bertahan di layar, dan kamu tidak pernah melihat angka "setengah benar". Itu jaminan konsistensi yang kamu dapat gratis.
+
+Contoh kedua menunjukkan dua hal yang sering bikin bingung: **paralel vs waterfall**. Dua `await` independen otomatis jalan bareng; dua `$derived` yang saling bergantung jalan berurutan.
+
+```svelte
+<script>
+	let x = $state(1);
+	let y = $state(1);
+
+	async function one(n) {
+		await new Promise((r) => setTimeout(r, 500));
+		return n * 10;
+	}
+	async function two(n) {
+		await new Promise((r) => setTimeout(r, 500));
+		return n * 100;
+	}
+
+	// PARALEL: kedua ekspresi independen, Svelte menjalankannya bersamaan.
+	// Total tunggu ~500ms, bukan 1000ms.
+</script>
+
+<svelte:boundary>
+	<p>one = {await one(x)}</p>
+	<p>two = {await two(y)}</p>
+
+	{#snippet pending()}<p>Memuat…</p>{/snippet}
+</svelte:boundary>
+```
+
+Bandingkan dengan versi waterfall di bawah — `b` butuh `a`, jadi tidak bisa mulai sebelum `a` resolve. Svelte akan memberi warning `await_waterfall` kalau ia menduga ketergantungan ini tak disengaja:
+
+```svelte
+<script>
+	let x = $state(1);
+
+	// WATERFALL (berurutan): `b` baru dibuat setelah `a` resolve.
+	// Kalau memang saling bergantung, ini wajar. Kalau tidak, pisahkan
+	// agar keduanya independen supaya jalan paralel.
+	let a = $derived(await one(x));
+	let b = $derived(await two(a)); // <- pakai hasil `a`, jadi harus menunggu
+</script>
+```
+
+## 4. Latihan
+
+<Exercise title="Profil asinkron dengan loading & update halus">
+Buat komponen yang menampilkan profil user berdasarkan `id` (sebuah `$state` angka). Sediakan fungsi async `loadUser(id)` yang menunggu sebentar (pakai `setTimeout`) lalu mengembalikan objek `&#123; name &#125;` — misalnya `&#123; name: 'User ' + id &#125;`.
+
+Gunakan `let user = $derived(await loadUser(id))` untuk mengambil data, lalu bungkus tampilan dengan `<svelte:boundary>` yang punya snippet `pending` untuk load pertama. Tambahkan tombol "Next" yang menaikkan `id`, dan tampilkan teks kecil "memuat…" memakai `$effect.pending()` selama update berlangsung (bukan layar loading penuh).
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let id = $state(1);
+
+	async function loadUser(userId) {
+		// simulasi latensi jaringan
+		await new Promise((resolve) => setTimeout(resolve, 700));
+		return { name: 'User ' + userId };
+	}
+
+	// nilai turunan asinkron: berubah tiap `id` berubah
+	let user = $derived(await loadUser(id));
+
+	// true selama loadUser untuk id baru masih berjalan (bukan saat initial)
+	let updating = $effect.pending();
+</script>
+
+<button onclick={() => id++}>Next</button>
+{#if updating}<small>memuat…</small>{/if}
+
+<svelte:boundary>
+	<!-- saat update, kartu lama tetap tampil sampai data baru siap -->
+	<p>Halo, {user.name} (id {id})</p>
+
+	{#snippet pending()}
+		<p>Memuat profil pertama kali…</p>
+	{/snippet}
+</svelte:boundary>
+```
+
+Inti pelajarannya: `pending` snippet hanya muncul sekali di awal. Untuk klik "Next" berikutnya, kartu profil lama tetap terlihat (UI tidak kosong/setengah jadi) sementara `$effect.pending()` memberi tahu kamu ada update yang sedang jalan — jauh lebih halus daripada mengedipkan layar loading tiap klik.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+<strong>Fitur ini masih experimental dan harus diaktifkan.</strong> Tambahkan flag di <code>svelte.config.js</code>:
+<br />
+
+```js
+export default {
+	compilerOptions: {
+		experimental: { async: true }
+	}
+};
+```
+
+Flag ini direncanakan hilang di Svelte 6 (jadi default). Karena masih experimental, API-nya bisa berubah di luar rilis mayor — dan urutan eksekusi <code>$effect</code> ikut berubah saat <code>experimental.async</code> aktif. Pertimbangkan baik-baik sebelum dipakai di produksi.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Hati-hati waterfall asinkron.</strong> Jika kamu menulis <code>let a = $derived(await one(x))</code> lalu <code>let b = $derived(await two(a))</code>, keduanya berjalan berurutan dan kamu bisa kena warning <code>await_waterfall</code>. Kalau dua pekerjaan tidak saling bergantung, biarkan mereka independen agar Svelte menjalankannya paralel — dua <code>{`{await ...}`}</code> independen di markup otomatis jalan bersamaan.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Selalu bungkus dengan boundary.</strong> Ekspresi <code>await</code> tanpa <code>&lt;svelte:boundary&gt;</code> di atasnya tidak punya tempat untuk menampilkan loading awal, dan error yang dilempar tidak punya tempat untuk "ditangkap" — error <code>await</code> selalu naik (bubble) ke error boundary terdekat. Tidak ada boundary = error lolos sampai memecah aplikasi.
+</Callout>
+
+<Callout type="tip">
+Butuh menunggu sampai semua state asinkron <em>dan</em> DOM benar-benar selesai (mis. sebelum mengukur layout)? Impor <code>settled</code> dari <code>'svelte'</code> dan <code>await settled()</code> setelah mengubah state. Untuk sekadar menunggu satu putaran update DOM sinkron, <code>tick()</code> masih cukup:
+<br />
+
+```js
+import { tick, settled } from 'svelte';
+
+async function update() {
+	updating = true;
+	await tick();
+	color = 'octarine';
+	answer = 42;
+	await settled(); // tunggu SEMUA pekerjaan async + DOM tuntas
+	updating = false;
+}
+```
+</Callout>
+
+<Callout type="tip">
+Async Svelte juga jalan di <strong>server (SSR)</strong>. <code>render()</code> dari <code>'svelte/server'</code> mengembalikan Promise, jadi <code>const &#123; head, body &#125; = await render(App)</code>. Kalau boundary dengan snippet <code>pending</code> tersentuh saat SSR, snippet itulah yang dirender (konten async diabaikan). Versi baru (5.42+) menambah <code>fork()</code> untuk preload navigasi — di luar cakupan modul ini, tapi enak diketahui.
+</Callout>
+
+<Callout type="legacy">
+Pola lama menangani async di Svelte 4 bertumpu pada <code>onMount</code> + variabel manual, atau hanya blok <code>{`{#await}`}</code>. Itu masih berfungsi di Svelte 5, tapi tidak punya jaminan "UI konsisten" maupun <code>$effect.pending()</code>. Jangan campur <code>beforeUpdate</code>/<code>afterUpdate</code> dengan async — keduanya API lama dan tidak cocok dengan model reaktivitas baru.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Cara lama (Svelte 4)"
+	modernLabel="Async Svelte (Svelte 5)"
+	rows={[
+		{ legacy: 'onMount(async () => { data = await load(); })', modern: 'let data = $derived(await load(id))', note: 'turunan asinkron reaktif, tanpa lifecycle manual' },
+		{ legacy: '{#await p}…{:then v}…{/await} per Promise', modern: '<svelte:boundary> + {#snippet pending()}', note: 'loading & error untuk area luas, bukan satu Promise' },
+		{ legacy: 'let loading = true; (set manual)', modern: 'let loading = $effect.pending()', note: 'deteksi update asinkron otomatis' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/await-expressions" label="await expressions (Async Svelte) — dokumentasi resmi Svelte" />

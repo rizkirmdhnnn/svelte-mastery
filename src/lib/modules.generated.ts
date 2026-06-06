@@ -3,4 +3,3519 @@
 
 import type { ModuleMeta } from './content';
 
-export const generatedModules: ModuleMeta[] = [];
+export const generatedModules: ModuleMeta[] = [
+	{
+		"slug": "svelte/introduction/overview",
+		"title": "Overview",
+		"product": "svelte",
+		"section": "introduction",
+		"sectionTitle": "Introduction",
+		"sectionOrder": 1,
+		"order": 1,
+		"status": "stable",
+		"description": "Svelte itu compiler, bukan runtime ber-Virtual DOM — ia merakit kode update presisi saat build sehingga output JS-nya ringan; SvelteKit adalah framework aplikasi pendampingnya.",
+		"docs": "https://svelte.dev/docs/svelte/overview",
+		"keywords": [
+			"compiler",
+			"virtual dom",
+			"runtime",
+			"write less code",
+			"sveltekit"
+		]
+	},
+	{
+		"slug": "svelte/introduction/getting-started",
+		"title": "Getting started",
+		"product": "svelte",
+		"section": "introduction",
+		"sectionTitle": "Introduction",
+		"sectionOrder": 1,
+		"order": 2,
+		"status": "stable",
+		"description": "Membuat proyek Svelte/SvelteKit dari nol dengan npx sv create, memahami template & struktur folder, dev server Vite, tooling editor, dan alternatif (Vite plugin & playground).",
+		"docs": "https://svelte.dev/docs/svelte/getting-started",
+		"keywords": [
+			"sv create",
+			"sveltekit",
+			"vite",
+			"npm run dev",
+			"struktur proyek",
+			"tooling"
+		]
+	},
+	{
+		"slug": "svelte/introduction/svelte-files",
+		"title": ".svelte files",
+		"product": "svelte",
+		"section": "introduction",
+		"sectionTitle": "Introduction",
+		"sectionOrder": 1,
+		"order": 3,
+		"status": "stable",
+		"description": "Membedah anatomi sebuah file .svelte — blok script, script module, markup, dan style — beserta urutan eksekusi dan aturan dasarnya.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-files",
+		"keywords": [
+			"svelte-files",
+			"script",
+			"script-module",
+			"markup",
+			"style",
+			"scoped-css"
+		]
+	},
+	{
+		"slug": "svelte/introduction/svelte-js-files",
+		"title": ".svelte.js & .svelte.ts files",
+		"product": "svelte",
+		"section": "introduction",
+		"sectionTitle": "Introduction",
+		"sectionOrder": 1,
+		"order": 4,
+		"status": "stable",
+		"description": "File .svelte.js/.svelte.ts memungkinkan kamu memakai runes di luar komponen untuk membuat logika reaktif yang reusable dan state yang bisa di-share antar komponen.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-js-files",
+		"keywords": [
+			"svelte-js-files",
+			"shared-state",
+			"runes",
+			"reactive-module",
+			"getter"
+		]
+	},
+	{
+		"slug": "svelte/runes/what-are-runes",
+		"title": "What are runes?",
+		"product": "svelte",
+		"section": "runes",
+		"sectionTitle": "Runes",
+		"sectionOrder": 2,
+		"order": 1,
+		"status": "stable",
+		"description": "Runes adalah simbol $ yang berfungsi sebagai instruksi compiler untuk menandai bagian kode mana yang reaktif, menggantikan reaktivitas implisit Svelte 4.",
+		"docs": "https://svelte.dev/docs/svelte/what-are-runes",
+		"keywords": [
+			"runes",
+			"reactivity",
+			"compiler",
+			"$state",
+			"svelte5"
+		]
+	},
+	{
+		"slug": "svelte/runes/state",
+		"title": "$state",
+		"product": "svelte",
+		"section": "runes",
+		"sectionTitle": "Runes",
+		"sectionOrder": 2,
+		"order": 2,
+		"status": "stable",
+		"description": "Menandai nilai sebagai reaktif dengan $state, memahami deep reactivity lewat Proxy, serta varian $state.raw, $state.snapshot, dan class fields.",
+		"docs": "https://svelte.dev/docs/svelte/$state",
+		"keywords": [
+			"state",
+			"reactivity",
+			"proxy",
+			"snapshot",
+			"runes",
+			"class-fields"
+		]
+	},
+	{
+		"slug": "svelte/runes/derived",
+		"title": "$derived",
+		"product": "svelte",
+		"section": "runes",
+		"sectionTitle": "Runes",
+		"sectionOrder": 2,
+		"order": 3,
+		"status": "stable",
+		"description": "Membuat nilai turunan yang menghitung ulang otomatis dengan $derived dan $derived.by — dependency dilacak otomatis dan bebas efek samping.",
+		"docs": "https://svelte.dev/docs/svelte/$derived",
+		"keywords": [
+			"derived",
+			"derived.by",
+			"computed",
+			"reactivity",
+			"runes"
+		]
+	},
+	{
+		"slug": "svelte/runes/effect",
+		"title": "$effect",
+		"product": "svelte",
+		"section": "runes",
+		"sectionTitle": "Runes",
+		"sectionOrder": 2,
+		"order": 4,
+		"status": "stable",
+		"description": "Menjalankan side effect reaktif yang otomatis melacak dependensinya, beserta cleanup dan varian $effect.pre, $effect.root, serta $effect.tracking.",
+		"docs": "https://svelte.dev/docs/svelte/$effect",
+		"keywords": [
+			"$effect",
+			"side-effect",
+			"cleanup",
+			"$effect.pre",
+			"$effect.root",
+			"$derived"
+		]
+	},
+	{
+		"slug": "svelte/runes/props",
+		"title": "$props",
+		"product": "svelte",
+		"section": "runes",
+		"sectionTitle": "Runes",
+		"sectionOrder": 2,
+		"order": 5,
+		"status": "stable",
+		"description": "Menerima data dari parent lewat $props() dengan destructuring biasa — default value, rename, rest props, tipe TypeScript, dan $props.id().",
+		"docs": "https://svelte.dev/docs/svelte/$props",
+		"keywords": [
+			"props",
+			"$props",
+			"destructuring",
+			"rest props",
+			"typescript",
+			"props.id"
+		]
+	},
+	{
+		"slug": "svelte/runes/bindable",
+		"title": "$bindable",
+		"product": "svelte",
+		"section": "runes",
+		"sectionTitle": "Runes",
+		"sectionOrder": 2,
+		"order": 6,
+		"status": "stable",
+		"description": "Membuka two-way binding antar komponen secara opt-in dengan let { value = $bindable() } = $props(), lengkap dengan kapan ia layak dipakai.",
+		"docs": "https://svelte.dev/docs/svelte/$bindable",
+		"keywords": [
+			"bindable",
+			"two-way binding",
+			"props",
+			"bind",
+			"defineModel",
+			"runes"
+		]
+	},
+	{
+		"slug": "svelte/runes/inspect",
+		"title": "$inspect",
+		"product": "svelte",
+		"section": "runes",
+		"sectionTitle": "Runes",
+		"sectionOrder": 2,
+		"order": 7,
+		"status": "stable",
+		"description": "Rune debug khusus development yang otomatis nge-log saat state reaktif berubah, lengkap dengan .with() dan $inspect.trace(), dan lenyap total di build produksi.",
+		"docs": "https://svelte.dev/docs/svelte/$inspect",
+		"keywords": [
+			"inspect",
+			"debug",
+			"trace",
+			"with",
+			"reactivity",
+			"runes"
+		]
+	},
+	{
+		"slug": "svelte/runes/host",
+		"title": "$host",
+		"product": "svelte",
+		"section": "runes",
+		"sectionTitle": "Runes",
+		"sectionOrder": 2,
+		"order": 8,
+		"status": "stable",
+		"description": "Mengakses elemen host saat komponen di-compile sebagai custom element, terutama untuk men-dispatch CustomEvent ke dunia non-Svelte.",
+		"docs": "https://svelte.dev/docs/svelte/$host",
+		"keywords": [
+			"host",
+			"custom-element",
+			"web-component",
+			"CustomEvent",
+			"dispatch"
+		]
+	},
+	{
+		"slug": "svelte/template/basic-markup",
+		"title": "Basic markup",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 1,
+		"status": "stable",
+		"description": "Cara menyisipkan nilai JavaScript ke teks & atribut HTML di Svelte lewat kurung kurawal, plus shorthand, spread, boolean attribute, dan komentar.",
+		"docs": "https://svelte.dev/docs/svelte/basic-markup",
+		"keywords": [
+			"markup",
+			"interpolation",
+			"attributes",
+			"shorthand",
+			"spread",
+			"boolean attributes"
+		]
+	},
+	{
+		"slug": "svelte/template/if",
+		"title": "{#if ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 2,
+		"status": "stable",
+		"description": "Merender markup secara kondisional dengan blok {#if}/{:else if}/{:else} di template Svelte.",
+		"docs": "https://svelte.dev/docs/svelte/if",
+		"keywords": [
+			"if",
+			"else",
+			"conditional",
+			"template",
+			"branching"
+		]
+	},
+	{
+		"slug": "svelte/template/each",
+		"title": "{#each ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 3,
+		"status": "stable",
+		"description": "Merender list di markup dengan blok each — keyed vs unkeyed, index, destructuring, blok kosong :else, serta iterasi Map dan Set.",
+		"docs": "https://svelte.dev/docs/svelte/each",
+		"keywords": [
+			"each",
+			"list",
+			"keyed",
+			"destructuring",
+			"map-set",
+			"index"
+		]
+	},
+	{
+		"slug": "svelte/template/key",
+		"title": "{#key ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 4,
+		"status": "stable",
+		"description": "Membuang lalu membangun ulang (remount) sebagian markup saat sebuah nilai berubah — untuk mereset state komponen anak dan memicu transisi ulang.",
+		"docs": "https://svelte.dev/docs/svelte/key",
+		"keywords": [
+			"key",
+			"remount",
+			"transition",
+			"reset-state",
+			"template"
+		]
+	},
+	{
+		"slug": "svelte/template/await",
+		"title": "{#await ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 5,
+		"status": "stable",
+		"description": "Menangani Promise langsung di markup lewat blok {#await}/{:then}/{:catch}, lengkap dengan state loading, sukses, dan error tanpa boilerplate.",
+		"docs": "https://svelte.dev/docs/svelte/await",
+		"keywords": [
+			"await",
+			"then",
+			"catch",
+			"promise",
+			"async",
+			"loading-state"
+		]
+	},
+	{
+		"slug": "svelte/template/snippet",
+		"title": "{#snippet ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 6,
+		"status": "stable",
+		"description": "Membuat potongan markup yang bisa dipakai ulang dengan {#snippet}, memanggilnya lewat {@render}, dan mengirimnya sebagai prop untuk menggantikan slot Svelte 4.",
+		"docs": "https://svelte.dev/docs/svelte/snippet",
+		"keywords": [
+			"snippet",
+			"render",
+			"children",
+			"slot",
+			"render props",
+			"scoped slot"
+		]
+	},
+	{
+		"slug": "svelte/template/render",
+		"title": "{@render ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 7,
+		"status": "stable",
+		"description": "Memanggil dan merender snippet (termasuk children) dengan {@render snippet(args)}, lengkap dengan render opsional dan ekspresi dinamis.",
+		"docs": "https://svelte.dev/docs/svelte/@render",
+		"keywords": [
+			"render",
+			"snippet",
+			"children",
+			"optional",
+			"scope"
+		]
+	},
+	{
+		"slug": "svelte/template/html",
+		"title": "{@html ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 8,
+		"status": "stable",
+		"description": "Menyuntik string HTML mentah ke DOM lewat tag @html, memahami risiko XSS dan cara menyanitasi, plus menata hasilnya dengan :global.",
+		"docs": "https://svelte.dev/docs/svelte/@html",
+		"keywords": [
+			"html",
+			"xss",
+			"innerHTML",
+			"sanitize",
+			"DOMPurify"
+		]
+	},
+	{
+		"slug": "svelte/template/attach",
+		"title": "{@attach ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 9,
+		"status": "stable",
+		"description": "Menempelkan fungsi ke elemen/komponen dengan {@attach fn} — jalan saat mount, reaktif, dengan cleanup; pengganti modern action use: di Svelte 5.",
+		"docs": "https://svelte.dev/docs/svelte/@attach",
+		"keywords": [
+			"attach",
+			"attachment",
+			"action",
+			"reactive",
+			"cleanup",
+			"factory"
+		]
+	},
+	{
+		"slug": "svelte/template/const",
+		"title": "{@const ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 10,
+		"status": "stable",
+		"description": "Mendeklarasikan konstanta lokal di dalam sebuah blok (each, if, snippet) memakai @const, lengkap dengan aturan penempatannya.",
+		"docs": "https://svelte.dev/docs/svelte/@const",
+		"keywords": [
+			"const",
+			"template",
+			"konstanta",
+			"each",
+			"snippet"
+		]
+	},
+	{
+		"slug": "svelte/template/debug",
+		"title": "{@debug ...}",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 11,
+		"status": "stable",
+		"description": "Mendebug nilai reaktif langsung dari markup; mencetak ke console dan memicu breakpoint debugger tiap nilai berubah, hanya saat development.",
+		"docs": "https://svelte.dev/docs/svelte/@debug",
+		"keywords": [
+			"debug",
+			"breakpoint",
+			"debugger",
+			"console",
+			"dev-only"
+		]
+	},
+	{
+		"slug": "svelte/template/declaration-tags",
+		"title": "{@const} / declaration tags",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 12,
+		"status": "stable",
+		"description": "Cara membuat variabel lokal di dalam markup Svelte dengan declaration tags (const & let), aturannya, plus padanan lawasnya @const.",
+		"docs": "https://svelte.dev/docs/svelte/declaration-tags",
+		"keywords": [
+			"declaration tags",
+			"const",
+			"let",
+			"template",
+			"derived"
+		]
+	},
+	{
+		"slug": "svelte/template/bind",
+		"title": "bind:",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 13,
+		"status": "stable",
+		"description": "Two-way binding di Svelte 5 — menyambungkan DOM dan state dua arah lewat bind:value, checked, group, files, this, prop $bindable, binding dimensi, dan function bindings.",
+		"docs": "https://svelte.dev/docs/svelte/bind",
+		"keywords": [
+			"bind",
+			"two-way binding",
+			"bindable",
+			"group",
+			"clientWidth"
+		]
+	},
+	{
+		"slug": "svelte/template/use",
+		"title": "use:",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 14,
+		"status": "stable",
+		"description": "Menjalankan logika DOM imperatif yang reusable lewat use:action — parameter reaktif, cleanup, dan kapan beralih ke attachments.",
+		"docs": "https://svelte.dev/docs/svelte/use",
+		"keywords": [
+			"use",
+			"action",
+			"directive",
+			"DOM",
+			"clickOutside",
+			"attachment"
+		]
+	},
+	{
+		"slug": "svelte/template/transition",
+		"title": "transition:",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 15,
+		"status": "stable",
+		"description": "Animasikan elemen saat masuk dan keluar dari DOM dengan satu directive bawaan — fade, fly, slide, scale, modifier local/global, event lifecycle, plus custom transition.",
+		"docs": "https://svelte.dev/docs/svelte/transition",
+		"keywords": [
+			"transition",
+			"fade",
+			"fly",
+			"slide",
+			"custom-transition",
+			"local-global"
+		]
+	},
+	{
+		"slug": "svelte/template/in-and-out",
+		"title": "in: and out:",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 16,
+		"status": "stable",
+		"description": "Memberi animasi masuk dan keluar yang berbeda dengan in:/out:, dua directive terpisah yang berjalan independen — bukan saling membalik seperti transition:.",
+		"docs": "https://svelte.dev/docs/svelte/in-and-out",
+		"keywords": [
+			"in",
+			"out",
+			"transition",
+			"masuk",
+			"keluar",
+			"animasi"
+		]
+	},
+	{
+		"slug": "svelte/template/animate",
+		"title": "animate:",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 17,
+		"status": "stable",
+		"description": "Menganimasikan elemen list ber-key yang berpindah posisi (reorder/sort) dengan mulus memakai animate:flip dan teknik FLIP.",
+		"docs": "https://svelte.dev/docs/svelte/animate",
+		"keywords": [
+			"animate",
+			"flip",
+			"reorder",
+			"keyed-each",
+			"custom-animate"
+		]
+	},
+	{
+		"slug": "svelte/template/style",
+		"title": "style:",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 18,
+		"status": "stable",
+		"description": "Mengatur properti CSS inline secara reaktif dengan directive style: — termasuk shorthand, modifier |important, banyak style: sekaligus, custom properties, dan kombinasinya dengan atribut style serta class.",
+		"docs": "https://svelte.dev/docs/svelte/style",
+		"keywords": [
+			"style",
+			"directive",
+			"inline css",
+			"important",
+			"custom property",
+			"reaktif"
+		]
+	},
+	{
+		"slug": "svelte/template/class",
+		"title": "class",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 19,
+		"status": "stable",
+		"description": "Memberi kelas CSS secara dinamis di Svelte 5 — atribut class dengan objek/array (clsx), directive class:name lama, dan cara menggabungkan kelas dengan rapi.",
+		"docs": "https://svelte.dev/docs/svelte/class",
+		"keywords": [
+			"class",
+			"clsx",
+			"conditional class",
+			"class directive",
+			"styling"
+		]
+	},
+	{
+		"slug": "svelte/template/await-expressions",
+		"title": "await (expressions)",
+		"product": "svelte",
+		"section": "template",
+		"sectionTitle": "Template syntax",
+		"sectionOrder": 3,
+		"order": 20,
+		"status": "stable",
+		"description": "Memakai await langsung di script, $derived, dan markup (Async Svelte) — lengkap dengan $effect.pending dan <svelte:boundary> untuk loading yang konsisten.",
+		"docs": "https://svelte.dev/docs/svelte/await-expressions",
+		"keywords": [
+			"await",
+			"async",
+			"derived",
+			"effect-pending",
+			"boundary",
+			"settled"
+		]
+	},
+	{
+		"slug": "svelte/styling/scoped-styles",
+		"title": "Scoped styles",
+		"product": "svelte",
+		"section": "styling",
+		"sectionTitle": "Styling",
+		"sectionOrder": 4,
+		"order": 1,
+		"status": "stable",
+		"description": "Bagaimana Svelte membuat CSS komponen otomatis terisolasi lewat hash class, plus aturan spesifisitas dan scoping keyframes.",
+		"docs": "https://svelte.dev/docs/svelte/scoped-styles",
+		"keywords": [
+			"scoped",
+			"styling",
+			"hash",
+			"specificity",
+			"keyframes",
+			"css"
+		]
+	},
+	{
+		"slug": "svelte/styling/global-styles",
+		"title": "Global styles",
+		"product": "svelte",
+		"section": "styling",
+		"sectionTitle": "Styling",
+		"sectionOrder": 4,
+		"order": 2,
+		"status": "stable",
+		"description": "Menembus scoping Svelte secara sengaja dengan :global(...) dan blok :global { ... } — untuk reset global, menata konten {@html}, dan menjangkau elemen anak/pihak ketiga.",
+		"docs": "https://svelte.dev/docs/svelte/global-styles",
+		"keywords": [
+			"global",
+			"css",
+			"scoped",
+			"html-content",
+			"keyframes",
+			"reset"
+		]
+	},
+	{
+		"slug": "svelte/styling/custom-properties",
+		"title": "Custom properties",
+		"product": "svelte",
+		"section": "styling",
+		"sectionTitle": "Styling",
+		"sectionOrder": 4,
+		"order": 3,
+		"status": "stable",
+		"description": "Mengoper CSS custom properties ke komponen Svelte dan membacanya lewat var() untuk membuat komponen yang gampang di-tema dari luar.",
+		"docs": "https://svelte.dev/docs/svelte/custom-properties",
+		"keywords": [
+			"custom-properties",
+			"css-variables",
+			"theming",
+			"var",
+			"props",
+			"styling"
+		]
+	},
+	{
+		"slug": "svelte/styling/nested-style-elements",
+		"title": "Nested <style> elements",
+		"product": "svelte",
+		"section": "styling",
+		"sectionTitle": "Styling",
+		"sectionOrder": 4,
+		"order": 4,
+		"status": "stable",
+		"description": "Aturan style bertingkat di Svelte — kenapa cuma satu blok style top-level yang di-scope, sisanya disisipkan apa adanya dan menjadi global.",
+		"docs": "https://svelte.dev/docs/svelte/nested-style-elements",
+		"keywords": [
+			"nested-style",
+			"scoped",
+			"global",
+			"style-tag",
+			"top-level"
+		]
+	},
+	{
+		"slug": "svelte/special-elements/boundary",
+		"title": "<svelte:boundary>",
+		"product": "svelte",
+		"section": "special-elements",
+		"sectionTitle": "Special elements",
+		"sectionOrder": 5,
+		"order": 1,
+		"status": "stable",
+		"description": "Menangkap error saat render dan menampilkan UI cadangan (serta loading) secara deklaratif lewat snippet failed, pending, dan callback onerror.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-boundary",
+		"keywords": [
+			"svelte-boundary",
+			"error-boundary",
+			"failed",
+			"pending",
+			"reset"
+		]
+	},
+	{
+		"slug": "svelte/special-elements/window",
+		"title": "<svelte:window>",
+		"product": "svelte",
+		"section": "special-elements",
+		"sectionTitle": "Special elements",
+		"sectionOrder": 5,
+		"order": 2,
+		"status": "stable",
+		"description": "Pasang event listener dan binding ke objek window secara deklaratif lewat <svelte:window> — dengan auto-cleanup dan aman SSR.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-window",
+		"keywords": [
+			"svelte-window",
+			"bind-scrollY",
+			"window-events",
+			"auto-cleanup",
+			"special-elements"
+		]
+	},
+	{
+		"slug": "svelte/special-elements/document",
+		"title": "<svelte:document>",
+		"product": "svelte",
+		"section": "special-elements",
+		"sectionTitle": "Special elements",
+		"sectionOrder": 5,
+		"order": 3,
+		"status": "stable",
+		"description": "Menempelkan event listener dan binding (readonly) ke objek document secara deklaratif — visibilitychange, selectionchange, activeElement, dan lainnya — tanpa addEventListener manual.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-document",
+		"keywords": [
+			"svelte-document",
+			"visibilitychange",
+			"selectionchange",
+			"activeElement",
+			"special-elements"
+		]
+	},
+	{
+		"slug": "svelte/special-elements/body",
+		"title": "<svelte:body>",
+		"product": "svelte",
+		"section": "special-elements",
+		"sectionTitle": "Special elements",
+		"sectionOrder": 5,
+		"order": 4,
+		"status": "stable",
+		"description": "Menempelkan event listener (terutama mouseenter/mouseleave) dan action/attachment ke document.body secara deklaratif, tanpa addEventListener manual — pas untuk deteksi kursor keluar-masuk halaman dan exit-intent.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-body",
+		"keywords": [
+			"svelte-body",
+			"mouseenter",
+			"mouseleave",
+			"exit-intent",
+			"special-elements"
+		]
+	},
+	{
+		"slug": "svelte/special-elements/head",
+		"title": "<svelte:head>",
+		"product": "svelte",
+		"section": "special-elements",
+		"sectionTitle": "Special elements",
+		"sectionOrder": 5,
+		"order": 5,
+		"status": "stable",
+		"description": "Menyisipkan title, meta, dan link ke dalam <head> dokumen secara deklaratif dan SSR-friendly, langsung dari dalam komponen.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-head",
+		"keywords": [
+			"svelte-head",
+			"seo",
+			"meta-tags",
+			"document-title",
+			"ssr"
+		]
+	},
+	{
+		"slug": "svelte/special-elements/element",
+		"title": "<svelte:element>",
+		"product": "svelte",
+		"section": "special-elements",
+		"sectionTitle": "Special elements",
+		"sectionOrder": 5,
+		"order": 6,
+		"status": "stable",
+		"description": "Merender satu elemen DOM yang nama tag-nya baru ditentukan saat runtime lewat <svelte:element> dengan atribut this, lengkap dengan atribut & event dinamis serta perilaku saat tag null.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-element",
+		"keywords": [
+			"svelte-element",
+			"dynamic-tag",
+			"this",
+			"void-element",
+			"xmlns"
+		]
+	},
+	{
+		"slug": "svelte/special-elements/options",
+		"title": "<svelte:options>",
+		"product": "svelte",
+		"section": "special-elements",
+		"sectionTitle": "Special elements",
+		"sectionOrder": 5,
+		"order": 7,
+		"status": "stable",
+		"description": "Mengatur opsi compiler per-komponen (runes, namespace, customElement, css) lewat elemen svelte:options.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-options",
+		"keywords": [
+			"svelte-options",
+			"custom-element",
+			"runes-mode",
+			"namespace",
+			"compiler-options"
+		]
+	},
+	{
+		"slug": "svelte/runtime/stores",
+		"title": "Stores",
+		"product": "svelte",
+		"section": "runtime",
+		"sectionTitle": "Runtime",
+		"sectionOrder": 6,
+		"order": 1,
+		"status": "stable",
+		"description": "Memahami store Svelte (writable, readable, derived, custom store) dengan auto-subscribe $, plus kapan memilih store vs runes ($state di .svelte.ts) untuk state global.",
+		"docs": "https://svelte.dev/docs/svelte/stores",
+		"keywords": [
+			"store",
+			"writable",
+			"readable",
+			"derived",
+			"auto-subscribe",
+			"runes"
+		]
+	},
+	{
+		"slug": "svelte/runtime/context",
+		"title": "Context",
+		"product": "svelte",
+		"section": "runtime",
+		"sectionTitle": "Runtime",
+		"sectionOrder": 6,
+		"order": 2,
+		"status": "stable",
+		"description": "Berbagi data lintas kedalaman komponen lewat setContext/getContext/hasContext/getAllContexts tanpa prop drilling, termasuk cara menyimpan state reaktif dan batasan timing-nya.",
+		"docs": "https://svelte.dev/docs/svelte/context",
+		"keywords": [
+			"setContext",
+			"getContext",
+			"hasContext",
+			"createContext",
+			"prop drilling"
+		]
+	},
+	{
+		"slug": "svelte/runtime/lifecycle-hooks",
+		"title": "Lifecycle hooks",
+		"product": "svelte",
+		"section": "runtime",
+		"sectionTitle": "Runtime",
+		"sectionOrder": 6,
+		"order": 3,
+		"status": "stable",
+		"description": "Mengelola momen lahir dan matinya komponen dengan onMount (plus cleanup), onDestroy, dan tick — serta kenapa beforeUpdate/afterUpdate ditinggalkan demi $effect.",
+		"docs": "https://svelte.dev/docs/svelte/lifecycle-hooks",
+		"keywords": [
+			"onMount",
+			"onDestroy",
+			"tick",
+			"lifecycle",
+			"effect",
+			"cleanup"
+		]
+	},
+	{
+		"slug": "svelte/runtime/imperative-component-api",
+		"title": "Imperative component API",
+		"product": "svelte",
+		"section": "runtime",
+		"sectionTitle": "Runtime",
+		"sectionOrder": 6,
+		"order": 4,
+		"status": "stable",
+		"description": "Memasang, membongkar, dan merender komponen Svelte secara manual dari JavaScript biasa lewat mount, unmount, render, dan hydrate.",
+		"docs": "https://svelte.dev/docs/svelte/imperative-component-api",
+		"keywords": [
+			"mount",
+			"unmount",
+			"render",
+			"hydrate",
+			"flushSync"
+		]
+	},
+	{
+		"slug": "svelte/runtime/hydratable",
+		"title": "Hydratable data",
+		"product": "svelte",
+		"section": "runtime",
+		"sectionTitle": "Runtime",
+		"sectionOrder": 6,
+		"order": 5,
+		"status": "stable",
+		"description": "API low-level untuk membagikan hasil kerja server (fetch/komputasi) ke proses hidrasi klien tanpa mengerjakannya ulang.",
+		"docs": "https://svelte.dev/docs/svelte/hydratable",
+		"keywords": [
+			"hydratable",
+			"hydration",
+			"SSR",
+			"devalue",
+			"serialization"
+		]
+	},
+	{
+		"slug": "svelte/misc/best-practices",
+		"title": "Best practices",
+		"product": "svelte",
+		"section": "misc",
+		"sectionTitle": "Misc",
+		"sectionOrder": 7,
+		"order": 1,
+		"status": "stable",
+		"description": "Pola idiomatik Svelte 5 — kapan pakai $derived vs $effect, struktur komponen yang sehat, aksesibilitas, performa, dan cara menghindari anti-pattern reaktivitas.",
+		"docs": "https://svelte.dev/docs/svelte/best-practices",
+		"keywords": [
+			"best-practices",
+			"derived",
+			"effect",
+			"anti-pattern",
+			"aksesibilitas",
+			"performa"
+		]
+	},
+	{
+		"slug": "svelte/misc/testing",
+		"title": "Testing",
+		"product": "svelte",
+		"section": "misc",
+		"sectionTitle": "Misc",
+		"sectionOrder": 7,
+		"order": 2,
+		"status": "stable",
+		"description": "Strategi testing Svelte 5 lengkap — unit logic .svelte.ts dengan flushSync & $effect.root, component test pakai @testing-library/svelte, dan E2E dengan Playwright, plus kapan memakai masing-masing.",
+		"docs": "https://svelte.dev/docs/svelte/testing",
+		"keywords": [
+			"testing",
+			"vitest",
+			"testing-library",
+			"playwright",
+			"flushSync",
+			"effect-root"
+		]
+	},
+	{
+		"slug": "svelte/misc/typescript",
+		"title": "TypeScript",
+		"product": "svelte",
+		"section": "misc",
+		"sectionTitle": "Misc",
+		"sectionOrder": 7,
+		"order": 3,
+		"status": "stable",
+		"description": "Memakai TypeScript penuh di Svelte 5 — lang=\"ts\", mengetik $props lewat interface, generics komponen, typing $state/$derived, tipe Component & Snippet, plus konfigurasi.",
+		"docs": "https://svelte.dev/docs/svelte/typescript",
+		"keywords": [
+			"typescript",
+			"$props",
+			"generics",
+			"Component",
+			"Snippet",
+			"$state"
+		]
+	},
+	{
+		"slug": "svelte/misc/custom-elements",
+		"title": "Custom elements",
+		"product": "svelte",
+		"section": "misc",
+		"sectionTitle": "Misc",
+		"sectionOrder": 7,
+		"order": 4,
+		"status": "stable",
+		"description": "Mengkompilasi komponen Svelte 5 menjadi Web Component standar dengan svelte:options customElement, $host(), props/events, shadow DOM, beserta batasan & cara memakainya di luar Svelte.",
+		"docs": "https://svelte.dev/docs/svelte/custom-elements",
+		"keywords": [
+			"custom-elements",
+			"web-components",
+			"svelte:options",
+			"$host",
+			"shadow-dom"
+		]
+	},
+	{
+		"slug": "svelte/misc/browser-support",
+		"title": "Browser support",
+		"product": "svelte",
+		"section": "misc",
+		"sectionTitle": "Misc",
+		"sectionOrder": 7,
+		"order": 5,
+		"status": "stable",
+		"description": "Browser mana saja yang didukung Svelte 5 (Baseline 2020), fitur JavaScript yang diasumsikan, polyfill, dan pertimbangan untuk browser lawas.",
+		"docs": "https://svelte.dev/docs/svelte/browser-support",
+		"keywords": [
+			"browser-support",
+			"baseline",
+			"polyfill",
+			"proxy",
+			"legacy-browser"
+		]
+	},
+	{
+		"slug": "svelte/misc/v4-migration-guide",
+		"title": "Svelte 4 migration guide",
+		"product": "svelte",
+		"section": "misc",
+		"sectionTitle": "Misc",
+		"sectionOrder": 7,
+		"order": 6,
+		"status": "stable",
+		"description": "Migrasi Svelte 3 ke Svelte 4 — perubahan minor seputar tooling, bundler, dan tipe, dengan fokus kompatibilitas.",
+		"docs": "https://svelte.dev/docs/svelte/v4-migration-guide",
+		"keywords": [
+			"migrasi",
+			"svelte-4",
+			"tooling",
+			"bundler",
+			"typescript",
+			"kompatibilitas"
+		]
+	},
+	{
+		"slug": "svelte/misc/v5-migration-guide",
+		"title": "Svelte 5 migration guide",
+		"product": "svelte",
+		"section": "misc",
+		"sectionTitle": "Misc",
+		"sectionOrder": 7,
+		"order": 7,
+		"status": "stable",
+		"description": "Memetakan setiap API Svelte 4 ke padanan runes Svelte 5 — export let, $:, on:, slot, createEventDispatcher, svelte:component, instansiasi komponen — plus strategi migrasi bertahap dengan migration script.",
+		"docs": "https://svelte.dev/docs/svelte/v5-migration-guide",
+		"keywords": [
+			"migrasi",
+			"runes",
+			"legacy",
+			"props",
+			"snippet",
+			"callback"
+		]
+	},
+	{
+		"slug": "svelte/misc/faq",
+		"title": "Frequently asked questions",
+		"product": "svelte",
+		"section": "misc",
+		"sectionTitle": "Misc",
+		"sectionOrder": 7,
+		"order": 8,
+		"status": "stable",
+		"description": "Kumpulan pertanyaan umum seputar Svelte — dukungan, perbandingan, format kode, routing, mobile, testing, HMR — beserta peta ekosistem dan padanannya di React/Vue.",
+		"docs": "https://svelte.dev/docs/svelte/faq",
+		"keywords": [
+			"faq",
+			"ekosistem",
+			"routing",
+			"testing",
+			"prettier",
+			"sveltekit"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte",
+		"title": "svelte",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 1,
+		"status": "reference",
+		"description": "Referensi lengkap modul inti 'svelte' — mount, unmount, hydrate, render, tick, untrack, flushSync, context API, createRawSnippet, dan tipe seperti Component & Snippet.",
+		"docs": "https://svelte.dev/docs/svelte/svelte",
+		"keywords": [
+			"mount",
+			"hydrate",
+			"context",
+			"snippet",
+			"tick",
+			"untrack"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-action",
+		"title": "svelte/action",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 2,
+		"status": "reference",
+		"description": "Tipe Action & ActionReturn dari svelte/action untuk membuat perilaku DOM lewat directive use:, plus cara mengetik parameter dan penerus modernnya, attachments.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-action",
+		"keywords": [
+			"action",
+			"ActionReturn",
+			"use directive",
+			"attachment",
+			"DOM"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-animate",
+		"title": "svelte/animate",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 3,
+		"status": "reference",
+		"description": "Modul svelte/animate dan fungsi flip untuk directive animate: — menganimasikan elemen yang berpindah posisi saat daftar berurutan diubah.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-animate",
+		"keywords": [
+			"animate",
+			"flip",
+			"FLIP",
+			"reorder",
+			"keyed each",
+			"animation"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-attachments",
+		"title": "svelte/attachments",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 4,
+		"status": "reference",
+		"description": "Modul svelte/attachments — tipe Attachment, createAttachmentKey, fromAction, dan directive @attach untuk memasang perilaku DOM yang reaktif ke elemen.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-attachments",
+		"keywords": [
+			"attachments",
+			"attach",
+			"createAttachmentKey",
+			"fromAction",
+			"action"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-compiler",
+		"title": "svelte/compiler",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 5,
+		"status": "reference",
+		"description": "Referensi modul svelte/compiler — compile, compileModule, parse, preprocess, migrate, dan VERSION beserta opsi dan bentuk hasilnya.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-compiler",
+		"keywords": [
+			"compiler",
+			"compile",
+			"preprocess",
+			"parse",
+			"migrate",
+			"AST"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-easing",
+		"title": "svelte/easing",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 6,
+		"status": "reference",
+		"description": "Katalog 31 fungsi kurva easing Svelte (cubicOut, elasticOut, bounceOut, dll.) untuk mengatur \"rasa\" percepatan animasi pada transition, Tween, dan animate.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-easing",
+		"keywords": [
+			"easing",
+			"cubicOut",
+			"elasticOut",
+			"transition",
+			"Tween",
+			"kurva"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-events",
+		"title": "svelte/events",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 7,
+		"status": "reference",
+		"description": "Memasang event listener secara terprogram dengan on() yang sadar delegasi event Svelte 5 dan mengembalikan fungsi pelepas.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-events",
+		"keywords": [
+			"on",
+			"svelte/events",
+			"event listener",
+			"delegation",
+			"cleanup"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-legacy",
+		"title": "svelte/legacy",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 8,
+		"status": "reference",
+		"description": "Modul jembatan berisi padanan runtime untuk fitur Svelte 4 (event modifier, event forwarding, instansiasi class) yang dipakai migration script saat memodernkan kode.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-legacy",
+		"keywords": [
+			"legacy",
+			"migrasi",
+			"event-modifier",
+			"createBubbler",
+			"asClassComponent",
+			"run"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-motion",
+		"title": "svelte/motion",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 9,
+		"status": "reference",
+		"description": "Referensi lengkap svelte/motion — class Spring & Tween berbasis runes, fungsi lama spring()/tweened(), dan prefersReducedMotion untuk aksesibilitas.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-motion",
+		"keywords": [
+			"motion",
+			"spring",
+			"tween",
+			"prefers-reduced-motion",
+			"animasi"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-reactivity-window",
+		"title": "svelte/reactivity/window",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 10,
+		"status": "reference",
+		"description": "Nilai reaktif bawaan untuk membaca ukuran & keadaan window (innerWidth, scrollY, online, devicePixelRatio, dll.) tanpa menulis event listener manual.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-reactivity-window",
+		"keywords": [
+			"reactivity",
+			"window",
+			"innerWidth",
+			"scrollY",
+			"online",
+			"SSR"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-reactivity",
+		"title": "svelte/reactivity",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 11,
+		"status": "reference",
+		"description": "Koleksi & objek reaktif bawaan Svelte 5 — SvelteMap, SvelteSet, SvelteDate, SvelteURL, SvelteURLSearchParams, MediaQuery, dan createSubscriber untuk membungkus sumber event eksternal.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-reactivity",
+		"keywords": [
+			"SvelteMap",
+			"SvelteSet",
+			"SvelteDate",
+			"MediaQuery",
+			"createSubscriber",
+			"reactivity"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-server",
+		"title": "svelte/server",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 12,
+		"status": "reference",
+		"description": "Modul svelte/server berisi fungsi render() untuk mengubah komponen Svelte menjadi string HTML (head + body) di sisi server untuk SSR.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-server",
+		"keywords": [
+			"svelte/server",
+			"render",
+			"SSR",
+			"head",
+			"body",
+			"hydrate"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-store",
+		"title": "svelte/store",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 13,
+		"status": "reference",
+		"description": "Referensi lengkap modul svelte/store — writable, readable, derived, readonly, get, toStore, fromStore beserta tipe Writable/Readable.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-store",
+		"keywords": [
+			"svelte/store",
+			"writable",
+			"readable",
+			"derived",
+			"toStore",
+			"fromStore"
+		]
+	},
+	{
+		"slug": "svelte/reference/svelte-transition",
+		"title": "svelte/transition",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 14,
+		"status": "reference",
+		"description": "Referensi lengkap modul svelte/transition — fade, blur, fly, slide, scale, draw, dan crossfade beserta semua parameter, default, dan tipe.",
+		"docs": "https://svelte.dev/docs/svelte/svelte-transition",
+		"keywords": [
+			"transition",
+			"fade",
+			"fly",
+			"slide",
+			"crossfade"
+		]
+	},
+	{
+		"slug": "svelte/reference/compiler-errors",
+		"title": "Compiler errors",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 15,
+		"status": "reference",
+		"description": "Daftar lengkap kode error compiler Svelte 5 — arti, penyebab umum, dan cara memperbaikinya, dikelompokkan per kategori.",
+		"docs": "https://svelte.dev/docs/svelte/compiler-errors",
+		"keywords": [
+			"compiler errors",
+			"runes",
+			"legacy",
+			"diagnostics",
+			"build error",
+			"svelte 5"
+		]
+	},
+	{
+		"slug": "svelte/reference/compiler-warnings",
+		"title": "Compiler warnings",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 16,
+		"status": "reference",
+		"description": "Daftar lengkap kode warning compiler Svelte 5 — arti, penyebab umum, cara memperbaiki, dan cara membungkamnya dengan svelte-ignore atau warningFilter.",
+		"docs": "https://svelte.dev/docs/svelte/compiler-warnings",
+		"keywords": [
+			"compiler-warnings",
+			"svelte-ignore",
+			"a11y",
+			"warningFilter",
+			"linting"
+		]
+	},
+	{
+		"slug": "svelte/reference/runtime-errors",
+		"title": "Runtime errors",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 17,
+		"status": "reference",
+		"description": "Daftar lengkap error runtime Svelte 5 (klien, server, shared) — kode, arti, penyebab umum, dan cara memperbaikinya.",
+		"docs": "https://svelte.dev/docs/svelte/runtime-errors",
+		"keywords": [
+			"runtime error",
+			"state_unsafe_mutation",
+			"effect_orphan",
+			"hydration",
+			"lifecycle",
+			"bind"
+		]
+	},
+	{
+		"slug": "svelte/reference/runtime-warnings",
+		"title": "Runtime warnings",
+		"product": "svelte",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 8,
+		"order": 18,
+		"status": "reference",
+		"description": "Daftar lengkap peringatan runtime Svelte 5 (hydration mismatch, ownership, equality proxy, dll) — arti, penyebab, dan cara memperbaikinya.",
+		"docs": "https://svelte.dev/docs/svelte/runtime-warnings",
+		"keywords": [
+			"runtime warnings",
+			"hydration",
+			"ownership",
+			"state proxy",
+			"$inspect"
+		]
+	},
+	{
+		"slug": "svelte/legacy/overview",
+		"title": "Overview (legacy)",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 1,
+		"status": "legacy",
+		"description": "Peta lengkap API Svelte 4 (non-runes) yang masih jalan di Svelte 5 — kapan kamu menemuinya dan cara membaca kode lama tanpa panik.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-overview",
+		"keywords": [
+			"legacy",
+			"svelte-4",
+			"non-runes",
+			"membaca-kode-lama",
+			"deprecated",
+			"migrasi"
+		]
+	},
+	{
+		"slug": "svelte/legacy/let",
+		"title": "Reactive let/var declarations",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 2,
+		"status": "legacy",
+		"description": "Reaktivitas implisit Svelte 4 — setiap let di top-level otomatis reaktif berbasis assignment — dan padanan modern eksplisitnya, $state.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-let",
+		"keywords": [
+			"legacy",
+			"reactivity",
+			"let",
+			"assignment",
+			"state"
+		]
+	},
+	{
+		"slug": "svelte/legacy/reactive-assignments",
+		"title": "Reactive $: statements",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 3,
+		"status": "legacy",
+		"description": "Label reaktif `$:` Svelte 4 untuk derivasi & efek, jebakannya, dan padanan modern $derived / $effect.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-reactive-assignments",
+		"keywords": [
+			"reactive",
+			"derived",
+			"effect",
+			"legacy",
+			"migrasi"
+		]
+	},
+	{
+		"slug": "svelte/legacy/export-let",
+		"title": "export let",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 4,
+		"status": "legacy",
+		"description": "Cara Svelte 4 mendeklarasikan props lewat `export let` — default, rename, dan export non-prop — beserta padanan modern `$props()`.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-export-let",
+		"keywords": [
+			"export-let",
+			"props",
+			"legacy",
+			"svelte-4",
+			"dollar-props",
+			"rename"
+		]
+	},
+	{
+		"slug": "svelte/legacy/props-and-restprops",
+		"title": "$$props and $$restProps",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 5,
+		"status": "legacy",
+		"description": "Dua variabel ajaib Svelte 4 untuk membaca semua props sekaligus — dan padanan modernnya pakai rest destructuring dari $props().",
+		"docs": "https://svelte.dev/docs/svelte/legacy-$$props-and-$$restProps",
+		"keywords": [
+			"legacy",
+			"props",
+			"restProps",
+			"forwarding",
+			"spread",
+			"$props"
+		]
+	},
+	{
+		"slug": "svelte/legacy/on",
+		"title": "on: (legacy events)",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 6,
+		"status": "legacy",
+		"description": "Directive on: dan event modifier Svelte 4 (preventDefault, once, capture, dll) plus padanan modern Svelte 5 — onclick dan helper svelte/legacy.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-on",
+		"keywords": [
+			"legacy",
+			"events",
+			"modifiers",
+			"onclick",
+			"forwarding",
+			"preventDefault"
+		]
+	},
+	{
+		"slug": "svelte/legacy/slots",
+		"title": "<slot> (legacy)",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 7,
+		"status": "legacy",
+		"description": "Memahami API <slot> lama Svelte 4 (default, named, slot props, fallback) dan padanannya di Svelte 5 dengan snippet & {@render}.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-slots",
+		"keywords": [
+			"slot",
+			"named slot",
+			"slot props",
+			"legacy",
+			"snippet",
+			"render"
+		]
+	},
+	{
+		"slug": "svelte/legacy/dollar-slots",
+		"title": "$$slots",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 8,
+		"status": "legacy",
+		"description": "API lama Svelte 4 untuk mengecek slot mana yang terisi oleh parent — padanan modernnya cukup cek prop snippet biasa.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-$$slots",
+		"keywords": [
+			"$$slots",
+			"slot",
+			"legacy",
+			"snippet",
+			"children",
+			"conditional slot"
+		]
+	},
+	{
+		"slug": "svelte/legacy/svelte-fragment",
+		"title": "<svelte:fragment>",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 9,
+		"status": "legacy",
+		"description": "Cara Svelte 4 mengisi named slot tanpa elemen pembungkus DOM lewat `<svelte:fragment>` — dan kenapa snippet Svelte 5 membuatnya tak perlu lagi.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-svelte-fragment",
+		"keywords": [
+			"svelte-fragment",
+			"named-slot",
+			"legacy",
+			"svelte-4",
+			"snippet",
+			"wrapper"
+		]
+	},
+	{
+		"slug": "svelte/legacy/svelte-component",
+		"title": "<svelte:component>",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 10,
+		"status": "legacy",
+		"description": "Elemen khusus Svelte 4 untuk merender komponen dinamis — dan kenapa di Svelte 5 cukup render `<Comp />` langsung karena komponen kini nilai biasa.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-svelte-component",
+		"keywords": [
+			"svelte-component",
+			"dynamic-component",
+			"legacy",
+			"svelte-4",
+			"runes",
+			"this"
+		]
+	},
+	{
+		"slug": "svelte/legacy/svelte-self",
+		"title": "<svelte:self>",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 11,
+		"status": "legacy",
+		"description": "Elemen khusus Svelte 4 untuk membuat komponen merekursi dirinya sendiri — kini digantikan dengan mengimpor komponen lewat nama filenya sendiri.",
+		"docs": "https://svelte.dev/docs/svelte/legacy-svelte-self",
+		"keywords": [
+			"svelte:self",
+			"rekursi",
+			"legacy",
+			"self-import",
+			"komponen"
+		]
+	},
+	{
+		"slug": "svelte/legacy/component-api",
+		"title": "Imperative component API (legacy)",
+		"product": "svelte",
+		"section": "legacy",
+		"sectionTitle": "Legacy APIs",
+		"sectionOrder": 9,
+		"order": 12,
+		"status": "legacy",
+		"description": "Cara lama Svelte 4 mengontrol komponen sebagai class (new Component, $set, $on, $destroy) dan padanan modern Svelte 5 (mount, unmount, hydrate).",
+		"docs": "https://svelte.dev/docs/svelte/legacy-component-api",
+		"keywords": [
+			"new Component",
+			"$set",
+			"$on",
+			"$destroy",
+			"mount",
+			"unmount"
+		]
+	},
+	{
+		"slug": "kit/getting-started/introduction",
+		"title": "Introduction",
+		"product": "kit",
+		"section": "getting-started",
+		"sectionTitle": "Getting started",
+		"sectionOrder": 1,
+		"order": 1,
+		"status": "stable",
+		"description": "SvelteKit adalah meta-framework full-stack di atas Svelte + Vite yang mengurus routing, SSR, dan build — kapan kamu butuh Kit dan kapan cukup Svelte saja.",
+		"docs": "https://svelte.dev/docs/kit/introduction",
+		"keywords": [
+			"sveltekit",
+			"meta-framework",
+			"routing",
+			"ssr",
+			"vite",
+			"adapter"
+		]
+	},
+	{
+		"slug": "kit/getting-started/creating-a-project",
+		"title": "Creating a project",
+		"product": "kit",
+		"section": "getting-started",
+		"sectionTitle": "Getting started",
+		"sectionOrder": 1,
+		"order": 2,
+		"status": "stable",
+		"description": "Membuat proyek SvelteKit baru dengan CLI sv, mengenali struktur awalnya, menjalankan dev server, menyiapkan editor, menambah dependensi, dan gambaran singkat deploy.",
+		"docs": "https://svelte.dev/docs/kit/creating-a-project",
+		"keywords": [
+			"sveltekit",
+			"sv create",
+			"scaffolding",
+			"npm run dev",
+			"project-structure",
+			"vite"
+		]
+	},
+	{
+		"slug": "kit/getting-started/project-types",
+		"title": "Project types",
+		"product": "kit",
+		"section": "getting-started",
+		"sectionTitle": "Getting started",
+		"sectionOrder": 1,
+		"order": 3,
+		"status": "stable",
+		"description": "Empat cara membangun aplikasi dengan SvelteKit — SSR, SSG/prerender, SPA, dan library — beserta kapan masing-masing cocok dan cara mengaturnya lewat adapter & page options.",
+		"docs": "https://svelte.dev/docs/kit/project-types",
+		"keywords": [
+			"ssr",
+			"ssg",
+			"prerender",
+			"spa",
+			"library",
+			"adapter"
+		]
+	},
+	{
+		"slug": "kit/getting-started/project-structure",
+		"title": "Project structure",
+		"product": "kit",
+		"section": "getting-started",
+		"sectionTitle": "Getting started",
+		"sectionOrder": 1,
+		"order": 4,
+		"status": "stable",
+		"description": "Anatomi proyek SvelteKit — peran tiap folder & file (src/routes, src/lib, app.html, static, hooks, params) dan mengapa struktur folder itu sendiri yang jadi konfigurasi.",
+		"docs": "https://svelte.dev/docs/kit/project-structure",
+		"keywords": [
+			"project-structure",
+			"src-routes",
+			"src-lib",
+			"app-html",
+			"hooks",
+			"svelte-config"
+		]
+	},
+	{
+		"slug": "kit/getting-started/web-standards",
+		"title": "Web standards",
+		"product": "kit",
+		"section": "getting-started",
+		"sectionTitle": "Getting started",
+		"sectionOrder": 1,
+		"order": 5,
+		"status": "stable",
+		"description": "SvelteKit dibangun di atas API web standar (Request, Response, Headers, URL, FormData, fetch, Streams) sehingga kode-mu portable lintas runtime dan minim API framework-spesifik.",
+		"docs": "https://svelte.dev/docs/kit/web-standards",
+		"keywords": [
+			"web-standards",
+			"Request",
+			"Response",
+			"fetch",
+			"FormData",
+			"URL"
+		]
+	},
+	{
+		"slug": "kit/core/routing",
+		"title": "Routing",
+		"product": "kit",
+		"section": "core",
+		"sectionTitle": "Core concepts",
+		"sectionOrder": 2,
+		"order": 1,
+		"status": "stable",
+		"description": "Struktur folder src/routes adalah peta URL aplikasimu — file berawalan + (+page, +layout, +server, +error) menentukan UI, data, endpoint, dan error tiap rute.",
+		"docs": "https://svelte.dev/docs/kit/routing",
+		"keywords": [
+			"routing",
+			"+page",
+			"+layout",
+			"+server",
+			"+error",
+			"params"
+		]
+	},
+	{
+		"slug": "kit/core/load",
+		"title": "Loading data",
+		"product": "kit",
+		"section": "core",
+		"sectionTitle": "Core concepts",
+		"sectionOrder": 2,
+		"order": 2,
+		"status": "stable",
+		"description": "Cara SvelteKit mengambil data halaman lewat fungsi load — universal (+page.js) vs server (+page.server.js), aliran data ke page, layout load, parent(), invalidation, dan streaming.",
+		"docs": "https://svelte.dev/docs/kit/load",
+		"keywords": [
+			"load",
+			"page.js",
+			"page.server.js",
+			"layout-load",
+			"invalidate",
+			"streaming"
+		]
+	},
+	{
+		"slug": "kit/core/form-actions",
+		"title": "Form actions",
+		"product": "kit",
+		"section": "core",
+		"sectionTitle": "Core concepts",
+		"sectionOrder": 2,
+		"order": 3,
+		"status": "stable",
+		"description": "Menulis mutasi data lewat HTML form di server dengan export const actions, lalu meningkatkannya jadi mulus tanpa reload memakai use:enhance — progressive enhancement.",
+		"docs": "https://svelte.dev/docs/kit/form-actions",
+		"keywords": [
+			"form-actions",
+			"use-enhance",
+			"progressive-enhancement",
+			"fail",
+			"ActionData",
+			"redirect"
+		]
+	},
+	{
+		"slug": "kit/core/page-options",
+		"title": "Page options",
+		"product": "kit",
+		"section": "core",
+		"sectionTitle": "Core concepts",
+		"sectionOrder": 2,
+		"order": 4,
+		"status": "stable",
+		"description": "Mengatur cara tiap rute dirender — ssr, csr, prerender, trailingSlash, config, dan entries — lewat export const di +page/+layout, per-route maupun diwariskan dari layout.",
+		"docs": "https://svelte.dev/docs/kit/page-options",
+		"keywords": [
+			"page-options",
+			"ssr",
+			"csr",
+			"prerender",
+			"trailingslash",
+			"entries"
+		]
+	},
+	{
+		"slug": "kit/core/state-management",
+		"title": "State management",
+		"product": "kit",
+		"section": "core",
+		"sectionTitle": "Core concepts",
+		"sectionOrder": 2,
+		"order": 5,
+		"status": "stable",
+		"description": "Cara menyimpan state dengan aman di SvelteKit — kenapa variabel bersama di server bocor, dan pola aman lewat locals, context, page data, URL, dan snapshots.",
+		"docs": "https://svelte.dev/docs/kit/state-management",
+		"keywords": [
+			"state-management",
+			"ssr",
+			"context",
+			"locals",
+			"url-state",
+			"snapshots"
+		]
+	},
+	{
+		"slug": "kit/core/remote-functions",
+		"title": "Remote functions",
+		"product": "kit",
+		"section": "core",
+		"sectionTitle": "Core concepts",
+		"sectionOrder": 2,
+		"order": 6,
+		"status": "stable",
+		"description": "RPC type-safe antara klien & server lewat file .remote.js — query, form, command, dan prerender — tanpa menulis endpoint manual.",
+		"docs": "https://svelte.dev/docs/kit/remote-functions",
+		"keywords": [
+			"remote-functions",
+			"query",
+			"form",
+			"command",
+			"prerender",
+			"rpc"
+		]
+	},
+	{
+		"slug": "kit/core/environment-variables",
+		"title": "Environment variables",
+		"product": "kit",
+		"section": "core",
+		"sectionTitle": "Core concepts",
+		"sectionOrder": 2,
+		"order": 7,
+		"status": "stable",
+		"description": "Memahami modul env SvelteKit (static vs dynamic, public vs private), prefix PUBLIC_, dan sistem explicit environment variables baru (2.62+) supaya secret tak bocor ke browser.",
+		"docs": "https://svelte.dev/docs/kit/environment-variables",
+		"keywords": [
+			"environment variables",
+			"static",
+			"dynamic",
+			"public",
+			"private",
+			"PUBLIC_"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/building-your-app",
+		"title": "Building your app",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 1,
+		"status": "stable",
+		"description": "Memahami apa yang sebenarnya terjadi saat `vite build` membangun aplikasi SvelteKit — tahap analisis & prerender, peran adapter, flag `building`, dan cara menjalankan hasil build secara lokal.",
+		"docs": "https://svelte.dev/docs/kit/building-your-app",
+		"keywords": [
+			"build",
+			"vite build",
+			"prerender",
+			"adapter",
+			"building",
+			"preview"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/adapters",
+		"title": "Adapters",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 2,
+		"status": "stable",
+		"description": "Adapter adalah plugin kecil yang membungkus hasil build SvelteKit agar pas dijalankan di platform tujuan — Node, static, Vercel, Netlify, atau Cloudflare.",
+		"docs": "https://svelte.dev/docs/kit/adapters",
+		"keywords": [
+			"adapters",
+			"deployment",
+			"svelte.config.js",
+			"adapter-node",
+			"adapter-static",
+			"ssg"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/adapter-auto",
+		"title": "Zero-config deployments",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 3,
+		"status": "stable",
+		"description": "Bagaimana @sveltejs/adapter-auto mendeteksi platform deploy-mu otomatis, dan kapan sebaiknya kamu ganti ke adapter spesifik.",
+		"docs": "https://svelte.dev/docs/kit/adapter-auto",
+		"keywords": [
+			"adapter-auto",
+			"deployment",
+			"zero-config",
+			"vercel",
+			"netlify",
+			"cloudflare"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/adapter-node",
+		"title": "Node servers",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 4,
+		"status": "stable",
+		"description": "Membungkus aplikasi SvelteKit jadi server Node.js mandiri dengan adapter-node — cara build, menjalankan, mengatur env (PORT/HOST/ORIGIN), reverse proxy, dan custom server.",
+		"docs": "https://svelte.dev/docs/kit/adapter-node",
+		"keywords": [
+			"adapter-node",
+			"node",
+			"deploy",
+			"reverse-proxy",
+			"ORIGIN",
+			"custom-server"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/adapter-static",
+		"title": "Static site generation",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 5,
+		"status": "stable",
+		"description": "Memakai adapter-static untuk meng-prerender seluruh situs jadi file HTML/CSS/JS statis (SSG), termasuk mode SPA dan deploy ke GitHub Pages.",
+		"docs": "https://svelte.dev/docs/kit/adapter-static",
+		"keywords": [
+			"adapter-static",
+			"ssg",
+			"prerender",
+			"spa",
+			"github-pages",
+			"fallback"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/single-page-apps",
+		"title": "Single-page apps",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 6,
+		"status": "stable",
+		"description": "Mengubah SvelteKit jadi SPA murni dengan `ssr = false` + `adapter-static` fallback — kapan ini pilihan tepat dan apa harga SEO/performa yang kamu bayar.",
+		"docs": "https://svelte.dev/docs/kit/single-page-apps",
+		"keywords": [
+			"spa",
+			"ssr false",
+			"adapter-static",
+			"fallback",
+			"csr",
+			"prerender"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/adapter-cloudflare",
+		"title": "Cloudflare",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 7,
+		"status": "stable",
+		"description": "Deploy SvelteKit ke Cloudflare Workers/Pages dengan adapter-cloudflare — akses binding KV/R2/D1 lewat platform.env, konfigurasi wrangler, dan pahami batasan edge runtime.",
+		"docs": "https://svelte.dev/docs/kit/adapter-cloudflare",
+		"keywords": [
+			"adapter-cloudflare",
+			"cloudflare workers",
+			"platform.env",
+			"bindings",
+			"wrangler"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/adapter-cloudflare-workers",
+		"title": "Cloudflare Workers",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 8,
+		"status": "stable",
+		"description": "Mendeploy SvelteKit ke Cloudflare Workers murni dengan adapter-cloudflare-workers, lengkap dengan konfigurasi wrangler.jsonc dan bedanya dengan adapter-cloudflare.",
+		"docs": "https://svelte.dev/docs/kit/adapter-cloudflare-workers",
+		"keywords": [
+			"cloudflare",
+			"workers",
+			"adapter",
+			"wrangler",
+			"deployment",
+			"edge"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/adapter-netlify",
+		"title": "Netlify",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 9,
+		"status": "stable",
+		"description": "Deploy SvelteKit ke Netlify dengan adapter-netlify — pilih antara Netlify Functions (Node) atau Edge Functions, atur netlify.toml, redirects, dan pahami batasannya.",
+		"docs": "https://svelte.dev/docs/kit/adapter-netlify",
+		"keywords": [
+			"adapter-netlify",
+			"netlify",
+			"edge functions",
+			"netlify.toml",
+			"redirects",
+			"deploy"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/adapter-vercel",
+		"title": "Vercel",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 10,
+		"status": "stable",
+		"description": "Deploy SvelteKit ke Vercel dengan adapter-vercel — pilih serverless vs edge, aktifkan ISR & image optimization, dan atur konfigurasi per-rute.",
+		"docs": "https://svelte.dev/docs/kit/adapter-vercel",
+		"keywords": [
+			"adapter-vercel",
+			"serverless",
+			"edge",
+			"ISR",
+			"image optimization",
+			"deployment"
+		]
+	},
+	{
+		"slug": "kit/build-deploy/writing-adapters",
+		"title": "Writing adapters",
+		"product": "kit",
+		"section": "build-deploy",
+		"sectionTitle": "Build and deploy",
+		"sectionOrder": 3,
+		"order": 11,
+		"status": "stable",
+		"description": "Membuat adapter SvelteKit sendiri — kontrak Adapter (adapt/emulate/supports), helper dari objek builder, dan kapan kamu benar-benar perlu menulisnya.",
+		"docs": "https://svelte.dev/docs/kit/writing-adapters",
+		"keywords": [
+			"adapter",
+			"builder",
+			"adapt",
+			"emulate",
+			"supports",
+			"deployment"
+		]
+	},
+	{
+		"slug": "kit/advanced/advanced-routing",
+		"title": "Advanced routing",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 1,
+		"status": "stable",
+		"description": "Bentuk-bentuk lanjutan file-based routing SvelteKit 2 — rest & optional params, param matchers, route groups, layout breaking, encoding karakter spesial, dan aturan sorting rute.",
+		"docs": "https://svelte.dev/docs/kit/advanced-routing",
+		"keywords": [
+			"advanced routing",
+			"rest params",
+			"optional params",
+			"matchers",
+			"route groups",
+			"layout breaking"
+		]
+	},
+	{
+		"slug": "kit/advanced/hooks",
+		"title": "Hooks",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 2,
+		"status": "stable",
+		"description": "Kode yang berjalan untuk SETIAP request lewat hooks SvelteKit — handle/locals/resolve, handleFetch, handleError, handleValidationError, plus reroute & transport universal, lalu sequence().",
+		"docs": "https://svelte.dev/docs/kit/hooks",
+		"keywords": [
+			"hooks",
+			"handle",
+			"handleFetch",
+			"handleError",
+			"reroute",
+			"sequence"
+		]
+	},
+	{
+		"slug": "kit/advanced/errors",
+		"title": "Errors",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 3,
+		"status": "stable",
+		"description": "Memahami dua jenis error di SvelteKit (expected lewat error() vs unexpected), merendernya dengan +error.svelte & page.error, mengatur status/message, memusatkan logging lewat handleError, dan mengetik error App.Error.",
+		"docs": "https://svelte.dev/docs/kit/errors",
+		"keywords": [
+			"errors",
+			"error",
+			"handleError",
+			"error-boundary",
+			"app-error",
+			"status"
+		]
+	},
+	{
+		"slug": "kit/advanced/link-options",
+		"title": "Link options",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 4,
+		"status": "stable",
+		"description": "Atur preload, history, fokus, dan scroll navigasi lewat atribut data-sveltekit-* pada elemen anchor — tanpa nulis satu baris JavaScript pun.",
+		"docs": "https://svelte.dev/docs/kit/link-options",
+		"keywords": [
+			"link-options",
+			"preload-data",
+			"preload-code",
+			"replacestate",
+			"keepfocus",
+			"noscroll"
+		]
+	},
+	{
+		"slug": "kit/advanced/service-workers",
+		"title": "Service workers",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 5,
+		"status": "stable",
+		"description": "Memakai service worker bawaan SvelteKit lewat src/service-worker.js dan modul $service-worker untuk caching, dukungan offline, dan registrasi otomatis.",
+		"docs": "https://svelte.dev/docs/kit/service-workers",
+		"keywords": [
+			"service-worker",
+			"offline",
+			"cache",
+			"pwa",
+			"$service-worker"
+		]
+	},
+	{
+		"slug": "kit/advanced/server-only-modules",
+		"title": "Server-only modules",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 6,
+		"status": "stable",
+		"description": "Mencegah kode dan rahasia server bocor ke browser lewat $lib/server, file *.server.js, dan $env/*/private — dijaga oleh bundler, bukan sekadar konvensi.",
+		"docs": "https://svelte.dev/docs/kit/server-only-modules",
+		"keywords": [
+			"server-only",
+			"$lib/server",
+			"env",
+			"private",
+			"secrets",
+			"bundler"
+		]
+	},
+	{
+		"slug": "kit/advanced/snapshots",
+		"title": "Snapshots",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 7,
+		"status": "stable",
+		"description": "Menyimpan state UI efemeral (isi form, posisi scroll) agar bertahan saat navigasi back/forward lewat export const snapshot.",
+		"docs": "https://svelte.dev/docs/kit/snapshots",
+		"keywords": [
+			"snapshots",
+			"capture",
+			"restore",
+			"history.state",
+			"sessionStorage",
+			"ephemeral-state"
+		]
+	},
+	{
+		"slug": "kit/advanced/shallow-routing",
+		"title": "Shallow routing",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 8,
+		"status": "stable",
+		"description": "Memasukkan state ke riwayat browser tanpa benar-benar berpindah halaman, untuk pola seperti modal yang bisa ditutup dengan tombol Back.",
+		"docs": "https://svelte.dev/docs/kit/shallow-routing",
+		"keywords": [
+			"shallow routing",
+			"pushState",
+			"replaceState",
+			"page.state",
+			"preloadData"
+		]
+	},
+	{
+		"slug": "kit/advanced/observability",
+		"title": "Observability",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 9,
+		"status": "stable",
+		"description": "Pantau performa request SvelteKit dengan tracing OpenTelemetry — instrumentation.server.js, span otomatis untuk load/actions, dan span manual untuk kode yang dicurigai lambat.",
+		"docs": "https://svelte.dev/docs/kit/observability",
+		"keywords": [
+			"observability",
+			"tracing",
+			"opentelemetry",
+			"instrumentation",
+			"span"
+		]
+	},
+	{
+		"slug": "kit/advanced/packaging",
+		"title": "Packaging",
+		"product": "kit",
+		"section": "advanced",
+		"sectionTitle": "Advanced",
+		"sectionOrder": 4,
+		"order": 10,
+		"status": "stable",
+		"description": "Mengemas komponen & util Svelte jadi library npm yang benar dengan @sveltejs/package (svelte-package) — exports map, condition svelte, dan publish.",
+		"docs": "https://svelte.dev/docs/kit/packaging",
+		"keywords": [
+			"packaging",
+			"svelte-package",
+			"library",
+			"exports",
+			"npm"
+		]
+	},
+	{
+		"slug": "kit/best-practices/auth",
+		"title": "Auth",
+		"product": "kit",
+		"section": "best-practices",
+		"sectionTitle": "Best practices",
+		"sectionOrder": 5,
+		"order": 1,
+		"status": "stable",
+		"description": "Pola autentikasi di SvelteKit 2 — session vs token, cookie aman, hooks + locals, melindungi route lewat load/hooks, alur login/logout, plus pilihan library (Lucia/Auth.js/Better Auth).",
+		"docs": "https://svelte.dev/docs/kit/auth",
+		"keywords": [
+			"auth",
+			"session",
+			"token",
+			"cookies",
+			"hooks",
+			"locals"
+		]
+	},
+	{
+		"slug": "kit/best-practices/performance",
+		"title": "Performance",
+		"product": "kit",
+		"section": "best-practices",
+		"sectionTitle": "Best practices",
+		"sectionOrder": 5,
+		"order": 2,
+		"status": "stable",
+		"description": "Strategi performa SvelteKit dari hulu ke hilir — mengukur dengan Lighthouse, preload, code-splitting, menghindari waterfall lewat parallel load & streaming, caching, sampai optimasi font & aset.",
+		"docs": "https://svelte.dev/docs/kit/performance",
+		"keywords": [
+			"performance",
+			"lighthouse",
+			"preload",
+			"code-splitting",
+			"waterfall",
+			"caching"
+		]
+	},
+	{
+		"slug": "kit/best-practices/icons",
+		"title": "Icons",
+		"product": "kit",
+		"section": "best-practices",
+		"sectionTitle": "Best practices",
+		"sectionOrder": 5,
+		"order": 3,
+		"status": "stable",
+		"description": "Strategi mengirim icon di SvelteKit — SVG inline, sprite, unplugin-icons, dan Iconify via CSS — beserta trade-off ukuran bundle dan aksesibilitasnya.",
+		"docs": "https://svelte.dev/docs/kit/icons",
+		"keywords": [
+			"icons",
+			"svg",
+			"sprite",
+			"iconify",
+			"unplugin-icons",
+			"a11y"
+		]
+	},
+	{
+		"slug": "kit/best-practices/images",
+		"title": "Images",
+		"product": "kit",
+		"section": "best-practices",
+		"sectionTitle": "Best practices",
+		"sectionOrder": 5,
+		"order": 4,
+		"status": "stable",
+		"description": "Optimalkan gambar di SvelteKit — @sveltejs/enhanced-img untuk aset lokal (AVIF/WebP + srcset otomatis), Vite asset handling, lazy loading, ukuran responsif, dan CDN gambar untuk sumber dinamis.",
+		"docs": "https://svelte.dev/docs/kit/images",
+		"keywords": [
+			"enhanced-img",
+			"lazy-loading",
+			"srcset",
+			"avif",
+			"webp",
+			"image-cdn"
+		]
+	},
+	{
+		"slug": "kit/best-practices/accessibility",
+		"title": "Accessibility",
+		"product": "kit",
+		"section": "best-practices",
+		"sectionTitle": "Best practices",
+		"sectionOrder": 5,
+		"order": 5,
+		"status": "stable",
+		"description": "Bagaimana SvelteKit menjaga aksesibilitas otomatis (pengumuman rute, manajemen fokus, atribut lang) plus praktik a11y manual — HTML semantik, ARIA, peringatan compiler, dan testing.",
+		"docs": "https://svelte.dev/docs/kit/accessibility",
+		"keywords": [
+			"accessibility",
+			"a11y",
+			"aria",
+			"focus",
+			"lang",
+			"screen reader"
+		]
+	},
+	{
+		"slug": "kit/best-practices/seo",
+		"title": "SEO",
+		"product": "kit",
+		"section": "best-practices",
+		"sectionTitle": "Best practices",
+		"sectionOrder": 5,
+		"order": 6,
+		"status": "stable",
+		"description": "Bikin halaman SvelteKit-mu ditemukan & ditampilkan benar oleh mesin pencari — lewat SSR, title/meta unik via `<svelte:head>`, sitemap & robots, canonical, dan performa sebagai faktor ranking.",
+		"docs": "https://svelte.dev/docs/kit/seo",
+		"keywords": [
+			"seo",
+			"ssr",
+			"svelte:head",
+			"sitemap",
+			"canonical",
+			"performance"
+		]
+	},
+	{
+		"slug": "kit/appendix/faq",
+		"title": "Frequently asked questions",
+		"product": "kit",
+		"section": "appendix",
+		"sectionTitle": "Appendix",
+		"sectionOrder": 6,
+		"order": 1,
+		"status": "stable",
+		"description": "Kumpulan pertanyaan yang paling sering muncul saat membangun aplikasi SvelteKit — library yang butuh browser, HMR, alias path, environment variables, database, dan deployment.",
+		"docs": "https://svelte.dev/docs/kit/faq",
+		"keywords": [
+			"faq",
+			"sveltekit",
+			"env",
+			"alias",
+			"hmr",
+			"deployment"
+		]
+	},
+	{
+		"slug": "kit/appendix/integrations",
+		"title": "Integrations",
+		"product": "kit",
+		"section": "appendix",
+		"sectionTitle": "Appendix",
+		"sectionOrder": 6,
+		"order": 2,
+		"status": "stable",
+		"description": "Cara menyambung SvelteKit ke tooling lain — vitePreprocess untuk SCSS/TS, add-on otomatis lewat `sv add` (Tailwind, MDsveX, Drizzle), setup database/ORM yang server-only, dan testing dengan Vitest & Playwright.",
+		"docs": "https://svelte.dev/docs/kit/integrations",
+		"keywords": [
+			"integrations",
+			"vitePreprocess",
+			"sv add",
+			"drizzle",
+			"vitest",
+			"playwright"
+		]
+	},
+	{
+		"slug": "kit/appendix/debugging",
+		"title": "Breakpoint Debugging",
+		"product": "kit",
+		"section": "appendix",
+		"sectionTitle": "Appendix",
+		"sectionOrder": 6,
+		"order": 3,
+		"status": "stable",
+		"description": "Menghentikan kode SvelteKit di tengah jalan dengan breakpoint — setup VS Code (launch.json), flag --inspect, beda debug server vs klien, dan peran source maps.",
+		"docs": "https://svelte.dev/docs/kit/debugging",
+		"keywords": [
+			"debugging",
+			"breakpoint",
+			"launch.json",
+			"inspect",
+			"source maps",
+			"vscode"
+		]
+	},
+	{
+		"slug": "kit/appendix/migrating-to-sveltekit-2",
+		"title": "Migrating to SvelteKit v2",
+		"product": "kit",
+		"section": "appendix",
+		"sectionTitle": "Appendix",
+		"sectionOrder": 6,
+		"order": 4,
+		"status": "stable",
+		"description": "Panduan lengkap memindahkan proyek dari SvelteKit 1 ke SvelteKit 2 — semua breaking change, alasannya, dan cara memperbaikinya satu per satu.",
+		"docs": "https://svelte.dev/docs/kit/migrating-to-sveltekit-2",
+		"keywords": [
+			"migration",
+			"sveltekit-2",
+			"breaking-changes",
+			"sv-migrate",
+			"cookies",
+			"redirect"
+		]
+	},
+	{
+		"slug": "kit/appendix/migrating",
+		"title": "Migrating from Sapper",
+		"product": "kit",
+		"section": "appendix",
+		"sectionTitle": "Appendix",
+		"sectionOrder": 6,
+		"order": 5,
+		"status": "stable",
+		"description": "Panduan ringkas (historis) memindahkan proyek Sapper lama ke SvelteKit v2 — struktur route, preload→load, dan API @sapper/* → $app.",
+		"docs": "https://svelte.dev/docs/kit/migrating",
+		"keywords": [
+			"sapper",
+			"migrating",
+			"preload",
+			"load",
+			"$app",
+			"routing"
+		]
+	},
+	{
+		"slug": "kit/appendix/additional-resources",
+		"title": "Additional resources",
+		"product": "kit",
+		"section": "appendix",
+		"sectionTitle": "Appendix",
+		"sectionOrder": 6,
+		"order": 6,
+		"status": "stable",
+		"description": "Peta lengkap sumber belajar lanjutan SvelteKit — tutorial interaktif resmi, repo contoh, komunitas Discord, integrasi via sv add, dan kumpulan FAQ.",
+		"docs": "https://svelte.dev/docs/kit/additional-resources",
+		"keywords": [
+			"additional resources",
+			"tutorial",
+			"discord",
+			"integrations",
+			"faq",
+			"komunitas"
+		]
+	},
+	{
+		"slug": "kit/appendix/glossary",
+		"title": "Glossary",
+		"product": "kit",
+		"section": "appendix",
+		"sectionTitle": "Appendix",
+		"sectionOrder": 6,
+		"order": 7,
+		"status": "stable",
+		"description": "Kamus istilah rendering SvelteKit — CSR, SSR, SSG, prerender, hydration, SPA, edge, routing — definisi singkat plus kapan tiap istilah relevan untukmu.",
+		"docs": "https://svelte.dev/docs/kit/glossary",
+		"keywords": [
+			"glossary",
+			"ssr",
+			"csr",
+			"ssg",
+			"hydration",
+			"edge"
+		]
+	},
+	{
+		"slug": "kit/reference/sveltejs-kit",
+		"title": "@sveltejs/kit",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 1,
+		"status": "reference",
+		"description": "Referensi lengkap modul @sveltejs/kit — helper error/redirect/json/text/fail, type guard isHttpError/isRedirect/isActionFailure, plus tipe inti RequestHandler, RequestEvent, Actions, Handle, dan Cookies.",
+		"docs": "https://svelte.dev/docs/kit/@sveltejs-kit",
+		"keywords": [
+			"error",
+			"redirect",
+			"json",
+			"fail",
+			"RequestHandler",
+			"Cookies"
+		]
+	},
+	{
+		"slug": "kit/reference/sveltejs-kit-hooks",
+		"title": "@sveltejs/kit/hooks",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 2,
+		"status": "reference",
+		"description": "Modul @sveltejs/kit/hooks beserta fungsi sequence() untuk merangkai banyak handle jadi satu rantai middleware, lengkap dengan urutan resolve dan transformPageChunk.",
+		"docs": "https://svelte.dev/docs/kit/@sveltejs-kit-hooks",
+		"keywords": [
+			"sequence",
+			"handle",
+			"hooks",
+			"middleware",
+			"transformPageChunk",
+			"resolve"
+		]
+	},
+	{
+		"slug": "kit/reference/sveltejs-kit-node-polyfills",
+		"title": "@sveltejs/kit/node/polyfills",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 3,
+		"status": "reference",
+		"description": "Fungsi installPolyfills() yang memasang Web API (crypto, File) sebagai global di Node — dipakai adapter agar kode universal SvelteKit jalan di server.",
+		"docs": "https://svelte.dev/docs/kit/@sveltejs-kit-node-polyfills",
+		"keywords": [
+			"polyfills",
+			"installPolyfills",
+			"node",
+			"adapter",
+			"crypto",
+			"File"
+		]
+	},
+	{
+		"slug": "kit/reference/sveltejs-kit-node",
+		"title": "@sveltejs/kit/node",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 4,
+		"status": "reference",
+		"description": "Helper level-rendah yang menjembatani objek HTTP Node (IncomingMessage/ServerResponse) dengan standar web Request/Response — fondasi adapter-node.",
+		"docs": "https://svelte.dev/docs/kit/@sveltejs-kit-node",
+		"keywords": [
+			"node",
+			"getRequest",
+			"setResponse",
+			"adapter-node",
+			"createReadableStream"
+		]
+	},
+	{
+		"slug": "kit/reference/sveltejs-kit-vite",
+		"title": "@sveltejs/kit/vite",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 5,
+		"status": "reference",
+		"description": "Fungsi sveltekit() dari @sveltejs/kit/vite — plugin Vite yang menyulap bundler generik jadi framework SSR penuh, plus cara mengonfigurasinya di vite.config.js.",
+		"docs": "https://svelte.dev/docs/kit/@sveltejs-kit-vite",
+		"keywords": [
+			"sveltekit",
+			"vite plugin",
+			"vite.config.js",
+			"build",
+			"dev",
+			"ssr"
+		]
+	},
+	{
+		"slug": "kit/reference/app-environment",
+		"title": "$app/environment",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 6,
+		"status": "reference",
+		"description": "Empat konstanta lingkungan SvelteKit dari $app/environment — browser, building, dev, dan version — beserta kapan masing-masing bernilai true dan cara memakainya dengan aman.",
+		"docs": "https://svelte.dev/docs/kit/$app-environment",
+		"keywords": [
+			"browser",
+			"building",
+			"dev",
+			"version",
+			"environment"
+		]
+	},
+	{
+		"slug": "kit/reference/app-forms",
+		"title": "$app/forms",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 7,
+		"status": "reference",
+		"description": "Referensi modul $app/forms SvelteKit — enhance, applyAction, dan deserialize untuk progressive enhancement pada form actions.",
+		"docs": "https://svelte.dev/docs/kit/$app-forms",
+		"keywords": [
+			"enhance",
+			"applyAction",
+			"deserialize",
+			"progressive-enhancement",
+			"form-actions"
+		]
+	},
+	{
+		"slug": "kit/reference/app-navigation",
+		"title": "$app/navigation",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 8,
+		"status": "reference",
+		"description": "Referensi lengkap modul $app/navigation SvelteKit — goto, invalidate, invalidateAll, preloadData/preloadCode, hook navigasi (beforeNavigate/afterNavigate/onNavigate), shallow routing (pushState/replaceState), dan disableScrollHandling.",
+		"docs": "https://svelte.dev/docs/kit/$app-navigation",
+		"keywords": [
+			"app-navigation",
+			"goto",
+			"invalidate",
+			"preloadData",
+			"beforeNavigate",
+			"shallow-routing"
+		]
+	},
+	{
+		"slug": "kit/reference/app-paths",
+		"title": "$app/paths",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 9,
+		"status": "reference",
+		"description": "Modul $app/paths — base, assets, resolve()/resolveRoute, dan asset() untuk membangun URL & path yang tetap benar walau app dipasang di sub-path atau CDN.",
+		"docs": "https://svelte.dev/docs/kit/$app-paths",
+		"keywords": [
+			"app-paths",
+			"base",
+			"assets",
+			"resolve",
+			"resolveRoute",
+			"asset"
+		]
+	},
+	{
+		"slug": "kit/reference/app-server",
+		"title": "$app/server",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 10,
+		"status": "reference",
+		"description": "API khusus sisi server SvelteKit — getRequestEvent, read, dan remote functions (query/form/command/prerender) untuk mengakses request & data server dari mana saja.",
+		"docs": "https://svelte.dev/docs/kit/$app-server",
+		"keywords": [
+			"app-server",
+			"getRequestEvent",
+			"read",
+			"remote-functions",
+			"query",
+			"command"
+		]
+	},
+	{
+		"slug": "kit/reference/app-state",
+		"title": "$app/state",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 11,
+		"status": "reference",
+		"description": "Modul $app/state mengekspos page, navigating, dan updated sebagai objek reaktif berbasis runes — pengganti modern $app/stores yang diakses tanpa tanda $.",
+		"docs": "https://svelte.dev/docs/kit/$app-state",
+		"keywords": [
+			"app-state",
+			"page",
+			"navigating",
+			"updated",
+			"runes",
+			"app-stores"
+		]
+	},
+	{
+		"slug": "kit/reference/app-stores",
+		"title": "$app/stores",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 12,
+		"status": "reference",
+		"description": "Modul store lama SvelteKit (page, navigating, updated, getStores) yang diakses pakai $ — kini deprecated demi $app/state, tapi masih relevan untuk proyek Svelte 4.",
+		"docs": "https://svelte.dev/docs/kit/$app-stores",
+		"keywords": [
+			"app-stores",
+			"page",
+			"navigating",
+			"updated",
+			"getStores",
+			"legacy"
+		]
+	},
+	{
+		"slug": "kit/reference/app-types",
+		"title": "$app/types",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 13,
+		"status": "reference",
+		"description": "Tipe TypeScript yang di-generate SvelteKit dari struktur rutemu — RouteId, RouteParams, LayoutParams, Pathname, ResolvedPathname, dan Asset — untuk path, params, dan aset yang type-safe.",
+		"docs": "https://svelte.dev/docs/kit/$app-types",
+		"keywords": [
+			"app-types",
+			"RouteId",
+			"RouteParams",
+			"Pathname",
+			"Asset",
+			"type-safe"
+		]
+	},
+	{
+		"slug": "kit/reference/env-dynamic-private",
+		"title": "$env/dynamic/private",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 14,
+		"status": "reference",
+		"description": "Modul $env/dynamic/private SvelteKit — membaca environment variable privat saat runtime (setara process.env), hanya di server, beda dari $env/static, dan kapan sebaiknya dipakai.",
+		"docs": "https://svelte.dev/docs/kit/$env-dynamic-private",
+		"keywords": [
+			"env",
+			"dynamic",
+			"private",
+			"runtime",
+			"process.env",
+			"server-only"
+		]
+	},
+	{
+		"slug": "kit/reference/env-dynamic-public",
+		"title": "$env/dynamic/public",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 15,
+		"status": "reference",
+		"description": "Membaca environment variable publik (prefix PUBLIC_) saat runtime lewat objek env, aman dipakai di server maupun browser.",
+		"docs": "https://svelte.dev/docs/kit/$env-dynamic-public",
+		"keywords": [
+			"env",
+			"dynamic",
+			"public",
+			"PUBLIC_",
+			"runtime",
+			"browser"
+		]
+	},
+	{
+		"slug": "kit/reference/env-static-private",
+		"title": "$env/static/private",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 16,
+		"status": "reference",
+		"description": "Modul untuk membaca environment variable privat yang di-inline saat build, hanya boleh dipakai di server, dan bisa di-tree-shake.",
+		"docs": "https://svelte.dev/docs/kit/$env-static-private",
+		"keywords": [
+			"env",
+			"static",
+			"private",
+			"secret",
+			"build-time",
+			"tree-shaking"
+		]
+	},
+	{
+		"slug": "kit/reference/env-static-public",
+		"title": "$env/static/public",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 17,
+		"status": "reference",
+		"description": "Modul env publik SvelteKit yang di-inline saat build — variabel berprefix PUBLIC_ yang aman ikut ke bundle browser, beda dari versi dynamic dan private.",
+		"docs": "https://svelte.dev/docs/kit/$env-static-public",
+		"keywords": [
+			"env",
+			"static",
+			"public",
+			"PUBLIC_",
+			"build-time",
+			"browser"
+		]
+	},
+	{
+		"slug": "kit/reference/app-env",
+		"title": "$app/env",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 18,
+		"status": "reference",
+		"description": "Alias $app/env — jalan pintas untuk $app/environment yang muncul saat mode explicit environment variables (experimental, sejak SvelteKit 2.62) aktif, dengan empat export yang sama persis browser, building, dev, dan version.",
+		"docs": "https://svelte.dev/docs/kit/$app-env",
+		"keywords": [
+			"app/env",
+			"alias",
+			"explicit env",
+			"browser",
+			"building",
+			"version"
+		]
+	},
+	{
+		"slug": "kit/reference/app-env-private",
+		"title": "$app/env/private",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 19,
+		"status": "reference",
+		"description": "Modul eksperimental (SvelteKit 2.62+) untuk mengakses environment variable privat yang dideklarasikan secara eksplisit & type-safe di src/env.ts.",
+		"docs": "https://svelte.dev/docs/kit/$app-env-private",
+		"keywords": [
+			"env",
+			"private",
+			"explicit",
+			"src/env.ts",
+			"defineEnvVars",
+			"type-safe"
+		]
+	},
+	{
+		"slug": "kit/reference/app-env-public",
+		"title": "$app/env/public",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 20,
+		"status": "reference",
+		"description": "Modul environment publik eksplisit & type-safe SvelteKit (2.62+) — deklarasikan variabel sekali di src/env.ts dengan defineEnvVars, lalu impor yang aman ke klien dari $app/env/public.",
+		"docs": "https://svelte.dev/docs/kit/$app-env-public",
+		"keywords": [
+			"env",
+			"explicit",
+			"$app/env/public",
+			"public",
+			"type-safe",
+			"defineEnvVars"
+		]
+	},
+	{
+		"slug": "kit/reference/lib",
+		"title": "$lib",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 21,
+		"status": "reference",
+		"description": "Alias $lib memetakan src/lib jadi jalur impor yang stabil, dengan $lib/server sebagai zona khusus server yang dilindungi compiler dari kebocoran ke browser.",
+		"docs": "https://svelte.dev/docs/kit/$lib",
+		"keywords": [
+			"lib",
+			"alias",
+			"server-only",
+			"import",
+			"files-config",
+			"sveltekit"
+		]
+	},
+	{
+		"slug": "kit/reference/service-worker",
+		"title": "$service-worker",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 22,
+		"status": "reference",
+		"description": "Modul virtual $service-worker — build, files, prerendered, version, dan base — untuk menyusun daftar cache dan menulis service worker offline-ready di SvelteKit.",
+		"docs": "https://svelte.dev/docs/kit/$service-worker",
+		"keywords": [
+			"service-worker",
+			"build",
+			"files",
+			"prerendered",
+			"version",
+			"base"
+		]
+	},
+	{
+		"slug": "kit/reference/configuration",
+		"title": "Configuration",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 23,
+		"status": "reference",
+		"description": "Referensi lengkap svelte.config.js — semua opsi kit (adapter, alias, csp, csrf, env, files, paths, prerender, router, serviceWorker, version, dll.) beserta tipe & nilai default.",
+		"docs": "https://svelte.dev/docs/kit/configuration",
+		"keywords": [
+			"svelte.config.js",
+			"kit config",
+			"csp",
+			"prerender",
+			"paths",
+			"adapter"
+		]
+	},
+	{
+		"slug": "kit/reference/cli",
+		"title": "Command Line Interface",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 24,
+		"status": "reference",
+		"description": "Referensi lengkap perintah CLI yang dipakai proyek SvelteKit — vite dev/build/preview, svelte-kit sync, flag-flagnya, dan bedanya dengan CLI sv.",
+		"docs": "https://svelte.dev/docs/kit/cli",
+		"keywords": [
+			"sveltekit",
+			"cli",
+			"vite dev",
+			"svelte-kit sync",
+			"flags",
+			"sv"
+		]
+	},
+	{
+		"slug": "kit/reference/types",
+		"title": "Types",
+		"product": "kit",
+		"section": "reference",
+		"sectionTitle": "Reference",
+		"sectionOrder": 7,
+		"order": 25,
+		"status": "reference",
+		"description": "Dua sistem tipe SvelteKit — namespace App di app.d.ts yang kamu isi sendiri (Error, Locals, PageData, PageState, Platform) dan tipe ./$types yang di-generate otomatis (PageLoad, PageServerLoad, Actions, RequestHandler).",
+		"docs": "https://svelte.dev/docs/kit/types",
+		"keywords": [
+			"app.d.ts",
+			"Locals",
+			"$types",
+			"PageServerLoad",
+			"Actions",
+			"Platform"
+		]
+	},
+	{
+		"slug": "cli/overview",
+		"title": "Overview",
+		"product": "cli",
+		"section": "intro",
+		"sectionTitle": "Pengantar",
+		"sectionOrder": 1,
+		"order": 1,
+		"status": "stable",
+		"description": "Mengenal sv — CLI resmi Svelte untuk membuat, menambah integrasi, mengecek, dan memigrasi proyek Svelte/SvelteKit, semuanya lewat npx.",
+		"docs": "https://svelte.dev/docs/cli/overview",
+		"keywords": [
+			"sv",
+			"cli",
+			"npx sv",
+			"sv create",
+			"sv add",
+			"sv migrate"
+		]
+	},
+	{
+		"slug": "cli/faq",
+		"title": "Frequently asked questions",
+		"product": "cli",
+		"section": "intro",
+		"sectionTitle": "Pengantar",
+		"sectionOrder": 1,
+		"order": 2,
+		"status": "stable",
+		"description": "Jawaban atas pertanyaan tersering soal CLI sv — cara menjalankannya di tiap package manager, bedanya dengan create-svelte lama, add-ons, dan troubleshooting.",
+		"docs": "https://svelte.dev/docs/cli/faq",
+		"keywords": [
+			"sv cli",
+			"faq",
+			"package manager",
+			"create-svelte",
+			"add-ons",
+			"troubleshooting"
+		]
+	},
+	{
+		"slug": "cli/sv-create",
+		"title": "sv create",
+		"product": "cli",
+		"section": "commands",
+		"sectionTitle": "Perintah",
+		"sectionOrder": 2,
+		"order": 1,
+		"status": "stable",
+		"description": "Scaffold proyek Svelte/SvelteKit baru dengan sv create — pilih template, type-checking, add-ons, package manager, baik lewat prompt interaktif maupun flag.",
+		"docs": "https://svelte.dev/docs/cli/sv-create",
+		"keywords": [
+			"sv create",
+			"scaffolding",
+			"template",
+			"add-ons",
+			"flags",
+			"package manager"
+		]
+	},
+	{
+		"slug": "cli/sv-add",
+		"title": "sv add",
+		"product": "cli",
+		"section": "commands",
+		"sectionTitle": "Perintah",
+		"sectionOrder": 2,
+		"order": 2,
+		"status": "stable",
+		"description": "Menambahkan integrasi (Tailwind, Drizzle, Playwright, dll) ke proyek Svelte yang sudah ada lewat sv add, lengkap dengan flag dan cara kerja patch berbasis AST.",
+		"docs": "https://svelte.dev/docs/cli/sv-add",
+		"keywords": [
+			"sv add",
+			"add-on",
+			"tailwindcss",
+			"drizzle",
+			"integrasi",
+			"AST patch"
+		]
+	},
+	{
+		"slug": "cli/sv-check",
+		"title": "sv check",
+		"product": "cli",
+		"section": "commands",
+		"sectionTitle": "Perintah",
+		"sectionOrder": 2,
+		"order": 3,
+		"status": "stable",
+		"description": "Menjalankan svelte-check untuk memvalidasi seluruh proyek — type error, aksesibilitas, dan CSS tak terpakai — lengkap dengan opsi --watch, --threshold, dan integrasi CI.",
+		"docs": "https://svelte.dev/docs/cli/sv-check",
+		"keywords": [
+			"sv check",
+			"svelte-check",
+			"type-check",
+			"a11y",
+			"watch",
+			"CI"
+		]
+	},
+	{
+		"slug": "cli/sv-migrate",
+		"title": "sv migrate",
+		"product": "cli",
+		"section": "commands",
+		"sectionTitle": "Perintah",
+		"sectionOrder": 2,
+		"order": 4,
+		"status": "stable",
+		"description": "Otomasi upgrade kode dengan sv migrate <target> — svelte-5, sveltekit-2, self-closing-tags, app-state, dan lainnya — plus cara meninjau hasilnya lewat penanda @migration.",
+		"docs": "https://svelte.dev/docs/cli/sv-migrate",
+		"keywords": [
+			"sv migrate",
+			"codemod",
+			"svelte-5",
+			"sveltekit-2",
+			"runes",
+			"upgrade"
+		]
+	},
+	{
+		"slug": "cli/better-auth",
+		"title": "better-auth",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 1,
+		"status": "stable",
+		"description": "Add-on sv yang memasang setup autentikasi siap-pakai (Better Auth + Drizzle) ke proyek SvelteKit lewat satu perintah.",
+		"docs": "https://svelte.dev/docs/cli/better-auth",
+		"keywords": [
+			"better-auth",
+			"sv add",
+			"autentikasi",
+			"drizzle",
+			"session",
+			"oauth"
+		]
+	},
+	{
+		"slug": "cli/drizzle",
+		"title": "drizzle",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 2,
+		"status": "stable",
+		"description": "Add-on drizzle untuk sv — pasang ORM Drizzle ke SvelteKit, pilih database (SQLite/PostgreSQL/MySQL) & driver-nya, lalu kelola schema, koneksi, dan migrasi.",
+		"docs": "https://svelte.dev/docs/cli/drizzle",
+		"keywords": [
+			"drizzle",
+			"orm",
+			"sv add",
+			"database",
+			"schema",
+			"migrasi"
+		]
+	},
+	{
+		"slug": "cli/eslint",
+		"title": "eslint",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 3,
+		"status": "stable",
+		"description": "Add-on sv add eslint — memasang dan mengonfigurasi ESLint (flat config) untuk Svelte 5 dan TypeScript, berdamai dengan Prettier, plus script lint siap pakai.",
+		"docs": "https://svelte.dev/docs/cli/eslint",
+		"keywords": [
+			"eslint",
+			"sv add",
+			"eslint-plugin-svelte",
+			"flat config",
+			"prettier",
+			"lint"
+		]
+	},
+	{
+		"slug": "cli/mcp",
+		"title": "mcp",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 4,
+		"status": "stable",
+		"description": "Memasang server Model Context Protocol Svelte lewat `sv add mcp` supaya AI coding assistant menulis kode Svelte 5 yang akurat dan ter-update.",
+		"docs": "https://svelte.dev/docs/cli/mcp",
+		"keywords": [
+			"mcp",
+			"sv add",
+			"model context protocol",
+			"ai tooling",
+			"autofixer",
+			"claude code"
+		]
+	},
+	{
+		"slug": "cli/mdsvex",
+		"title": "mdsvex",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 5,
+		"status": "stable",
+		"description": "Add-on sv yang memasang mdsvex, preprocessor untuk menulis Markdown plus komponen Svelte (.svx), lengkap dengan konfigurasi dan layout.",
+		"docs": "https://svelte.dev/docs/cli/mdsvex",
+		"keywords": [
+			"mdsvex",
+			"svx",
+			"markdown",
+			"layout",
+			"frontmatter",
+			"sv add"
+		]
+	},
+	{
+		"slug": "cli/paraglide",
+		"title": "paraglide",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 6,
+		"status": "stable",
+		"description": "Add-on paraglide untuk i18n type-safe — pesan terjemahan yang dikompilasi jadi fungsi, plus routing berbasis locale di SvelteKit.",
+		"docs": "https://svelte.dev/docs/cli/paraglide",
+		"keywords": [
+			"paraglide",
+			"i18n",
+			"inlang",
+			"locale",
+			"routing",
+			"type-safe"
+		]
+	},
+	{
+		"slug": "cli/playwright",
+		"title": "playwright",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 7,
+		"status": "stable",
+		"description": "Add-on playwright untuk sv — pasang Playwright untuk E2E testing di SvelteKit, lengkap dengan config, folder e2e, demo test, cara menjalankan, dan integrasi CI.",
+		"docs": "https://svelte.dev/docs/cli/playwright",
+		"keywords": [
+			"playwright",
+			"e2e",
+			"testing",
+			"sv add",
+			"ci",
+			"browser"
+		]
+	},
+	{
+		"slug": "cli/prettier",
+		"title": "prettier",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 8,
+		"status": "stable",
+		"description": "Add-on prettier untuk sv — pasang Prettier + prettier-plugin-svelte, integrasi ESLint, dan script format/lint dengan satu perintah.",
+		"docs": "https://svelte.dev/docs/cli/prettier",
+		"keywords": [
+			"prettier",
+			"sv add",
+			"formatter",
+			"eslint",
+			"prettier-plugin-svelte",
+			"format"
+		]
+	},
+	{
+		"slug": "cli/storybook",
+		"title": "storybook",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 9,
+		"status": "stable",
+		"description": "Add-on storybook untuk sv — pasang Storybook sebagai katalog komponen terisolasi, tulis stories untuk komponen Svelte (Svelte CSF), lalu jalankan & build katalognya.",
+		"docs": "https://svelte.dev/docs/cli/storybook",
+		"keywords": [
+			"storybook",
+			"sv add",
+			"katalog komponen",
+			"stories",
+			"svelte csf",
+			"autodocs"
+		]
+	},
+	{
+		"slug": "cli/sveltekit-adapter",
+		"title": "sveltekit-adapter",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 10,
+		"status": "stable",
+		"description": "Add-on `sv add sveltekit-adapter` untuk memilih & memasang adapter deploy resmi (node/static/cloudflare/vercel/netlify/auto) lewat satu perintah.",
+		"docs": "https://svelte.dev/docs/cli/sveltekit-adapter",
+		"keywords": [
+			"sv add",
+			"sveltekit-adapter",
+			"adapter",
+			"node",
+			"static",
+			"cloudflare"
+		]
+	},
+	{
+		"slug": "cli/tailwind",
+		"title": "tailwindcss",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 11,
+		"status": "stable",
+		"description": "Add-on tailwindcss untuk sv — pasang Tailwind v4 di SvelteKit lewat satu perintah, pahami konfigurasi CSS-first, plugin typography/forms, dan cara memakai utility class bersama scoped style Svelte.",
+		"docs": "https://svelte.dev/docs/cli/tailwind",
+		"keywords": [
+			"tailwindcss",
+			"sv add",
+			"tailwind v4",
+			"utility class",
+			"theme",
+			"vite plugin"
+		]
+	},
+	{
+		"slug": "cli/vitest",
+		"title": "vitest",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 12,
+		"status": "stable",
+		"description": "Add-on vitest untuk sv — pasang & konfigurasi Vitest di SvelteKit untuk unit test logika .svelte.ts dan component test di browser asli (atau jsdom), lengkap dengan dua \"projects\" client/server.",
+		"docs": "https://svelte.dev/docs/cli/vitest",
+		"keywords": [
+			"vitest",
+			"unit test",
+			"component test",
+			"browser",
+			"jsdom",
+			"sv add"
+		]
+	},
+	{
+		"slug": "cli/community",
+		"title": "Create your own add-on",
+		"product": "cli",
+		"section": "addons",
+		"sectionTitle": "Add-ons",
+		"sectionOrder": 3,
+		"order": 13,
+		"status": "stable",
+		"description": "Membuat community add-on sv sendiri — struktur proyek, API defineAddon (setup/run/options), uji lokal, publish ke npm, dan menjalankan add-on pihak ketiga.",
+		"docs": "https://svelte.dev/docs/cli/community",
+		"keywords": [
+			"community add-on",
+			"defineAddon",
+			"sv add",
+			"publish npm",
+			"sv-add",
+			"tsdown"
+		]
+	},
+	{
+		"slug": "cli/sv",
+		"title": "sv",
+		"product": "cli",
+		"section": "api",
+		"sectionTitle": "API",
+		"sectionOrder": 4,
+		"order": 1,
+		"status": "reference",
+		"description": "Referensi API programatik @sveltejs/cli (paket sv) untuk membuat add-on sendiri — defineAddon, defineAddonOptions, workspace, SvApi, dan transforms dari @sveltejs/sv-utils.",
+		"docs": "https://svelte.dev/docs/cli/sv",
+		"keywords": [
+			"sv",
+			"defineAddon",
+			"defineAddonOptions",
+			"sv-utils",
+			"transforms",
+			"workspace"
+		]
+	},
+	{
+		"slug": "cli/sv-utils",
+		"title": "sv-utils",
+		"product": "cli",
+		"section": "api",
+		"sectionTitle": "API",
+		"sectionOrder": 4,
+		"order": 2,
+		"status": "reference",
+		"description": "Toolkit eksperimental @sveltejs/sv-utils untuk menyunting kode lewat AST (JS/Svelte/CSS/JSON/YAML/TOML) plus parser tingkat-rendah dan helper package manager — mesin di balik add-on sv.",
+		"docs": "https://svelte.dev/docs/cli/sv-utils",
+		"keywords": [
+			"sv-utils",
+			"transforms",
+			"AST",
+			"parser",
+			"package manager",
+			"codemod"
+		]
+	}
+];

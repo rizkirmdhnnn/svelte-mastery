@@ -1,0 +1,312 @@
+---
+title: Snapshots
+product: kit
+section: advanced
+sectionTitle: Advanced
+sectionOrder: 4
+order: 7
+status: stable
+description: Menyimpan state UI efemeral (isi form, posisi scroll) agar bertahan saat navigasi back/forward lewat export const snapshot.
+docs: https://svelte.dev/docs/kit/snapshots
+keywords: [snapshots, capture, restore, history.state, sessionStorage, ephemeral-state]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Pernah mengalami ini? Kamu mengetik setengah komentar panjang, lalu iseng klik sebuah link untuk mengecek sesuatu, tekan tombol **Back** browser — dan kotak komentarmu **kosong melompong**. Atau kamu sudah memilih beberapa filter di halaman katalog, klik satu produk, tekan Back, dan semua filter ter-reset. Frustrasi kecil ini muncul karena cara kerja Single Page App: saat kamu menavigasi, SvelteKit me-**render ulang** halaman dari awal. State komponen yang tidak tersimpan di mana-mana akan hilang ditelan bumi.
+
+**Snapshots** adalah jawaban SvelteKit untuk masalah ini: cara resmi menyimpan **state UI yang efemeral** supaya bertahan saat user pergi lalu kembali lewat tombol back/forward.
+
+### Kenapa masalah ini ada (dan kenapa bukan salahmu)
+
+Mari pahami dulu "mengapa"-nya, bukan cuma "bagaimana". Di SvelteKit, ada tiga tempat state bisa "hidup":
+
+1. **Di URL** (query param, path param) — bertahan saat refresh, bisa di-share, jadi bookmark. Cocok untuk hal yang ingin kamu bagikan: `?page=2&sort=harga`.
+2. **Di `load` / database** — sumber kebenaran data aplikasi (daftar produk, profil user).
+3. **Di state komponen lokal** (`$state`) — hidup hanya selama komponen itu ada di layar.
+
+Nah, ada kategori state yang **tidak pantas** masuk kategori 1 atau 2 tapi tetap ingin kamu pertahankan: isi draft `<textarea>` yang belum di-submit, tab mana yang sedang aktif di sebuah panel, posisi scroll di dalam carousel, isi sementara sebuah accordion. Memasukkan draft komentar ke URL itu konyol (URL jadi raksasa, dan untuk apa di-share?). Menyimpannya ke database juga berlebihan — ini cuma "sampah sementara" yang relevan untuk sesi browsing ini saja. Tapi membiarkannya hilang saat Back juga terasa kasar buat user.
+
+Snapshot mengisi celah keempat ini: **state efemeral yang terikat ke entri riwayat browser.**
+
+### Analogi: pembatas buku (bookmark fisik)
+
+Bayangkan kamu sedang membaca buku tebal. Kamu sampai di halaman 147, sedang menggarisbawahi sebuah kalimat. Lalu seseorang memanggilmu — kamu **selipkan pembatas buku** di halaman itu, tutup bukunya, dan pergi. Saat kembali, kamu buka tepat di halaman 147 dengan garis bawah yang sama, melanjutkan seperti tak pernah pergi.
+
+Snapshot bekerja persis seperti itu:
+
+- **`capture`** = aksi menyelipkan pembatas buku **tepat sebelum** kamu menutup buku (meninggalkan halaman). Ia memotret "aku ada di kondisi seperti ini".
+- **`restore`** = aksi membuka buku **kembali** di pembatas itu (kembali ke halaman lewat Back/Forward). Ia memasang kembali kondisi yang tadi dipotret.
+
+Yang penting: pembatas itu **diselipkan per-halaman buku**, bukan satu pembatas global. Begitu juga snapshot — tiap entri riwayat browser punya potretnya sendiri. Kalau kamu mengunjungi halaman form tiga kali dengan isi berbeda, tiap entri history menyimpan isi yang sesuai.
+
+### Bagaimana mekanismenya jalan
+
+Di SvelteKit, kamu meng-`export` sebuah objek bernama `snapshot` dari `+page.svelte` (atau `+layout.svelte`) yang berisi dua fungsi: `capture` dan `restore`. SvelteKit yang mengatur kapan keduanya dipanggil:
+
+- `capture()` dipanggil **persis sebelum** halaman ditinggalkan (navigasi ke mana pun). Nilai yang ia `return` ditempelkan ke entri **riwayat browser** saat ini.
+- `restore(value)` dipanggil saat halaman ini **muncul kembali** lewat back/forward, menerima nilai yang tadi disimpan, dan tugasmu memasangnya kembali ke state.
+
+Di mana persisnya datanya disimpan? Di `history.state`, yang oleh SvelteKit di-serialize ke **`sessionStorage`**. Ini punya dua konsekuensi besar yang akan kita bahas berulang: (1) datanya **harus JSON-serializable**, dan (2) datanya sebaiknya **kecil**. Karena lewat `sessionStorage`, snapshot bahkan bertahan saat **reload halaman** atau saat user kembali dari situs eksternal — selama tab browser-nya sama.
+
+### Untuk pembaca dari React / Vue
+
+Supaya kamu cepat "klik" dengan konsep ini, kaitkan ke yang sudah kamu tahu:
+
+- **React Router / Next.js** tidak punya primitif bawaan seperti ini. Kamu biasanya menambal sendiri: simpan ke `sessionStorage` manual, atau angkat state ke context/store global, atau pakai library macam `react-router` scroll restoration plus state ad-hoc. Snapshot mengangkat pola tambal-sulam itu jadi API kelas satu yang terikat rapi ke entri history.
+- **Vue / Nuxt** punya `<KeepAlive>` yang menjaga **seluruh instance komponen tetap hidup** (tidak di-unmount) sehingga state-nya utuh. Bedanya filosofis: `<KeepAlive>` menahan komponen di memori, sementara snapshot **membiarkan komponen mati** lalu me-rehidrasi sepotong state terpilih dari history. Snapshot lebih hemat memori dan lebih eksplisit (kamu memilih apa yang disimpan), tapi `<KeepAlive>` lebih "ajaib" (semua otomatis tersimpan). Snapshot juga bertahan lintas reload karena `sessionStorage`, sesuatu yang `<KeepAlive>` tidak lakukan.
+
+Singkatnya: snapshot = "scroll/state restoration yang bisa kamu kendalikan, terikat ke history, lewat dua fungsi murni".
+
+## 2. Contoh kode
+
+Bentuk paling dasar — menyelamatkan isi sebuah `<textarea>`:
+
+```svelte
+<!-- src/routes/item/[id]/+page.svelte -->
+<script lang="ts">
+	import type { Snapshot } from './$types';
+
+	let comment = $state('');
+
+	// Ekspor objek bernama `snapshot` PERSIS dengan nama itu.
+	// Tipe generic Snapshot<T> = bentuk data yang kamu capture/restore.
+	export const snapshot: Snapshot<string> = {
+		// capture(): dipanggil TEPAT sebelum meninggalkan halaman.
+		// Apa pun yang di-return ditempel ke entri history saat ini.
+		capture: () => comment,
+
+		// restore(value): dipanggil saat KEMBALI lewat back/forward.
+		// value = persis yang tadi di-return capture(). Pasang lagi ke state.
+		restore: (value) => (comment = value)
+	};
+</script>
+
+<form method="POST">
+	<textarea bind:value={comment} placeholder="Tulis komentar..."></textarea>
+	<button>Kirim</button>
+</form>
+```
+
+Snapshot tidak harus satu nilai tunggal — kamu bisa memotret **beberapa potong state** sekaligus dengan mengembalikan sebuah objek polos:
+
+```svelte
+<!-- src/routes/katalog/+page.svelte -->
+<script lang="ts">
+	import type { Snapshot } from './$types';
+
+	let activeTab = $state<'detail' | 'ulasan'>('detail');
+	let draftUlasan = $state('');
+	let panelTerbuka = $state(false);
+
+	// Bentuk data yang di-capture. WAJIB JSON-serializable & ringan:
+	// hanya tipe primitif + objek/array polos. Tanpa fungsi, class, Map, Set.
+	type Snap = {
+		tab: 'detail' | 'ulasan';
+		draft: string;
+		panel: boolean;
+	};
+
+	export const snapshot: Snapshot<Snap> = {
+		capture: () => ({
+			tab: activeTab,
+			draft: draftUlasan,
+			panel: panelTerbuka
+		}),
+		restore: (v) => {
+			activeTab = v.tab;
+			draftUlasan = v.draft;
+			panelTerbuka = v.panel;
+		}
+	};
+</script>
+
+<!-- ...UI tab, textarea ulasan, panel collapsible... -->
+```
+
+Snapshot juga bisa diekspor dari `+layout.svelte`, berguna untuk state yang dipakai lintas beberapa child route — misalnya isi sebuah search box di sidebar yang tetap muncul di banyak halaman:
+
+```svelte
+<!-- src/routes/dashboard/+layout.svelte -->
+<script lang="ts">
+	import type { Snapshot } from './$types';
+
+	let { children } = $props();
+	let sidebarQuery = $state('');
+
+	// Selama user berpindah antar halaman di dalam /dashboard,
+	// layout TIDAK di-unmount, jadi sidebarQuery sudah otomatis bertahan.
+	// Snapshot di layout berguna saat user PERGI dari /dashboard lalu
+	// menekan Back untuk kembali — query pencarian sidebar pulih.
+	export const snapshot: Snapshot<string> = {
+		capture: () => sidebarQuery,
+		restore: (v) => (sidebarQuery = v)
+	};
+</script>
+
+<aside>
+	<input bind:value={sidebarQuery} placeholder="Cari..." />
+</aside>
+
+{@render children()}
+```
+
+## 3. Coba sendiri
+
+Snapshot butuh runtime SvelteKit penuh (router + `history.state` + `sessionStorage`), jadi tidak bisa dijalankan di playground komponen tunggal. Tapi mari telusuri sebuah skenario **langkah demi langkah** supaya kamu betul-betul paham *kapan* tiap fungsi dipanggil dan *apa* yang terjadi di `sessionStorage`.
+
+```svelte
+<!-- src/routes/tulis/+page.svelte -->
+<script lang="ts">
+	import type { Snapshot } from './$types';
+
+	let judul = $state('');
+	let isi = $state('');
+
+	export const snapshot: Snapshot<{ judul: string; isi: string }> = {
+		capture: () => {
+			// Misalkan saat ini judul = "Halo" dan isi = "draft saya".
+			// SvelteKit memanggil ini PERSIS sebelum navigasi.
+			// Return-nya ({ judul: "Halo", isi: "draft saya" }) ditulis ke
+			// history.state entri saat ini, lalu di-mirror ke sessionStorage.
+			return { judul, isi };
+		},
+		restore: (v) => {
+			// Saat user menekan Back dan kembali ke /tulis, SvelteKit me-render
+			// halaman dari nol (judul = "", isi = ""), LALU memanggil restore
+			// dengan { judul: "Halo", isi: "draft saya" } yang tadi disimpan.
+			// Kita pasang kembali → user melihat draftnya utuh.
+			judul = v.judul;
+			isi = v.isi;
+		}
+	};
+</script>
+
+<input bind:value={judul} placeholder="Judul" />
+<textarea bind:value={isi} placeholder="Isi tulisan..."></textarea>
+```
+
+Urutan kejadian yang sebenarnya, kalau kamu mau membayangkannya seperti timeline:
+
+```text
+1. User di /tulis, mengetik judul="Halo", isi="draft saya".
+2. User klik link ke /pratinjau.
+   → SvelteKit panggil capture()  → { judul: "Halo", isi: "draft saya" }
+   → nilai itu ditempel ke history.state entri /tulis + ke sessionStorage.
+3. /pratinjau ter-render. Komponen /tulis sudah di-DESTROY (state-nya hilang).
+4. User klik Back.
+   → SvelteKit kembali ke /tulis, render komponen baru (judul="", isi="").
+   → BEGITU halaman update, panggil restore({ judul:"Halo", isi:"draft saya" }).
+   → judul & isi terisi kembali. User senang. ✨
+```
+
+Detail penting yang sering bikin salah paham: `restore` dipanggil **setelah** komponen di-mount dan halaman ter-update, bukan menggantikan render awal. Jadi sekejap komponen memang punya nilai awal (`''`), baru kemudian `restore` menimpanya. Untuk input biasa ini tak terlihat, tapi kalau kamu punya efek samping yang bereaksi ke nilai awal kosong, ingat urutan ini.
+
+## 4. Latihan
+
+<Exercise title="Form panjang yang tahan tombol Back">
+
+Kamu membuat halaman `/lamaran` berisi form lamaran kerja yang panjang: nama, posisi yang dilamar (sebuah `<select>`), dan surat motivasi (`<textarea>` panjang). User sering meng-klik link "Lihat detail posisi" untuk membaca deskripsi pekerjaan, lalu menekan **Back** untuk melanjutkan mengisi — dan mereka **tidak boleh** kehilangan apa yang sudah diketik.
+
+Tugas:
+
+1. Tambahkan `snapshot` agar **ketiga field** bertahan saat back/forward.
+2. Pastikan tipe data yang di-`capture` JSON-serializable dan ringan.
+3. Jelaskan singkat: kenapa kita **tidak** menyimpan data ini ke URL atau database?
+
+{#snippet solution()}
+
+```svelte
+<!-- src/routes/lamaran/+page.svelte -->
+<script lang="ts">
+	import type { Snapshot } from './$types';
+
+	let nama = $state('');
+	let posisi = $state('');        // value dari <select>
+	let motivasi = $state('');      // <textarea> panjang
+
+	// Bentuk snapshot: objek polos berisi primitif saja → aman di-JSON & ringan.
+	type FormSnap = {
+		nama: string;
+		posisi: string;
+		motivasi: string;
+	};
+
+	export const snapshot: Snapshot<FormSnap> = {
+		// Dipanggil sebelum user pergi (mis. klik "Lihat detail posisi").
+		capture: () => ({ nama, posisi, motivasi }),
+
+		// Dipanggil saat user menekan Back kembali ke /lamaran.
+		restore: (v) => {
+			nama = v.nama;
+			posisi = v.posisi;
+			motivasi = v.motivasi;
+		}
+	};
+</script>
+
+<form method="POST">
+	<input bind:value={nama} placeholder="Nama lengkap" />
+
+	<select bind:value={posisi}>
+		<option value="">Pilih posisi...</option>
+		<option value="fe">Frontend Engineer</option>
+		<option value="be">Backend Engineer</option>
+	</select>
+
+	<textarea bind:value={motivasi} placeholder="Surat motivasi..."></textarea>
+
+	<a href="/posisi/{posisi}">Lihat detail posisi</a>
+	<button>Kirim lamaran</button>
+</form>
+```
+
+**Kenapa bukan URL atau database?** Ini state **efemeral dan privat**: surat motivasi setengah jadi tidak layak masuk URL (URL akan jadi raksasa, dan untuk apa di-share/di-bookmark draft setengah matang?). Menyimpannya ke database juga berlebihan dan memunculkan pertanyaan privasi/kebersihan data — ini cuma "tempat parkir sementara" untuk sesi browsing saat ini. Snapshot pas di tengah: cukup pintar untuk bertahan saat Back/refresh tab, tapi tidak mengotori URL maupun server. Begitu user submit (data jadi resmi) barulah ia pantas masuk database.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Data snapshot harus JSON-serializable.</strong> Karena disimpan ke <code>history.state</code> lalu di-mirror ke <code>sessionStorage</code>, yang boleh hanya tipe yang selamat melewati <code>JSON.stringify</code>: string, number, boolean, <code>null</code>, plus array & objek polos dari semua itu. <strong>Jangan</strong> kembalikan fungsi, instance class, <code>Date</code>, <code>Map</code>/<code>Set</code>, atau elemen DOM dari <code>capture()</code> — mereka akan rusak/hilang saat di-restore. Kalau perlu <code>Date</code>, simpan sebagai string ISO lalu rekonstruksi di <code>restore</code>.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Jaga snapshot tetap KECIL.</strong> Docs resmi memperingatkan: objek besar dari <code>capture()</code> akan <em>ditahan di memori selama sesi berlangsung</em>, dan dalam kasus ekstrem bisa <strong>terlalu besar untuk disimpan ke <code>sessionStorage</code></strong> (kuotanya umumnya beberapa MB). Snapshot ideal cuma berisi isi input, tab aktif, atau posisi scroll — bukan seluruh daftar hasil fetch. Untuk data besar, sumbernya tetap <code>load</code>/database; biarkan SvelteKit memuat ulang itu, dan snapshot cukup menyimpan "petunjuk" kecilnya saja.
+</Callout>
+
+<Callout type="warning">
+<strong>Snapshot bukan pengganti penyimpanan permanen.</strong> Datanya terikat ke sesi tab via <code>sessionStorage</code>: tutup tab, atau buka URL yang sama di tab baru, maka snapshot tidak ikut. Ia juga bukan auto-save ke server. Untuk draft yang harus selamat lintas-perangkat atau lintas-sesi, tetap simpan ke database (mis. lewat form action atau endpoint), dan pakai snapshot hanya untuk kenyamanan back/forward dalam sesi yang sama.
+</Callout>
+
+<Callout type="tip">
+<strong>Pakai tipe <code>Snapshot&lt;T&gt;</code> dari <code>./$types</code>.</strong> Dengan menulis <code>export const snapshot: Snapshot&lt;FormSnap&gt;</code>, TypeScript memastikan nilai yang kamu <code>capture</code> dan yang kamu terima di <code>restore</code> punya bentuk yang sama persis — menangkap kesalahan ketik field lebih awal. Ini juga dokumentasi hidup tentang "state apa saja yang dianggap efemeral" di halaman ini.
+</Callout>
+
+<Callout type="tip">
+<strong>Ingat urutan: <code>restore</code> berjalan SETELAH render awal.</strong> Komponen pertama-tama di-mount dengan nilai awal (mis. string kosong), baru <code>restore</code> menimpanya. Jadi jangan menaruh logika yang "memutuskan sesuatu sekali" berdasarkan nilai awal kosong di <code>$effect</code> tanpa mengantisipasi bahwa nilai aslinya datang sepersekian detik kemudian lewat <code>restore</code>.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Tambal-sulam manual"
+	modernLabel="Snapshot SvelteKit"
+	rows={[
+		{ legacy: "Simpan/baca sessionStorage sendiri di onMount/onDestroy", modern: "export const snapshot = { capture, restore }", note: "SvelteKit mengikat otomatis ke entri history yang tepat" },
+		{ legacy: "Angkat state ke store global agar tak hilang saat navigasi", modern: "Biarkan state lokal; snapshot yang memulihkannya", note: "tak perlu mengotori store global dengan draft efemeral" },
+		{ legacy: "Masukkan draft form ke query URL biar tahan refresh", modern: "Snapshot lewat history.state + sessionStorage", note: "URL tetap bersih & tak perlu di-share" }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/snapshots" label="SvelteKit — Snapshots (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/kit/state-management" label="SvelteKit — State management (kapan pakai URL vs load vs snapshot)" />
