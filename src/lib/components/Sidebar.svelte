@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { levels } from '$lib/content';
+	import { products, productOf, type Product } from '$lib/content';
 	import { progress } from '$lib/stores/progress.svelte';
+	import StatusBadge from './StatusBadge.svelte';
+	import ProductSwitcher from './ProductSwitcher.svelte';
 
 	let { onNavigate }: { onNavigate?: () => void } = $props();
 
@@ -10,54 +12,63 @@
 			? decodeURIComponent(page.url.pathname.replace('/belajar/', ''))
 			: ''
 	);
+	const activeProduct = $derived<Product>(currentSlug ? productOf(currentSlug) : 'svelte');
+	const group = $derived(products.find((p) => p.product === activeProduct) ?? products[0]);
 
-	const allSlugs = $derived(levels.flatMap((l) => l.modules.map((m) => m.slug)));
-	const totalPercent = $derived(progress.percent(allSlugs));
+	const productSlugs = $derived(group ? group.modules.map((m) => m.slug) : []);
+	const productPercent = $derived(progress.percent(productSlugs));
+	const doneCount = $derived(progress.count(productSlugs));
 
-	function levelHasCurrent(lvlModules: { slug: string }[]) {
-		return lvlModules.some((m) => m.slug === currentSlug);
+	function sectionHasCurrent(mods: { slug: string }[]) {
+		return mods.some((m) => m.slug === currentSlug);
 	}
 </script>
 
 <nav class="sidebar" aria-label="Daftar modul">
-	<div class="overall">
-		<div class="overall-head">
-			<span>Progress</span>
-			<span class="pct">{totalPercent}%</span>
-		</div>
-		<div class="bar"><div class="fill" style="width:{totalPercent}%"></div></div>
-	</div>
+	<div class="mobile-switch"><ProductSwitcher /></div>
 
-	{#each levels as lvl (lvl.level)}
-		{@const lvlSlugs = lvl.modules.map((m) => m.slug)}
-		{@const lvlPct = progress.percent(lvlSlugs)}
-		<details class="level" open={levelHasCurrent(lvl.modules) || lvl.level === 1}>
-			<summary>
-				<span class="lv-num">L{lvl.level}</span>
-				<span class="lv-title">{lvl.title}</span>
-				<span class="lv-pct" class:done={lvlPct === 100}>{lvlPct}%</span>
-			</summary>
-			<ul>
-				{#each lvl.modules as m (m.slug)}
-					<li>
-						<a
-							href="/belajar/{m.slug}"
-							class="mod"
-							class:active={m.slug === currentSlug}
-							onclick={onNavigate}
-						>
-							<span class="check" class:on={progress.isDone(m.slug)} aria-hidden="true">
-								{progress.isDone(m.slug) ? '✓' : '○'}
-							</span>
-							<span class="m-title">{m.title}</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
-		</details>
-	{/each}
+	{#if group}
+		<div class="overall">
+			<div class="overall-head">
+				<span>{group.title}</span>
+				<span class="pct">{productPercent}%</span>
+			</div>
+			<div class="bar"><div class="fill" style="width:{productPercent}%"></div></div>
+			<div class="count">{doneCount}/{group.modules.length} modul</div>
+		</div>
+
+		{#each group.sections as sec (sec.section)}
+			{@const secSlugs = sec.modules.map((m) => m.slug)}
+			{@const secPct = progress.percent(secSlugs)}
+			<details class="level" open={sectionHasCurrent(sec.modules) || sec.order === 1}>
+				<summary>
+					<span class="lv-title">{sec.title}</span>
+					<span class="lv-pct" class:done={secPct === 100}>{secPct}%</span>
+				</summary>
+				<ul>
+					{#each sec.modules as m (m.slug)}
+						<li>
+							<a
+								href="/belajar/{m.slug}"
+								class="mod"
+								class:active={m.slug === currentSlug}
+								onclick={onNavigate}
+							>
+								<span class="check" class:on={progress.isDone(m.slug)} aria-hidden="true">
+									{progress.isDone(m.slug) ? '✓' : '○'}
+								</span>
+								<span class="m-title">{m.title}</span>
+								{#if m.status !== 'stable'}<StatusBadge status={m.status} />{/if}
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</details>
+		{/each}
+	{/if}
 
 	<div class="extras">
+		<a href="/kelengkapan">✅ Kelengkapan materi</a>
 		<a href="/roadmap">🗺️ Roadmap belajar</a>
 		<a href="/cheatsheet-runes">📋 Cheat sheet runes</a>
 		<a href="/migration-cheatsheet">🔄 Migration cheat sheet</a>
@@ -69,6 +80,10 @@
 	.sidebar {
 		padding: 1rem 0.7rem 3rem;
 		font-size: 0.88rem;
+	}
+	.mobile-switch {
+		display: none;
+		padding: 0 0.6rem 0.8rem;
 	}
 	.overall {
 		padding: 0.5rem 0.6rem 0.9rem;
@@ -95,6 +110,11 @@
 		background: linear-gradient(90deg, var(--brand), var(--brand-2));
 		transition: width 0.3s var(--ease);
 	}
+	.count {
+		font-size: 0.72rem;
+		color: var(--text-faint);
+		margin-top: 0.3rem;
+	}
 	.level {
 		margin-bottom: 0.15rem;
 	}
@@ -113,14 +133,6 @@
 	}
 	summary:hover {
 		background: var(--bg-subtle);
-	}
-	.lv-num {
-		font-size: 0.7rem;
-		font-weight: 700;
-		color: var(--brand-ink);
-		background: var(--brand);
-		padding: 0.1rem 0.35rem;
-		border-radius: 5px;
 	}
 	.lv-title {
 		flex: 1;
@@ -174,6 +186,10 @@
 	.m-title {
 		flex: 1;
 	}
+	.mod :global(.badge) {
+		margin-left: auto;
+		align-self: center;
+	}
 	.extras {
 		display: flex;
 		flex-direction: column;
@@ -192,5 +208,10 @@
 	.extras a:hover {
 		background: var(--bg-subtle);
 		color: var(--text);
+	}
+	@media (max-width: 760px) {
+		.mobile-switch {
+			display: block;
+		}
 	}
 </style>

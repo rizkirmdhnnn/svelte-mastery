@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { theme } from '$lib/stores/theme.svelte';
 	import Search from './Search.svelte';
+	import ProductSwitcher from './ProductSwitcher.svelte';
 
 	let { onMenuToggle }: { onMenuToggle?: () => void } = $props();
 </script>
@@ -12,6 +13,8 @@
 		<span class="logo" aria-hidden="true">🔥</span>
 		<span class="name">Svelte &amp; SvelteKit <strong>Mastery</strong></span>
 	</a>
+
+	<div class="switcher-wrap"><ProductSwitcher /></div>
 
 	<div class="search-wrap">
 		<Search />
@@ -71,6 +74,9 @@
 	}
 	.name strong {
 		color: var(--brand);
+	}
+	.switcher-wrap {
+		flex: none;
 	}
 	.search-wrap {
 		flex: 1;
@@ -132,6 +138,11 @@
 			display: none;
 		}
 		.nav-label {
+			display: none;
+		}
+	}
+	@media (max-width: 760px) {
+		.switcher-wrap {
 			display: none;
 		}
 	}

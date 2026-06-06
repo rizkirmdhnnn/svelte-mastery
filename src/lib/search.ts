@@ -1,4 +1,4 @@
-import { modules, type ModuleMeta } from './content';
+import { modules, PRODUCT_TITLES, type ModuleMeta } from './content';
 
 /** Lightweight client-side search over the module manifest (title/keywords/desc). */
 export function search(query: string): ModuleMeta[] {
@@ -9,7 +9,7 @@ export function search(query: string): ModuleMeta[] {
 	const scored = modules.map((m) => {
 		const title = m.title.toLowerCase();
 		const keywords = (m.keywords ?? []).join(' ').toLowerCase();
-		const hay = `${title} ${keywords} ${m.description.toLowerCase()} ${m.levelTitle.toLowerCase()}`;
+		const hay = `${title} ${keywords} ${m.description.toLowerCase()} ${m.sectionTitle.toLowerCase()} ${PRODUCT_TITLES[m.product].toLowerCase()}`;
 
 		let score = 0;
 		for (const t of terms) {
@@ -23,7 +23,7 @@ export function search(query: string): ModuleMeta[] {
 
 	return scored
 		.filter((x) => x.score >= 0)
-		.sort((a, b) => b.score - a.score || a.m.level - b.m.level)
+		.sort((a, b) => b.score - a.score || a.m.sectionOrder - b.m.sectionOrder)
 		.slice(0, 12)
 		.map((x) => x.m);
 }

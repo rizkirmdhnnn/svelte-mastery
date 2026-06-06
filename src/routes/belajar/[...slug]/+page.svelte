@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { neighbors } from '$lib/content';
+	import { neighbors, PRODUCT_TITLES } from '$lib/content';
 	import { progress } from '$lib/stores/progress.svelte';
 	import { addCopyButtons } from '$lib/actions/copy';
 	import Toc from '$lib/components/Toc.svelte';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import type { Component } from 'svelte';
 
 	let { data } = $props();
@@ -34,10 +35,15 @@
 	<nav class="crumb">
 		<a href="/">Beranda</a>
 		<span aria-hidden="true">/</span>
-		<span>Level {data.meta.level} · {data.meta.levelTitle}</span>
+		<a href="/belajar/{data.meta.product}">{PRODUCT_TITLES[data.meta.product]}</a>
+		<span aria-hidden="true">/</span>
+		<span>{data.meta.sectionTitle}</span>
 	</nav>
 
-	<h1>{data.meta.title}</h1>
+	<div class="title-row">
+		<h1>{data.meta.title}</h1>
+		<StatusBadge status={data.meta.status} />
+	</div>
 	<p class="lead">{data.meta.description}</p>
 	{#if updated}
 		<p class="updated" title="Materi modul ini terakhir diperbarui">
@@ -112,6 +118,23 @@
 		font-size: 0.82rem;
 		color: var(--text-muted);
 		margin-bottom: 0.8rem;
+		flex-wrap: wrap;
+	}
+	.crumb a {
+		color: var(--text-muted);
+		text-decoration: none;
+	}
+	.crumb a:hover {
+		color: var(--brand);
+	}
+	.title-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+	.title-row h1 {
+		margin: 0;
 	}
 	.lead {
 		font-size: 1.1rem;

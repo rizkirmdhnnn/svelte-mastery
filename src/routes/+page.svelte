@@ -1,11 +1,13 @@
 <script lang="ts">
-	import { levels, modules } from '$lib/content';
+	import { products, modules } from '$lib/content';
 	import { progress } from '$lib/stores/progress.svelte';
+	import { officialPages } from '$lib/official-pages';
 	import { SITE_DESCRIPTION } from '$lib/site';
 	import HeroDemo from '$lib/components/HeroDemo.svelte';
 
 	const firstSlug = $derived(modules[0]?.slug ?? '');
 	const totalPercent = $derived(progress.percent(modules.map((m) => m.slug)));
+	const total = officialPages.length;
 
 	const features = [
 		{
@@ -20,15 +22,21 @@
 		},
 		{
 			icon: '📚',
-			title: '100% docs terbaru',
-			body: 'Svelte 5 (runes) & SvelteKit v2 — bukan sintaks lama. Legacy ditandai jelas.'
+			title: '100% docs resmi',
+			body: `${total} modul — satu untuk tiap halaman docs Svelte, SvelteKit & CLI, termasuk Reference & API.`
 		},
 		{
 			icon: '🧭',
-			title: 'Pemula → Expert',
-			body: '8 level, 42 modul terstruktur, dengan analogi untuk konsep yang sulit.'
+			title: 'Tiga menu terpisah',
+			body: 'Svelte, SvelteKit, dan CLI dipisah lewat switcher — sidebar mengikuti struktur docs resmi.'
 		}
 	];
+
+	const PRODUCT_BLURB: Record<string, string> = {
+		svelte: 'Bahasa & compiler: runes, template, styling, special elements, runtime, reference, legacy.',
+		kit: 'Meta-framework full-stack: routing, load, form actions, deploy/adapters, advanced, reference.',
+		cli: 'Perintah sv: create, add, check, migrate — plus add-ons & API.'
+	};
 </script>
 
 <svelte:head>
@@ -40,17 +48,25 @@
 
 <section class="hero">
 	<div class="hero-copy">
-		<span class="kicker">🔥 Svelte 5 · SvelteKit v2</span>
+		<span class="kicker">🔥 Svelte 5 · SvelteKit v2 · CLI sv</span>
 		<h1>Kuasai <span class="grad">Svelte &amp; SvelteKit</span><br />dari pemula hingga expert</h1>
 		<p class="sub">
-			Kurikulum interaktif berbahasa Indonesia, mengacu 100% ke dokumentasi resmi terbaru.
-			Belajar konsep, langsung praktik di playground, dan lihat padanannya di framework lain.
+			Kurikulum interaktif berbahasa Indonesia, mengacu 100% ke dokumentasi resmi terbaru —
+			{total} modul, satu untuk tiap halaman docs. Belajar konsep, langsung praktik di playground,
+			dan lihat padanannya di framework lain.
 		</p>
 		<div class="cta">
 			{#if firstSlug}
 				<a class="btn btn-primary big" href="/belajar/{firstSlug}">Mulai Belajar →</a>
 			{/if}
 			<a class="btn big" href="/cheatsheet-runes">Cheat Sheet Runes</a>
+		</div>
+		<div class="prod-links">
+			{#each products as p (p.product)}
+				<a class="prod-link" href="/belajar/{p.modules[0]?.slug ?? p.product}">
+					{p.title} <span class="pc">{p.modules.length}</span>
+				</a>
+			{/each}
 		</div>
 		{#if totalPercent > 0}
 			<p class="resume">Progress kamu: <strong>{totalPercent}%</strong> selesai.</p>
@@ -73,24 +89,27 @@
 
 <section class="levels">
 	<div class="levels-head">
-		<h2>Peta Belajar</h2>
+		<h2>Tiga jalur belajar</h2>
 		<a class="roadmap-link" href="/roadmap">🗺️ Lihat roadmap lengkap →</a>
 	</div>
 	<div class="level-grid">
-		{#each levels as lvl (lvl.level)}
-			{@const slugs = lvl.modules.map((m) => m.slug)}
+		{#each products as p (p.product)}
+			{@const slugs = p.modules.map((m) => m.slug)}
 			{@const pct = progress.percent(slugs)}
-			<a class="level-card" href="/belajar/{lvl.modules[0]?.slug ?? ''}">
+			<a class="level-card" href="/belajar/{p.modules[0]?.slug ?? ''}">
 				<div class="lc-head">
-					<span class="lc-num">Level {lvl.level}</span>
-					<span class="lc-count">{lvl.modules.length} modul</span>
+					<span class="lc-num">{p.title}</span>
+					<span class="lc-count">{p.modules.length} modul · {p.sections.length} bagian</span>
 				</div>
-				<h3>{lvl.title}</h3>
+				<p class="lc-blurb">{PRODUCT_BLURB[p.product] ?? ''}</p>
 				<div class="lc-bar"><div class="lc-fill" style="width:{pct}%"></div></div>
 				<span class="lc-pct">{pct}% selesai</span>
 			</a>
 		{/each}
 	</div>
+	<p class="coverage-note">
+		Mau lihat kelengkapan vs docs resmi? <a href="/kelengkapan">Buka dashboard kelengkapan →</a>
+	</p>
 </section>
 
 <section class="compare-note">
@@ -150,6 +169,36 @@
 		padding: 0.7rem 1.3rem;
 		font-size: 1rem;
 	}
+	.prod-links {
+		display: flex;
+		gap: 0.6rem;
+		margin-top: 1rem;
+		flex-wrap: wrap;
+	}
+	.prod-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.4rem 0.8rem;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--bg-subtle);
+		color: var(--text);
+		text-decoration: none;
+		font-weight: 600;
+		font-size: 0.85rem;
+	}
+	.prod-link:hover {
+		color: var(--brand);
+		border-color: var(--brand);
+	}
+	.prod-link .pc {
+		font-size: 0.72rem;
+		color: var(--text-muted);
+		background: var(--bg-inset);
+		padding: 0.05rem 0.35rem;
+		border-radius: 5px;
+	}
 	.resume {
 		margin-top: 1.2rem;
 		font-size: 0.9rem;
@@ -178,7 +227,9 @@
 		border-radius: var(--radius-lg);
 		background: var(--bg-elevated);
 		box-shadow: var(--shadow-sm);
-		transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+		transition:
+			transform 0.15s var(--ease),
+			box-shadow 0.15s var(--ease);
 	}
 	.feature:hover {
 		transform: translateY(-3px);
@@ -240,7 +291,9 @@
 		background: var(--bg-elevated);
 		color: var(--text);
 		text-decoration: none;
-		transition: border-color 0.15s var(--ease), transform 0.15s var(--ease);
+		transition:
+			border-color 0.15s var(--ease),
+			transform 0.15s var(--ease);
 	}
 	.level-card:hover {
 		border-color: var(--brand);
@@ -251,23 +304,28 @@
 	.lc-head {
 		display: flex;
 		justify-content: space-between;
+		align-items: center;
+		gap: 0.5rem;
 		font-size: 0.78rem;
-		margin-bottom: 0.4rem;
+		margin-bottom: 0.5rem;
 	}
 	.lc-num {
 		font-weight: 700;
 		color: var(--brand-ink);
 		background: var(--brand);
-		padding: 0.12rem 0.45rem;
+		padding: 0.12rem 0.5rem;
 		border-radius: 5px;
-		font-size: 0.72rem;
+		font-size: 0.8rem;
 	}
 	.lc-count {
 		color: var(--text-faint);
+		text-align: right;
 	}
-	.level-card h3 {
+	.lc-blurb {
 		margin: 0 0 0.8rem;
-		font-size: 1.05rem;
+		font-size: 0.86rem;
+		color: var(--text-muted);
+		line-height: 1.5;
 	}
 	.lc-bar {
 		height: 6px;
@@ -283,6 +341,15 @@
 	.lc-pct {
 		font-size: 0.76rem;
 		color: var(--text-muted);
+	}
+	.coverage-note {
+		margin-top: 1.2rem;
+		font-size: 0.9rem;
+		color: var(--text-muted);
+	}
+	.coverage-note a {
+		color: var(--brand);
+		font-weight: 600;
 	}
 	.compare-note p {
 		font-size: 1rem;

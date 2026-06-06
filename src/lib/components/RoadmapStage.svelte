@@ -4,14 +4,12 @@
 	import type { RoadmapMeta } from '$lib/roadmap';
 
 	let {
-		level,
 		title,
 		modules,
 		meta,
 		currentSlug,
 		isLast = false
 	}: {
-		level: number;
 		title: string;
 		modules: ModuleMeta[];
 		meta: RoadmapMeta;
@@ -41,7 +39,6 @@
 
 	<div class="card">
 		<header class="head">
-			<span class="lv">Level {level}</span>
 			<h2>{title}</h2>
 			<span class="pct" class:full={pct === 100}>{pct}%</span>
 		</header>
@@ -135,15 +132,6 @@
 		display: flex;
 		align-items: baseline;
 		gap: 0.6rem;
-	}
-	.lv {
-		font-size: 0.72rem;
-		font-weight: 700;
-		color: var(--brand-ink);
-		background: var(--brand);
-		padding: 0.12rem 0.4rem;
-		border-radius: 5px;
-		flex: none;
 	}
 	.head h2 {
 		margin: 0;
