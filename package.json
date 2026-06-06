@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "manifest": "node scripts/gen-manifest.mjs",
-    "predev": "node scripts/gen-manifest.mjs",
+    "data": "node scripts/gen-data.mjs",
+    "predev": "node scripts/gen-data.mjs && node scripts/gen-manifest.mjs",
     "dev": "vite dev",
-    "prebuild": "node scripts/gen-manifest.mjs",
+    "prebuild": "node scripts/gen-data.mjs && node scripts/gen-manifest.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
