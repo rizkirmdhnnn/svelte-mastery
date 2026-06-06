@@ -137,10 +137,8 @@ Ubah-ubah kode di bawah. Coba ganti `count++` jadi `count += 5`, atau tambahkan 
 	let double = $derived(count * 2);
 	let label = $derived(count === 0 ? 'mulai' : 'jalan');
 </script>
-
 <h3>Hitungan: {count} (status: {label})</h3>
 <p>Dua kali lipat: {double}</p>
-
 <button onclick={() => count++}>Tambah</button>
 <button onclick={() => (count = 0)}>Reset</button>`} />
 

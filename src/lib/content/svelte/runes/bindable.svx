@@ -6,7 +6,7 @@ sectionTitle: Runes
 sectionOrder: 2
 order: 6
 status: stable
-description: Membuka two-way binding antar komponen secara opt-in dengan let { value = $bindable() } = $props(), lengkap dengan kapan ia layak dipakai.
+description: Membuka two-way binding antar komponen secara opt-in lewat rune $bindable() pada props, lengkap dengan kapan ia layak dipakai.
 docs: https://svelte.dev/docs/svelte/$bindable
 keywords: [bindable, two-way binding, props, bind, defineModel, runes]
 ---
@@ -137,15 +137,12 @@ Di dalam child, prop bindable boleh kamu ubah langsung (mis. <code>checked = !ch
 	let pesan = $state('Svelte');
 	let huruf = $derived(pesan.length);
 </script>
-
 <label>
 	Pesan:
 	<input bind:value={pesan} />
 </label>
-
 <p>Isi: {pesan}</p>
 <p>Jumlah huruf: {huruf}</p>
-
 <button onclick={() => (pesan = 'Halo dunia')}>Set dari luar</button>
 <button onclick={() => (pesan = '')}>Kosongkan</button>`} />
 
@@ -162,7 +159,6 @@ Di sini <code>bind:value</code> menempel ke <code>&lt;input&gt;</code> bawaan, y
   let { value = $bindable('') } = $props();
 </script>
 <input bind:value />
-
 <!-- Parent -->
 <Field bind:value={nama} />`}
 	react={`// Field.tsx — props selalu satu arah
@@ -183,7 +179,6 @@ const value = defineModel()
 <template>
   <input v-model="value" />
 </template>
-
 <!-- Parent: v-model dua arah -->
 <Field v-model="nama" />`}
 	diff={{ react: [9], vue: [3] }}
@@ -193,6 +188,7 @@ const value = defineModel()
 ## 5. Latihan
 
 <Exercise title="Buat Counter yang bindable">
+
 Buat komponen `Counter.svelte` dengan satu prop `count` yang **bindable** (fallback `0`): tampilkan nilainya dan punya tombol `+`. Lalu buat parent yang memakainya dengan `bind:count`, menampilkan `count` parent, dan punya tombol "Reset" yang menyetel `count` parent kembali ke `0`. Pastikan perubahan dari child terlihat di parent, dan perubahan dari parent terlihat di child (benar-benar dua arah).
 
 {#snippet solution()}

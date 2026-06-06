@@ -165,10 +165,8 @@ Ubah harga atau jumlah barang di bawah. Perhatikan `subtotal`, `pajak`, dan `tot
 	let price = $state(50000);
 	let qty = $state(2);
 	let taxRate = $state(0.11);
-
 	// $derived satu ekspresi
 	let subtotal = $derived(price * qty);
-
 	// $derived.by untuk logika beberapa baris, lalu di-destructure.
 	// tax dan total dua-duanya tetap reaktif.
 	let { tax, total } = $derived.by(() => {
@@ -176,7 +174,6 @@ Ubah harga atau jumlah barang di bawah. Perhatikan `subtotal`, `pajak`, dan `tot
 		return { tax: t, total: subtotal + t };
 	});
 </script>
-
 <label>Harga: <input type='number' bind:value={price} /></label>
 <label>Jumlah: <input type='number' bind:value={qty} /></label>
 <p>Subtotal: {subtotal}</p>

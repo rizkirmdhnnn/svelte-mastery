@@ -115,7 +115,8 @@ Catatan singkat penulisan: `bind:innerWidth` (tanpa `={...}`) adalah bentuk ring
 
 Peraga di bawah memasang banyak binding window sekaligus dan satu event keyboard — tanpa satu pun `addEventListener` / `removeEventListener`. Geser-resize jendela browser untuk melihat `innerWidth`/`innerHeight` berubah, scroll area, lalu klik kotak agar fokus dan tekan panah kiri/kanan untuk menggesernya. Tombol "Ke atas" memanfaatkan sifat **dua arah** `scrollY`.
 
-<Playground code={`<script>
+```svelte
+<script>
 	let scrollY = $state(0);
 	let innerWidth = $state(0);
 	let innerHeight = $state(0);
@@ -159,12 +160,14 @@ Peraga di bawah memasang banyak binding window sekaligus dan satu event keyboard
 </button>
 
 <div style="height: 1400px;"></div>
-<p>Kamu sampai di bawah. Lihat scrollY berubah, lalu klik tombol di atas.</p>`} />
+<p>Kamu sampai di bawah. Lihat scrollY berubah, lalu klik tombol di atas.</p>
+```
 
 ## 4. Latihan
 
 <Exercise title="Shortcut keyboard global + banner offline">
-Buat satu komponen `App.svelte` yang memakai `<svelte:window>` untuk dua hal sekaligus:
+
+Buat satu komponen `App.svelte` yang memakai `&lt;svelte:window&gt;` untuk dua hal sekaligus:
 
 1. Sebuah tombol "Buka modal". Saat diklik, tampilkan "modal" sederhana (cukup sebuah `<div>` berisi teks dan tombol Tutup).
 2. Tekan tombol **Escape** di mana pun harus menutup modal — tapi **hanya** kalau modal sedang terbuka.
@@ -213,7 +216,7 @@ Inti jawabannya: `<svelte:window onkeydown={...} bind:online>` menggantikan selu
 ## 5. Tips & Pitfalls
 
 <Callout type="pitfall">
-`<svelte:window>` harus berada di <strong>top-level</strong> komponen — tidak boleh dibungkus di dalam blok `{#if}`, blok `{#each}`, atau elemen lain. Compiler akan menolaknya. Kalau kamu butuh listener yang kondisional, jangan bungkus tag-nya; pasang selalu `<svelte:window onkeydown={handler} />` lalu beri logika kondisi <em>di dalam</em> handler (mis. `if (open) ...`). Pola yang sama berlaku untuk membatalkan handler secara dinamis.
+`&lt;svelte:window&gt;` harus berada di <strong>top-level</strong> komponen — tidak boleh dibungkus di dalam blok `&#123;#if&#125;`, blok `&#123;#each&#125;`, atau elemen lain. Compiler akan menolaknya. Kalau kamu butuh listener yang kondisional, jangan bungkus tag-nya; pasang selalu `&lt;svelte:window onkeydown=&#123;handler&#125; /&gt;` lalu beri logika kondisi <em>di dalam</em> handler (mis. `if (open) ...`). Pola yang sama berlaku untuk membatalkan handler secara dinamis.
 </Callout>
 
 <Callout type="warning">
@@ -225,7 +228,7 @@ Soal aksesibilitas pada `bind:scrollY`: halaman <strong>tidak</strong> akan otom
 </Callout>
 
 <Callout type="tip">
-Cukup satu `<svelte:window>` per komponen, tapi kamu boleh menumpuk banyak binding dan event di dalam tag yang sama: `<svelte:window bind:scrollY bind:innerWidth onkeydown={fn} onresize={g} />`. Karena `<svelte:window>` aman SSR (tidak menyentuh objek `window` di server), kamu tidak perlu lagi menjaga-jaga dengan `if (typeof window !== 'undefined')` seperti saat memakai `addEventListener` mentah di `$effect`.
+Cukup satu `&lt;svelte:window&gt;` per komponen, tapi kamu boleh menumpuk banyak binding dan event di dalam tag yang sama: `&lt;svelte:window bind:scrollY bind:innerWidth onkeydown=&#123;fn&#125; onresize=&#123;g&#125; /&gt;`. Karena `&lt;svelte:window&gt;` aman SSR (tidak menyentuh objek `window` di server), kamu tidak perlu lagi menjaga-jaga dengan `if (typeof window !== 'undefined')` seperti saat memakai `addEventListener` mentah di `$effect`.
 </Callout>
 
 <LegacyVsModern

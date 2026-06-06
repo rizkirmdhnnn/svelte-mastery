@@ -161,7 +161,6 @@ Playground ini menunjukkan dua sifat khas attachment dalam satu komponen mandiri
 	let warna = $state('teal');
 	let jalan = $state(true);
 	let detik = $state(0);
-
 	// Factory: argumen 'warna' dibaca saat evaluasi {@attach gambar(warna)}
 	// di dalam effect -> attachment jalan ulang tiap kali warna berubah.
 	function gambar(warna) {
@@ -173,7 +172,6 @@ Playground ini menunjukkan dua sifat khas attachment dalam satu komponen mandiri
 			return () => ctx.clearRect(0, 0, canvas.width, canvas.height);
 		};
 	}
-
 	// Attachment dengan resource (interval). Cleanup WAJIB agar tak bocor.
 	function detak(node) {
 		node.textContent = 'Stopwatch jalan...';
@@ -184,19 +182,15 @@ Playground ini menunjukkan dua sifat khas attachment dalam satu komponen mandiri
 		};
 	}
 </script>
-
 <canvas width={140} height={80} style="border:1px solid #ccc; display:block" {@attach gambar(warna)}></canvas>
-
 <div style="margin:8px 0">
 	<button onclick={() => warna = 'teal'}>Teal</button>
 	<button onclick={() => warna = 'tomato'}>Tomato</button>
 	<button onclick={() => warna = 'rebeccapurple'}>Ungu</button>
 </div>
-
 <label>
 	<input type="checkbox" bind:checked={jalan} /> Jalankan stopwatch
 </label>
-
 <!-- attach kondisional: saat 'jalan' false, attachment dilepas -> cleanup -->
 <p {@attach jalan && detak}></p>
 <p>Detik berlalu: {detik}</p>`} />

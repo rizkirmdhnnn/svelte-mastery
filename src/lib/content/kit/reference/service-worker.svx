@@ -276,6 +276,7 @@ Saat <code>vite dev</code>, <code>build</code> dan <code>prerendered</code> seng
 ## 5. Latihan
 
 <Exercise title="Susun daftar precache yang lengkap + bersih-bersih versi lama">
+
 Tulis `src/service-worker.js` yang:
 
 1. Meng-cache **semua** aset app: hasil build, aset statis, **dan** halaman prerender (banyak orang lupa yang ketiga).
@@ -355,11 +356,11 @@ Tulis `src/service-worker.js` yang:
 </Callout>
 
 <Callout type="pitfall">
-<strong>Menamai cache tanpa <code>version</code>.</strong> Kalau nama cache statis (mis. <code>'app-cache'</code>) tanpa <code>version</code>, handler <code>activate</code> tidak punya cara membedakan cache lama vs baru — user bisa "terjebak" di aset usang selamanya karena cache-first selalu menyajikan yang lama. Selalu sisipkan <code>version</code> ke nama cache (`cache-${version}`) supaya tiap deploy menghasilkan cache baru dan yang lama bisa dibersihkan.
+<strong>Menamai cache tanpa <code>version</code>.</strong> Kalau nama cache statis (mis. <code>'app-cache'</code>) tanpa <code>version</code>, handler <code>activate</code> tidak punya cara membedakan cache lama vs baru — user bisa "terjebak" di aset usang selamanya karena cache-first selalu menyajikan yang lama. Selalu sisipkan <code>version</code> ke nama cache (<code>cache-$&#123;version&#125;</code>) supaya tiap deploy menghasilkan cache baru dan yang lama bisa dibersihkan.
 </Callout>
 
 <Callout type="warning">
-<strong>Variabel kosong saat dev itu normal.</strong> <code>build</code> dan <code>prerendered</code> bernilai <code>[]</code> di <code>vite dev</code>. Jangan kira service worker-mu rusak — itu memang disengaja. Uji selalu lewat <code>vite build</code> + <code>vite preview</code>. Kalau benar-benar perlu menjalankan service worker saat dev, matikan auto-registrasi (<code>config.kit.serviceWorker.register: false</code>) lalu daftarkan manual, gunakan `{ type: dev ? 'module' : 'classic' }` sesuai mode.
+<strong>Variabel kosong saat dev itu normal.</strong> <code>build</code> dan <code>prerendered</code> bernilai <code>[]</code> di <code>vite dev</code>. Jangan kira service worker-mu rusak — itu memang disengaja. Uji selalu lewat <code>vite build</code> + <code>vite preview</code>. Kalau benar-benar perlu menjalankan service worker saat dev, matikan auto-registrasi (<code>config.kit.serviceWorker.register: false</code>) lalu daftarkan manual, gunakan <code>&#123; type: dev ? 'module' : 'classic' &#125;</code> sesuai mode.
 </Callout>
 
 <Callout type="tip">

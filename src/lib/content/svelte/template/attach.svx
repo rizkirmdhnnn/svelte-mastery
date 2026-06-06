@@ -156,11 +156,9 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan d
 	let warna = $state('tomato');
 	let tampil = $state(true);
 	let log = $state([]);
-
 	function catat(pesan) {
 		log = [pesan, ...log].slice(0, 7);
 	}
-
 	// Attachment factory: terima warna, kembalikan attachment.
 	// {@attach cat(warna)} membaca 'warna' -> ekspresinya reaktif.
 	// Tiap warna berubah: cleanup attachment lama jalan, lalu yang baru jalan.
@@ -172,21 +170,18 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan d
 			return () => catat('cat: cleanup (warna lama ' + c + ')');
 		};
 	}
-
 	// Attachment biasa: jalan saat MOUNT, cleanup saat UNMOUNT.
 	function lacak(node) {
 		catat('lacak: MOUNT, lebar ' + node.offsetWidth + 'px');
 		return () => catat('lacak: UNMOUNT, bersih-bersih');
 	}
 </script>
-
 <button onclick={() => (warna = warna === 'tomato' ? 'skyblue' : 'tomato')}>
 	Ganti warna
 </button>
 <button onclick={() => (tampil = !tampil)}>
 	{tampil ? 'Sembunyikan' : 'Tampilkan'} kotak
 </button>
-
 {#if tampil}
 	<div
 		{@attach cat(warna)}
@@ -196,7 +191,6 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan d
 		Aku punya dua stiker fungsi
 	</div>
 {/if}
-
 <h4>Log lifecycle</h4>
 <ul>
 	{#each log as baris}

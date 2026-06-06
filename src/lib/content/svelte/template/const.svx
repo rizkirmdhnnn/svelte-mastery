@@ -135,14 +135,11 @@ Geser slider diskon dan klik tombol `+` pada tiap baris. Perhatikan: `{@const su
 	]);
 	let diskonPersen = $state(10);
 </script>
-
 <h3>Struk belanja</h3>
-
 <label>
 	Diskon: {diskonPersen}%
 	<input type='range' min='0' max='50' bind:value={diskonPersen} />
 </label>
-
 <ul>
 	{#each items as item}
 		{@const subtotal = item.harga * item.qty}
@@ -156,7 +153,6 @@ Geser slider diskon dan klik tombol `+` pada tiap baris. Perhatikan: `{@const su
 		</li>
 	{/each}
 </ul>
-
 {#if items.length > 0}
 	{@const total = items.reduce((s, it) => s + Math.round(it.harga * it.qty * (1 - diskonPersen / 100)), 0)}
 	<p><strong>Total: Rp {total.toLocaleString('id-ID')}</strong></p>

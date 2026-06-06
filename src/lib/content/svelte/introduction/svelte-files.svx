@@ -45,7 +45,7 @@ Ini bagian yang paling sering bikin bingung pendatang baru, jadi pelan-pelan:
 Di React, `<script module>` kira-kira seperti variabel atau konstanta yang ditaruh **di luar** fungsi komponen; di Vue, seperti kode di luar `setup`.
 
 <Callout type="tip">
-Kamu boleh `export` dari `<script module>` (misal `export const MAX = 10`), dan komponen lain bisa meng-`import`-nya. Satu-satunya yang **tidak** boleh adalah `export default` — sebab default export sebuah file `.svelte` sudah dipakai untuk komponennya sendiri.
+Kamu boleh `export` dari `&lt;script module&gt;` (misal `export const MAX = 10`), dan komponen lain bisa meng-`import`-nya. Satu-satunya yang **tidak** boleh adalah `export default` — sebab default export sebuah file `.svelte` sudah dipakai untuk komponennya sendiri.
 </Callout>
 
 ### Urutan eksekusi
@@ -125,7 +125,8 @@ Kalau pakai **TypeScript**, cukup tambahkan `lang="ts"` di tag script:
 
 Demo di bawah adalah **satu komponen `.svelte` mandiri** yang memamerkan blok `<script>` (dengan `$state`/`$derived`), markup (event handler & blok kontrol), dan `<style>` ter-scope. Ubah-ubah isinya dan lihat live preview bergerak otomatis.
 
-<Playground code={`<script>
+```svelte
+<script>
 	let nama = $state('Svelte');
 	let klik = $state(0);
 	let panjang = $derived(nama.length);
@@ -153,7 +154,8 @@ Demo di bawah adalah **satu komponen `.svelte` mandiri** yang memamerkan blok `<
 	button {
 		margin-top: 0.5rem;
 	}
-</style>`} />
+</style>
+```
 
 ## 4. Kalau di framework lain
 
@@ -163,15 +165,12 @@ Demo di bawah adalah **satu komponen `.svelte` mandiri** yang memamerkan blok `<
 <script>
 	let count = $state(0);
 </script>
-
 <button onclick={() => count++}>{count}</button>
-
 <style>
 	button { font-weight: bold; }
 </style>`}
 	react={`// Counter.jsx: 1 fungsi + JSX; CSS biasanya di file terpisah
 import { useState } from 'react';
-
 export default function Counter() {
 	const [count, setCount] = useState(0);
 	return <button onClick={() => setCount(count + 1)}>{count}</button>;
@@ -181,21 +180,20 @@ export default function Counter() {
 import { ref } from 'vue';
 const count = ref(0);
 </script>
-
 <template>
 	<button @click="count++">{{ count }}</button>
 </template>
-
 <style scoped>
 button { font-weight: bold; }
 </style>`}
-	diff={{ svelte: [3], react: [5], vue: [4] }}
+	diff={{ svelte: [3], react: [4], vue: [4] }}
 	note="React: satu fungsi yang me-return JSX, styling umumnya di luar file komponen. Vue SFC: tiga blok terpisah (script/template/style scoped) — paling dekat ke Svelte. Svelte: bentuknya mirip SFC, tapi reaktivitas dihasilkan compiler sehingga tak perlu pembungkus runtime seperti ref() atau useState(); markup ditulis langsung tanpa tag <template>."
 />
 
 ## 5. Latihan
 
 <Exercise title="Hitung total instance dengan &lt;script module&gt;">
+
 Buat komponen `Tiket.svelte`. Setiap kali sebuah tiket dirender, ia harus mendapat **nomor urut** unik (1, 2, 3, ...) yang dibagi-pakai oleh semua instance. Selain itu tiap tiket punya `nama` (dari props) dan sebuah counter lokal `cap` yang berdiri sendiri per tiket.
 
 Petunjuk: taruh penghitung bersama di `<script module>` (jalan sekali, akumulatif), dan state lokal di `<script>` biasa. Ingat aturan urutan eksekusi.

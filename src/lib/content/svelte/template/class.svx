@@ -155,28 +155,22 @@ Mainkan checkbox-nya dan perhatikan bagaimana objek `class` menyalakan/mematikan
   let big = $state(false);
   let faded = $state(false);
 </script>
-
 <label><input type="checkbox" bind:checked={active} /> active</label>
 <label><input type="checkbox" bind:checked={big} /> big</label>
 <label><input type="checkbox" bind:checked={faded} /> faded</label>
-
 <hr />
-
 <!-- versi OBJEK -->
 <p class={{ active, big, faded }}>
   Kotak (objek): aktifkan checkbox di atas
 </p>
-
 <!-- versi ARRAY dengan pola kondisi && 'kelas' -->
 <p class={['box', big && 'big', faded && 'faded']}>
   Kotak (array)
 </p>
-
 <!-- versi DIRECTIVE lama, hasilnya sama -->
 <p class:active class:big={big} class:faded={faded}>
   Kotak (directive class:)
 </p>
-
 <style>
   .box { border: 1px dashed #999; }
   .active { color: teal; font-weight: bold; }

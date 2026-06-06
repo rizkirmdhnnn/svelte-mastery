@@ -130,19 +130,15 @@ Kita bahas keduanya di bawah.
 <Playground code={`<script>
 	let count = $state(0);
 	let user = $state({ name: 'Sera', age: 20 });
-
 	// CCTV: cetak otomatis tiap count berubah (lihat Console)
 	$inspect(count);
-
 	// .with: kontrol penuh; type = 'init' lalu 'update'
 	$inspect(user).with((type, value) => {
 		console.log('[user ' + type + ']', value.name, value.age);
 	});
 </script>
-
 <h3>count: {count}</h3>
 <p>{user.name}, umur {user.age}</p>
-
 <button onclick={() => count++}>count++</button>
 <button onclick={() => user.age++}>umur++</button>
 <button onclick={() => (user = { name: 'Dimas', age: 30 })}>ganti user</button>`} />

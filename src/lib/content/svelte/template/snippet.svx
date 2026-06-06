@@ -197,9 +197,7 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan s
 		produk = produk.map((p) => ({ ...p, stok: p.stok + 1 }));
 	}
 </script>
-
 <h3>Daftar Produk</h3>
-
 <!-- cetakan kecil: badge status, menerima argumen 'ada' -->
 {#snippet badge(ada)}
 	{#if ada}
@@ -208,7 +206,6 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan s
 		<span style='color: red'>habis</span>
 	{/if}
 {/snippet}
-
 <!-- cetakan baris MEMAKAI cetakan badge di dalamnya -->
 {#snippet baris(item)}
 	<li>
@@ -216,13 +213,11 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan s
 		{@render badge(item.stok > 0)}
 	</li>
 {/snippet}
-
 <ul>
 	{#each produk as p}
 		{@render baris(p)}
 	{/each}
 </ul>
-
 <button onclick={tambahStok}>Tambah stok semua</button>`} />
 
 <Callout type="tip">
@@ -242,7 +237,6 @@ Ketiga framework menyelesaikan masalah yang sama — "biarkan parent menyisipkan
 {#each data as row}
   {@render item(row)}
 {/each}
-
 <!-- Parent -->
 <List data={orang}>
   {#snippet item(o)}
@@ -253,7 +247,6 @@ Ketiga framework menyelesaikan masalah yang sama — "biarkan parent menyisipkan
 function List({ data, item }) {
   return data.map((row) => item(row));
 }
-
 // Parent: kirim fungsi yang mengembalikan JSX
 <List
   data={orang}
@@ -266,7 +259,6 @@ function List({ data, item }) {
     <slot name="item" :o="row" />
   </div>
 </template>
-
 <!-- Parent: v-slot menerima data dari anak -->
 <List :data="orang">
   <template #item="{ o }">

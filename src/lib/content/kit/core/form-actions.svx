@@ -281,7 +281,6 @@ export const actions = {
     return { success: true };
   }
 };
-
 <!-- +page.svelte -->
 <scr` + `ipt>
   import { enhance } from '$app/forms';
@@ -295,7 +294,6 @@ export const actions = {
 </form>`}
 	next={`// app/todos/page.tsx (Next.js Server Action)
 import { revalidatePath } from 'next/cache';
-
 async function addTodo(formData: FormData) {
   'use server'; // menandai fungsi ini berjalan di server
   const text = formData.get('text') as string;
@@ -303,7 +301,6 @@ async function addTodo(formData: FormData) {
   await db.createTodo(text.trim());
   revalidatePath('/todos'); // segarkan data
 }
-
 export default function Page() {
   // action menerima fungsi server langsung (bukan URL).
   return (

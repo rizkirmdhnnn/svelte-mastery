@@ -170,9 +170,7 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan `
 		produk = produk.map((p) => ({ ...p, stok: p.stok + 1 }));
 	}
 </script>
-
 <h3>Daftar Produk</h3>
-
 <!-- stempel kecil: badge status, menerima argumen 'ada' -->
 {#snippet badge(ada)}
 	{#if ada}
@@ -181,7 +179,6 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan `
 		<span style='color: red'>habis</span>
 	{/if}
 {/snippet}
-
 <!-- stempel baris me-render stempel badge di dalamnya -->
 {#snippet baris(item)}
 	<li>
@@ -189,7 +186,6 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan `
 		{@render badge(item.stok > 0)}
 	</li>
 {/snippet}
-
 <!-- dua versi ringkasan, dipilih dinamis lewat ekspresi -->
 {#snippet ringkasPanjang()}
 	<p>Total {produk.length} produk dalam daftar.</p>
@@ -197,15 +193,12 @@ Playground ini berdiri sendiri sebagai satu komponen, jadi pas untuk merasakan `
 {#snippet ringkasPendek()}
 	<p>{produk.length} produk</p>
 {/snippet}
-
 <ul>
 	{#each produk as p}
 		{@render baris(p)}
 	{/each}
 </ul>
-
 {@render (ringkas ? ringkasPendek : ringkasPanjang)()}
-
 <button onclick={tambahStok}>Tambah stok semua</button>
 <button onclick={() => (ringkas = !ringkas)}>Toggle ringkasan</button>`} />
 

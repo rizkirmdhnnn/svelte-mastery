@@ -237,6 +237,7 @@ Inti pelajarannya: untuk **route id** dan **segmen path statis**, union-nya stri
 ## 5. Latihan
 
 <Exercise title="Menu navigasi type-safe">
+
 Untuk sebuah app dengan route `'/'`, `'/produk'`, dan `'/produk/[id]'`, serta ikon di folder `static/icons/`:
 
 1. Definisikan tipe `MenuItem` dengan field `to` (path navigasi valid), `label` (string), dan `icon` (aset valid). Pakai tipe yang tepat dari `$app/types`.
@@ -246,33 +247,34 @@ Untuk sebuah app dengan route `'/'`, `'/produk'`, dan `'/produk/[id]'`, serta ik
 
 {#snippet solution()}
 
-  ```ts
-  // src/lib/menu.ts
-  import { resolve } from '$app/paths';
-  import type { Pathname, Asset, ResolvedPathname } from '$app/types';
+```ts
+// src/lib/menu.ts
+import { resolve } from '$app/paths';
+import type { Pathname, Asset, ResolvedPathname } from '$app/types';
 
-  // `Pathname` = path konkret yang bisa dinavigasi; `Asset` = file di static/.
-  type MenuItem = { to: Pathname; label: string; icon: Asset };
+// `Pathname` = path konkret yang bisa dinavigasi; `Asset` = file di static/.
+type MenuItem = { to: Pathname; label: string; icon: Asset };
 
-  const menu: MenuItem[] = [
-    { to: '/', label: 'Beranda', icon: '/icons/home.svg' },
-    { to: '/produk', label: 'Produk', icon: '/icons/box.svg' }
-  ];
+const menu: MenuItem[] = [
+  { to: '/', label: 'Beranda', icon: '/icons/home.svg' },
+  { to: '/produk', label: 'Produk', icon: '/icons/box.svg' }
+];
 
-  function produkHref(id: string): ResolvedPathname {
-    // resolve(routeId, params): segmen [id] diisi, hasil sudah ber-prefix base.
-    return resolve('/produk/[id]', { id });
-  }
+function produkHref(id: string): ResolvedPathname {
+  // resolve(routeId, params): segmen [id] diisi, hasil sudah ber-prefix base.
+  return resolve('/produk/[id]', { id });
+}
 
-  export { menu, produkHref };
-  ```
+export { menu, produkHref };
+```
 
-  Jawaban bonus:
+Jawaban bonus:
 
-  - `to` bertipe `Pathname`, yaitu union literal path konkret. `'/prodk'` **bukan** anggota union itu, dan segmen statis tidak punya escape hatch → **error compile**.
-  - `icon` bertipe `Asset`, yang mengandung `(string & {})` sebagai escape hatch (supaya nama aset yang dibangun saat runtime tetap boleh). Akibatnya string acak **lolos**, jadi `'/icons/typo.svg'` tidak menyalakan error. `Asset` memberi **autocomplete**, bukan jaminan filenya ada.
+- `to` bertipe `Pathname`, yaitu union literal path konkret. `'/prodk'` **bukan** anggota union itu, dan segmen statis tidak punya escape hatch → **error compile**.
+- `icon` bertipe `Asset`, yang mengandung `(string & {})` sebagai escape hatch (supaya nama aset yang dibangun saat runtime tetap boleh). Akibatnya string acak **lolos**, jadi `'/icons/typo.svg'` tidak menyalakan error. `Asset` memberi **autocomplete**, bukan jaminan filenya ada.
 
-  {/snippet}</Exercise>
+{/snippet}
+</Exercise>
 
 ## 6. Tips & Pitfalls
 
@@ -293,7 +295,7 @@ Ingat beda <code>$app/types</code> (union <em>se-aplikasi</em>: semua route/path
 </Callout>
 
 <Callout type="tip">
-Selalu impor dengan <code>import type { ... } from '$app/types'</code>. Karena isinya murni tipe, <code>import type</code> memastikan semuanya terhapus di hasil build (tidak menambah satu byte pun ke bundle) dan tidak bentrok dengan tree-shaking.
+Selalu impor dengan <code>import type &#123; ... &#125; from '$app/types'</code>. Karena isinya murni tipe, <code>import type</code> memastikan semuanya terhapus di hasil build (tidak menambah satu byte pun ke bundle) dan tidak bentrok dengan tree-shaking.
 </Callout>
 
 ## 7. Docs resmi

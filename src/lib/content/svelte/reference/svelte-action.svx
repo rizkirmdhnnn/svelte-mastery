@@ -156,7 +156,8 @@ Playground ini memakai tiga action dalam satu komponen mandiri, supaya kamu meli
 - `tooltip` — action **dengan parameter**; coba ubah teks di input, lalu hover tombolnya — `update()` menyalin teks baru.
 - centang/hapus tombol kedua untuk memicu `destroy()` — perhatikan listener-nya dibersihkan saat elemen dilepas.
 
-<Playground code={`<script>
+```svelte
+<script>
 	let pesan = $state('Halo, aku tooltip!');
 	let tampilTombolKedua = $state(true);
 
@@ -220,7 +221,8 @@ Playground ini memakai tiga action dalam satu komponen mandiri, supaya kamu meli
 
 {#if tampilTombolKedua}
 	<button use:tooltip={'Aku akan di-destroy saat dilepas'}>Hover aku juga</button>
-{/if}`} />
+{/if}
+```
 
 ## 4. Ringkasan API
 
@@ -294,6 +296,7 @@ Perbedaan inti dalam satu kalimat: **action** punya `update`/`destroy` yang kamu
 ## 5. Latihan
 
 <Exercise title="Action clickOutside untuk menutup dropdown">
+
 Buat satu komponen `.svelte` berisi action bernama `clickOutside`:
 
 1. Saat ada klik **di luar** elemen yang memakai action ini, action memancarkan event kustom `outclick` (lewat `node.dispatchEvent(new CustomEvent('outclick'))`).
@@ -366,7 +369,7 @@ Action <strong>hanya berjalan di browser</strong>, tidak saat SSR — <code>node
 </Callout>
 
 <Callout type="tip">
-<code>update</code> hanya terpicu saat <strong>nilai parameter</strong> yang dioper ke <code>use:action={...}</code> berubah — bukan state reaktif lain yang kebetulan dibaca di dalam action. Kalau action-mu perlu bereaksi terhadap beberapa potong state sekaligus, jangan paksakan lewat <code>update</code>; pakai <strong>attachment</strong> (<code>&#123;@attach&#125;</code>) yang reaktif penuh, atau bungkus semua nilai itu jadi satu objek parameter sehingga perubahan apa pun memicu <code>update</code>.
+<code>update</code> hanya terpicu saat <strong>nilai parameter</strong> yang dioper ke <code>use:action=&#123;...&#125;</code> berubah — bukan state reaktif lain yang kebetulan dibaca di dalam action. Kalau action-mu perlu bereaksi terhadap beberapa potong state sekaligus, jangan paksakan lewat <code>update</code>; pakai <strong>attachment</strong> (<code>&#123;@attach&#125;</code>) yang reaktif penuh, atau bungkus semua nilai itu jadi satu objek parameter sehingga perubahan apa pun memicu <code>update</code>.
 </Callout>
 
 <Callout type="tip">

@@ -127,33 +127,26 @@ Playground berikut memasang listener `keydown` ke `window` lewat `on()` di dalam
 
 <Playground code={`<script>
 	import { on } from 'svelte/events';
-
 	let aktif = $state(true);
 	let terakhir = $state('(belum ada)');
 	let jumlah = $state(0);
-
 	$effect(() => {
 		// efek membaca 'aktif' → dijalankan ulang saat 'aktif' berubah
 		if (!aktif) return; // saat nonaktif: tidak pasang listener
-
 		// on() mengembalikan fungsi pelepas
 		const lepas = on(window, 'keydown', (event) => {
 			terakhir = event.key;
 			jumlah += 1;
 		});
-
 		// dikembalikan sebagai cleanup: dipanggil sebelum efek jalan ulang
 		// (mis. saat 'aktif' jadi false) atau saat komponen hancur
 		return lepas;
 	});
 </script>
-
 <p>Klik di sini dulu, lalu tekan tombol keyboard mana saja.</p>
-
 <button onclick={() => (aktif = !aktif)}>
 	{aktif ? 'Nonaktifkan' : 'Aktifkan'} listener
 </button>
-
 <p>Status: <strong>{aktif ? 'mendengarkan' : 'berhenti'}</strong></p>
 <p>Tombol terakhir: <code>{terakhir}</code></p>
 <p>Total ketukan tercatat: {jumlah}</p>`} />

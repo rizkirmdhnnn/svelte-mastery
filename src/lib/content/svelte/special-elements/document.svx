@@ -139,35 +139,26 @@ Satu komponen di bawah ini memakai `<svelte:document>` untuk tiga hal sekaligus:
 	let selection = $state('');
 	let active = $state(null);
 	let leaveCount = $state(0);
-
 	function onselectionchange() {
 		const sel = document.getSelection();
 		selection = sel ? sel.toString() : '';
 	}
-
 	function onvisibilitychange() {
 		if (document.visibilityState === 'hidden') leaveCount += 1;
 	}
-
 	let activeTag = $derived(active ? active.tagName.toLowerCase() : 'tidak ada');
 </script>
-
 <svelte:document
 	{onselectionchange}
 	{onvisibilitychange}
 	bind:activeElement={active}
 />
-
 <h3>Demo svelte:document</h3>
-
 <p>1) Sorot (drag) teks kalimat ini dengan mouse-mu untuk memicu selectionchange.</p>
-
 <p>2) Klik salah satu kontrol untuk melihat activeElement berubah:</p>
 <input placeholder="klik aku" />
 <button>atau klik tombol ini</button>
-
 <p>3) Pindah ke tab browser lain lalu kembali untuk memicu visibilitychange.</p>
-
 <div style="margin-top: 12px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px;">
 	<p>Teks tersorot: <strong>{selection || '(belum ada)'}</strong></p>
 	<p>Elemen aktif: <strong>&lt;{activeTag}&gt;</strong></p>

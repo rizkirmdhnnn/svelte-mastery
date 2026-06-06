@@ -21,7 +21,8 @@ export const generatedModules: ModuleMeta[] = [
 			"runtime",
 			"write less code",
 			"sveltekit"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/introduction/getting-started",
@@ -41,7 +42,8 @@ export const generatedModules: ModuleMeta[] = [
 			"npm run dev",
 			"struktur proyek",
 			"tooling"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/introduction/svelte-files",
@@ -61,7 +63,8 @@ export const generatedModules: ModuleMeta[] = [
 			"markup",
 			"style",
 			"scoped-css"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/introduction/svelte-js-files",
@@ -80,7 +83,8 @@ export const generatedModules: ModuleMeta[] = [
 			"runes",
 			"reactive-module",
 			"getter"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runes/what-are-runes",
@@ -99,7 +103,8 @@ export const generatedModules: ModuleMeta[] = [
 			"compiler",
 			"$state",
 			"svelte5"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runes/state",
@@ -119,7 +124,8 @@ export const generatedModules: ModuleMeta[] = [
 			"snapshot",
 			"runes",
 			"class-fields"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runes/derived",
@@ -138,7 +144,8 @@ export const generatedModules: ModuleMeta[] = [
 			"computed",
 			"reactivity",
 			"runes"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runes/effect",
@@ -158,7 +165,8 @@ export const generatedModules: ModuleMeta[] = [
 			"$effect.pre",
 			"$effect.root",
 			"$derived"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runes/props",
@@ -178,7 +186,8 @@ export const generatedModules: ModuleMeta[] = [
 			"rest props",
 			"typescript",
 			"props.id"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runes/bindable",
@@ -189,7 +198,7 @@ export const generatedModules: ModuleMeta[] = [
 		"sectionOrder": 2,
 		"order": 6,
 		"status": "stable",
-		"description": "Membuka two-way binding antar komponen secara opt-in dengan let { value = $bindable() } = $props(), lengkap dengan kapan ia layak dipakai.",
+		"description": "Membuka two-way binding antar komponen secara opt-in lewat rune $bindable() pada props, lengkap dengan kapan ia layak dipakai.",
 		"docs": "https://svelte.dev/docs/svelte/$bindable",
 		"keywords": [
 			"bindable",
@@ -198,7 +207,8 @@ export const generatedModules: ModuleMeta[] = [
 			"bind",
 			"defineModel",
 			"runes"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runes/inspect",
@@ -218,7 +228,8 @@ export const generatedModules: ModuleMeta[] = [
 			"with",
 			"reactivity",
 			"runes"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runes/host",
@@ -237,7 +248,8 @@ export const generatedModules: ModuleMeta[] = [
 			"web-component",
 			"CustomEvent",
 			"dispatch"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/basic-markup",
@@ -257,7 +269,8 @@ export const generatedModules: ModuleMeta[] = [
 			"shorthand",
 			"spread",
 			"boolean attributes"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/if",
@@ -276,7 +289,8 @@ export const generatedModules: ModuleMeta[] = [
 			"conditional",
 			"template",
 			"branching"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/each",
@@ -296,7 +310,8 @@ export const generatedModules: ModuleMeta[] = [
 			"destructuring",
 			"map-set",
 			"index"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/key",
@@ -315,7 +330,8 @@ export const generatedModules: ModuleMeta[] = [
 			"transition",
 			"reset-state",
 			"template"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/await",
@@ -335,7 +351,8 @@ export const generatedModules: ModuleMeta[] = [
 			"promise",
 			"async",
 			"loading-state"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/snippet",
@@ -355,7 +372,8 @@ export const generatedModules: ModuleMeta[] = [
 			"slot",
 			"render props",
 			"scoped slot"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/render",
@@ -374,7 +392,8 @@ export const generatedModules: ModuleMeta[] = [
 			"children",
 			"optional",
 			"scope"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/html",
@@ -393,7 +412,8 @@ export const generatedModules: ModuleMeta[] = [
 			"innerHTML",
 			"sanitize",
 			"DOMPurify"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/attach",
@@ -413,7 +433,8 @@ export const generatedModules: ModuleMeta[] = [
 			"reactive",
 			"cleanup",
 			"factory"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/const",
@@ -432,7 +453,8 @@ export const generatedModules: ModuleMeta[] = [
 			"konstanta",
 			"each",
 			"snippet"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/debug",
@@ -451,7 +473,8 @@ export const generatedModules: ModuleMeta[] = [
 			"debugger",
 			"console",
 			"dev-only"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/declaration-tags",
@@ -470,7 +493,8 @@ export const generatedModules: ModuleMeta[] = [
 			"let",
 			"template",
 			"derived"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/bind",
@@ -489,7 +513,8 @@ export const generatedModules: ModuleMeta[] = [
 			"bindable",
 			"group",
 			"clientWidth"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/use",
@@ -509,7 +534,8 @@ export const generatedModules: ModuleMeta[] = [
 			"DOM",
 			"clickOutside",
 			"attachment"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/transition",
@@ -529,7 +555,8 @@ export const generatedModules: ModuleMeta[] = [
 			"slide",
 			"custom-transition",
 			"local-global"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/in-and-out",
@@ -549,7 +576,8 @@ export const generatedModules: ModuleMeta[] = [
 			"masuk",
 			"keluar",
 			"animasi"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/animate",
@@ -568,7 +596,8 @@ export const generatedModules: ModuleMeta[] = [
 			"reorder",
 			"keyed-each",
 			"custom-animate"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/style",
@@ -588,7 +617,8 @@ export const generatedModules: ModuleMeta[] = [
 			"important",
 			"custom property",
 			"reaktif"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/class",
@@ -607,7 +637,8 @@ export const generatedModules: ModuleMeta[] = [
 			"conditional class",
 			"class directive",
 			"styling"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/template/await-expressions",
@@ -627,7 +658,8 @@ export const generatedModules: ModuleMeta[] = [
 			"effect-pending",
 			"boundary",
 			"settled"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/styling/scoped-styles",
@@ -647,7 +679,8 @@ export const generatedModules: ModuleMeta[] = [
 			"specificity",
 			"keyframes",
 			"css"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/styling/global-styles",
@@ -658,7 +691,7 @@ export const generatedModules: ModuleMeta[] = [
 		"sectionOrder": 4,
 		"order": 2,
 		"status": "stable",
-		"description": "Menembus scoping Svelte secara sengaja dengan :global(...) dan blok :global { ... } — untuk reset global, menata konten {@html}, dan menjangkau elemen anak/pihak ketiga.",
+		"description": "Menembus scoping Svelte secara sengaja dengan :global(...) dan blok :global, untuk reset global, menata konten dari @html, dan menjangkau elemen anak atau pihak ketiga.",
 		"docs": "https://svelte.dev/docs/svelte/global-styles",
 		"keywords": [
 			"global",
@@ -667,7 +700,8 @@ export const generatedModules: ModuleMeta[] = [
 			"html-content",
 			"keyframes",
 			"reset"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/styling/custom-properties",
@@ -687,7 +721,8 @@ export const generatedModules: ModuleMeta[] = [
 			"var",
 			"props",
 			"styling"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/styling/nested-style-elements",
@@ -706,7 +741,8 @@ export const generatedModules: ModuleMeta[] = [
 			"global",
 			"style-tag",
 			"top-level"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/special-elements/boundary",
@@ -725,7 +761,8 @@ export const generatedModules: ModuleMeta[] = [
 			"failed",
 			"pending",
 			"reset"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/special-elements/window",
@@ -744,7 +781,8 @@ export const generatedModules: ModuleMeta[] = [
 			"window-events",
 			"auto-cleanup",
 			"special-elements"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/special-elements/document",
@@ -763,7 +801,8 @@ export const generatedModules: ModuleMeta[] = [
 			"selectionchange",
 			"activeElement",
 			"special-elements"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/special-elements/body",
@@ -782,7 +821,8 @@ export const generatedModules: ModuleMeta[] = [
 			"mouseleave",
 			"exit-intent",
 			"special-elements"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/special-elements/head",
@@ -801,7 +841,8 @@ export const generatedModules: ModuleMeta[] = [
 			"meta-tags",
 			"document-title",
 			"ssr"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/special-elements/element",
@@ -820,7 +861,8 @@ export const generatedModules: ModuleMeta[] = [
 			"this",
 			"void-element",
 			"xmlns"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/special-elements/options",
@@ -839,7 +881,8 @@ export const generatedModules: ModuleMeta[] = [
 			"runes-mode",
 			"namespace",
 			"compiler-options"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runtime/stores",
@@ -859,7 +902,8 @@ export const generatedModules: ModuleMeta[] = [
 			"derived",
 			"auto-subscribe",
 			"runes"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runtime/context",
@@ -878,7 +922,8 @@ export const generatedModules: ModuleMeta[] = [
 			"hasContext",
 			"createContext",
 			"prop drilling"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runtime/lifecycle-hooks",
@@ -898,7 +943,8 @@ export const generatedModules: ModuleMeta[] = [
 			"lifecycle",
 			"effect",
 			"cleanup"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runtime/imperative-component-api",
@@ -917,7 +963,8 @@ export const generatedModules: ModuleMeta[] = [
 			"render",
 			"hydrate",
 			"flushSync"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/runtime/hydratable",
@@ -936,7 +983,8 @@ export const generatedModules: ModuleMeta[] = [
 			"SSR",
 			"devalue",
 			"serialization"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/misc/best-practices",
@@ -956,7 +1004,8 @@ export const generatedModules: ModuleMeta[] = [
 			"anti-pattern",
 			"aksesibilitas",
 			"performa"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/misc/testing",
@@ -976,7 +1025,8 @@ export const generatedModules: ModuleMeta[] = [
 			"playwright",
 			"flushSync",
 			"effect-root"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/misc/typescript",
@@ -996,7 +1046,8 @@ export const generatedModules: ModuleMeta[] = [
 			"Component",
 			"Snippet",
 			"$state"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/misc/custom-elements",
@@ -1015,7 +1066,8 @@ export const generatedModules: ModuleMeta[] = [
 			"svelte:options",
 			"$host",
 			"shadow-dom"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/misc/browser-support",
@@ -1034,7 +1086,8 @@ export const generatedModules: ModuleMeta[] = [
 			"polyfill",
 			"proxy",
 			"legacy-browser"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/misc/v4-migration-guide",
@@ -1054,7 +1107,8 @@ export const generatedModules: ModuleMeta[] = [
 			"bundler",
 			"typescript",
 			"kompatibilitas"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/misc/v5-migration-guide",
@@ -1074,7 +1128,8 @@ export const generatedModules: ModuleMeta[] = [
 			"props",
 			"snippet",
 			"callback"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/misc/faq",
@@ -1094,7 +1149,8 @@ export const generatedModules: ModuleMeta[] = [
 			"testing",
 			"prettier",
 			"sveltekit"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte",
@@ -1114,7 +1170,8 @@ export const generatedModules: ModuleMeta[] = [
 			"snippet",
 			"tick",
 			"untrack"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-action",
@@ -1133,7 +1190,8 @@ export const generatedModules: ModuleMeta[] = [
 			"use directive",
 			"attachment",
 			"DOM"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-animate",
@@ -1153,7 +1211,8 @@ export const generatedModules: ModuleMeta[] = [
 			"reorder",
 			"keyed each",
 			"animation"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-attachments",
@@ -1172,7 +1231,8 @@ export const generatedModules: ModuleMeta[] = [
 			"createAttachmentKey",
 			"fromAction",
 			"action"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-compiler",
@@ -1192,7 +1252,8 @@ export const generatedModules: ModuleMeta[] = [
 			"parse",
 			"migrate",
 			"AST"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-easing",
@@ -1212,7 +1273,8 @@ export const generatedModules: ModuleMeta[] = [
 			"transition",
 			"Tween",
 			"kurva"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-events",
@@ -1231,7 +1293,8 @@ export const generatedModules: ModuleMeta[] = [
 			"event listener",
 			"delegation",
 			"cleanup"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-legacy",
@@ -1251,7 +1314,8 @@ export const generatedModules: ModuleMeta[] = [
 			"createBubbler",
 			"asClassComponent",
 			"run"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-motion",
@@ -1270,7 +1334,8 @@ export const generatedModules: ModuleMeta[] = [
 			"tween",
 			"prefers-reduced-motion",
 			"animasi"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-reactivity-window",
@@ -1290,7 +1355,8 @@ export const generatedModules: ModuleMeta[] = [
 			"scrollY",
 			"online",
 			"SSR"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-reactivity",
@@ -1310,7 +1376,8 @@ export const generatedModules: ModuleMeta[] = [
 			"MediaQuery",
 			"createSubscriber",
 			"reactivity"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-server",
@@ -1330,7 +1397,8 @@ export const generatedModules: ModuleMeta[] = [
 			"head",
 			"body",
 			"hydrate"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-store",
@@ -1350,7 +1418,8 @@ export const generatedModules: ModuleMeta[] = [
 			"derived",
 			"toStore",
 			"fromStore"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/svelte-transition",
@@ -1369,7 +1438,8 @@ export const generatedModules: ModuleMeta[] = [
 			"fly",
 			"slide",
 			"crossfade"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/compiler-errors",
@@ -1389,7 +1459,8 @@ export const generatedModules: ModuleMeta[] = [
 			"diagnostics",
 			"build error",
 			"svelte 5"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/compiler-warnings",
@@ -1408,7 +1479,8 @@ export const generatedModules: ModuleMeta[] = [
 			"a11y",
 			"warningFilter",
 			"linting"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/runtime-errors",
@@ -1428,7 +1500,8 @@ export const generatedModules: ModuleMeta[] = [
 			"hydration",
 			"lifecycle",
 			"bind"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/reference/runtime-warnings",
@@ -1447,7 +1520,8 @@ export const generatedModules: ModuleMeta[] = [
 			"ownership",
 			"state proxy",
 			"$inspect"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/overview",
@@ -1467,7 +1541,8 @@ export const generatedModules: ModuleMeta[] = [
 			"membaca-kode-lama",
 			"deprecated",
 			"migrasi"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/let",
@@ -1486,7 +1561,8 @@ export const generatedModules: ModuleMeta[] = [
 			"let",
 			"assignment",
 			"state"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/reactive-assignments",
@@ -1505,7 +1581,8 @@ export const generatedModules: ModuleMeta[] = [
 			"effect",
 			"legacy",
 			"migrasi"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/export-let",
@@ -1525,7 +1602,8 @@ export const generatedModules: ModuleMeta[] = [
 			"svelte-4",
 			"dollar-props",
 			"rename"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/props-and-restprops",
@@ -1545,7 +1623,8 @@ export const generatedModules: ModuleMeta[] = [
 			"forwarding",
 			"spread",
 			"$props"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/on",
@@ -1565,7 +1644,8 @@ export const generatedModules: ModuleMeta[] = [
 			"onclick",
 			"forwarding",
 			"preventDefault"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/slots",
@@ -1585,7 +1665,8 @@ export const generatedModules: ModuleMeta[] = [
 			"legacy",
 			"snippet",
 			"render"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/dollar-slots",
@@ -1605,7 +1686,8 @@ export const generatedModules: ModuleMeta[] = [
 			"snippet",
 			"children",
 			"conditional slot"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/svelte-fragment",
@@ -1625,7 +1707,8 @@ export const generatedModules: ModuleMeta[] = [
 			"svelte-4",
 			"snippet",
 			"wrapper"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/svelte-component",
@@ -1645,7 +1728,8 @@ export const generatedModules: ModuleMeta[] = [
 			"svelte-4",
 			"runes",
 			"this"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/svelte-self",
@@ -1664,7 +1748,8 @@ export const generatedModules: ModuleMeta[] = [
 			"legacy",
 			"self-import",
 			"komponen"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "svelte/legacy/component-api",
@@ -1684,7 +1769,8 @@ export const generatedModules: ModuleMeta[] = [
 			"$destroy",
 			"mount",
 			"unmount"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/getting-started/introduction",
@@ -1704,7 +1790,8 @@ export const generatedModules: ModuleMeta[] = [
 			"ssr",
 			"vite",
 			"adapter"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/getting-started/creating-a-project",
@@ -1724,7 +1811,8 @@ export const generatedModules: ModuleMeta[] = [
 			"npm run dev",
 			"project-structure",
 			"vite"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/getting-started/project-types",
@@ -1744,7 +1832,8 @@ export const generatedModules: ModuleMeta[] = [
 			"spa",
 			"library",
 			"adapter"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/getting-started/project-structure",
@@ -1764,7 +1853,8 @@ export const generatedModules: ModuleMeta[] = [
 			"app-html",
 			"hooks",
 			"svelte-config"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/getting-started/web-standards",
@@ -1784,7 +1874,8 @@ export const generatedModules: ModuleMeta[] = [
 			"fetch",
 			"FormData",
 			"URL"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/core/routing",
@@ -1804,7 +1895,8 @@ export const generatedModules: ModuleMeta[] = [
 			"+server",
 			"+error",
 			"params"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/core/load",
@@ -1824,7 +1916,8 @@ export const generatedModules: ModuleMeta[] = [
 			"layout-load",
 			"invalidate",
 			"streaming"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/core/form-actions",
@@ -1844,7 +1937,8 @@ export const generatedModules: ModuleMeta[] = [
 			"fail",
 			"ActionData",
 			"redirect"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/core/page-options",
@@ -1864,7 +1958,8 @@ export const generatedModules: ModuleMeta[] = [
 			"prerender",
 			"trailingslash",
 			"entries"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/core/state-management",
@@ -1884,7 +1979,8 @@ export const generatedModules: ModuleMeta[] = [
 			"locals",
 			"url-state",
 			"snapshots"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/core/remote-functions",
@@ -1904,7 +2000,8 @@ export const generatedModules: ModuleMeta[] = [
 			"command",
 			"prerender",
 			"rpc"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/core/environment-variables",
@@ -1924,7 +2021,8 @@ export const generatedModules: ModuleMeta[] = [
 			"public",
 			"private",
 			"PUBLIC_"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/building-your-app",
@@ -1944,7 +2042,8 @@ export const generatedModules: ModuleMeta[] = [
 			"adapter",
 			"building",
 			"preview"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/adapters",
@@ -1964,7 +2063,8 @@ export const generatedModules: ModuleMeta[] = [
 			"adapter-node",
 			"adapter-static",
 			"ssg"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/adapter-auto",
@@ -1984,7 +2084,8 @@ export const generatedModules: ModuleMeta[] = [
 			"vercel",
 			"netlify",
 			"cloudflare"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/adapter-node",
@@ -2004,7 +2105,8 @@ export const generatedModules: ModuleMeta[] = [
 			"reverse-proxy",
 			"ORIGIN",
 			"custom-server"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/adapter-static",
@@ -2024,7 +2126,8 @@ export const generatedModules: ModuleMeta[] = [
 			"spa",
 			"github-pages",
 			"fallback"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/single-page-apps",
@@ -2044,7 +2147,8 @@ export const generatedModules: ModuleMeta[] = [
 			"fallback",
 			"csr",
 			"prerender"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/adapter-cloudflare",
@@ -2063,7 +2167,8 @@ export const generatedModules: ModuleMeta[] = [
 			"platform.env",
 			"bindings",
 			"wrangler"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/adapter-cloudflare-workers",
@@ -2083,7 +2188,8 @@ export const generatedModules: ModuleMeta[] = [
 			"wrangler",
 			"deployment",
 			"edge"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/adapter-netlify",
@@ -2103,7 +2209,8 @@ export const generatedModules: ModuleMeta[] = [
 			"netlify.toml",
 			"redirects",
 			"deploy"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/adapter-vercel",
@@ -2123,7 +2230,8 @@ export const generatedModules: ModuleMeta[] = [
 			"ISR",
 			"image optimization",
 			"deployment"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/build-deploy/writing-adapters",
@@ -2143,7 +2251,8 @@ export const generatedModules: ModuleMeta[] = [
 			"emulate",
 			"supports",
 			"deployment"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/advanced-routing",
@@ -2163,7 +2272,8 @@ export const generatedModules: ModuleMeta[] = [
 			"matchers",
 			"route groups",
 			"layout breaking"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/hooks",
@@ -2183,7 +2293,8 @@ export const generatedModules: ModuleMeta[] = [
 			"handleError",
 			"reroute",
 			"sequence"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/errors",
@@ -2203,7 +2314,8 @@ export const generatedModules: ModuleMeta[] = [
 			"error-boundary",
 			"app-error",
 			"status"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/link-options",
@@ -2223,7 +2335,8 @@ export const generatedModules: ModuleMeta[] = [
 			"replacestate",
 			"keepfocus",
 			"noscroll"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/service-workers",
@@ -2242,7 +2355,8 @@ export const generatedModules: ModuleMeta[] = [
 			"cache",
 			"pwa",
 			"$service-worker"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/server-only-modules",
@@ -2262,7 +2376,8 @@ export const generatedModules: ModuleMeta[] = [
 			"private",
 			"secrets",
 			"bundler"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/snapshots",
@@ -2282,7 +2397,8 @@ export const generatedModules: ModuleMeta[] = [
 			"history.state",
 			"sessionStorage",
 			"ephemeral-state"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/shallow-routing",
@@ -2301,7 +2417,8 @@ export const generatedModules: ModuleMeta[] = [
 			"replaceState",
 			"page.state",
 			"preloadData"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/observability",
@@ -2320,7 +2437,8 @@ export const generatedModules: ModuleMeta[] = [
 			"opentelemetry",
 			"instrumentation",
 			"span"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/advanced/packaging",
@@ -2339,7 +2457,8 @@ export const generatedModules: ModuleMeta[] = [
 			"library",
 			"exports",
 			"npm"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/best-practices/auth",
@@ -2359,7 +2478,8 @@ export const generatedModules: ModuleMeta[] = [
 			"cookies",
 			"hooks",
 			"locals"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/best-practices/performance",
@@ -2379,7 +2499,8 @@ export const generatedModules: ModuleMeta[] = [
 			"code-splitting",
 			"waterfall",
 			"caching"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/best-practices/icons",
@@ -2399,7 +2520,8 @@ export const generatedModules: ModuleMeta[] = [
 			"iconify",
 			"unplugin-icons",
 			"a11y"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/best-practices/images",
@@ -2419,7 +2541,8 @@ export const generatedModules: ModuleMeta[] = [
 			"avif",
 			"webp",
 			"image-cdn"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/best-practices/accessibility",
@@ -2439,7 +2562,8 @@ export const generatedModules: ModuleMeta[] = [
 			"focus",
 			"lang",
 			"screen reader"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/best-practices/seo",
@@ -2459,7 +2583,8 @@ export const generatedModules: ModuleMeta[] = [
 			"sitemap",
 			"canonical",
 			"performance"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/appendix/faq",
@@ -2479,7 +2604,8 @@ export const generatedModules: ModuleMeta[] = [
 			"alias",
 			"hmr",
 			"deployment"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/appendix/integrations",
@@ -2499,7 +2625,8 @@ export const generatedModules: ModuleMeta[] = [
 			"drizzle",
 			"vitest",
 			"playwright"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/appendix/debugging",
@@ -2519,7 +2646,8 @@ export const generatedModules: ModuleMeta[] = [
 			"inspect",
 			"source maps",
 			"vscode"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/appendix/migrating-to-sveltekit-2",
@@ -2539,7 +2667,8 @@ export const generatedModules: ModuleMeta[] = [
 			"sv-migrate",
 			"cookies",
 			"redirect"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/appendix/migrating",
@@ -2559,7 +2688,8 @@ export const generatedModules: ModuleMeta[] = [
 			"load",
 			"$app",
 			"routing"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/appendix/additional-resources",
@@ -2579,7 +2709,8 @@ export const generatedModules: ModuleMeta[] = [
 			"integrations",
 			"faq",
 			"komunitas"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/appendix/glossary",
@@ -2599,7 +2730,8 @@ export const generatedModules: ModuleMeta[] = [
 			"ssg",
 			"hydration",
 			"edge"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/sveltejs-kit",
@@ -2619,7 +2751,8 @@ export const generatedModules: ModuleMeta[] = [
 			"fail",
 			"RequestHandler",
 			"Cookies"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/sveltejs-kit-hooks",
@@ -2639,7 +2772,8 @@ export const generatedModules: ModuleMeta[] = [
 			"middleware",
 			"transformPageChunk",
 			"resolve"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/sveltejs-kit-node-polyfills",
@@ -2659,7 +2793,8 @@ export const generatedModules: ModuleMeta[] = [
 			"adapter",
 			"crypto",
 			"File"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/sveltejs-kit-node",
@@ -2678,7 +2813,8 @@ export const generatedModules: ModuleMeta[] = [
 			"setResponse",
 			"adapter-node",
 			"createReadableStream"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/sveltejs-kit-vite",
@@ -2698,7 +2834,8 @@ export const generatedModules: ModuleMeta[] = [
 			"build",
 			"dev",
 			"ssr"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-environment",
@@ -2717,7 +2854,8 @@ export const generatedModules: ModuleMeta[] = [
 			"dev",
 			"version",
 			"environment"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-forms",
@@ -2736,7 +2874,8 @@ export const generatedModules: ModuleMeta[] = [
 			"deserialize",
 			"progressive-enhancement",
 			"form-actions"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-navigation",
@@ -2756,7 +2895,8 @@ export const generatedModules: ModuleMeta[] = [
 			"preloadData",
 			"beforeNavigate",
 			"shallow-routing"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-paths",
@@ -2776,7 +2916,8 @@ export const generatedModules: ModuleMeta[] = [
 			"resolve",
 			"resolveRoute",
 			"asset"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-server",
@@ -2796,7 +2937,8 @@ export const generatedModules: ModuleMeta[] = [
 			"remote-functions",
 			"query",
 			"command"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-state",
@@ -2816,7 +2958,8 @@ export const generatedModules: ModuleMeta[] = [
 			"updated",
 			"runes",
 			"app-stores"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-stores",
@@ -2836,7 +2979,8 @@ export const generatedModules: ModuleMeta[] = [
 			"updated",
 			"getStores",
 			"legacy"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-types",
@@ -2856,7 +3000,8 @@ export const generatedModules: ModuleMeta[] = [
 			"Pathname",
 			"Asset",
 			"type-safe"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/env-dynamic-private",
@@ -2876,7 +3021,8 @@ export const generatedModules: ModuleMeta[] = [
 			"runtime",
 			"process.env",
 			"server-only"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/env-dynamic-public",
@@ -2896,7 +3042,8 @@ export const generatedModules: ModuleMeta[] = [
 			"PUBLIC_",
 			"runtime",
 			"browser"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/env-static-private",
@@ -2916,7 +3063,8 @@ export const generatedModules: ModuleMeta[] = [
 			"secret",
 			"build-time",
 			"tree-shaking"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/env-static-public",
@@ -2936,7 +3084,8 @@ export const generatedModules: ModuleMeta[] = [
 			"PUBLIC_",
 			"build-time",
 			"browser"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-env",
@@ -2956,7 +3105,8 @@ export const generatedModules: ModuleMeta[] = [
 			"browser",
 			"building",
 			"version"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-env-private",
@@ -2976,7 +3126,8 @@ export const generatedModules: ModuleMeta[] = [
 			"src/env.ts",
 			"defineEnvVars",
 			"type-safe"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/app-env-public",
@@ -2996,7 +3147,8 @@ export const generatedModules: ModuleMeta[] = [
 			"public",
 			"type-safe",
 			"defineEnvVars"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/lib",
@@ -3016,7 +3168,8 @@ export const generatedModules: ModuleMeta[] = [
 			"import",
 			"files-config",
 			"sveltekit"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/service-worker",
@@ -3036,7 +3189,8 @@ export const generatedModules: ModuleMeta[] = [
 			"prerendered",
 			"version",
 			"base"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/configuration",
@@ -3056,7 +3210,8 @@ export const generatedModules: ModuleMeta[] = [
 			"prerender",
 			"paths",
 			"adapter"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/cli",
@@ -3076,7 +3231,8 @@ export const generatedModules: ModuleMeta[] = [
 			"svelte-kit sync",
 			"flags",
 			"sv"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "kit/reference/types",
@@ -3096,7 +3252,8 @@ export const generatedModules: ModuleMeta[] = [
 			"PageServerLoad",
 			"Actions",
 			"Platform"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/overview",
@@ -3116,7 +3273,8 @@ export const generatedModules: ModuleMeta[] = [
 			"sv create",
 			"sv add",
 			"sv migrate"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/faq",
@@ -3136,7 +3294,8 @@ export const generatedModules: ModuleMeta[] = [
 			"create-svelte",
 			"add-ons",
 			"troubleshooting"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/sv-create",
@@ -3156,7 +3315,8 @@ export const generatedModules: ModuleMeta[] = [
 			"add-ons",
 			"flags",
 			"package manager"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/sv-add",
@@ -3176,7 +3336,8 @@ export const generatedModules: ModuleMeta[] = [
 			"drizzle",
 			"integrasi",
 			"AST patch"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/sv-check",
@@ -3196,7 +3357,8 @@ export const generatedModules: ModuleMeta[] = [
 			"a11y",
 			"watch",
 			"CI"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/sv-migrate",
@@ -3216,7 +3378,8 @@ export const generatedModules: ModuleMeta[] = [
 			"sveltekit-2",
 			"runes",
 			"upgrade"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/better-auth",
@@ -3236,7 +3399,8 @@ export const generatedModules: ModuleMeta[] = [
 			"drizzle",
 			"session",
 			"oauth"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/drizzle",
@@ -3256,7 +3420,8 @@ export const generatedModules: ModuleMeta[] = [
 			"database",
 			"schema",
 			"migrasi"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/eslint",
@@ -3276,7 +3441,8 @@ export const generatedModules: ModuleMeta[] = [
 			"flat config",
 			"prettier",
 			"lint"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/mcp",
@@ -3296,7 +3462,8 @@ export const generatedModules: ModuleMeta[] = [
 			"ai tooling",
 			"autofixer",
 			"claude code"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/mdsvex",
@@ -3316,7 +3483,8 @@ export const generatedModules: ModuleMeta[] = [
 			"layout",
 			"frontmatter",
 			"sv add"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/paraglide",
@@ -3336,7 +3504,8 @@ export const generatedModules: ModuleMeta[] = [
 			"locale",
 			"routing",
 			"type-safe"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/playwright",
@@ -3356,7 +3525,8 @@ export const generatedModules: ModuleMeta[] = [
 			"sv add",
 			"ci",
 			"browser"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/prettier",
@@ -3376,7 +3546,8 @@ export const generatedModules: ModuleMeta[] = [
 			"eslint",
 			"prettier-plugin-svelte",
 			"format"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/storybook",
@@ -3396,7 +3567,8 @@ export const generatedModules: ModuleMeta[] = [
 			"stories",
 			"svelte csf",
 			"autodocs"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/sveltekit-adapter",
@@ -3416,7 +3588,8 @@ export const generatedModules: ModuleMeta[] = [
 			"node",
 			"static",
 			"cloudflare"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/tailwind",
@@ -3436,7 +3609,8 @@ export const generatedModules: ModuleMeta[] = [
 			"utility class",
 			"theme",
 			"vite plugin"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/vitest",
@@ -3456,7 +3630,8 @@ export const generatedModules: ModuleMeta[] = [
 			"browser",
 			"jsdom",
 			"sv add"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/community",
@@ -3476,7 +3651,8 @@ export const generatedModules: ModuleMeta[] = [
 			"publish npm",
 			"sv-add",
 			"tsdown"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/sv",
@@ -3496,7 +3672,8 @@ export const generatedModules: ModuleMeta[] = [
 			"sv-utils",
 			"transforms",
 			"workspace"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	},
 	{
 		"slug": "cli/sv-utils",
@@ -3516,6 +3693,7 @@ export const generatedModules: ModuleMeta[] = [
 			"parser",
 			"package manager",
 			"codemod"
-		]
+		],
+		"updated": "2026-06-07T01:41:19+07:00"
 	}
 ];

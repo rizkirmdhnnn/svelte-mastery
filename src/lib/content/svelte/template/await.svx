@@ -126,7 +126,6 @@ Di bawah ini Promise disimulasikan dengan `setTimeout` (kita tidak punya server 
 
 <Playground code={`<script>
 	let attempt = $state(0);
-
 	// Simulasi panggilan jaringan: resolve setelah 800ms,
 	// tapi setiap percobaan ke-3 (indeks 2, 5, 8, ...) sengaja reject.
 	function muatData(n) {
@@ -143,13 +142,10 @@ Di bawah ini Promise disimulasikan dengan `setTimeout` (kita tidak punya server 
 			}, 800);
 		});
 	}
-
 	// Promise BARU tiap kali attempt berubah -> {#await} kembali pending.
 	let promise = $derived(muatData(attempt));
 </script>
-
 <button onclick={() => attempt++}>Muat ulang (percobaan {attempt + 1})</button>
-
 {#await promise}
 	<p>Memuat data…</p>
 {:then data}
@@ -170,17 +166,14 @@ Inti perbandingannya: di Svelte, "tiga state Promise" itu sintaks bawaan; di Rea
 	task="Render promise"
 	svelte={`<script>
   let { id } = $props();
-
   async function loadUser(userId) {
     const res = await fetch('/api/users/' + userId);
     if (!res.ok) throw new Error('Gagal memuat');
     return res.json();
   }
-
   // Promise baru tiap kali id berubah.
   let promise = $derived(loadUser(id));
 </script>
-
 {#await promise}
   <p>Memuat…</p>
 {:then user}
@@ -192,7 +185,6 @@ Inti perbandingannya: di Svelte, "tiga state Promise" itu sintaks bawaan; di Rea
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -202,7 +194,6 @@ Inti perbandingannya: di Svelte, "tiga state Promise" itu sintaks bawaan; di Rea
       .catch(setError)
       .finally(() => setLoading(false));
   }, [id]);
-
   if (loading) return <p>Memuat…</p>;
   if (error) return <p>Error: {error.message}</p>;
   return <p>Halo, {data.name}</p>;
@@ -213,7 +204,6 @@ const props = defineProps(['id']);
 const data = ref(null);
 const error = ref(null);
 const loading = ref(true);
-
 watchEffect(async () => {
   loading.value = true;
   error.value = null;
@@ -227,7 +217,6 @@ watchEffect(async () => {
   }
 });
 </script>
-
 <template>
   <p v-if="loading">Memuat…</p>
   <p v-else-if="error">Error: {{ error.message }}</p>

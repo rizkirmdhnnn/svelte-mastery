@@ -6,7 +6,7 @@ sectionTitle: Styling
 sectionOrder: 4
 order: 2
 status: stable
-description: Menembus scoping Svelte secara sengaja dengan :global(...) dan blok :global { ... } — untuk reset global, menata konten {@html}, dan menjangkau elemen anak/pihak ketiga.
+description: Menembus scoping Svelte secara sengaja dengan :global(...) dan blok :global, untuk reset global, menata konten dari @html, dan menjangkau elemen anak atau pihak ketiga.
 docs: https://svelte.dev/docs/svelte/global-styles
 keywords: [global, css, scoped, html-content, keyframes, reset]
 ---
@@ -111,13 +111,16 @@ Dan untuk `@keyframes` yang ingin dipakai lintas komponen, prefix namanya dengan
 
 Di bawah, konten di dalam `.kotak` ditambahkan lewat `{@html}`, jadi `<em>` dan `<code>`-nya bukan bagian markup statis. Aturan `:global` yang ber-scope ke `.kotak`-lah yang menatanya. Coba hapus `:global(...)` (ganti jadi `em { ... }` biasa) untuk melihat gayanya tidak lagi menempel — itulah scoping yang sedang kamu tembus dengan sengaja.
 
-<Playground code={`<script>
+```svelte
+<script>
 	let html = '<em>miring</em> dan <code>kode</code> dari @html';
 </script>
+
 <div class="kotak">
 	{@html html}
 </div>
-<!----><style>
+
+<style>
 	.kotak {
 		padding: 1rem;
 		border: 2px dashed teal;
@@ -135,11 +138,13 @@ Di bawah, konten di dalam `.kotak` ditambahkan lewat `{@html}`, jadi `<em>` dan 
 		padding: 0.1rem 0.35rem;
 		border-radius: 4px;
 	}
-</style>`} />
+</style>
+```
 
 ## 4. Latihan
 
-<Exercise title="Tata konten {@html} tanpa membocorkan gaya ke seluruh app">
+<Exercise title="Tata konten &#123;@html&#125; tanpa membocorkan gaya ke seluruh app">
+
 Kamu punya komponen `Komentar.svelte` yang merender HTML kiriman pengguna dengan `{@html body}` di dalam `<div class="isi">`. Kamu ingin semua `<a>` di dalam komentar berwarna `royalblue` dan bergaris bawah — **tapi** tautan di bagian lain aplikasi tidak boleh ikut berubah.
 
 Tulis blok `<style>`-nya. Jelaskan kenapa `:global(a)` telanjang akan salah di sini.
@@ -172,7 +177,7 @@ Kenapa bukan `:global(a)` telanjang? Karena itu melepas selector sepenuhnya ke g
 </Callout>
 
 <Callout type="warning">
-Svelte membuang selector yang tampak tak terpakai. Saat kamu memang menata elemen yang dipasang dari luar (anak <code>{@html}</code>, slot, komponen pihak ketiga), <strong>tanpa</strong> <code>:global</code> Svelte bisa menghapus aturannya dan memberi warning <code>css_unused_selector</code>. Membungkusnya dengan <code>:global(...)</code> sekaligus memberi tahu compiler "selector ini memang ditujukan ke luar scope" — jadi ia tidak dibuang.
+Svelte membuang selector yang tampak tak terpakai. Saat kamu memang menata elemen yang dipasang dari luar (anak <code>&#123;@html&#125;</code>, slot, komponen pihak ketiga), <strong>tanpa</strong> <code>:global</code> Svelte bisa menghapus aturannya dan memberi warning <code>css_unused_selector</code>. Membungkusnya dengan <code>:global(...)</code> sekaligus memberi tahu compiler "selector ini memang ditujukan ke luar scope" — jadi ia tidak dibuang.
 </Callout>
 
 <Callout type="tip">

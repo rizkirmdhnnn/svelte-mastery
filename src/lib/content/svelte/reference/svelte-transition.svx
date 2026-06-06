@@ -120,15 +120,12 @@ Pilih jenis transisi di dropdown, lalu klik **Toggle**. Parameter `x`, `y`, `amo
 
 <Playground code={`<script>
 	import { fade, blur, fly, slide, scale } from 'svelte/transition';
-
 	let visible = $state(true);
 	let kind = $state('fly');
-
 	// pilih fungsi transition secara dinamis berdasar dropdown.
 	// transition:fn menerima variabel yang berisi sebuah fungsi transition.
 	let fn = $derived(({ fade, blur, fly, slide, scale })[kind]);
 </script>
-
 <div style='display:flex; gap:8px; align-items:center; margin-bottom:16px'>
 	<button onclick={() => (visible = !visible)}>Toggle</button>
 	<select bind:value={kind}>
@@ -139,7 +136,6 @@ Pilih jenis transisi di dropdown, lalu klik **Toggle**. Parameter `x`, `y`, `amo
 		<option value='scale'>scale</option>
 	</select>
 </div>
-
 {#if visible}
 	<p
 		transition:fn={{ x: 60, y: 40, amount: 10, start: 0.4, duration: 500 }}

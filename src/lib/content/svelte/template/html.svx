@@ -112,11 +112,9 @@ Ketik HTML di kotak input dan bandingkan dua kotak preview: yang **tanpa** `{@ht
 
 <Playground code={`<script>
 	let raw = $state('<strong>Tebal</strong>, <em>miring</em>, dan <a href="#">sebuah tautan</a>.');
-
 	function isiAman() {
 		raw = '<h4>Judul Artikel</h4><p>Paragraf dengan <strong>kata tebal</strong> dan <a href="#">tautan</a>.</p>';
 	}
-
 	function isiBerbahaya() {
 		// Catatan: <script> TIDAK jalan via innerHTML, tapi onerror IYA.
 		// String hasilnya kita encode dengan fromCharCode hanya untuk
@@ -124,22 +122,17 @@ Ketik HTML di kotak input dan bandingkan dua kotak preview: yang **tanpa** `{@ht
 		raw = '<img src=x onerror="this.replaceWith(document.createTextNode(String.fromCharCode(88,83,83,32,106,97,108,97,110,33)))">';
 	}
 </script>
-
 <input bind:value={raw} style="width: 100%; padding: 6px;" />
-
 <h4>1. Tanpa @html (di-escape, aman):</h4>
 <p style="background:#f5f5f5; padding:8px;">{raw}</p>
-
 <h4>2. Dengan @html (HTML asli):</h4>
 <div class="konten" style="border:1px solid #ccc; padding:8px; min-height:32px;">
 	{@html raw}
 </div>
-
 <div style="margin-top:10px; display:flex; gap:8px;">
 	<button onclick={isiAman}>Isi konten aman</button>
 	<button onclick={isiBerbahaya}>Coba payload berbahaya</button>
 </div>
-
 <style>
 	/* :global menembus batas scoped agar isi @html bisa ditata */
 	.konten :global(a) { color: hotpink; font-weight: bold; }

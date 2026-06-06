@@ -128,18 +128,13 @@ Karena props mengalir antara dua komponen (parent dan anak), playground ini mena
 	// Tak ada parent yang mengirim props di playground ini,
 	// jadi nilai fallback 'Form Pendaftaran' yang dipakai.
 	let { judul = 'Form Pendaftaran' } = $props();
-
 	// ID unik & stabil untuk instance ini (mirip useId di React).
 	const uid = $props.id();
-
 	let nama = $state('');
 </script>
-
 <h3>{judul}</h3>
-
 <label for={uid + '-nama'}>Nama kamu:</label>
 <input id={uid + '-nama'} bind:value={nama} placeholder='Ketik di sini' />
-
 <p>Halo, {nama || 'tamu'}!</p>
 <p style='opacity:0.6'>id yang dipakai label/input: {uid}-nama</p>`} />
 
@@ -155,7 +150,6 @@ Karena di playground tak ada parent, prop <code>judul</code> jatuh ke <strong>fa
 <script>
   let { name, greeting = 'Halo', ...rest } = $props();
 </script>
-
 <p {...rest}>{greeting}, {name}!</p>`}
 	react={`// Greeting.jsx
 function Greeting({ name, greeting = 'Halo', ...rest }) {
@@ -165,17 +159,17 @@ function Greeting({ name, greeting = 'Halo', ...rest }) {
 <script setup>
 const { name, greeting = 'Halo' } = defineProps(['name', 'greeting'])
 </script>
-
 <template>
   <p>{{ greeting }}, {{ name }}!</p>
 </template>`}
 	diff={{ svelte: [3], react: [2], vue: [3] }}
-	note="React: props datang sebagai argumen fungsi, jadi default & rest pakai destructuring JS biasa — paling mirip Svelte. Vue: props dideklarasikan eksplisit lewat defineProps (atau generic + withDefaults di TS). Svelte: let { a, b = d, ...rest } = $props() — satu rune, lalu murni destructuring JS, tanpa makro/argumen khusus."
+	note="React: props datang sebagai argumen fungsi, jadi default & rest pakai destructuring JS biasa — paling mirip Svelte. Vue: props dideklarasikan eksplisit lewat defineProps (atau generic + withDefaults di TS). Svelte: let &#123; a, b = d, ...rest &#125; = $props() — satu rune, lalu murni destructuring JS, tanpa makro/argumen khusus."
 />
 
 ## 5. Latihan
 
 <Exercise title="Komponen Button yang fleksibel">
+
 Buat `Button.svelte` yang: (1) punya prop `label` dengan default `'Klik'`, (2) menerima prop bernama `class` lewat **rename** menjadi variabel lokal `klass`, dan (3) meneruskan **sisa prop** (`...rest`) ke elemen `<button>` agar parent bisa mengirim `onclick`, `disabled`, `type`, dll. Tampilkan `label` sebagai isi tombol.
 
 {#snippet solution()}

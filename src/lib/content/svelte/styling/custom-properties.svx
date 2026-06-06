@@ -139,12 +139,10 @@ Komponen di bawah membaca seluruh tampilannya dari custom property (`--bg`, `--f
 	let hue = $state(210);
 	let radius = $state(14);
 	let gelap = $state(false);
-
 	let bg = $derived(gelap ? 'hsl(' + hue + ' 30% 16%)' : 'hsl(' + hue + ' 92% 96%)');
 	let fg = $derived(gelap ? 'hsl(' + hue + ' 80% 88%)' : 'hsl(' + hue + ' 55% 22%)');
 	let accent = $derived('hsl(' + hue + ' 80% 55%)');
 </script>
-
 <div
 	class="card"
 	style:--bg={bg}
@@ -156,7 +154,6 @@ Komponen di bawah membaca seluruh tampilannya dari custom property (`--bg`, `--f
 	<p>Semua warna di kartu ini dibaca dari var(--bg), var(--fg), dan var(--accent). Tidak ada warna hardcode di markup.</p>
 	<button class="cta">Tombol aksen</button>
 </div>
-
 <div class="controls">
 	<label>Hue: {hue}
 		<input type="range" min="0" max="360" bind:value={hue} />
@@ -168,7 +165,6 @@ Komponen di bawah membaca seluruh tampilannya dari custom property (`--bg`, `--f
 		Ganti ke mode {gelap ? 'terang' : 'gelap'}
 	</button>
 </div>
-
 <!----><style>
 	.card {
 		background: var(--bg, white);

@@ -209,6 +209,7 @@ Node req (IncomingMessage)
 ## 5. Latihan
 
 <Exercise title="Bangun jembatan getRequest -> respond -> setResponse">
+
 Lengkapi handler `node:http` di bawah agar setiap request masuk diterjemahkan ke `Request`, diproses oleh `respond` (anggap sudah ada, mengembalikan `Promise<Response>`), lalu hasilnya dikirim balik ke klien. Tambahkan juga batas body 1 MB dan tangani request yang gagal diterjemahkan dengan status `400`.
 
 ```js
@@ -225,40 +226,41 @@ http.createServer(async (req, res) => {
 
 {#snippet solution()}
 
-  ```js
-  import http from 'node:http';
-  import { getRequest, setResponse } from '@sveltejs/kit/node';
-  import { respond } from './handler.js';
+```js
+import http from 'node:http';
+import { getRequest, setResponse } from '@sveltejs/kit/node';
+import { respond } from './handler.js';
 
-  http
-    .createServer(async (req, res) => {
-      let request;
-      try {
-        // 1) Gerbang masuk: IncomingMessage -> Request web-standard.
-        request = await getRequest({
-          request: req,
-          base: 'http://' + req.headers.host, // origin untuk URL absolut
-          bodySizeLimit: 1024 * 1024 // 1 MB; lebih -> error 413
-        });
-      } catch (err) {
-        // Body kebesaran / request rusak: balas tanpa menyentuh SvelteKit.
-        res.statusCode = err?.status ?? 400;
-        res.end(err?.reason ?? 'Bad Request');
-        return;
-      }
+http
+  .createServer(async (req, res) => {
+    let request;
+    try {
+      // 1) Gerbang masuk: IncomingMessage -> Request web-standard.
+      request = await getRequest({
+        request: req,
+        base: 'http://' + req.headers.host, // origin untuk URL absolut
+        bodySizeLimit: 1024 * 1024 // 1 MB; lebih -> error 413
+      });
+    } catch (err) {
+      // Body kebesaran / request rusak: balas tanpa menyentuh SvelteKit.
+      res.statusCode = err?.status ?? 400;
+      res.end(err?.reason ?? 'Bad Request');
+      return;
+    }
 
-      // 2) Proses: dapatkan Response web-standard dari SvelteKit.
-      const response = await respond(request);
+    // 2) Proses: dapatkan Response web-standard dari SvelteKit.
+    const response = await respond(request);
 
-      // 3) Gerbang keluar: salin status/header + stream body ke res.
-      await setResponse(res, response);
-    })
-    .listen(3000, () => console.log('http://localhost:3000'));
-  ```
+    // 3) Gerbang keluar: salin status/header + stream body ke res.
+    await setResponse(res, response);
+  })
+  .listen(3000, () => console.log('http://localhost:3000'));
+```
 
-  Kunci penilaian: `getRequest` dipanggil dengan objek `{ request, base, bodySizeLimit }` (bukan argumen posisional), `base` berisi origin absolut, error penerjemahan dibalas `400`/`413` tanpa memanggil `respond`, dan `setResponse(res, response)` yang menutup koneksi (bukan `res.end` manual).
+Kunci penilaian: `getRequest` dipanggil dengan objek `{ request, base, bodySizeLimit }` (bukan argumen posisional), `base` berisi origin absolut, error penerjemahan dibalas `400`/`413` tanpa memanggil `respond`, dan `setResponse(res, response)` yang menutup koneksi (bukan `res.end` manual).
 
-  {/snippet}</Exercise>
+{/snippet}
+</Exercise>
 
 ## 6. Tips & Pitfalls
 

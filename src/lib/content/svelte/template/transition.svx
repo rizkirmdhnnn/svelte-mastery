@@ -216,7 +216,8 @@ function typewriter(node, { speed = 1 } = {}) {
 
 Klik Toggle. Empat kotak muncul bersamaan, masing-masing dengan built-in berbeda — perhatikan karakter geraknya. Kotak `fade` juga melaporkan event lifecycle-nya ke teks status; saat kamu sembunyikan, status sempat jadi "mulai keluar" sebelum kotaknya benar-benar lepas.
 
-<Playground code={`<script>
+```svelte
+<script>
 	import { fade, fly, slide, scale } from 'svelte/transition';
 	let visible = $state(true);
 	let status = $state('siap');
@@ -254,7 +255,8 @@ Klik Toggle. Empat kotak muncul bersamaan, masing-masing dengan built-in berbeda
 		border-radius: 10px;
 		font-weight: 700;
 	}
-</style>`} />
+</style>
+```
 
 ## 4. Kalau di framework lain
 
@@ -264,9 +266,7 @@ Klik Toggle. Empat kotak muncul bersamaan, masing-masing dengan built-in berbeda
 	import { fade } from 'svelte/transition';
 	let visible = $state(true);
 </script>
-
 <button onclick={() => (visible = !visible)}>Toggle</button>
-
 {#if visible}
 	<!-- masuk DAN keluar diurus satu directive, tanpa library -->
 	<p transition:fade={{ duration: 300 }}>Halo!</p>
@@ -275,7 +275,6 @@ Klik Toggle. Empat kotak muncul bersamaan, masing-masing dengan built-in berbeda
 // React tidak punya animasi keluar bawaan.
 // Butuh library, mis. Framer Motion.
 import { AnimatePresence, motion } from 'framer-motion';
-
 function Demo() {
 	const [visible, setVisible] = useState(true);
 	return (
@@ -300,7 +299,6 @@ function Demo() {
 import { ref } from 'vue';
 const visible = ref(true);
 </script>
-
 <template>
 	<button @click="visible = !visible">Toggle</button>
 	<!-- <Transition> bawaan: kamu definisikan kelas CSS enter/leave -->
@@ -308,11 +306,10 @@ const visible = ref(true);
 		<p v-if="visible">Halo!</p>
 	</Transition>
 </template>
-
 <style>
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-<\/style>`}
+</style>`}
 	diff={{ react: [3], vue: [9] }}
 	note="React tidak punya animasi keluar bawaan: butuh AnimatePresence/Framer Motion supaya elemen sempat beranimasi sebelum lepas. Vue punya <Transition> bawaan, tapi kamu menulis kelas CSS-nya sendiri (enter-from/leave-to). Svelte paling ringkas: satu directive transition:fade mengurus masuk + keluar, plus banyak fungsi siap pakai (fly/slide/scale) dan custom transition berbasis fungsi. Plus-minus: pendekatan CSS-class Vue lebih transparan/standar; pendekatan fungsi Svelte lebih programatik dan mudah di-parametrisasi."
 />
@@ -320,6 +317,7 @@ const visible = ref(true);
 ## 5. Latihan
 
 <Exercise title="Custom transition 'swoosh' + hitung berapa kali masuk">
+
 Buat sebuah kartu yang bisa di-toggle. Persyaratan:
 
 1. Tulis **custom transition** bernama `swoosh` yang memakai `css`: saat masuk, kartu **meluncur dari kiri** (gunakan `u` untuk offset `translateX`) sambil **membesar** dari `scale(0.9)` ke `scale(1)` dan memudar (`opacity`).

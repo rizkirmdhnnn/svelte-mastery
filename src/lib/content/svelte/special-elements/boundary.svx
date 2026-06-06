@@ -145,7 +145,6 @@ Coba tekan "Tambah" beberapa kali sampai melewati 3, lalu "Pulihkan".
 
 <Playground code={`<script>
 	let count = $state(0);
-
 	// Fungsi ini dipanggil SAAT RENDER (di dalam markup di bawah).
 	// Kalau count > 3 ia melempar error, dan svelte:boundary menangkapnya.
 	function aman(n) {
@@ -153,12 +152,9 @@ Coba tekan "Tambah" beberapa kali sampai melewati 3, lalu "Pulihkan".
 		return n;
 	}
 </script>
-
 <button onclick={() => count++}>Tambah (sekarang {count})</button>
-
 <svelte:boundary>
 	<p>Nilai terverifikasi: {aman(count)}</p>
-
 	{#snippet failed(error, reset)}
 		<div style="border: 1px solid crimson; padding: 10px; border-radius: 8px;">
 			<p style="color: crimson; margin: 0 0 8px;">Jaring menangkap: {error.message}</p>

@@ -200,37 +200,28 @@ Mainkan playground ini: ketik di input (perhatikan transformasi huruf kecil lewa
   let flavor = $state('cokelat');
   let toppings = $state([]);
   let w = $state(0);
-
   // function binding: paksa huruf kecil saat user mengetik
   function getName() { return name; }
   function setName(v) { name = v.toLowerCase(); }
 </script>
-
 <input bind:value={getName, setName} placeholder="ketik (otomatis lowercase)" />
-
 <label>
   <input type="checkbox" bind:checked={big} />
   Perbesar teks
 </label>
-
 <p class={{ big }}>Halo, {name}!</p>
-
 <fieldset>
   <legend>Rasa (radio - satu pilihan)</legend>
   <label><input type="radio" bind:group={flavor} value="cokelat" /> Cokelat</label>
   <label><input type="radio" bind:group={flavor} value="vanila" /> Vanila</label>
 </fieldset>
-
 <fieldset>
   <legend>Topping (checkbox - banyak pilihan)</legend>
   <label><input type="checkbox" bind:group={toppings} value="keju" /> Keju</label>
   <label><input type="checkbox" bind:group={toppings} value="meses" /> Meses</label>
 </fieldset>
-
 <p>Rasa: {flavor} | Topping: {toppings.join(', ') || '(kosong)'}</p>
-
 <div bind:clientWidth={w} class="box">Lebar box ini: {w}px (resize jendela)</div>
-
 <style>
   .big { font-size: 1.6rem; font-weight: bold; }
   .box { padding: 0.75rem; background: #eef; border-radius: 6px; }
@@ -248,7 +239,6 @@ Di playground, function binding ditulis <code>bind:value=&#123;getName, setName&
 	svelte={`<script>
   let text = $state('');
 </script>
-
 <input bind:value={text} />
 <p>{text}</p>`}
 	react={`function Field() {
@@ -267,7 +257,6 @@ Di playground, function binding ditulis <code>bind:value=&#123;getName, setName&
 import { ref } from 'vue'
 const text = ref('')
 </script>
-
 <template>
   <input v-model="text" />
   <p>{{ text }}</p>

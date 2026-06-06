@@ -114,16 +114,12 @@ Karena efek utama `{@debug}` adalah mencetak ke console (dan membekukan eksekusi
 	let count = $state(0);
 	let user = $state({ nama: 'Sinta', skor: 10 });
 </script>
-
 <h3>Demo tag debug</h3>
-
 <div style="display: flex; gap: 8px;">
 	<button onclick={() => count++}>count = {count}</button>
 	<button onclick={() => user.skor++}>user.skor = {user.skor}</button>
 </div>
-
 {@debug count, user}
-
 <p style="margin-top: 12px; font-size: 14px; color: #555;">
 	Buka DevTools (F12) lalu klik tombol. Tiap 'count' atau 'user'
 	berubah, Svelte mencetak nilainya ke console. Kalau panel DevTools

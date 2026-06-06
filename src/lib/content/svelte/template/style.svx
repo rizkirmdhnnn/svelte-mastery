@@ -164,7 +164,6 @@ Geser slider, ketik di kolom, dan klik tombol. Perhatikan tiap `style:` hanya me
   let tebal = $state(false);
   let paksa = $state(false);
 </script>
-
 <div class="kartu" style:--size={size + 'px'}>
   <p
     class={{ tebal }}
@@ -174,12 +173,10 @@ Geser slider, ketik di kolom, dan klik tombol. Perhatikan tiap `style:` hanya me
     {teks}
   </p>
 </div>
-
 <!-- contoh |important: paksa background biru menimpa CSS .kotak -->
 <div class="kotak" style:background|important={paksa ? 'royalblue' : null}>
   {paksa ? 'background dipaksa biru' : 'background default dari class'}
 </div>
-
 <label>Teks: <input bind:value={teks} /></label>
 <br />
 <label>Hue: <input type="range" min="0" max="360" bind:value={hue} /> {hue}</label>
@@ -188,7 +185,6 @@ Geser slider, ketik di kolom, dan klik tombol. Perhatikan tiap `style:` hanya me
 <br />
 <label><input type="checkbox" bind:checked={tebal} /> Tebalkan</label>
 <label><input type="checkbox" bind:checked={paksa} /> Paksa background</label>
-
 <style>
   .kartu {
     padding: 1rem;

@@ -128,7 +128,8 @@ export async function load({ params, fetch }) {
 
 Ketik judul dan deskripsi di bawah, lalu **lihat judul tab browser ikut berubah**. Centang "noindex" untuk melihat bagaimana sebuah `<meta>` bisa ditambah/dihapus secara kondisional — perhatikan `{#if}` berada **di dalam** `<svelte:head>`, bukan membungkusnya. `$effect` di bawah membaca `document.title` setelah Svelte selesai menyisipkan ke head, jadi kamu bisa membuktikan teleportasinya benar-benar terjadi.
 
-<Playground code={`<script>
+```svelte
+<script>
 	let judul = $state('Beranda');
 	let deskripsi = $state('Halaman utama toko saya');
 	let noindex = $state(false);
@@ -168,11 +169,13 @@ Ketik judul dan deskripsi di bawah, lalu **lihat judul tab browser ikut berubah*
 <p style="color: #666; font-size: 13px;">
 	Lihat judul tab/jendela preview di atas — ikut berubah, padahal
 	svelte:head ditulis dari dalam body komponen.
-</p>`} />
+</p>
+```
 
 ## 4. Latihan
 
 <Exercise title="Komponen Seo yang reusable">
+
 Banyak halaman butuh `<title>`, deskripsi, dan Open Graph yang serupa. Daripada menulis ulang `<svelte:head>` di tiap halaman, buat satu komponen `Seo.svelte` yang menerima props lalu mengisi head.
 
 Buat `Seo.svelte` dengan ketentuan:
@@ -231,18 +234,22 @@ Intinya: `<svelte:head>` bisa "dipinjam" oleh komponen mana pun — termasuk kom
 ## 5. Tips & Pitfalls
 
 <Callout type="pitfall">
+
 `<svelte:head>` harus berada di <strong>top-level</strong> komponen — <strong>tidak boleh</strong> dibungkus di dalam `{#if}`, `{#each}`, atau elemen lain. Tapi jangan keliru: kamu <em>boleh</em> menaruh `{#if}` di <strong>dalam</strong> `<svelte:head>` untuk menampilkan meta secara kondisional. Jadi `{#if cond}<svelte:head>…</svelte:head>{/if}` SALAH, sedangkan `<svelte:head>{#if cond}<meta … />{/if}</svelte:head>` BENAR.
 </Callout>
 
 <Callout type="warning">
+
 Kalau beberapa komponen sama-sama menulis `<title>` (mis. layout dan halaman di SvelteKit), <strong>hanya satu yang menang</strong> — yang terakhir dalam urutan head, yaitu komponen yang lebih dalam/spesifik (halaman menimpa layout). Ini fitur, bukan bug: pakai untuk memberi judul default di layout dan menimpanya per halaman. Tapi kalau judulmu "tiba-tiba berubah" tak terduga, kemungkinan ada dua `<title>` yang saling menimpa.
 </Callout>
 
 <Callout type="tip">
+
 Jangan taruh metadata yang harus <strong>selalu ada di setiap halaman</strong> — seperti `<meta charset>`, `<meta name="viewport">`, dan favicon — di `<svelte:head>`. Itu tempatnya di `src/app.html` (SvelteKit). `<svelte:head>` untuk hal yang <strong>berbeda per halaman</strong> (judul, deskripsi, OG, canonical). Begitu juga atribut `lang` pada `<html>`: tidak bisa diatur via `<svelte:head>`, set di `app.html`.
 </Callout>
 
 <Callout type="tip">
+
 `<svelte:head>` bukan cuma untuk title/meta. Kamu juga bisa menyisipkan <strong>structured data JSON-LD</strong> untuk rich result Google, misalnya `<script type="application/ld+json">{@html dataLd}</script>` di dalamnya — sangat berguna untuk halaman produk, artikel, atau resep.
 </Callout>
 

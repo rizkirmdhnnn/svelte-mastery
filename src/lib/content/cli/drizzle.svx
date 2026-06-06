@@ -227,6 +227,7 @@ export default defineConfig({
 ## 4. Latihan
 
 <Exercise title="Tambah tabel post (relasi ke user) lalu migrasikan dengan benar">
+
 Kamu sudah punya proyek SvelteKit dengan add-on Drizzle (SQLite + better-sqlite3) dan tabel `user`. Tugas:
 
 1. Tambahkan tabel `post` di `schema.ts` dengan kolom: `id` (primary key auto-increment), `title` (teks, wajib), `content` (teks), dan `authorId` (integer) yang merujuk ke `user.id` (foreign key).
@@ -292,6 +293,7 @@ Kamu sudah punya proyek SvelteKit dengan add-on Drizzle (SQLite + better-sqlite3
 ## 5. Tips & Pitfalls
 
 <Callout type="warning">
+
 File `db` ada di `src/lib/server/db/` — folder `$lib/server` itu **server-only**. Jangan pernah meng-`import { db }` ke dalam komponen `.svelte`, `+page.svelte`, atau modul universal `+page.js`. SvelteKit akan **menolak build** kalau modul `$lib/server` sampai ter-import ke kode klien. Mengakses database hanya boleh dari tempat server: `+server.js`, `+page.server.js`, `+layout.server.js`, form actions, atau `hooks.server.js`. Ini "mandor pemegang kunci tidak menyerahkan kunci ke pengunjung".
 </Callout>
 

@@ -155,15 +155,12 @@ Playground ini menunjukkan lifecycle yang paling kelihatan: `onMount` memulai se
 
 <Playground code={`<script>
   import { onMount } from 'svelte';
-
   let detik = $state(0);
-
   onMount(() => {
     // dijalankan SEKALI setelah komponen masuk DOM
     const id = setInterval(() => {
       detik += 1;
     }, 1000);
-
     // fungsi yang dikembalikan = cleanup saat unmount
     return () => {
       clearInterval(id);
@@ -171,7 +168,6 @@ Playground ini menunjukkan lifecycle yang paling kelihatan: `onMount` memulai se
     };
   });
 </script>
-
 <h3>Sudah berjalan: {detik} detik</h3>
 <p>onMount memulai interval; cleanup-nya menghentikannya saat di-unmount.</p>`} />
 
@@ -185,24 +181,19 @@ Buka konsol browser (DevTools). Di proyek nyata, lupa membersihkan interval/list
 	task="Lifecycle: setup saat mount + cleanup saat unmount"
 	svelte={`<script>
   import { onMount, onDestroy } from 'svelte';
-
   let detik = $state(0);
-
   onMount(() => {
     const id = setInterval(() => detik++, 1000);
     return () => clearInterval(id); // cleanup
   });
-
   onDestroy(() => {
     // juga jalan di SSR
     console.log('bye');
   });
 </script>
-
 <p>{detik}</p>`}
 	react={`function Jam() {
   const [detik, setDetik] = useState(0);
-
   useEffect(() => {
     const id = setInterval(
       () => setDetik((s) => s + 1),
@@ -210,22 +201,17 @@ Buka konsol browser (DevTools). Di proyek nyata, lupa membersihkan interval/list
     );
     return () => clearInterval(id); // cleanup
   }, []); // [] = sekali saat mount
-
   return <p>{detik}</p>;
 }`}
 	vue={`<script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-
 const detik = ref(0);
 let id;
-
 onMounted(() => {
   id = setInterval(() => detik.value++, 1000);
 });
-
 onUnmounted(() => clearInterval(id)); // cleanup
 </script>
-
 <template><p>{{ detik }}</p></template>`}
 	diff={{ react: [4], vue: [10] }}
 	note="React: useEffect dengan dependency array kosong [] = jalan sekali saat mount; fungsi yang di-return jadi cleanup saat unmount — satu API menangani mount, update, dan cleanup sekaligus. Vue: onMounted/onUnmounted dipisah jadi dua hook eksplisit. Svelte: onMount untuk mount (return = cleanup, mirip useEffect), onDestroy untuk cleanup universal yang juga jalan di SSR. Plus-minus: model React menyatukan semuanya di satu hook tapi menuntut paham dependency array & double-invoke StrictMode; Svelte/Vue lebih eksplisit memisah momen. Catatan penting Svelte 5: banyak kebutuhan 'jalan ulang saat data berubah' kini cukup pakai $effect, bukan lifecycle hook — onMount disisakan untuk setup browser sekali jalan, onDestroy untuk teardown, tick untuk sinkron dengan DOM."

@@ -166,15 +166,12 @@ Coba juga klik toggle **cepat berkali-kali**: kamu akan lihat sifat "tidak rever
 
 <Playground code={`<script>
 	import { fly, scale } from 'svelte/transition';
-
 	let visible = $state(true);
 </script>
-
 <label style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
 	<input type="checkbox" bind:checked={visible} />
 	tampilkan kartu
 </label>
-
 {#if visible}
 	<div
 		in:fly={{ x: -150, duration: 400 }}

@@ -132,24 +132,19 @@ Ubah variabel di `$state`, lalu perhatikan teks & atribut ikut berubah otomatis.
 	let dark = $state(true);
 	let inputProps = $state({ type: 'text', placeholder: 'Ketik di sini', maxlength: 12 });
 </script>
-
 <h2>Halo {name}, kamu klik {count} kali</h2>
 <p>Nama kapital: {name.toUpperCase()}</p>
-
 <!-- spread: sebar type, placeholder, maxlength jadi atribut sekaligus -->
 <input {...inputProps} />
-
 <!-- boolean attribute: tombol mati saat stok habis -->
 <p>Sisa stok: {stock}</p>
 <button onclick={() => count++}>Klik aku</button>
 <button onclick={() => stock--} disabled={stock <= 0}>Beli</button>
-
 <!-- atribut HTML asli: class & data-* langsung, tanpa className -->
 <div class="kotak" data-theme={dark ? 'gelap' : 'terang'}>
 	Tema sekarang: {dark ? 'gelap' : 'terang'}
 </div>
 <button onclick={() => (dark = !dark)}>Toggle tema</button>
-
 <style>
 	.kotak {
 		padding: 12px;
@@ -168,7 +163,6 @@ Ubah variabel di `$state`, lalu perhatikan teks & atribut ikut berubah otomatis.
 	let name = $state('Rizki');
 	let url = $state('/foto.jpg');
 </script>
-
 <h1 class="judul">Halo {name}</h1>
 <img src={url} alt={name} />
 <label for="email">Email</label>`}
@@ -188,7 +182,6 @@ import { ref } from 'vue'
 const name = ref('Rizki')
 const url = ref('/foto.jpg')
 </script>
-
 <template>
 	<h1 class="judul">Halo {{ name }}</h1>
 	<img :src="url" :alt="name" />

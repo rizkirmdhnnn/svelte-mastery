@@ -300,6 +300,7 @@ Untuk menguji logika <code>$state</code> (runes) di Vitest, beri nama file <code
 ## 4. Latihan
 
 <Exercise title="Pasang SCSS, Drizzle, dan satu unit test">
+
 Kamu punya proyek SvelteKit baru. Kerjakan empat hal, perhatikan aturan **server-only** dan setup modern Svelte 5:
 
 1. **SCSS**: aktifkan `vitePreprocess` di `svelte.config.js` (impor dari paket yang benar) lalu jelaskan satu langkah lagi agar `<style lang="scss">` jalan.
@@ -378,7 +379,7 @@ Jangan pernah mengimpor kode database/koneksi (atau apa pun yang memegang secret
 </Callout>
 
 <Callout type="tip">
-Di <strong>Svelte 5</strong>, kamu hampir tak pernah butuh <code>vitePreprocess({ script: true })</code> karena TypeScript sudah didukung native (type-stripping). Aktifkan <code>script: true</code> hanya untuk fitur TS yang menghasilkan kode runtime (enum, decorator, namespace) atau proyek lama pra-Svelte-5. Mengaktifkannya tanpa perlu cuma menambah kerja build.
+Di <strong>Svelte 5</strong>, kamu hampir tak pernah butuh <code>vitePreprocess(&#123; script: true &#125;)</code> karena TypeScript sudah didukung native (type-stripping). Aktifkan <code>script: true</code> hanya untuk fitur TS yang menghasilkan kode runtime (enum, decorator, namespace) atau proyek lama pra-Svelte-5. Mengaktifkannya tanpa perlu cuma menambah kerja build.
 </Callout>
 
 <Callout type="tip">

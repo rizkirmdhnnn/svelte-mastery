@@ -177,14 +177,12 @@ Dropdown menu di bawah memakai **dua action sekaligus**: `clickOutside` (menutup
   let open = $state(false);
   let picked = $state('belum ada');
   let items = ['Nasi goreng', 'Sate ayam', 'Bakso', 'Mie ayam'];
-
   // Action 1: fokus otomatis saat elemen muncul
   function autofocus(node) {
     $effect(() => {
       node.focus();
     });
   }
-
   // Action 2: panggil callback saat klik di LUAR node
   function clickOutside(node, onOutside) {
     $effect(() => {
@@ -198,20 +196,16 @@ Dropdown menu di bawah memakai **dua action sekaligus**: `clickOutside` (menutup
       return () => document.removeEventListener('click', handle, true);
     });
   }
-
   function choose(item) {
     picked = item;
     open = false;
   }
 </script>
-
 <p>Dipilih: <strong>{picked}</strong></p>
-
 <div class="menu" use:clickOutside={() => (open = false)}>
   <button onclick={() => (open = !open)}>
     {open ? 'Tutup' : 'Buka'} menu
   </button>
-
   {#if open}
     <div class="panel">
       <input use:autofocus placeholder="cari menu..." />
@@ -221,7 +215,6 @@ Dropdown menu di bawah memakai **dua action sekaligus**: `clickOutside` (menutup
     </div>
   {/if}
 </div>
-
 <style>
   .menu { position: relative; display: inline-block; }
   .panel {

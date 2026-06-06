@@ -180,6 +180,7 @@ Catatan penting soal alur kerja: `vite dev` (server dev biasa SvelteKit) **tidak
 ## 4. Latihan
 
 <Exercise title="Migrasikan dari adapter-cloudflare-workers ke adapter-cloudflare">
+
 Sebuah proyek lama memakai `@sveltejs/adapter-cloudflare-workers` dengan `wrangler.jsonc` di bawah. Karena Workers Sites akan dihentikan Cloudflare, kamu diminta memigrasikannya ke `@sveltejs/adapter-cloudflare` (Static Assets). Tuliskan (a) perubahan di `svelte.config.js` dan (b) `wrangler.jsonc` yang baru. Sebutkan field mana yang diganti dan kenapa.
 
 ```jsonc
@@ -194,46 +195,47 @@ Sebuah proyek lama memakai `@sveltejs/adapter-cloudflare-workers` dengan `wrangl
 
 {#snippet solution()}
 
-  ```js
-  // (a) svelte.config.js — cukup ganti paket adapter yang di-import.
-  //     Kode aplikasi (load, actions, +server) TIDAK perlu diubah.
-  import adapter from '@sveltejs/adapter-cloudflare';
+```js
+// (a) svelte.config.js — cukup ganti paket adapter yang di-import.
+//     Kode aplikasi (load, actions, +server) TIDAK perlu diubah.
+import adapter from '@sveltejs/adapter-cloudflare';
 
-  const config = {
-    kit: {
-      adapter: adapter()
-    }
-  };
+const config = {
+	kit: {
+		adapter: adapter()
+	}
+};
 
-  export default config;
-  ```
+export default config;
+```
 
-  ```jsonc
-  // (b) wrangler.jsonc BARU — Workers Sites (site.bucket) diganti Static Assets.
-  {
-    "name": "my-app",
-    // main kini menunjuk ke output adapter-cloudflare
-    "main": ".svelte-kit/cloudflare/_worker.js",
+```jsonc
+// (b) wrangler.jsonc BARU — Workers Sites (site.bucket) diganti Static Assets.
+{
+	"name": "my-app",
+	// main kini menunjuk ke output adapter-cloudflare
+	"main": ".svelte-kit/cloudflare/_worker.js",
 
-    // `site.bucket` DIHAPUS, diganti blok `assets`:
-    //  - directory: folder aset hasil build
-    //  - binding  : nama variabel agar Worker bisa menjangkau aset (mis. ASSETS)
-    "assets": {
-      "directory": ".svelte-kit/cloudflare",
-      "binding": "ASSETS"
-    },
+	// `site.bucket` DIHAPUS, diganti blok `assets`:
+	//  - directory: folder aset hasil build
+	//  - binding  : nama variabel agar Worker bisa menjangkau aset (mis. ASSETS)
+	"assets": {
+		"directory": ".svelte-kit/cloudflare",
+		"binding": "ASSETS"
+	},
 
-    "compatibility_date": "2024-09-23",
-    "compatibility_flags": ["nodejs_compat"]
-  }
-  ```
+	"compatibility_date": "2024-09-23",
+	"compatibility_flags": ["nodejs_compat"]
+}
+```
 
-  Inti perubahan:
-  - `main`: dari `./.cloudflare/worker.js` ke `.svelte-kit/cloudflare/_worker.js` (lokasi output adapter baru).
-  - `site.bucket` (Workers Sites, aset numpang di KV) -> `assets.directory` + `assets.binding` (Static Assets, native & tak makan kuota KV).
-  - Akses binding tetap lewat `platform.env`, jadi kode `+server.js`/`load` tidak berubah. Itulah kekuatan model adapter: target deploy berganti, logika aplikasi tetap.
+Inti perubahan:
+- `main`: dari `./.cloudflare/worker.js` ke `.svelte-kit/cloudflare/_worker.js` (lokasi output adapter baru).
+- `site.bucket` (Workers Sites, aset numpang di KV) -> `assets.directory` + `assets.binding` (Static Assets, native & tak makan kuota KV).
+- Akses binding tetap lewat `platform.env`, jadi kode `+server.js`/`load` tidak berubah. Itulah kekuatan model adapter: target deploy berganti, logika aplikasi tetap.
 
-  {/snippet}</Exercise>
+{/snippet}
+</Exercise>
 
 ## 5. Tips & Pitfalls
 

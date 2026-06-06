@@ -158,7 +158,6 @@ Geser slider untuk mengubah `delay`. Setiap kali `delay` berubah, cleanup member
 	let delay = $state(1000);
 	let ticks = $state(0);
 	let log = $state('');
-
 	$effect(() => {
 		log = 'pasang interval ' + delay + 'ms';
 		const id = setInterval(() => ticks++, delay);
@@ -166,7 +165,6 @@ Geser slider untuk mengubah `delay`. Setiap kali `delay` berubah, cleanup member
 		return () => clearInterval(id);
 	});
 </script>
-
 <input type='range' min='200' max='2000' step='100' bind:value={delay} />
 <p>delay: {delay}ms</p>
 <p>ticks: {ticks}</p>
@@ -212,7 +210,8 @@ watchEffect(() => {
 ## 5. Latihan
 
 <Exercise title="Sinkronkan ke localStorage (lalu sadari kapan TIDAK perlu effect)">
-Buat komponen catatan dengan satu `<textarea>` yang ter-`bind` ke state `text`. Pakai `$effect` untuk **menyimpan** `text` ke `localStorage` setiap kali berubah.
+
+Buat komponen catatan dengan satu <code>&lt;textarea&gt;</code> yang ter-`bind` ke state `text`. Pakai `$effect` untuk **menyimpan** `text` ke `localStorage` setiap kali berubah.
 
 Lalu jawab di kepala: kalau kamu juga butuh `charCount` (jumlah karakter), apakah kamu pakai `$effect` untuk menghitungnya? (Petunjuk: jangan — itu pekerjaan `$derived`.)
 

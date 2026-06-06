@@ -132,9 +132,7 @@ Playground ini menggabungkan empat struktur reaktif sekaligus dalam satu kompone
 
 <Playground code={`<script>
 	import { SvelteMap, SvelteSet, SvelteDate, SvelteURL } from 'svelte/reactivity';
-
 	const menu = ['Kopi', 'Teh', 'Roti'];
-
 	// SvelteMap: keranjang (nama -> jumlah). set/get memicu & mendaftar dependency.
 	const keranjang = new SvelteMap();
 	// SvelteSet: kumpulan favorit yang reaktif.
@@ -143,22 +141,18 @@ Playground ini menggabungkan empat struktur reaktif sekaligus dalam satu kompone
 	const terakhir = new SvelteDate();
 	// SvelteURL: link berbagi; searchParams reaktif.
 	const link = new SvelteURL('https://toko.example/cart');
-
 	function tambah(nama) {
 		keranjang.set(nama, (keranjang.get(nama) ?? 0) + 1);
 		terakhir.setTime(Date.now());
 		link.searchParams.set(nama, String(keranjang.get(nama)));
 	}
-
 	function toggleFavorit(nama) {
 		if (favorit.has(nama)) favorit.delete(nama);
 		else favorit.add(nama);
 	}
-
 	// $derived membaca koleksi reaktif -> ikut terhitung ulang otomatis
 	let total = $derived([...keranjang.values()].reduce((a, b) => a + b, 0));
 </script>
-
 <h3>Menu</h3>
 {#each menu as nama}
 	<div style="margin-bottom: 6px;">
@@ -169,7 +163,6 @@ Playground ini menggabungkan empat struktur reaktif sekaligus dalam satu kompone
 		</button>
 	</div>
 {/each}
-
 <hr />
 <p>Total item: {total}</p>
 <p>Favorit: {favorit.size}</p>

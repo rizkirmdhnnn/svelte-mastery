@@ -126,22 +126,18 @@ Easing itu paling jelas kalau **dirasakan**, bukan dibaca. Playground di bawah m
 		linear, sineInOut, cubicOut, quintInOut,
 		expoOut, circOut, backOut, elasticOut, bounceOut
 	} from 'svelte/easing';
-
 	// Peta nama -> fungsi, supaya bisa dipilih lewat tombol.
 	const kurva = {
 		linear, sineInOut, cubicOut, quintInOut,
 		expoOut, circOut, backOut, elasticOut, bounceOut
 	};
-
 	let pilihan = $state('cubicOut');
 	const x = new Tween(0, { duration: 1000, easing: cubicOut });
-
 	function jalankan() {
 		const tujuan = x.current > 0.5 ? 0 : 1;
 		// override easing sesuai pilihan saat ini
 		x.set(tujuan, { duration: 1000, easing: kurva[pilihan] });
 	}
-
 	// Sampel kurva jadi titik polyline SVG (40 segmen).
 	// viewBox dibuat lega agar overshoot (back/elastic) tetap kelihatan.
 	let titik = $derived.by(() => {
@@ -154,7 +150,6 @@ Easing itu paling jelas kalau **dirasakan**, bukan dibaca. Playground di bawah m
 		return arr.join(' ');
 	});
 </script>
-
 <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
 	{#each Object.keys(kurva) as nama}
 		<button
@@ -165,7 +160,6 @@ Easing itu paling jelas kalau **dirasakan**, bukan dibaca. Playground di bawah m
 		</button>
 	{/each}
 </div>
-
 <svg viewBox="-12 -45 124 190" width="220" height="180" style="border:1px solid #ccc;">
 	<!-- kotak referensi 0..1 -->
 	<rect x="0" y="0" width="100" height="100" fill="none" stroke="#eee" />
@@ -176,11 +170,9 @@ Easing itu paling jelas kalau **dirasakan**, bukan dibaca. Playground di bawah m
 	<!-- penanda progres saat ini di sumbu X -->
 	<circle cx={x.current * 100} cy={(1 - x.current) * 100} r="3" fill="crimson" />
 </svg>
-
 <div style="margin-top:8px; height:24px; background:#f3f3f3; border-radius:6px; position:relative;">
 	<div style="position:absolute; left:{x.current * 90}%; width:24px; height:24px; background:crimson; border-radius:50%;"></div>
 </div>
-
 <p>Easing: <strong>{pilihan}</strong> — progres: {x.current.toFixed(3)}</p>
 <button onclick={jalankan}>Jalankan</button>`} />
 

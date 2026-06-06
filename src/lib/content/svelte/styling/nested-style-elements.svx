@@ -224,17 +224,17 @@ Catatan: kalau kamu memang ingin `.title` global (jarang), pilih cara yang lebih
 ## 5. Tips & Pitfalls
 
 <Callout type="pitfall">
-Nested `<style>` <strong>diam-diam menjadi global</strong>, dan Svelte tidak memberi peringatan bahwa ia global. Ini paling sering terjadi saat kamu <em>copy-paste</em> sepotong markup yang kebetulan menyertakan blok `<style>` ke dalam sebuah elemen pembungkus. Gejalanya: gaya tiba-tiba bocor ke seluruh halaman, dan selector tak terpakai pun tidak dipangkas (karena nested = tak diproses). Kalau gaya komponenmu mendadak "menular", cek dulu: apakah ada `<style>` yang tidak sengaja bersarang di dalam markup?
+Nested `&lt;style&gt;` <strong>diam-diam menjadi global</strong>, dan Svelte tidak memberi peringatan bahwa ia global. Ini paling sering terjadi saat kamu <em>copy-paste</em> sepotong markup yang kebetulan menyertakan blok `&lt;style&gt;` ke dalam sebuah elemen pembungkus. Gejalanya: gaya tiba-tiba bocor ke seluruh halaman, dan selector tak terpakai pun tidak dipangkas (karena nested = tak diproses). Kalau gaya komponenmu mendadak "menular", cek dulu: apakah ada `&lt;style&gt;` yang tidak sengaja bersarang di dalam markup?
 </Callout>
 
 <Callout type="warning">
-Hanya boleh ada <strong>satu</strong> `<style>` top-level per komponen. Menulis dua blok di level atas akan gagal compile dengan pesan semacam <em>"A component can have a single top-level &lt;style&gt; element"</em>. Kalau butuh memisahkan gaya secara logis, gabungkan dalam satu blok (boleh pakai komentar sebagai pemisah), atau pindahkan sebagian ke file CSS eksternal.
+Hanya boleh ada <strong>satu</strong> `&lt;style&gt;` top-level per komponen. Menulis dua blok di level atas akan gagal compile dengan pesan semacam <em>"A component can have a single top-level &lt;style&gt; element"</em>. Kalau butuh memisahkan gaya secara logis, gabungkan dalam satu blok (boleh pakai komentar sebagai pemisah), atau pindahkan sebagian ke file CSS eksternal.
 </Callout>
 
 <Callout type="tip">
-Butuh CSS yang <strong>memang global</strong>? Pilih cara yang lebih mudah ditemukan dan dipahami orang lain, bukan nested `<style>` yang terkubur di tengah markup. Urutan rekomendasi: (1) `:global(...)` di dalam blok top-level — niatnya eksplisit dan tetap dekat dengan komponen; (2) stylesheet eksternal seperti `app.css` untuk reset/utility global; (3) `<svelte:head><style>...</style></svelte:head>` untuk gaya level-dokumen. Sisakan nested `<style>` untuk kasus langka di mana kamu benar-benar perlu menaruh CSS mentah-tanpa-diproses pada titik tertentu (mis. menyuntik CSS dinamis secara kondisional lewat `{#if}`).
+Butuh CSS yang <strong>memang global</strong>? Pilih cara yang lebih mudah ditemukan dan dipahami orang lain, bukan nested `&lt;style&gt;` yang terkubur di tengah markup. Urutan rekomendasi: (1) `:global(...)` di dalam blok top-level — niatnya eksplisit dan tetap dekat dengan komponen; (2) stylesheet eksternal seperti `app.css` untuk reset/utility global; (3) <code>&lt;svelte:head&gt;&lt;style&gt;...&lt;/style&gt;&lt;/svelte:head&gt;</code> untuk gaya level-dokumen. Sisakan nested `&lt;style&gt;` untuk kasus langka di mana kamu benar-benar perlu menaruh CSS mentah-tanpa-diproses pada titik tertentu (mis. menyuntik CSS dinamis secara kondisional lewat `&#123;#if&#125;`).
 </Callout>
 
 ## 6. Docs resmi
 
-<DocsLink href="https://svelte.dev/docs/svelte/nested-style-elements" label="Nested <style> elements — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/nested-style-elements" label="Nested &lt;style&gt; elements — dokumentasi resmi Svelte" />

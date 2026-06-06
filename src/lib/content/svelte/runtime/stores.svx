@@ -220,12 +220,10 @@ Ubah-ubah kode di bawah. Perhatikan `$count` (auto-subscribe), store `derived` y
   }
   const safe = createCounter();
 </script>
-
 <h3>writable + derived</h3>
 <button onclick={() => count.update((n) => n + 1)}>count = {$count}</button>
 <button onclick={() => ($count = 0)}>reset count</button>
 <p>double = {$double}, ini bilangan {$label}</p>
-
 <h3>custom store (API terbatas)</h3>
 <p>safe = {$safe}</p>
 <button onclick={safe.increment}>increment</button>

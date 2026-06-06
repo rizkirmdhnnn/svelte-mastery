@@ -170,22 +170,18 @@ Demo di bawah membuktikan kenapa key itu penting. Setiap baris punya `<input>` t
 		{ id: 3, name: 'Susu' }
 	]);
 	let nextId = 4;
-
 	function tambah() {
 		// push() langsung berfungsi berkat deep reactivity $state
 		items.push({ id: nextId, name: 'Item ' + nextId });
 		nextId++;
 	}
-
 	function hapus(id) {
 		items = items.filter((it) => it.id !== id);
 	}
-
 	function acak() {
 		items = [...items].sort(() => Math.random() - 0.5);
 	}
 </script>
-
 <h3>Keranjang (keyed by id)</h3>
 <ul>
 	{#each items as item, i (item.id)}
@@ -198,10 +194,8 @@ Demo di bawah membuktikan kenapa key itu penting. Setiap baris punya `<input>` t
 		<li>Keranjang kosong.</li>
 	{/each}
 </ul>
-
 <button onclick={tambah}>+ Tambah</button>
 <button onclick={acak}>Acak urutan</button>
-
 <p style="color:gray">Coba: ketik di beberapa input, lalu Acak / hapus tengah.</p>`} />
 
 <Callout type="tip">
@@ -215,7 +209,6 @@ Mau lihat sisi buruknya? Hapus <code>(item.id)</code> dari blok itu sehingga jad
 	svelte={`<script>
 	let { fruits } = $props();
 </script>
-
 <ul>
 	{#each fruits as fruit, i (fruit.id)}
 		<li>{i + 1}. {fruit.name}</li>
@@ -235,7 +228,6 @@ Mau lihat sisi buruknya? Hapus <code>(item.id)</code> dari blok itu sehingga jad
 	vue={`<script setup>
 defineProps(['fruits']);
 </script>
-
 <template>
 	<ul>
 		<li

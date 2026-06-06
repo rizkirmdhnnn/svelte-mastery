@@ -117,7 +117,8 @@ Untuk konten di luar HTML biasa (mis. SVG), Svelte berusaha menebak namespace da
 
 Klik tombol untuk mengganti tag yang dirender. Perhatikan: `class`, `style`, dan `onclick` yang sama tetap menempel apa pun tag-nya — kamu menulisnya sekali. Pilih `(null)` dan elemennya hilang total beserta isinya, jadi `onclick`-nya pun tidak akan terpicu lagi.
 
-<Playground code={`<script>
+```svelte
+<script>
 	let tag = $state('h1');
 	let clicks = $state(0);
 	// catatan: sengaja tanpa void element (br/hr/img) karena tag ini diberi anak
@@ -144,11 +145,13 @@ Klik tombol untuk mengganti tag yang dirender. Perhatikan: `class`, `style`, dan
 
 <p style="margin-top: 14px;">
 	Tag aktif: <strong>{tag === null ? 'null (tidak dirender)' : tag}</strong> — diklik {clicks} kali.
-</p>`} />
+</p>
+```
 
 ## 4. Latihan
 
 <Exercise title="Renderer blok dari CMS dengan svelte:element">
+
 Buat komponen `Blocks.svelte` yang menerima prop `blocks`, sebuah array berisi objek `{ tag, text }` (contoh: `{ tag: 'h2', text: 'Judul' }`). Tugasnya:
 
 1. Render tiap block memakai `<svelte:element>` dengan tag dari `block.tag` dan isi dari `block.text`.
@@ -186,23 +189,28 @@ Inti jawabannya: satu `<svelte:element>` menggantikan rantai `{#if tag === 'h1'}
 ## 5. Tips & Pitfalls
 
 <Callout type="pitfall">
-<strong>Void element + anak = runtime error (mode dev).</strong> Void element seperti `br`, `hr`, `img`, `input`, `meta` secara spesifikasi HTML tidak boleh punya anak. Menulis `<svelte:element this="hr">teks</svelte:element>` akan melempar runtime error saat development. Kalau `this` bisa berubah menjadi void element, pastikan kamu tidak memberinya konten anak — atau jaga daftar tag yang dipakai hanya berisi elemen non-void.
+
+**Void element + anak = runtime error (mode dev).** Void element seperti `br`, `hr`, `img`, `input`, `meta` secara spesifikasi HTML tidak boleh punya anak. Menulis `<svelte:element this="hr">teks</svelte:element>` akan melempar runtime error saat development. Kalau `this` bisa berubah menjadi void element, pastikan kamu tidak memberinya konten anak — atau jaga daftar tag yang dipakai hanya berisi elemen non-void.
 </Callout>
 
 <Callout type="pitfall">
-<strong>Hanya `bind:this` yang bekerja.</strong> Karena Svelte tidak tahu tag apa yang akan muncul saat compile, ia tidak bisa menyiapkan binding bawaan yang spesifik-elemen. Jadi `bind:value`, `bind:checked`, `bind:group`, dan kawan-kawan <em>tidak</em> berfungsi di `<svelte:element>`. Satu-satunya binding yang sah adalah `bind:this` untuk meraih node DOM-nya. Butuh two-way binding ke input? Pakai elemen `<input>` konkret, bukan elemen dinamis.
+
+**Hanya `bind:this` yang bekerja.** Karena Svelte tidak tahu tag apa yang akan muncul saat compile, ia tidak bisa menyiapkan binding bawaan yang spesifik-elemen. Jadi `bind:value`, `bind:checked`, `bind:group`, dan kawan-kawan <em>tidak</em> berfungsi di `<svelte:element>`. Satu-satunya binding yang sah adalah `bind:this` untuk meraih node DOM-nya. Butuh two-way binding ke input? Pakai elemen `<input>` konkret, bukan elemen dinamis.
 </Callout>
 
 <Callout type="warning">
-<strong>`this` harus nama tag DOM yang valid (string).</strong> Nilai seperti `#text`, `svelte:head`, atau nama komponen tidak akan bekerja — `<svelte:element>` khusus untuk elemen DOM nyata. Untuk SVG, Svelte mencoba menebak namespace dari sekitarnya; bila gambar tak muncul atau salah, paksa dengan `xmlns="http://www.w3.org/2000/svg"`.
+
+**`this` harus nama tag DOM yang valid (string).** Nilai seperti `#text`, `svelte:head`, atau nama komponen tidak akan bekerja — `<svelte:element>` khusus untuk elemen DOM nyata. Untuk SVG, Svelte mencoba menebak namespace dari sekitarnya; bila gambar tak muncul atau salah, paksa dengan `xmlns="http://www.w3.org/2000/svg"`.
 </Callout>
 
 <Callout type="tip">
-<strong>Manfaatkan nullish sebagai `{#if}` gratis.</strong> Saat `this` bernilai `null`/`undefined`, elemen beserta seluruh anaknya tidak dirender. Untuk konten opsional yang kadang punya wrapper kadang tidak, kamu bisa men-set `this` ke `null` alih-alih membungkus dengan blok kondisional — lebih ringkas dan niatnya jelas.
+
+**Manfaatkan nullish sebagai `{#if}` gratis.** Saat `this` bernilai `null`/`undefined`, elemen beserta seluruh anaknya tidak dirender. Untuk konten opsional yang kadang punya wrapper kadang tidak, kamu bisa men-set `this` ke `null` alih-alih membungkus dengan blok kondisional — lebih ringkas dan niatnya jelas.
 </Callout>
 
 <Callout type="legacy">
-<strong>Jangan keliru dengan `<svelte:component>`.</strong> Di Svelte lama, merender <em>komponen</em> dinamis butuh `<svelte:component this={Comp} />`. Di Svelte 5 itu sudah tidak diperlukan — komponen adalah nilai biasa, jadi cukup `<Comp />` di mana `Comp` sebuah variabel (mis. hasil `$derived`). `<svelte:element>` tetap relevan tapi untuk hal berbeda: <em>tag DOM</em> dinamis, bukan komponen.
+
+**Jangan keliru dengan `<svelte:component>`.** Di Svelte lama, merender <em>komponen</em> dinamis butuh `<svelte:component this={Comp} />`. Di Svelte 5 itu sudah tidak diperlukan — komponen adalah nilai biasa, jadi cukup `<Comp />` di mana `Comp` sebuah variabel (mis. hasil `$derived`). `<svelte:element>` tetap relevan tapi untuk hal berbeda: <em>tag DOM</em> dinamis, bukan komponen.
 </Callout>
 
 <LegacyVsModern

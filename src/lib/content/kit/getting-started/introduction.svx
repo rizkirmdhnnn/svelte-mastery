@@ -159,7 +159,6 @@ Begitu dev server jalan, coba klik bolak-balik antara <code>/</code> dan <code>/
 	svelte={`<!-- Svelte = library UI (komponen saja). -->
 <!-- src/lib/Counter.svelte -->
 <button onclick={() => count++}>{count}</button>
-
 <!-- Untuk jadi APLIKASI (routing, SSR, deploy) komponen ini
      dibungkus SvelteKit: taruh halaman di
      src/routes/+page.svelte, pilih adapter, ambil data
@@ -169,7 +168,6 @@ Begitu dev server jalan, coba klik bolak-balik antara <code>/</code> dan <code>/
 export default function Home() {
   return <h1>Beranda</h1>;
 }
-
 // React sendiri TIDAK punya routing/SSR/build bawaan;
 // Next.js (atau Remix) yang menyediakannya, di atas bundler-nya.`}
 	nuxt={`<!-- Vue = library UI; Nuxt = meta-framework-nya. -->
@@ -177,16 +175,16 @@ export default function Home() {
 <template>
   <h1>Beranda</h1>
 </template>
-
 <!-- Vue sendiri TIDAK punya routing/SSR/build bawaan;
      Nuxt yang menyediakannya, dibangun di atas Vite. -->`}
-	diff={{ svelte: [6, 7], next: [8], nuxt: [8] }}
+	diff={{ svelte: [5, 6], next: [7], nuxt: [7] }}
 	note="Pemetaan peran setara: React+Next.js, Vue+Nuxt, Svelte+SvelteKit — ketiganya pasangan 'library UI + meta-framework'. Ketiganya menyediakan routing berbasis file, SSR, dan build/deploy, dan kebetulan Nuxt maupun SvelteKit sama-sama berdiri di atas Vite. Plus-minus objektif: ekosistem & adopsi Next/Nuxt lebih besar (lebih banyak contoh, plugin, lowongan); SvelteKit cenderung lebih ringkas, satu cara resmi (less boilerplate), bundle lebih kecil. Tidak ada yang mutlak 'benar' — pilih mengikuti bahasa UI yang kamu pakai."
 />
 
 ## 5. Latihan
 
 <Exercise title="Svelte saja atau SvelteKit?">
+
 Untuk tiap skenario berikut, tentukan apakah cukup **Svelte saja** atau sebaiknya pakai **SvelteKit**, beri alasan singkat, lalu sebutkan padanan meta-framework di React dan Vue.
 
 1. Blog dengan banyak artikel yang harus muncul cepat di Google.

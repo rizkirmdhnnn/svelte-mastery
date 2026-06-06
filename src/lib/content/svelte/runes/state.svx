@@ -168,7 +168,6 @@ Mainkan beberapa jenis state sekaligus di bawah. Tambahkan item ke array dengan 
 	let profil = $state({ nama: 'Budi', umur: 20 });
 	let daftar = $state(['belajar $state']);
 	let foto = $state(null);
-
 	class Tugas {
 		teks = $state('');
 		selesai = $state(false);
@@ -180,7 +179,6 @@ Mainkan beberapa jenis state sekaligus di bawah. Tambahkan item ke array dengan 
 		};
 	}
 	let tugas = new Tugas('Coba class field');
-
 	function tambahItem() {
 		daftar.push('item ke-' + (daftar.length + 1));
 	}
@@ -188,14 +186,11 @@ Mainkan beberapa jenis state sekaligus di bawah. Tambahkan item ke array dengan 
 		foto = $state.snapshot(profil);
 	}
 </script>
-
 <h3>count: {count}</h3>
 <button onclick={() => count++}>count++</button>
-
 <h3>{profil.nama}, umur {profil.umur}</h3>
 <button onclick={() => profil.umur++}>Ulang tahun</button>
 <button onclick={() => (profil.nama = 'Sari')}>Ganti nama</button>
-
 <h3>daftar ({daftar.length})</h3>
 <ul>
 	{#each daftar as d}
@@ -203,12 +198,10 @@ Mainkan beberapa jenis state sekaligus di bawah. Tambahkan item ke array dengan 
 	{/each}
 </ul>
 <button onclick={tambahItem}>Tambah item</button>
-
 <h3>Class field</h3>
 <button onclick={tugas.toggle}>
 	{tugas.teks} — {tugas.selesai ? 'selesai' : 'belum'}
 </button>
-
 <h3>Snapshot beku</h3>
 <button onclick={ambilSnapshot}>Ambil snapshot profil</button>
 {#if foto}

@@ -192,14 +192,12 @@ Klik **Acak** untuk men-sort ulang, **Tambah** untuk menyisipkan, dan **x** untu
 <Playground code={`<script>
 	import { fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
-
 	let nextId = 4;
 	let items = $state([
 		{ id: 1, text: 'Satu' },
 		{ id: 2, text: 'Dua' },
 		{ id: 3, text: 'Tiga' }
 	]);
-
 	function add() {
 		items = [...items, { id: nextId, text: 'Item ' + nextId }];
 		nextId++;
@@ -211,12 +209,10 @@ Klik **Acak** untuk men-sort ulang, **Tambah** untuk menyisipkan, dan **x** untu
 		items = [...items].sort(() => Math.random() - 0.5);
 	}
 </script>
-
 <div style="display:flex; gap:8px; margin-bottom:12px">
 	<button onclick={add}>Tambah</button>
 	<button onclick={shuffle}>Acak</button>
 </div>
-
 <ul style="list-style:none; padding:0; display:flex; flex-direction:column; gap:6px">
 	{#each items as item (item.id)}
 		<li

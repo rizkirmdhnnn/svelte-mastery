@@ -142,12 +142,10 @@ Latih membacanya seperti ini: "Ketika tombol Tambah diklik, `count` naik sebesar
 	// Tidak ada VDOM, tidak ada diffing — update langsung ke node.
 	let count = $state(0);
 </script>
-
 <button onclick={() => count++}>
 	{count}
 </button>`}
 	react={`import { useState } from 'react';
-
 function Counter() {
 	// State + setter manual. Tiap setCount memicu render ulang
 	// fungsi ini, lalu React men-diff Virtual DOM (saat runtime).
@@ -164,7 +162,6 @@ import { ref } from 'vue'
 // Vue melacak dependensi & men-diff Virtual DOM saat runtime.
 const count = ref(0)
 </script>
-
 <template>
 	<button @click="count++">{{ count }}</button>
 </template>`}

@@ -170,7 +170,6 @@ Playground di bawah punya dua tombol: **Acak** (mengocok urutan) dan **Urutkan A
 
 <Playground code={`<script>
 	import { flip } from 'svelte/animate';
-
 	let items = $state([
 		{ id: 1, label: 'Apel' },
 		{ id: 2, label: 'Mangga' },
@@ -178,21 +177,17 @@ Playground di bawah punya dua tombol: **Acak** (mengocok urutan) dan **Urutkan A
 		{ id: 4, label: 'Jeruk' },
 		{ id: 5, label: 'Anggur' }
 	]);
-
 	function acak() {
 		items = [...items].sort(() => Math.random() - 0.5);
 	}
-
 	function urutkan() {
 		items = [...items].sort((a, b) => a.label.localeCompare(b.label));
 	}
 </script>
-
 <div style='display: flex; gap: 8px; margin-bottom: 12px;'>
 	<button onclick={acak}>Acak</button>
 	<button onclick={urutkan}>Urutkan A-Z</button>
 </div>
-
 <ul style='list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; max-width: 220px;'>
 	{#each items as item (item.id)}
 		<li

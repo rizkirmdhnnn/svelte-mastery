@@ -109,20 +109,15 @@ Klik "Profil berikutnya" dan bandingkan dua baris di bawah. Baris pertama (tanpa
 
 <Playground code={`<script>
 	import { fly } from 'svelte/transition';
-
 	let id = $state(1);
 	const nama = ['', 'Andi', 'Budi', 'Citra'];
-
 	function ganti() {
 		id = id === 3 ? 1 : id + 1;
 	}
 </script>
-
 <button onclick={ganti}>Profil berikutnya</button>
-
 <p style="margin-top:12px">Tanpa key (update di tempat, tanpa animasi):</p>
 <p style="font-weight:bold">{nama[id]} (id {id})</p>
-
 <p style="margin-top:12px">Dengan key (remount + animasi tiap ganti):</p>
 {#key id}
 	<p transition:fly={{ x: 24, duration: 300 }} style="font-weight:bold;color:teal">

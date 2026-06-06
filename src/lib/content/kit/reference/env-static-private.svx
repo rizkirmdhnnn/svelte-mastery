@@ -162,6 +162,7 @@ Yang ingin ditegaskan peraga ini: setelah build, **tidak ada lagi pembacaan envi
 ## 4. Latihan
 
 <Exercise title="Susun .env, impor, dan jelaskan satu jebakan">
+
 Kamu membangun modul pembayaran server. Ada tiga nilai:
 
 1. `STRIPE_SECRET_KEY` — secret memanggil Stripe dari server. Jarang berubah, ingin di-tree-shake, **tidak boleh** ke browser.
@@ -176,31 +177,32 @@ Tugas:
 
 {#snippet solution()}
 
-  ```bash
-  # .env
-  # (1) private + jarang berubah -> cocok untuk $env/static/private. Tanpa prefix.
-  STRIPE_SECRET_KEY="sk_live_xxx"
-  # (2) private, dipakai untuk dead-code elimination. Tanpa prefix.
-  ENVIRONMENT="production"
-  # (3) WAJIB prefix PUBLIC_ -> ini milik $env/static/public, BUKAN /private.
-  PUBLIC_STRIPE_KEY="pk_live_xxx"
-  ```
+```bash
+# .env
+# (1) private + jarang berubah -> cocok untuk $env/static/private. Tanpa prefix.
+STRIPE_SECRET_KEY="sk_live_xxx"
+# (2) private, dipakai untuk dead-code elimination. Tanpa prefix.
+ENVIRONMENT="production"
+# (3) WAJIB prefix PUBLIC_ -> ini milik $env/static/public, BUKAN /private.
+PUBLIC_STRIPE_KEY="pk_live_xxx"
+```
 
-  ```js
-  // src/lib/server/payments.js  (server-only)
-  // (1) & (2): named import dari modul private. Keduanya di-inline saat build.
-  import { STRIPE_SECRET_KEY, ENVIRONMENT } from '$env/static/private';
+```js
+// src/lib/server/payments.js  (server-only)
+// (1) & (2): named import dari modul private. Keduanya di-inline saat build.
+import { STRIPE_SECRET_KEY, ENVIRONMENT } from '$env/static/private';
 
-  export function charge(amount) {
-  	if (ENVIRONMENT !== 'production') console.debug('charging', amount);
-  	return stripe(STRIPE_SECRET_KEY).charge(amount);
-  }
-  ```
+export function charge(amount) {
+	if (ENVIRONMENT !== 'production') console.debug('charging', amount);
+	return stripe(STRIPE_SECRET_KEY).charge(amount);
+}
+```
 
-  - `PUBLIC_STRIPE_KEY` **tidak boleh** diimpor dari `$env/static/private` — namanya berawalan `PUBLIC_`, sehingga itu milik modul `public`. Mengimpornya dari modul private memicu **build error**.
-  - Karena static di-inline saat build, aplikasi tetap memakai **nilai `STRIPE_SECRET_KEY` saat build**, bukan nilai runtime baru. Untuk mengganti tanpa rebuild, perlu `$env/dynamic/private`.
+- `PUBLIC_STRIPE_KEY` **tidak boleh** diimpor dari `$env/static/private` — namanya berawalan `PUBLIC_`, sehingga itu milik modul `public`. Mengimpornya dari modul private memicu **build error**.
+- Karena static di-inline saat build, aplikasi tetap memakai **nilai `STRIPE_SECRET_KEY` saat build**, bukan nilai runtime baru. Untuk mengganti tanpa rebuild, perlu `$env/dynamic/private`.
 
-  {/snippet}</Exercise>
+{/snippet}
+</Exercise>
 
 ## 5. Tips & Pitfalls
 

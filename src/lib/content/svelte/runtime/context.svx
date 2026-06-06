@@ -174,18 +174,15 @@ Playground ini cuma boleh satu komponen, padahal context normalnya menghubungkan
 
 <Playground code={`<script>
 	import { setContext, getContext, hasContext } from 'svelte';
-
 	// Titip OBJEK $state (bukan angka mentah) ke context.
 	let keranjang = $state({ jumlah: 0 });
 	setContext('keranjang', keranjang);
-
 	// Normalnya getContext dipanggil di komponen KETURUNAN.
 	// Di sini kita ambil di tempat yang sama hanya untuk membuktikan:
 	// yang diambil adalah REFERENSI yang sama dengan yang dititipkan.
 	const dariContext = getContext('keranjang');
 	const ada = hasContext('keranjang');
 </script>
-
 <h3>Item di keranjang: {dariContext.jumlah}</h3>
 <p>hasContext('keranjang') = {ada ? 'true' : 'false'}</p>
 <button onclick={() => dariContext.jumlah++}>Beli (+1)</button>

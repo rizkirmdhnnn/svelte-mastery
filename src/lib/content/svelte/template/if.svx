@@ -136,10 +136,8 @@ Mainkan blok `{#if}/{:else if}/{:else}` di bawah. Tambah/kurangi `suhu` dan amat
 	let suhu = $state(36);
 	let login = $state(false);
 </script>
-
 <h3>Cek suhu air</h3>
 <p>Suhu sekarang: {suhu} derajat</p>
-
 {#if suhu > 100}
 	<p>Mendidih, terlalu panas!</p>
 {:else if suhu >= 40}
@@ -149,12 +147,9 @@ Mainkan blok `{#if}/{:else if}/{:else}` di bawah. Tambah/kurangi `suhu` dan amat
 {:else}
 	<p>Membeku.</p>
 {/if}
-
 <button onclick={() => suhu += 20}>Panaskan +20</button>
 <button onclick={() => suhu -= 20}>Dinginkan -20</button>
-
 <hr />
-
 {#if login}
 	<button onclick={() => login = false}>Logout</button>
 {:else}
@@ -172,7 +167,6 @@ Coba ubah salah satu cabang <code>&#123;:else if&#125;</code> jadi kondisi yang 
 	svelte={`<script>
   let status = $state('loading');
 </script>
-
 {#if status === 'loading'}
   <p>Memuat...</p>
 {:else if status === 'error'}
@@ -182,7 +176,6 @@ Coba ubah salah satu cabang <code>&#123;:else if&#125;</code> jadi kondisi yang 
 {/if}`}
 	react={`function View() {
   const [status] = useState('loading');
-
   // Tidak ada "fitur if" — pakai ternary bersarang
   // atau kondisi && di tengah JSX.
   return (
@@ -201,7 +194,6 @@ Coba ubah salah satu cabang <code>&#123;:else if&#125;</code> jadi kondisi yang 
 import { ref } from 'vue';
 const status = ref('loading');
 </script>
-
 <template>
   <p v-if="status === 'loading'">Memuat...</p>
   <p v-else-if="status === 'error'">Gagal memuat.</p>

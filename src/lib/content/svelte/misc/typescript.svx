@@ -203,7 +203,6 @@ Playground ini satu komponen `.svelte` mandiri yang memakai `lang="ts"`: kita pa
 		teks = '';
 	}
 </script>
-
 <input bind:value={teks} placeholder="Tugas baru" />
 <button onclick={tambah}>Tambah</button>
 <p>Belum selesai: {sisa}</p>

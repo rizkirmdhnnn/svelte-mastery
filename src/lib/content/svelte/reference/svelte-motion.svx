@@ -210,38 +210,30 @@ Playground ini memajang `Spring` dan `Tween` berdampingan supaya watak keduanya 
 <Playground code={`<script>
 	import { Spring, Tween } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
-
 	// Spring: fisika pegas — kejar target tanpa durasi tetap
 	const ukuran = new Spring(80, { stiffness: 0.1, damping: 0.4 });
-
 	// Tween: durasi pasti + kurva easing
 	const progres = new Tween(0, { duration: 700, easing: cubicOut });
-
 	function acak() {
 		ukuran.target = 40 + Math.floor(Math.random() * 160);
 	}
-
 	function lempar() {
 		// preserveMomentum: lanjutkan lintasan seperti gerakan fling
 		ukuran.set(220, { preserveMomentum: 300 });
 	}
-
 	function isiPenuh() {
 		progres.target = progres.target >= 100 ? 0 : 100;
 	}
 </script>
-
 <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
 	<button onclick={acak}>Spring: acak ukuran</button>
 	<button onclick={lempar}>Spring: lempar (momentum)</button>
 	<button onclick={isiPenuh}>Tween: isi/kosongkan</button>
 </div>
-
 <div
 	style="width: {ukuran.current}px; height: {ukuran.current}px; background: teal; border-radius: 10px;"
 ></div>
 <p>Spring.current: {Math.round(ukuran.current)}px  (target {Math.round(ukuran.target)}px)</p>
-
 <progress value={progres.current} max="100"></progress>
 <p>Tween.current: {Math.round(progres.current)}%  (target {progres.target}%)</p>`} />
 
