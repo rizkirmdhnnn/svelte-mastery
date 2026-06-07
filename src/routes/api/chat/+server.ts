@@ -22,6 +22,7 @@ export const POST: RequestHandler = async ({ request, platform, getClientAddress
       embedModel: env.EMBED_MODEL ?? '@cf/baai/bge-m3',
       turnstileSecret: env.TURNSTILE_SECRET_KEY ?? '',
       rateLimit: Number(env.CHAT_RATE_LIMIT ?? '40'),
+      relevanceFloor: Number(env.CHAT_RELEVANCE_FLOOR ?? '0.5'),
       secrets: env as unknown as Record<string, string | undefined>
     }
   });
