@@ -30,8 +30,11 @@
     },
   ],
   "vars": {
-    "CHAT_PROVIDER": "workers-ai",
-    "CHAT_MODEL": "@cf/qwen/qwen2.5-coder-32b-instruct",
+    // Answer model = Gemini. Requires the GEMINI_API_KEY secret:
+    //   npx wrangler secret put GEMINI_API_KEY
+    "CHAT_PROVIDER": "gemini",
+    "CHAT_MODEL": "gemini-2.5-flash-lite",
+    // EMBED_MODEL stays on Workers AI — retrieval (embeddings + Vectorize) is provider-independent.
     "EMBED_MODEL": "@cf/baai/bge-m3",
     "CHAT_RATE_LIMIT": "40",
     // Min top-match similarity to answer. Below this → "di luar materi" refusal.

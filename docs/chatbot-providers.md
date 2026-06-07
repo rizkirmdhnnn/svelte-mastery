@@ -10,10 +10,13 @@ API key (if it needs one).
 > Cloudflare Workers AI, so you still need the `AI` + `VECTORIZE` bindings even
 > when the chat model is Gemini.
 
+**Production default: Gemini** (`gemini-2.5-flash-lite`), set in `wrangler.jsonc` `vars`.
+The code-level fallback (no config / unknown value) is still `workers-ai`, which needs no key.
+
 | Provider | `CHAT_PROVIDER` | Example `CHAT_MODEL` | Key needed | Status |
 |----------|----------------|----------------------|------------|--------|
-| Workers AI (default) | `workers-ai` | `@cf/qwen/qwen2.5-coder-32b-instruct` | — (binding) | ✅ |
-| Gemini | `gemini` | `gemini-2.5-flash-lite` | `GEMINI_API_KEY` | ✅ |
+| Workers AI | `workers-ai` | `@cf/qwen/qwen2.5-coder-32b-instruct` | — (binding) | ✅ |
+| Gemini **(default)** | `gemini` | `gemini-2.5-flash-lite` | `GEMINI_API_KEY` | ✅ |
 | Groq | `groq` | `llama-3.3-70b-versatile` | `GROQ_API_KEY` | ✅ |
 
 ## Switch to Gemini
