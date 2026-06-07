@@ -1582,7 +1582,9 @@ export interface HandleChatConfig {
 export interface HandleChatDeps {
   platform: {
     env: { AI: any; VECTORIZE: any; CHAT_KV: any };
+    // adapter-cloudflare exposes `context`; this repo's app.d.ts names it `ctx`.
     context?: { waitUntil(p: Promise<unknown>): void };
+    ctx?: { waitUntil(p: Promise<unknown>): void };
   };
   ip: string;
   config: HandleChatConfig;
@@ -1669,9 +1671,10 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
   });
 
   // 6) Stream out + schedule cache write
+  const waitUntil = platform.context?.waitUntil?.bind(platform.context) ?? platform.ctx?.waitUntil?.bind(platform.ctx);
   const stream = buildResponseStream(sources, tokens, (full) => {
     const write = putCached(platform.env.CHAT_KV, key, { text: full, sources });
-    if (platform.context?.waitUntil) platform.context.waitUntil(write);
+    if (waitUntil) waitUntil(write);
     else void write;
   });
 
