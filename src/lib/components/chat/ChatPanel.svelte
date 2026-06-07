@@ -195,10 +195,14 @@
     opacity: 0.5;
     cursor: default;
   }
+  /* Turnstile must mount into a real (non-zero, non-hidden) container or it
+     never renders. An interaction-only widget stays ~0-height when no challenge
+     is needed, so this is invisible in normal use. */
   .turnstile {
-    position: absolute;
-    width: 0;
-    height: 0;
-    overflow: hidden;
+    display: flex;
+    justify-content: center;
+  }
+  .turnstile:not(:empty) {
+    padding: 0 0.6rem 0.6rem;
   }
 </style>
