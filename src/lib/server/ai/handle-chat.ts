@@ -7,6 +7,7 @@ import { buildResponseStream } from '$lib/server/ai/chat-stream';
 import { checkAndIncrement } from '$lib/server/ai/ratelimit';
 import { cacheKey, getCached, putCached } from '$lib/server/ai/cache';
 import { verifyTurnstile, type TurnstileResult } from '$lib/server/ai/turnstile';
+import { issueSession, verifySession } from '$lib/server/ai/session';
 
 export interface HandleChatConfig {
   provider: string;
@@ -35,17 +36,26 @@ export interface HandleChatDeps {
 interface ChatBody {
   messages: ChatTurn[];
   turnstileToken?: string;
+  /** A previously-issued session token; lets the user skip Turnstile per message. */
+  sessionToken?: string;
   currentLesson?: CurrentLesson | null;
 }
 
-const SSE_HEADERS = {
-  'content-type': 'text/event-stream',
-  'cache-control': 'no-store',
-  connection: 'keep-alive'
-};
+/** SSE headers plus the (possibly refreshed) session token for the client to reuse. */
+function sseHeaders(sessionToken: string): Record<string, string> {
+  return {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-store',
+    connection: 'keep-alive',
+    'x-chat-session': sessionToken
+  };
+}
 
-function json(status: number, data: unknown): Response {
-  return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+function json(status: number, data: unknown, extra?: Record<string, string>): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'content-type': 'application/json', ...extra }
+  });
 }
 
 function cachedStream(text: string, sources: any[]): ReadableStream<Uint8Array> {
@@ -85,16 +95,27 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
   const prevUserContent = isFollowUp ? userTurns[userTurns.length - 2].content : '';
   const retrievalQuery = prevUserContent ? `${prevUserContent}\n${lastUser.content}` : lastUser.content;
 
-  // 1) Turnstile — surface WHY it failed (Cloudflare error-codes) to the client.
-  const turnstile = await verify(config.turnstileSecret, body.turnstileToken ?? '', ip);
-  if (!turnstile.success) {
-    return json(403, { error: 'turnstile_failed', codes: turnstile.errorCodes });
+  // 1) Auth — Turnstile once per session. A valid session token (HMAC, IP-bound,
+  // 30-min) skips Turnstile entirely; otherwise verify Turnstile and mint a fresh
+  // session token that the client reuses for the rest of the session.
+  let sessionToken = '';
+  const sessionOk = body.sessionToken
+    ? await verifySession(config.turnstileSecret, body.sessionToken, ip)
+    : false;
+  if (sessionOk) {
+    sessionToken = body.sessionToken as string;
+  } else {
+    const turnstile = await verify(config.turnstileSecret, body.turnstileToken ?? '', ip);
+    if (!turnstile.success) {
+      return json(403, { error: 'turnstile_failed', codes: turnstile.errorCodes });
+    }
+    sessionToken = await issueSession(config.turnstileSecret, ip);
   }
 
-  // 2) Rate limit
+  // 2) Rate limit (still per-IP regardless of session — abuse stays bounded).
   const rl = await checkAndIncrement(platform.env.CHAT_KV, ip, config.rateLimit);
   if (!rl.allowed) {
-    return json(429, { error: 'rate_limited', resetAt: rl.resetAt });
+    return json(429, { error: 'rate_limited', resetAt: rl.resetAt }, { 'x-chat-session': sessionToken });
   }
 
   // 3) Cache (first-turn questions only — follow-ups are context-dependent, so
@@ -103,7 +124,7 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
   if (!isFollowUp) {
     const hit = await getCached(platform.env.CHAT_KV, key);
     if (hit) {
-      return new Response(cachedStream(hit.text, hit.sources), { headers: SSE_HEADERS });
+      return new Response(cachedStream(hit.text, hit.sources), { headers: sseHeaders(sessionToken) });
     }
   }
 
@@ -117,7 +138,7 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
   // the conversation history + the system prompt's scope rule instead.
   const topScore = chunks[0]?.score ?? 0;
   if (!isFollowUp && topScore < config.relevanceFloor) {
-    return new Response(cachedStream(OUT_OF_SCOPE_MESSAGE, []), { headers: SSE_HEADERS });
+    return new Response(cachedStream(OUT_OF_SCOPE_MESSAGE, []), { headers: sseHeaders(sessionToken) });
   }
 
   // 5) Prompt + provider stream
@@ -140,5 +161,5 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
     else void write;
   });
 
-  return new Response(stream, { headers: SSE_HEADERS });
+  return new Response(stream, { headers: sseHeaders(sessionToken) });
 }

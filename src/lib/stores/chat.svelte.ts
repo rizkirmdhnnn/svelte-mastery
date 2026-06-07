@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import { browser } from '$app/environment';
 import { consumeChatStream } from '$lib/chat/client-stream';
 import type { ChatSource, UIMessage } from '$lib/chat/types';
@@ -21,8 +22,12 @@ class ChatStore {
   messages = $state<UIMessage[]>([]);
   sending = $state(false);
   error = $state<string | null>(null);
+  /** True while a valid session token is held → the Turnstile widget can hide. */
+  sessionActive = $state(false);
 
   #clientId = newId();
+  #sessionToken: string | null = null;
+  #sessionExp = 0;
   #tokenProvider: TokenProvider | null = null;
   #currentLesson: { slug: string; title: string } | null = null;
   #abort: AbortController | null = null;
@@ -133,25 +138,34 @@ class ChatStore {
     const signal = this.#abort.signal;
 
     try {
-      // Security check — bounded and cancellable. A Turnstile widget that never
-      // solves (e.g. a managed challenge that needs interaction the invisible
-      // widget can't surface) used to hang here forever, leaving an empty bubble
-      // and a dead Stop button. Now it times out into a retryable error.
+      // Auth: a still-valid session token skips Turnstile entirely (no widget,
+      // no wait). Only when there's no session do we solve Turnstile — bounded
+      // and cancellable so a widget that never solves becomes a retryable error.
       let turnstileToken = '';
-      try {
-        await this.#awaitTokenReady(signal);
-        if (this.#tokenProvider) turnstileToken = await this.#tokenProvider({ signal });
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          this.#patch(assistantId, { status: 'done' });
-        } else {
-          const reason = err instanceof Error ? err.message : 'penyebab tidak diketahui';
-          this.#patch(assistantId, {
-            status: 'error',
-            content: `Verifikasi keamanan tidak selesai (${reason}). Muat ulang halaman; kalau tetap gagal, cek apakah ekstensi/pemblokir iklan menghalangi challenges.cloudflare.com.`
-          });
+      let sessionToken = '';
+      const haveSession = this.#sessionToken && this.#sessionExp > Date.now() + 5000;
+      if (haveSession) {
+        sessionToken = this.#sessionToken as string;
+      } else {
+        if (this.sessionActive) {
+          this.sessionActive = false; // re-show the widget before solving
+          await tick();
         }
-        return;
+        try {
+          await this.#awaitTokenReady(signal);
+          if (this.#tokenProvider) turnstileToken = await this.#tokenProvider({ signal });
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            this.#patch(assistantId, { status: 'done' });
+          } else {
+            const reason = err instanceof Error ? err.message : 'penyebab tidak diketahui';
+            this.#patch(assistantId, {
+              status: 'error',
+              content: `Verifikasi keamanan tidak selesai (${reason}). Muat ulang halaman; kalau tetap gagal, cek apakah ekstensi/pemblokir iklan menghalangi challenges.cloudflare.com.`
+            });
+          }
+          return;
+        }
       }
 
       const history = this.messages
@@ -162,11 +176,16 @@ class ChatStore {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal,
-        body: JSON.stringify({ messages: history, turnstileToken, currentLesson: this.#currentLesson })
+        body: JSON.stringify({ messages: history, turnstileToken, sessionToken, currentLesson: this.#currentLesson })
       });
+
+      // Server returns a fresh/extended session token on every authed response.
+      const refreshed = res.headers.get('x-chat-session');
+      if (refreshed) this.#setSession(refreshed);
 
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
+        if (res.status === 403) this.#clearSession(); // force re-verify next time
         this.#patch(assistantId, { status: 'error', content: this.#errorMessage(res.status, data) });
         return;
       }
@@ -196,6 +215,30 @@ class ChatStore {
       this.sending = false;
       this.#abort = null;
       this.#save();
+    }
+  }
+
+  #setSession(token: string) {
+    this.#sessionToken = token;
+    this.#sessionExp = this.#decodeExp(token);
+    this.sessionActive = this.#sessionExp > Date.now();
+  }
+
+  #clearSession() {
+    this.#sessionToken = null;
+    this.#sessionExp = 0;
+    this.sessionActive = false;
+  }
+
+  /** Read `exp` from the token's base64url payload (signed, not encrypted). */
+  #decodeExp(token: string): number {
+    try {
+      let p = token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+      while (p.length % 4) p += '=';
+      const json = JSON.parse(atob(p)) as { exp?: number };
+      return typeof json.exp === 'number' ? json.exp : 0;
+    } catch {
+      return 0;
     }
   }
 

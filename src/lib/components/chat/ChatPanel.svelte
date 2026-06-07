@@ -97,7 +97,8 @@
     {/if}
   </form>
 
-  <div bind:this={turnstileEl} class="turnstile"></div>
+  <!-- Turnstile shows only until a session token is held; then it hides. -->
+  <div bind:this={turnstileEl} class="turnstile" class:idle={chat.sessionActive}></div>
 </div>
 
 <style>
@@ -209,6 +210,9 @@
   .turnstile {
     display: flex;
     justify-content: center;
+  }
+  .turnstile.idle {
+    display: none;
   }
   .turnstile:not(:empty) {
     padding: 0 0.6rem 0.6rem;
