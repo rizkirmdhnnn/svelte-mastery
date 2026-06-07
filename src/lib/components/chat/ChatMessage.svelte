@@ -17,8 +17,8 @@
         {#if seg.type === 'code'}
           <CodeBlock code={seg.code} lang={seg.lang} />
         {:else}
-          <!-- seg.html is escaped + allow-listed in parseMessageSegments -->
-          <p>{@html seg.html}</p>
+          <!-- seg.html is escaped + allow-listed block markup from parseMessageSegments -->
+          <div class="prose">{@html seg.html}</div>
         {/if}
       {/each}
       {#if message.status === 'streaming'}
@@ -68,8 +68,39 @@
   .bubble :global(p) {
     margin: 0 0 0.5rem;
   }
-  .bubble :global(p:last-child) {
+  .bubble :global(.prose:last-child > :last-child) {
     margin-bottom: 0;
+  }
+  .bubble :global(.md-h) {
+    font-weight: 700;
+    line-height: 1.3;
+    margin: 0.7rem 0 0.35rem;
+  }
+  .bubble :global(.prose:first-child > .md-h:first-child) {
+    margin-top: 0;
+  }
+  .bubble :global(.md-h1) {
+    font-size: 1.05rem;
+  }
+  .bubble :global(.md-h2) {
+    font-size: 1rem;
+  }
+  .bubble :global(.md-h3) {
+    font-size: 0.95rem;
+  }
+  .bubble :global(.md-h4),
+  .bubble :global(.md-h5),
+  .bubble :global(.md-h6) {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+  .bubble :global(ul),
+  .bubble :global(ol) {
+    margin: 0 0 0.5rem;
+    padding-left: 1.25rem;
+  }
+  .bubble :global(li) {
+    margin: 0.15rem 0;
   }
   .bubble :global(code) {
     font-family: var(--font-mono);
