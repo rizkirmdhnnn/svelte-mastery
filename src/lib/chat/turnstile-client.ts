@@ -79,8 +79,8 @@ export interface TokenSource {
 }
 
 /**
- * Render an invisible (`interaction-only`) Turnstile widget into `container`
- * and return a source that yields a fresh single-use token per `getToken()`.
+ * Render a visible managed Turnstile widget into `container` and return a source
+ * that yields a fresh single-use token per `getToken()`.
  * The widget auto-solves on render/reset; getToken() returns the current token
  * and resets the widget so a new one is ready for the next call.
  *
@@ -106,7 +106,10 @@ export async function createTokenSource(container: HTMLElement, sitekey: string)
 
 	const widgetId = ts.render(container, {
 		sitekey,
-		appearance: 'interaction-only',
+		// Visible managed widget: shows "verifying"/success, and crucially surfaces
+		// an interactive challenge when one is required so the user can complete it
+		// (an invisible interaction-only widget would silently time out instead).
+		appearance: 'always',
 		callback: (token: string) => {
 			current = token;
 			const ws = waiters;
