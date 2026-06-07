@@ -145,9 +145,10 @@ class ChatStore {
         if (err instanceof DOMException && err.name === 'AbortError') {
           this.#patch(assistantId, { status: 'done' });
         } else {
+          const reason = err instanceof Error ? err.message : 'penyebab tidak diketahui';
           this.#patch(assistantId, {
             status: 'error',
-            content: 'Verifikasi keamanan gagal. Muat ulang halaman lalu coba lagi.'
+            content: `Verifikasi keamanan tidak selesai (${reason}). Muat ulang halaman; kalau tetap gagal, cek apakah ekstensi/pemblokir iklan menghalangi challenges.cloudflare.com.`
           });
         }
         return;
@@ -198,12 +199,24 @@ class ChatStore {
     }
   }
 
-  #errorMessage(status: number, data: { error?: string; resetAt?: number }): string {
+  #errorMessage(status: number, data: { error?: string; resetAt?: number; codes?: string[] }): string {
     if (status === 429) {
       const when = data.resetAt ? new Date(data.resetAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : 'besok';
       return `Kamu sudah mencapai batas pertanyaan harian. Coba lagi setelah ${when}.`;
     }
-    if (status === 403) return 'Verifikasi keamanan gagal. Muat ulang halaman lalu coba lagi.';
+    if (status === 403) {
+      const codes = Array.isArray(data.codes) ? data.codes : [];
+      const reasons: Record<string, string> = {
+        'missing-input-response': 'token verifikasi kosong (widget belum menghasilkan token)',
+        'timeout-or-duplicate': 'token kedaluwarsa atau sudah dipakai — coba kirim lagi',
+        'invalid-input-response': 'token tidak valid',
+        'invalid-input-secret': 'konfigurasi server salah (secret tidak cocok dengan site key)',
+        'bad-request': 'permintaan verifikasi tidak valid',
+        'siteverify-unreachable': 'server verifikasi tidak bisa dihubungi'
+      };
+      const detail = codes.length ? (reasons[codes[0]] ?? `kode: ${codes.join(', ')}`) : 'alasan tidak diketahui';
+      return `Verifikasi keamanan ditolak: ${detail}. Muat ulang halaman lalu coba lagi.`;
+    }
     return 'Maaf, ada gangguan. Coba lagi sebentar.';
   }
 }
