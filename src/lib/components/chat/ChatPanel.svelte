@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import { PUBLIC_TURNSTILE_SITE_KEY } from '$env/static/public';
   import { chat } from '$lib/stores/chat.svelte';
-  import { createTokenSource } from '$lib/chat/turnstile-client';
+  import { createTokenSource, type TokenSource } from '$lib/chat/turnstile-client';
   import { STARTER_PROMPTS } from '$lib/components/chat/starter-prompts';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
 
@@ -10,18 +10,26 @@
   let listEl: HTMLDivElement;
   let turnstileEl: HTMLDivElement;
 
-  // Mount the invisible Turnstile widget once and register its token source.
+  // Mount the invisible Turnstile widget and register its token source. The
+  // widget is removed on unmount so toggling the panel doesn't leak widgets.
   $effect(() => {
     let cancelled = false;
+    let source: TokenSource | null = null;
     createTokenSource(turnstileEl, PUBLIC_TURNSTILE_SITE_KEY)
       .then((src) => {
-        if (!cancelled) chat.setTokenProvider(() => src.getToken());
+        source = src;
+        if (cancelled) {
+          src.destroy();
+          return;
+        }
+        chat.setTokenProvider((opts) => src.getToken(opts));
       })
       .catch(() => {
-        /* if Turnstile fails to load, the server will reject — surfaced as an error message */
+        /* Turnstile failed to load; send() bounds the wait and surfaces a retryable error */
       });
     return () => {
       cancelled = true;
+      source?.destroy();
     };
   });
 
