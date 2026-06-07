@@ -6,6 +6,9 @@
 	import { SITE_URL, SITE_NAME, canonical } from '$lib/site';
 	import Header from '$lib/components/Header.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import ChatBubble from '$lib/components/chat/ChatBubble.svelte';
+	import { chat } from '$lib/stores/chat.svelte';
+	import { getModule } from '$lib/content';
 
 	let { children } = $props();
 
@@ -17,6 +20,18 @@
 	$effect(() => {
 		page.url.pathname;
 		drawerOpen = false;
+	});
+
+	// Keep the chatbot's current-lesson context in sync with the route.
+	$effect(() => {
+		const path = page.url.pathname;
+		if (path.startsWith('/belajar/')) {
+			const slug = path.slice('/belajar/'.length).replace(/\/$/, '');
+			const mod = getModule(slug);
+			chat.setCurrentLesson(mod ? { slug, title: mod.title } : { slug, title: slug });
+		} else {
+			chat.setCurrentLesson(null);
+		}
 	});
 </script>
 
@@ -50,6 +65,8 @@
 		</main>
 	</div>
 </div>
+
+<ChatBubble />
 
 <style>
 	.app {

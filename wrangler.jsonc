@@ -1,14 +1,38 @@
 {
-	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "svelte-sveltekit-mastery",
-	"compatibility_date": "2026-06-04",
-	"compatibility_flags": ["nodejs_compat"],
-	"main": ".svelte-kit/cloudflare/_worker.js",
-	"assets": {
-		"binding": "ASSETS",
-		"directory": ".svelte-kit/cloudflare"
-	},
-	"observability": {
-		"enabled": true
-	}
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "svelte-sveltekit-mastery",
+  "compatibility_date": "2026-06-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".svelte-kit/cloudflare",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "ai": {
+    "binding": "AI",
+    "remote": true,
+  },
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "tanya-svelte",
+      "remote": true,
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CHAT_KV",
+      "id": "c19e2af5802741eb87dcaa91171151bf",
+      "remote": true,
+    },
+  ],
+  "vars": {
+    "CHAT_PROVIDER": "workers-ai",
+    "CHAT_MODEL": "@cf/qwen/qwen2.5-coder-32b-instruct",
+    "EMBED_MODEL": "@cf/baai/bge-m3",
+    "CHAT_RATE_LIMIT": "40",
+  },
 }
