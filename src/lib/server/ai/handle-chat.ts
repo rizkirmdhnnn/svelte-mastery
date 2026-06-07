@@ -77,6 +77,14 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
     return json(400, { error: 'empty_question' });
   }
 
+  // Conversation-aware retrieval: a follow-up like "kasih contohnya" or "tadi
+  // nanya apa?" has no topic of its own, so retrieve using the previous user
+  // turn for context. `isFollowUp` also relaxes the cold-start relevance guard.
+  const userTurns = history.filter((m) => m.role === 'user');
+  const isFollowUp = userTurns.length > 1;
+  const prevUserContent = isFollowUp ? userTurns[userTurns.length - 2].content : '';
+  const retrievalQuery = prevUserContent ? `${prevUserContent}\n${lastUser.content}` : lastUser.content;
+
   // 1) Turnstile
   const ok = await verify(config.turnstileSecret, body.turnstileToken ?? '', ip);
   if (!ok) return json(403, { error: 'turnstile_failed' });
@@ -87,22 +95,26 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
     return json(429, { error: 'rate_limited', resetAt: rl.resetAt });
   }
 
-  // 3) Cache
+  // 3) Cache (first-turn questions only — follow-ups are context-dependent, so
+  // keying on the last message alone would serve the wrong cached answer).
   const key = cacheKey(lastUser.content);
-  const hit = await getCached(platform.env.CHAT_KV, key);
-  if (hit) {
-    return new Response(cachedStream(hit.text, hit.sources), { headers: SSE_HEADERS });
+  if (!isFollowUp) {
+    const hit = await getCached(platform.env.CHAT_KV, key);
+    if (hit) {
+      return new Response(cachedStream(hit.text, hit.sources), { headers: SSE_HEADERS });
+    }
   }
 
-  // 4) Retrieve
-  const vector = await embedQuery(platform.env.AI, config.embedModel, lastUser.content);
+  // 4) Retrieve (context-aware query so follow-ups land on the real topic)
+  const vector = await embedQuery(platform.env.AI, config.embedModel, retrievalQuery);
   const chunks = await queryChunks(platform.env.VECTORIZE, vector, 5);
   const sources = dedupeSources(chunks);
 
-  // 4b) Relevance guard — if nothing in the materi is close enough, refuse the
-  // question deterministically instead of letting the model answer off-topic.
+  // 4b) Relevance guard — refuse cold off-topic questions on the FIRST turn only.
+  // Follow-ups legitimately score low (e.g. "tadi nanya apa?"), so there we trust
+  // the conversation history + the system prompt's scope rule instead.
   const topScore = chunks[0]?.score ?? 0;
-  if (topScore < config.relevanceFloor) {
+  if (!isFollowUp && topScore < config.relevanceFloor) {
     return new Response(cachedStream(OUT_OF_SCOPE_MESSAGE, []), { headers: SSE_HEADERS });
   }
 
@@ -120,6 +132,7 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
   // 6) Stream out + schedule cache write
   const waitUntil = platform.context?.waitUntil?.bind(platform.context) ?? platform.ctx?.waitUntil?.bind(platform.ctx);
   const stream = buildResponseStream(sources, tokens, (full) => {
+    if (isFollowUp) return; // don't cache context-dependent follow-up answers
     const write = putCached(platform.env.CHAT_KV, key, { text: full, sources });
     if (waitUntil) waitUntil(write);
     else void write;

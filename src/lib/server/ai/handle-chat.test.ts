@@ -74,6 +74,46 @@ describe('handleChat', () => {
     expect(deps.platform.env.AI.run.mock.calls[0][0]).toContain('bge');
   });
 
+  it('does NOT refuse a follow-up even if its own similarity is low (relies on history)', async () => {
+    const deps = baseDeps();
+    deps.platform.env.VECTORIZE.query = vi.fn().mockResolvedValue({
+      count: 1,
+      matches: [{ id: 'svelte/runes/state#0', score: 0.4, metadata: { text: '$state', slug: 'svelte/runes/state', title: '$state', product: 'svelte', section: 'runes' } }]
+    });
+    const res = await handleChat(
+      req({
+        messages: [
+          { role: 'user', content: 'apa itu $state' },
+          { role: 'assistant', content: '$state adalah rune reaktif.' },
+          { role: 'user', content: 'tadi saya nanya apa?' }
+        ],
+        turnstileToken: 'tok'
+      }),
+      deps
+    );
+    const text = await res.text();
+    expect(text).not.toContain('di luar materi'); // floor skipped for follow-ups
+    expect(text).toContain('"type":"token"'); // model actually answered
+  });
+
+  it('retrieves a follow-up using the previous user turn for context', async () => {
+    const deps = baseDeps();
+    await handleChat(
+      req({
+        messages: [
+          { role: 'user', content: 'apa itu $derived' },
+          { role: 'assistant', content: 'nilai turunan.' },
+          { role: 'user', content: 'berikan contoh kodenya' }
+        ],
+        turnstileToken: 'tok'
+      }),
+      deps
+    );
+    const calls = deps.platform.env.AI.run.mock.calls as unknown as unknown[][];
+    const embedCall = calls.find((c) => String(c[0]).includes('bge'));
+    expect((embedCall?.[1] as { text: string }).text).toBe('apa itu $derived\nberikan contoh kodenya');
+  });
+
   it('returns 403 when the Turnstile token fails', async () => {
     const deps = baseDeps({ verifyToken: vi.fn().mockResolvedValue(false) });
     const res = await handleChat(req({ messages: [{ role: 'user', content: 'hi' }], turnstileToken: 'bad' }), deps);
