@@ -1,0 +1,226 @@
+---
+title: $app/stores
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 12
+status: reference
+description: Modul store lama SvelteKit (page, navigating, updated, getStores) yang diakses pakai $ — kini deprecated demi $app/state, tapi masih relevan untuk proyek Svelte 4.
+docs: https://svelte.dev/docs/kit/$app-stores
+keywords: [app-stores, page, navigating, updated, getStores, legacy]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/stores` adalah versi **lama** dari modul state SvelteKit. Ia mengekspos tiga objek — `page`, `navigating`, `updated` — sebagai **Svelte store** (`Readable<...>`), bukan sebagai objek rune. Artinya kamu mengaksesnya dengan tanda `$` di dalam komponen: `$page.url.pathname`, `$navigating`, `$updated`. Plus satu fungsi pembantu, `getStores()`, yang mengembalikan ketiganya sekaligus.
+
+Sejak SvelteKit 2.12 modul ini berstatus **deprecated**. Penggantinya adalah `$app/state` yang mengekspos data yang sama persis sebagai objek reaktif berbasis runes — jadi `$page.url` menjadi cukup `page.url` (tanpa `$`). Tapi `$app/stores` belum dihapus dan masih punya satu alasan kuat untuk tetap ada: ia bekerja di proyek **Svelte 4**, sementara `$app/state` butuh Svelte 5 (runes). Jadi modul ini bukan "sampah" — ia jembatan kompatibilitas yang sengaja dipertahankan.
+
+> Catatan dari React/Vue: ini setara `useRouter()`/`usePathname` (Next) atau `useRoute()` (Vue Router/Nuxt), tetapi dibungkus sebagai **store** yang harus kamu "langgani". Mental model store SvelteKit paling dekat dengan `subscribe`-able observable, bukan hook yang dipanggil ulang tiap render.
+
+### Analogi: radio langganan vs jendela
+
+Bayangkan kamu ingin tahu "di halaman mana aplikasi sekarang berada".
+
+- `$app/stores` itu seperti **radio langganan**. Datanya tidak otomatis ada di tanganmu — kamu harus *tune in* (subscribe). Di Svelte, tanda `$` di depan nama store (`$page`) adalah tombol "tune in otomatis": compiler diam-diam memasang `subscribe()` dan `unsubscribe()` untukmu. Tanpa `$`, `page` cuma kotak radio yang belum dinyalakan — kamu memegang store-nya, bukan nilainya.
+- `$app/state` itu seperti **jendela**. Kamu tinggal melihat ke `page.url`; nilainya selalu terbaru karena ia objek reaktif rune. Tidak ada acara "langganan", tidak ada `$`.
+
+Keduanya menampilkan pemandangan yang sama (halaman aktif). Bedanya cuma **cara mengintipnya**: lewat langganan (`$`) atau lewat kaca jendela (langsung).
+
+### Kenapa "store hanya bisa di-subscribe saat init" di server?
+
+Satu keterbatasan khas store ini: di **server**, ketiga store hanya boleh di-subscribe **selama inisialisasi komponen** (saat `<script>` modul dijalankan pertama kali), bukan di dalam callback async yang jalan belakangan. Alasannya: di SSR tidak ada konsep "komponen yang hidup terus" seperti di browser — tiap request punya konteksnya sendiri, dan store di-resolve lewat context Svelte yang hanya valid saat komponen sedang disusun. Kalau kamu `subscribe` di luar fase itu (mis. di dalam `setTimeout` atau `await` yang sudah lewat), SvelteKit tak tahu konteks request mana yang kamu maksud. `$app/state` tidak punya jebakan ini karena ia bukan store.
+
+### `getStores()` — kapan dibutuhkan?
+
+Auto-subscribe `$` hanya bekerja di **template/komponen Svelte**. Kalau kamu menulis helper di file `.js` murni (mis. sebuah store turunan atau util yang harus membaca `page`), kamu tidak punya `$`. Di situlah `getStores()` berguna: ia mengembalikan `{ page, navigating, updated }` sebagai referensi store asli, yang lalu bisa kamu `subscribe` manual atau baca dengan `get()` dari `svelte/store`. Ini juga pola yang dipakai penulis library agar satu kode bisa jalan di Svelte 4 maupun 5. Untuk kode aplikasi Svelte 5 biasa, kamu hampir tidak pernah memanggilnya — cukup `$app/state`.
+
+## 2. Contoh kode
+
+```svelte
+<!-- src/routes/+layout.svelte — $app/stores: akses pakai tanda $ -->
+<script>
+	// Ketiganya adalah STORE. Di template, $-prefix = auto-subscribe.
+	import { page, navigating, updated } from '$app/stores';
+
+	let { children } = $props();
+</script>
+
+<nav>
+	<!-- $page.url.pathname: nilai store, reaktif via auto-subscribe -->
+	<a href="/" aria-current={$page.url.pathname === '/' ? 'page' : undefined}>Home</a>
+	<a href="/blog" aria-current={$page.url.pathname === '/blog' ? 'page' : undefined}>Blog</a>
+</nav>
+
+<!-- $navigating berisi objek Navigation saat pindah halaman, null saat idle -->
+{#if $navigating}
+	<div class="bar">Memuat {$navigating.to?.url.pathname} …</div>
+{/if}
+
+<!-- $updated jadi true kalau SvelteKit mendeteksi versi app baru -->
+{#if $updated}
+	<button onclick={() => location.reload()}>Versi baru — muat ulang</button>
+{/if}
+
+{@render children()}
+```
+
+```svelte
+<!-- src/routes/+page.svelte — apa saja isi $page -->
+<script>
+	import { page } from '$app/stores';
+</script>
+
+<!-- $page mengandung seluruh konteks halaman aktif: -->
+<p>URL: {$page.url.pathname}</p>           <!-- objek URL standar -->
+<p>Param :id = {$page.params.id}</p>        <!-- params dari rute -->
+<p>Route id: {$page.route.id}</p>           <!-- mis. /blog/[slug] -->
+<p>Status: {$page.status}</p>               <!-- 200, 404, ... -->
+<p>Judul dari load: {$page.data.title}</p>  <!-- gabungan semua data load -->
+
+{#if $page.error}
+	<p class="err">{$page.error.message}</p>  <!-- terisi pada halaman error -->
+{/if}
+{#if $page.form}
+	<p>Hasil action terakhir tersedia di $page.form</p>
+{/if}
+```
+
+```js
+// src/lib/track.js — getStores() untuk membaca store DI LUAR template
+import { getStores } from '$app/stores';
+import { get } from 'svelte/store';
+
+// Dipanggil dari komponen saat init (bukan dari callback async yang telat).
+export function currentPath() {
+	// getStores() mengembalikan { page, navigating, updated }.
+	const { page } = getStores();
+	// get(store) membaca snapshot nilai sekali tanpa auto-subscribe.
+	return get(page).url.pathname;
+}
+
+// Atau subscribe manual untuk bereaksi pada perubahan:
+export function watchNavigation(onChange) {
+	const { navigating } = getStores();
+	// subscribe() mengembalikan fungsi unsubscribe — panggil saat cleanup.
+	return navigating.subscribe((nav) => onChange(nav));
+}
+```
+
+```svelte
+<!-- src/routes/settings/+page.svelte — updated.check() untuk cek versi manual -->
+<script>
+	import { updated } from '$app/stores';
+
+	async function cekVersi() {
+		// updated punya method check(): paksa polling versi sekarang juga.
+		// Resolve true kalau ada versi baru. (updated.current padanannya di $app/state.)
+		const adaBaru = await updated.check();
+		if (adaBaru) location.reload();
+	}
+</script>
+
+<button onclick={cekVersi}>Cek pembaruan</button>
+{#if $updated}<span>Versi baru tersedia.</span>{/if}
+```
+
+## 3. Coba sendiri
+
+Modul ini tidak bisa dijalankan di live playground: `$app/stores` adalah **modul virtual milik SvelteKit** yang hanya ada di proyek SvelteKit asli (butuh server/router), bukan paket `svelte/*` yang bisa di-resolve di sandbox. Jadi di sini contoh statis beranotasi: bagaimana satu store yang sama dipakai lewat **auto-subscribe** (`$`) di template versus **subscribe manual** di JavaScript.
+
+```svelte
+<!-- Pola auto-subscribe vs manual untuk store yang SAMA ($page) -->
+<script>
+	import { page } from '$app/stores';
+	import { onDestroy } from 'svelte';
+
+	// (A) Cara biasa di template: cukup $page — compiler urus subscribe/unsubscribe.
+	//     Di bawah, {$page.url.pathname} otomatis ikut berubah saat navigasi.
+
+	// (B) Cara manual (jarang perlu): kalau butuh nilainya di logika JS biasa.
+	//     subscribe() memanggil callback langsung dgn nilai awal, lalu tiap berubah.
+	let pathLog = $state('');
+	const unsub = page.subscribe((p) => {
+		// HATI-HATI: di server, subscribe hanya valid saat init komponen ini.
+		pathLog = p.url.pathname;
+	});
+	// Tanpa $-prefix, KAMU yang wajib unsubscribe agar tak bocor memori.
+	onDestroy(unsub);
+</script>
+
+<!-- (A) auto-subscribe -->
+<p>Path (auto): {$page.url.pathname}</p>
+
+<!-- (B) hasil subscribe manual -->
+<p>Path (manual): {pathLog}</p>
+```
+
+<Callout type="tip">
+Perhatikan bedanya: pada cara (A) Svelte memasang dan melepas langganan untukmu — itulah kerja tanda <code>$</code>. Pada cara (B) kamu memegang store mentahnya, jadi kamu sendiri yang harus memanggil fungsi <code>unsubscribe</code> (di sini lewat <code>onDestroy</code>). Lupa unsubscribe = kebocoran memori. Inilah salah satu alasan <code>$app/state</code> lebih enak: tidak ada langganan untuk dilupakan.
+</Callout>
+
+## 4. Ringkasan API
+
+Modul `$app/stores` mengekspos **3 store** + **1 fungsi**. Semua data di store sama persis dengan padanannya di `$app/state`; yang beda hanya pembungkusnya (store vs rune).
+
+| Ekspor | Tanda tangan / tipe | Isi & kegunaan |
+| --- | --- | --- |
+| `page` | `Readable<Page>` | Store info halaman aktif. Akses `$page` di template. Mengandung `url`, `params`, `route.id`, `status`, `error`, `data` (gabungan semua `load`), `form` (hasil action terakhir), `state`. |
+| `navigating` | `Readable<Navigation \| null>` | Berisi objek `Navigation` (`from`, `to`, `type`, `delta?`, `complete`) **selama** navigasi; `null` saat idle. Akses `$navigating`. Cocok untuk loading bar global. |
+| `updated` | `Readable<boolean> & { check(): Promise<boolean> }` | Mula-mula `false`; jadi `true` saat SvelteKit (lewat polling `version.pollInterval`) mendeteksi versi app baru ter-deploy. `updated.check()` memaksa cek sekarang dan resolve `true` bila ada versi baru. |
+| `getStores()` | `() => { page, navigating, updated }` | Mengembalikan ketiga store sekaligus sebagai referensi mentah. Dipakai untuk membaca store **di luar** template (file `.js`) atau di library lintas-versi, lalu `get()`/`subscribe()` manual. |
+
+Detail bentuk `Page` (isi `$page`):
+
+| Field | Tipe | Keterangan |
+| --- | --- | --- |
+| `url` | `URL` | Objek URL standar halaman aktif (`pathname`, `searchParams`, dst). |
+| `params` | `Record<string, string>` | Parameter rute, mis. `{ slug: 'halo' }` untuk `/blog/[slug]`. |
+| `route` | `{ id: string \| null }` | ID rute, mis. `/blog/[slug]`; `null` di halaman 404. |
+| `status` | `number` | Kode status HTTP saat ini (200, 404, 500, …). |
+| `error` | `App.Error \| null` | Objek error pada halaman error; `null` saat normal. |
+| `data` | `App.PageData & Record<string, any>` | Gabungan hasil **semua** `load` di rantai layout + page. |
+| `form` | `any` | Hasil form action terakhir (lihat `$app/forms`). |
+| `state` | `App.PageState` | Shallow routing state (dari `pushState`/`replaceState` SvelteKit). |
+
+<Callout type="legacy">
+<strong>Status modul ini: deprecated sejak SvelteKit 2.12.</strong> Untuk kode Svelte 5 baru, pakai <code>$app/state</code> dengan API yang nyaris identik tetapi tanpa <code>$</code>. <code>$app/stores</code> tetap dipertahankan untuk proyek <strong>Svelte 4</strong> (yang belum punya runes) dan library yang perlu mendukung kedua versi.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "import { page } from '$app/stores'; $page.url", modern: "import { page } from '$app/state'; page.url", note: 'state = rune, tanpa $ dan tanpa subscribe' },
+	{ legacy: "$navigating", modern: "navigating (dari $app/state)", note: 'akses langsung, null saat idle' },
+	{ legacy: "$updated", modern: "updated.current (dari $app/state)", note: 'cek properti .current' },
+	{ legacy: 'updated.check()', modern: 'updated.check() (dari $app/state)', note: 'method check() tetap ada di kedua modul' },
+	{ legacy: "getStores().page lalu get()/subscribe()", modern: "import { page } from '$app/state'", note: '$app/state bisa dibaca langsung tanpa getStores' }
+]} />
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+Modul ini <strong>legacy</strong>. Aturannya sederhana: proyek <strong>Svelte 5</strong> baru → pakai <code>$app/state</code>. Proyek <strong>Svelte 4</strong> atau library lintas-versi → <code>$app/stores</code> masih sah dan satu-satunya pilihan. Jangan migrasi besar-besaran tanpa alasan; tapi untuk file baru, mulailah dari <code>$app/state</code>.
+</Callout>
+
+<Callout type="pitfall">
+Jangan campur <code>$app/state</code> dan <code>$app/stores</code> tanpa sadar di file yang sama. <code>$app/stores</code> diakses <strong>dengan</strong> <code>$</code> (<code>$page.url</code>), sedangkan <code>$app/state</code> <strong>tanpa</strong> <code>$</code> (<code>page.url</code>). Meng-import <code>page</code> dari <code>$app/state</code> lalu menulis <code>$page</code> akan membuat Svelte mengira itu store dan error. Pilih satu modul per file dan konsisten.
+</Callout>
+
+<Callout type="warning">
+Di <strong>server</strong>, store dari <code>$app/stores</code> hanya boleh di-subscribe <strong>saat inisialisasi komponen</strong>. Membaca <code>$page</code> di dalam callback yang jalan belakangan (mis. setelah <code>await</code> atau di <code>setTimeout</code>) bisa gagal karena konteks request sudah lewat. Kalau butuh nilai di logika async, baca snapshot-nya lebih dulu saat init, atau pindah ke <code>$app/state</code> yang tak punya batasan ini.
+</Callout>
+
+<Callout type="tip">
+Kalau memakai <code>getStores()</code> atau <code>subscribe()</code> manual, kamu wajib memanggil fungsi <strong>unsubscribe</strong> yang dikembalikan (mis. di <code>onDestroy</code>). Lupa = kebocoran memori. Untuk sekadar membaca nilai sekali di JS, <code>get(page)</code> dari <code>svelte/store</code> lebih aman karena tidak meninggalkan langganan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-stores" label="SvelteKit — $app/stores (page, navigating, updated, getStores)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-state" label="SvelteKit — $app/state (pengganti modern berbasis runes)" />

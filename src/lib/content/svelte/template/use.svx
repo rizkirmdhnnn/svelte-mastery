@@ -1,0 +1,340 @@
+---
+title: use:
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 14
+status: stable
+description: Menjalankan logika DOM imperatif yang reusable lewat use:action — parameter reaktif, cleanup, dan kapan beralih ke attachments.
+docs: https://svelte.dev/docs/svelte/use
+keywords: [use, action, directive, DOM, clickOutside, attachment]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`use:` adalah directive untuk memasang **action** — sebuah fungsi yang dijalankan pada satu node DOM tepat saat node itu lahir di halaman. Bentuknya: `use:namaFungsi` atau `use:namaFungsi={argumen}`.
+
+Analoginya begini: bayangkan setiap elemen di template-mu adalah ruangan kosong yang baru dibangun. Sebagian besar perabotannya bisa kamu pasang secara deklaratif (warna dinding lewat `style:`, label lewat teks). Tapi ada perabotan yang butuh **teknisi datang langsung ke ruangan** dengan obeng di tangan: memasang AC pihak ketiga, menyetel sensor gerak, mengarahkan lampu sorot. `use:` adalah cara kamu memanggil teknisi itu. Svelte menyerahkan node DOM mentahnya ("ini ruangannya"), teknisi melakukan pekerjaan imperatif, lalu meninggalkan catatan: "kalau ruangan ini dibongkar, copot dulu AC-nya" (cleanup).
+
+Kenapa kita butuh ini sama sekali? Karena tidak semua hal bisa diekspresikan secara deklaratif. Beberapa pekerjaan **hanya** punya API imperatif yang minta node DOM asli:
+
+- Integrasi library pihak ketiga (tooltip, chart, date-picker, drag-and-drop, peta).
+- Manajemen fokus (`node.focus()`).
+- Mendeteksi klik di luar elemen (pasang listener di `document`).
+- `IntersectionObserver`, `ResizeObserver`, animasi manual.
+
+Di React kamu menyelesaikan ini dengan `useRef` + `useEffect`; di Vue dengan custom directive (`v-tooltip`) atau template ref + `onMounted`. Action adalah versi Svelte-nya — dengan satu kelebihan penting: **logika setup + teardown terbungkus rapi dalam satu fungsi bernama yang bisa kamu `use:` di mana saja**. Itulah nilai jualnya: reusable dan terenkapsulasi. Dibanding `bind:this` + `$effect` langsung di komponen (yang juga bisa, tapi nempel di satu tempat), action memisahkan perilaku DOM menjadi unit mandiri yang bisa dibagikan antar komponen, bahkan dipublish sebagai library.
+
+### Tiga aturan main yang wajib diingat
+
+1. **Action berjalan SEKALI saat mount** — dan **tidak** dijalankan saat server-side rendering (SSR). Ia murni urusan client.
+2. **Action tidak otomatis jalan ulang saat argumennya berubah.** Fungsi `tooltip(node, teks)` dipanggil sekali dengan `teks` awal. Kalau `teks` berubah, fungsi itu **tidak** dipanggil lagi. Ini sumber kebingungan nomor satu. Solusinya ada di Bagian 2.
+3. **Cleanup itu wajib kalau kamu memasang sesuatu yang persisten** (listener, timer, instance library). Cara modern Svelte 5: pakai `$effect` di dalam action dan kembalikan fungsi teardown-nya.
+
+<Callout type="tip">
+Mau pakai action, atau langsung `bind:this` + `$effect` di komponen? Patokan sederhana: kalau logika DOM-nya cuma dipakai di satu komponen dan tidak butuh parameter, `bind:this` sudah cukup. Begitu perilaku itu ingin kamu pakai ulang di banyak tempat (mis. `clickOutside`, `autofocus`, `tooltip`), bungkus jadi action — itulah alasan action ada.
+</Callout>
+
+## 2. Contoh kode
+
+### Action paling sederhana: autofocus (tanpa parameter)
+
+```svelte
+<script>
+	// Action = fungsi yang menerima node DOM sebagai argumen pertama.
+	// Bungkus efeknya dengan $effect supaya teardown tertangani rapi.
+	function autofocus(node) {
+		$effect(() => {
+			node.focus();
+			// (Tidak ada yang perlu di-cleanup di sini, jadi tak perlu return.)
+		});
+	}
+</script>
+
+<!-- use:autofocus -> jalankan action ini pada <input> saat ia mount -->
+<input use:autofocus placeholder="otomatis ter-fokus saat muncul" />
+```
+
+### Action dengan parameter REAKTIF: tooltip
+
+Ini bagian terpenting. Karena action hanya dipanggil sekali, kalau kamu butuh action **bereaksi** terhadap nilai yang berubah, jangan oper nilainya mentah — oper sebuah **getter** (fungsi panah), lalu **baca getter itu di dalam `$effect`**. Karena `$effect` melacak state yang dibaca di dalamnya, ia akan jalan ulang setiap kali state berubah.
+
+```svelte
+<script>
+	import tippy from 'tippy.js'; // contoh library tooltip pihak ketiga
+
+	let pesan = $state('Halo!');
+
+	// Argumen kedua 'getContent' adalah FUNGSI, bukan nilai.
+	function tooltip(node, getContent) {
+		$effect(() => {
+			// Memanggil getContent() = membaca state reaktif di dalam $effect.
+			// Maka tiap kali 'pesan' berubah, $effect ini jalan ulang.
+			const instance = tippy(node, { content: getContent() });
+
+			// Fungsi yang di-return = teardown. Dipanggil saat $effect
+			// jalan ulang (sebelum re-run) dan saat node dilepas dari DOM.
+			return () => instance.destroy();
+		});
+	}
+</script>
+
+<input bind:value={pesan} />
+
+<!-- Oper getter () => pesan, BUKAN pesan langsung -->
+<button use:tooltip={() => pesan}>Arahkan kursor ke sini</button>
+```
+
+<Callout type="warning">
+Kalau kamu menulis <code>use:tooltip=&#123;pesan&#125;</code> (nilai mentah), tooltip akan menampilkan teks <strong>awal</strong> selamanya dan tidak pernah update — karena action cuma dipanggil sekali. Pola getter <code>() =&gt; pesan</code> + baca di dalam <code>$effect</code> adalah cara modern Svelte 5 untuk membuat parameter action jadi reaktif.
+</Callout>
+
+### Action dengan callback: clickOutside
+
+Pola sangat umum: tutup dropdown/modal ketika user mengklik di luar. Action memasang listener di `document` dan memanggil callback yang kamu oper.
+
+```svelte
+<script>
+	let terbuka = $state(false);
+
+	// Argumen kedua = callback yang dipanggil saat klik terjadi di LUAR node.
+	function clickOutside(node, onOutside) {
+		$effect(() => {
+			function handle(event) {
+				// node.contains() -> true kalau klik masih di dalam elemen
+				if (!node.contains(event.target)) {
+					onOutside();
+				}
+			}
+			// 'true' = fase capture, supaya jalan sebelum handler lain
+			document.addEventListener('click', handle, true);
+
+			// WAJIB cleanup: lepas listener saat node hilang,
+			// kalau tidak listener menumpuk = memory leak.
+			return () => document.removeEventListener('click', handle, true);
+		});
+	}
+</script>
+
+{#if terbuka}
+	<div use:clickOutside={() => (terbuka = false)} class="panel">
+		Klik di mana saja di luar kotak ini untuk menutup.
+	</div>
+{/if}
+
+<button onclick={() => (terbuka = true)}>Buka panel</button>
+```
+
+### Memberi tipe action (TypeScript)
+
+Svelte menyediakan tipe `Action` dan `ActionReturn`. `Action` menerima tiga argumen tipe opsional: **tipe node**, **tipe parameter**, dan **event handler kustom** yang dipancarkan action (mis. `onlongpress`).
+
+```ts
+import type { Action } from 'svelte/action';
+
+// Action<Node, Parameter, Attributes>
+// - Node: jenis elemen (HTMLDivElement, atau Element kalau berlaku untuk semua)
+// - Parameter: tipe argumen kedua
+// - Attributes: event handler kustom -> agar onlongpress dikenali TypeScript
+const longpress: Action<
+	HTMLButtonElement,
+	() => number,
+	{ onlongpress: (e: CustomEvent) => void }
+> = (node, getDuration) => {
+	$effect(() => {
+		// ...pasang listener, return cleanup
+	});
+};
+```
+
+Untuk referensi, inilah bentuk kedua tipe tersebut (disederhanakan):
+
+```ts
+interface ActionReturn<Parameter, Attributes> {
+	update?: (parameter: Parameter) => void; // API lama (lihat Bagian 5)
+	destroy?: () => void;                     // API lama
+}
+
+interface Action<Element, Parameter, Attributes> {
+	(node: Element, parameter: Parameter): void | ActionReturn<Parameter, Attributes>;
+}
+```
+
+## 3. Coba sendiri
+
+Dropdown menu di bawah memakai **dua action sekaligus**: `clickOutside` (menutup menu saat kamu klik di luar) dan `autofocus` (langsung fokus ke input pencarian saat menu terbuka). Buka menunya, lalu klik di area kosong untuk melihat `clickOutside` bekerja.
+
+<Playground code={`<script>
+  let open = $state(false);
+  let picked = $state('belum ada');
+  let items = ['Nasi goreng', 'Sate ayam', 'Bakso', 'Mie ayam'];
+  // Action 1: fokus otomatis saat elemen muncul
+  function autofocus(node) {
+    $effect(() => {
+      node.focus();
+    });
+  }
+  // Action 2: panggil callback saat klik di LUAR node
+  function clickOutside(node, onOutside) {
+    $effect(() => {
+      function handle(event) {
+        if (open && !node.contains(event.target)) {
+          onOutside();
+        }
+      }
+      document.addEventListener('click', handle, true);
+      // cleanup: lepas listener saat node hilang
+      return () => document.removeEventListener('click', handle, true);
+    });
+  }
+  function choose(item) {
+    picked = item;
+    open = false;
+  }
+</script>
+<p>Dipilih: <strong>{picked}</strong></p>
+<div class="menu" use:clickOutside={() => (open = false)}>
+  <button onclick={() => (open = !open)}>
+    {open ? 'Tutup' : 'Buka'} menu
+  </button>
+  {#if open}
+    <div class="panel">
+      <input use:autofocus placeholder="cari menu..." />
+      {#each items as item}
+        <button class="item" onclick={() => choose(item)}>{item}</button>
+      {/each}
+    </div>
+  {/if}
+</div>
+<style>
+  .menu { position: relative; display: inline-block; }
+  .panel {
+    position: absolute;
+    margin-top: 4px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 170px;
+  }
+  .item { text-align: left; }
+</style>`} />
+
+<Callout type="tip">
+Perhatikan dua hal di playground: (1) <code>clickOutside</code> menerima <code>() =&gt; (open = false)</code> sebagai callback — action memanggilnya saat klik luar terdeteksi. (2) <code>autofocus</code> hanya berjalan saat input benar-benar mount (yaitu saat <code>open</code> jadi <code>true</code>), karena <code>&#123;#if&#125;</code> baru menanam node-nya saat itu.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Action longpress dengan durasi reaktif">
+Buat action `longpress` yang memancarkan event kustom `longpress` ketika tombol ditekan dan ditahan selama durasi tertentu. Syarat:
+
+1. Action menerima parameter berupa **getter** durasi (mis. `() => duration`) agar bisa berubah secara reaktif.
+2. Pasang listener `pointerdown` (mulai timer), serta `pointerup` dan `pointerleave` (batalkan timer). Saat timer selesai, panggil `node.dispatchEvent(new CustomEvent('longpress'))`.
+3. **Cleanup** semua listener dan timer saat node dilepas (`return` dari `$effect`).
+4. Di markup, dengarkan dengan atribut `onlongpress` dan tambah sebuah penghitung. Sediakan slider `bind:value` untuk mengubah durasi.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let duration = $state(500);
+	let count = $state(0);
+
+	function longpress(node, getDuration) {
+		$effect(() => {
+			let timer;
+
+			function start() {
+				// getDuration() dibaca saat tekan -> selalu nilai terbaru
+				timer = setTimeout(() => {
+					node.dispatchEvent(new CustomEvent('longpress'));
+				}, getDuration());
+			}
+			function cancel() {
+				clearTimeout(timer);
+			}
+
+			node.addEventListener('pointerdown', start);
+			node.addEventListener('pointerup', cancel);
+			node.addEventListener('pointerleave', cancel);
+
+			// cleanup: lepas listener + bersihkan timer
+			return () => {
+				clearTimeout(timer);
+				node.removeEventListener('pointerdown', start);
+				node.removeEventListener('pointerup', cancel);
+				node.removeEventListener('pointerleave', cancel);
+			};
+		});
+	}
+</script>
+
+<label>
+	Durasi: {duration}ms
+	<input type="range" min={200} max={2000} step={100} bind:value={duration} />
+</label>
+
+<!-- oper getter () => duration, dengarkan event kustom via onlongpress -->
+<button
+	use:longpress={() => duration}
+	onlongpress={() => count++}
+>
+	Tahan saya ({count})
+</button>
+```
+
+Inti pelajaran: karena `getDuration` adalah fungsi yang dipanggil **saat `pointerdown`**, kamu selalu memakai durasi terbaru tanpa perlu me-restart action. Dan `onlongpress` bekerja karena Svelte 5 memasang atribut `on*` lewat `addEventListener`, jadi ia menangkap `CustomEvent` yang kamu pancarkan sendiri.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Argumen mentah tidak reaktif.</strong> <code>use:tooltip=&#123;pesan&#125;</code> hanya "memotret" nilai <code>pesan</code> saat mount. Kalau <code>pesan</code> berubah belakangan, action tidak tahu. Oper getter <code>() =&gt; pesan</code> dan baca di dalam <code>$effect</code> supaya reaktif. Ini perbedaan mental terbesar dibanding prop biasa.
+</Callout>
+
+<Callout type="warning">
+<strong>Selalu cleanup yang persisten.</strong> Kalau action memasang listener di <code>document</code>/<code>window</code>, timer, atau membuat instance library, kembalikan fungsi teardown dari <code>$effect</code>. Lupa cleanup = listener menumpuk dan memory leak, terutama untuk elemen yang sering muncul-hilang di dalam <code>&#123;#if&#125;</code> atau <code>&#123;#each&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+<strong>Action tidak jalan saat SSR.</strong> Karena membutuhkan node DOM asli, action di-skip di server dan baru hidup di browser. Jangan menaruh logika yang penting bagi tampilan awal (first paint) di dalam action — pakai untuk peningkatan (enhancement) sesudah hydrate.
+</Callout>
+
+<Callout type="legacy">
+<strong>API lama: <code>return &#123; update, destroy &#125;</code>.</strong> Sebelum ada rune <code>$effect</code>, action mengembalikan objek dengan metode <code>update(param)</code> (dipanggil saat argumen berubah) dan <code>destroy()</code> (dipanggil saat node dilepas). Pola ini <strong>masih valid</strong> dan banyak dipakai library lama, tapi untuk kode Svelte 5 baru, gaya <code>$effect</code> lebih disarankan karena cleanup dan reaktivitasnya menyatu.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'return { destroy() {…} }', modern: '$effect(() => { …; return () => {…} })', note: 'cleanup lewat return $effect' },
+	{ legacy: 'return { update(param) {…} }', modern: 'baca getter di dalam $effect', note: 'use:act={() => value}' },
+	{ legacy: 'use:action (Svelte 4 & 5)', modern: '{@attach fn} (Svelte 5.29+)', note: 'attachment lebih komposabel' }
+]} />
+
+### Action vs `{@attach}` — mana yang dipakai?
+
+Mulai Svelte 5.29, hadir **attachments** (`{@attach ...}`) sebagai pengganti yang lebih modern dan fleksibel. Perbandingan jujurnya:
+
+- **Action (`use:`)**: stabil, dikenal luas, jadi standar de-facto banyak library Svelte. Kekurangan: argumen tidak reaktif tanpa trik getter, tidak bisa di-spread/di-oper sebagai prop dengan gampang, dan punya "ekor" API lama (`update`/`destroy`).
+- **Attachment (`{@attach}`)**: lebih komposabel — bisa dibuat inline, dioper lewat props, dan ditaruh banyak sekaligus. Reaktivitas terhadap state terasa lebih alami karena memang dibangun di atas `$effect`. Dokumentasi resmi kini menyarankan attachment untuk kode baru.
+
+Patokan praktis: untuk **kode baru** di Svelte 5.29+, pertimbangkan `{@attach}` lebih dulu. Tetap pakai `use:` kalau kamu mendukung versi lebih lama, atau berinteraksi dengan library yang memang mengekspor action.
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/use" label="use: (actions) — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/@attach" label="&#123;@attach&#125; — penerus action yang lebih komposabel" />

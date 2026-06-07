@@ -1,0 +1,282 @@
+---
+title: eslint
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 3
+status: stable
+description: Add-on sv add eslint — memasang dan mengonfigurasi ESLint (flat config) untuk Svelte 5 dan TypeScript, berdamai dengan Prettier, plus script lint siap pakai.
+docs: https://svelte.dev/docs/cli/eslint
+keywords: [eslint, sv add, eslint-plugin-svelte, flat config, prettier, lint]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+ESLint adalah **linter**: alat yang membaca kodemu dan menandai masalah — variabel yang tak terpakai, `await` yang lupa ditulis, pemakaian API yang berbahaya, atau pola yang gampang jadi bug. Kalau kamu datang dari React (`eslint-plugin-react`, `eslint-plugin-react-hooks`) atau Vue (`eslint-plugin-vue`), kamu sudah kenal idenya. Di dunia Svelte, padanannya adalah **`eslint-plugin-svelte`**. Add-on `sv add eslint` adalah cara resmi memasang dan **mengkonfigurasinya dengan benar** dalam satu perintah, sehingga kamu tidak perlu menyusun config dari nol dan menebak-nebak plugin mana yang cocok.
+
+### Analogi: korektor naskah vs penata letak
+
+Bayangkan kamu menerbitkan sebuah buku. Ada dua orang berbeda yang menyentuh naskahmu:
+
+- **Korektor (proofreader)** memeriksa **isi**: kalimat ambigu, fakta keliru, logika yang janggal, kata yang dipakai tapi tak pernah didefinisikan. Dia tidak peduli apakah paragrafmu rata kiri atau ada dua spasi setelah titik.
+- **Penata letak (typesetter)** mengurus **bentuk**: lebar margin, jarak baris, di mana paragraf harus pindah baris. Dia tidak peduli isinya benar atau salah.
+
+**ESLint adalah korektor** — ia mengejar *correctness* dan *kualitas kode*. **Prettier adalah penata letak** — ia mengurus *formatting*. Dua pekerjaan yang berbeda. Masalah muncul kalau keduanya berebut tugas yang sama (mis. ESLint memaksa tanda titik koma sementara Prettier punya aturan sendiri) — naskahmu jadi rebutan dan terus berubah-ubah. Karena itu add-on ini memasang sebuah "perjanjian damai" yang akan kita bahas di bawah.
+
+### Apa yang dilakukan `sv add eslint`
+
+Saat dijalankan (`npx sv add eslint`), add-on ini melakukan beberapa hal sekaligus:
+
+1. **Memasang dependensi**: `eslint` itu sendiri, `eslint-plugin-svelte`, plus `globals` dan `@eslint/js`. Kalau proyekmu pakai TypeScript, ia juga menambahkan `typescript-eslint`. Kalau Prettier sudah terpasang, ia menambahkan `eslint-config-prettier`.
+2. **Membuat `eslint.config.js`** di root proyek — file konfigurasi gaya **flat config** (format baru ESLint 9+), bukan `.eslintrc` lama.
+3. **Memperbarui `.vscode/extensions.json`** agar VS Code merekomendasikan ekstensi ESLint, sehingga rekan setim langsung dapat garis merah di editor.
+4. **Menambahkan/menyesuaikan script `lint`** di `package.json`.
+
+Yang penting: add-on ini **sadar konteks**. Ia mendeteksi apakah kamu memakai TypeScript dan/atau Prettier, lalu menyusun config yang sesuai — kamu tidak perlu memberi tahu apa-apa.
+
+### Kenapa butuh `eslint-plugin-svelte`
+
+ESLint murni hanya paham JavaScript/TypeScript biasa. Ia **tidak bisa membaca file `.svelte`** — markup, blok `{#each}`, binding, semua itu sintaks asing baginya. `eslint-plugin-svelte` membawa dua hal: sebuah **parser** (`svelte-eslint-parser`) yang mengubah file `.svelte` jadi pohon yang dimengerti ESLint, dan sekumpulan **aturan khusus Svelte** (mis. memperingatkan binding yang salah, atau pemakaian reactive yang keliru). Persis seperti `eslint-plugin-vue` yang mengajari ESLint membaca `<template>` Vue.
+
+### Flat config: kenapa `eslint.config.js`, bukan `.eslintrc`
+
+Sejak ESLint 9, format konfigurasi default berubah dari `.eslintrc.*` (objek dengan `extends`, `overrides`, dst.) menjadi **flat config**: satu file `eslint.config.js` yang meng-export sebuah **array** objek konfigurasi. Konsepnya jauh lebih sederhana dan lebih mudah dinalar:
+
+- Tiap objek dalam array adalah satu "lapisan" aturan.
+- **Urutan itu penting** — lapisan yang lebih belakang menimpa yang di depan. Inilah kenapa konfigurasi Prettier diletakkan **paling akhir**: ia mematikan aturan format dari lapisan-lapisan sebelumnya.
+- Tidak ada lagi `extends` ajaib; kamu cukup `import` preset lalu menyebarkannya (`...`) ke dalam array.
+
+### "Perjanjian damai" dengan Prettier
+
+Kalau Prettier ada, add-on menambahkan **dua** hal di ujung config: `eslint-config-prettier` (di-import sebagai `prettier`) dan `svelte.configs.prettier`. Keduanya bukan menambah aturan, melainkan **mematikan** aturan-aturan format milik ESLint dan eslint-plugin-svelte yang bisa bentrok dengan Prettier. Hasilnya: ESLint berhenti mengomentari spasi/indentasi/koma, dan menyerahkan seluruh urusan bentuk ke Prettier. Korektor dan penata letak berhenti berebut. Karena prinsip "yang belakang menimpa", dua lapisan ini wajib berada **di akhir** array.
+
+## 2. Contoh kode
+
+Berikut isi `eslint.config.js` yang dihasilkan untuk proyek **TypeScript + Prettier** (varian paling umum), dengan anotasi tiap bagian:
+
+```js
+// eslint.config.js — flat config (ESLint 9+). Di-export sebagai ARRAY config.
+import prettier from 'eslint-config-prettier';      // mematikan aturan format ESLint
+import js from '@eslint/js';                          // preset aturan dasar JavaScript
+import { includeIgnoreFile } from '@eslint/compat';   // pakai .gitignore sbg daftar ignore
+import svelte from 'eslint-plugin-svelte';            // parser + aturan khusus Svelte
+import globals from 'globals';                         // daftar variabel global (browser/node)
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript-eslint';                    // parser + aturan TypeScript
+import svelteConfig from './svelte.config.js';         // agar parser tahu preprocessor-mu
+
+const gitignorePath = fileURLToPath(new URL('./.gitignore', import.meta.url));
+
+// ts.config() = helper untuk menyusun array config dengan tipe yang benar.
+export default ts.config(
+	// 1) Apa pun yang di-ignore .gitignore juga di-ignore ESLint (build/, .svelte-kit/, dst.)
+	includeIgnoreFile(gitignorePath),
+
+	// 2) Aturan dasar yang direkomendasikan, dari paling umum ke paling spesifik:
+	js.configs.recommended,        // JavaScript
+	...ts.configs.recommended,     // TypeScript (disebar dgn ... karena isinya array)
+	...svelte.configs.recommended, // Svelte
+
+	// 3) PERJANJIAN DAMAI — wajib di akhir agar menimpa aturan format di atas:
+	prettier,                      // matikan aturan format JS/TS yg bentrok dgn Prettier
+	...svelte.configs.prettier,    // matikan aturan format Svelte yg bentrok dgn Prettier
+
+	// 4) Variabel global yang dianggap "ada" (window, process, dll.)
+	{
+		languageOptions: {
+			globals: { ...globals.browser, ...globals.node }
+		},
+		rules: {
+			// Di proyek TypeScript, no-undef dimatikan: pengecekan "variabel tak
+			// didefinisikan" sudah dilakukan TypeScript dengan lebih akurat.
+			'no-undef': 'off'
+		}
+	},
+
+	// 5) Khusus file Svelte: beri tahu parser cara membaca <script lang="ts"> di .svelte
+	{
+		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
+		languageOptions: {
+			parserOptions: {
+				projectService: true,        // aktifkan lint "type-aware"
+				extraFileExtensions: ['.svelte'],
+				parser: ts.parser,           // pakai parser TS di dalam blok <script>
+				svelteConfig                 // hormati preprocessor dari svelte.config.js
+			}
+		}
+	}
+);
+```
+
+Script yang ditambahkan/diperbarui di `package.json`. Jika Prettier ada, script `lint` menjalankan keduanya (cek format **dan** lint):
+
+```json
+{
+	"scripts": {
+		"format": "prettier --write .",
+		"lint": "prettier --check . && eslint ."
+	}
+}
+```
+
+Catatan: kalau Prettier **tidak** terpasang, script `lint` cukup berisi `"eslint ."`. Bagian `prettier --check . &&` hanya muncul ketika kedua add-on ada — inilah bukti add-on saling sadar satu sama lain.
+
+Untuk proyek **tanpa TypeScript**, config-nya sedikit berbeda: tidak ada `typescript-eslint`, dan ia memakai helper `defineConfig` dari `eslint/config` alih-alih `ts.config()`. Bentuk array dan prinsip urutannya tetap sama.
+
+## 3. Coba sendiri
+
+Karena ESLint berjalan di terminal (bukan di browser), tidak ada playground live. Sebagai gantinya, ikuti **skenario nyata** beranotasi: dari memasang sampai memperbaiki error pertama.
+
+```bash
+# Langkah 1 — pasang add-on. (Pastikan kamu sudah punya Prettier kalau mau
+# integrasinya; urutan tidak masalah, sv akan menyesuaikan config.)
+npx sv add eslint
+
+# Yang terjadi:
+#   - install: eslint, eslint-plugin-svelte, typescript-eslint, globals, @eslint/js
+#              (+ eslint-config-prettier kalau Prettier terdeteksi)
+#   - tulis  : eslint.config.js
+#   - update : .vscode/extensions.json, script "lint" di package.json
+```
+
+Misalkan kita punya komponen Svelte 5 dengan sebuah masalah kecil — sebuah variabel `$state` yang dibuat tapi tidak pernah dipakai:
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script>
+	let count = $state(0);
+	let unused = $state('halo'); // <- dibuat tapi tak pernah dirender/dipakai
+</script>
+
+<button onclick={() => count++}>Klik: {count}</button>
+```
+
+Jalankan lint, dan ESLint akan menandai `unused`:
+
+```bash
+npm run lint
+
+# Output kira-kira:
+# /src/routes/+page.svelte
+#   3:6  warning  'unused' is assigned a value but never used  no-unused-vars
+```
+
+Banyak masalah bisa diperbaiki otomatis. ESLint punya flag `--fix` untuk aturan yang "auto-fixable" (mis. mengurutkan atribut, menghapus impor tak terpakai bila plugin-nya mendukung):
+
+```bash
+# Perbaiki yang bisa diperbaiki otomatis; sisanya kamu betulkan manual.
+npx eslint . --fix
+
+# Untuk variabel tak terpakai seperti 'unused', ESLint TIDAK menghapusnya sendiri
+# (menghapus kode itu keputusan kamu) — jadi hapus baris itu secara manual.
+```
+
+Setelah `unused` dihapus, `npm run lint` lolos bersih. Di editor (VS Code dengan ekstensi ESLint yang tadi direkomendasikan lewat `extensions.json`), peringatan yang sama muncul sebagai garis bergelombang **saat kamu mengetik** — jadi kamu jarang perlu menjalankan perintah lint secara manual.
+
+## 4. Latihan
+
+<Exercise title="Tambah aturan kustom + ignore tanpa merusak perjanjian Prettier">
+Kamu ingin menyesuaikan `eslint.config.js` hasil generate tadi dengan tiga hal:
+
+1. Jadikan `no-console` hanya **warning** (bukan error), supaya `console.log` saat debugging tidak menggagalkan lint.
+2. Izinkan argumen fungsi yang diawali garis bawah (mis. `_event`) tanpa diprotes aturan unused-vars.
+3. Tambahkan folder `coverage/` ke daftar yang di-ignore ESLint.
+
+Pertanyaan kuncinya: **di posisi mana** blok-blok ini harus diletakkan dalam array config, dan kenapa posisi itu penting?
+
+{#snippet solution()}
+
+```js
+// eslint.config.js (potongan) — perhatikan URUTAN penempatan.
+export default ts.config(
+	includeIgnoreFile(gitignorePath),
+	js.configs.recommended,
+	...ts.configs.recommended,
+	...svelte.configs.recommended,
+
+	// Perjanjian damai Prettier tetap di sini (mematikan aturan format):
+	prettier,
+	...svelte.configs.prettier,
+
+	// 1 & 2) Aturan kustom HARUS diletakkan SETELAH prettier.
+	// Kalau ditaruh sebelum prettier, lapisan prettier bisa menimpa/mematikannya.
+	// Karena ini bukan aturan format, ia aman berada di belakang.
+	{
+		rules: {
+			'no-console': 'warn',
+			'@typescript-eslint/no-unused-vars': [
+				'warn',
+				{ argsIgnorePattern: '^_' } // argumen diawali _ diabaikan
+			]
+		}
+	},
+
+	// 3) Objek yang HANYA berisi 'ignores' = ignore global.
+	// Setara menambah baris ke .gitignore, tapi khusus untuk ESLint.
+	{
+		ignores: ['coverage/']
+	},
+
+	// Blok parserOptions khusus .svelte tetap di paling akhir:
+	{
+		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
+		languageOptions: {
+			parserOptions: {
+				projectService: true,
+				extraFileExtensions: ['.svelte'],
+				parser: ts.parser,
+				svelteConfig
+			}
+		}
+	}
+);
+```
+
+**Kenapa urutan penting:** flat config berjalan dari atas ke bawah, dan lapisan belakang menimpa lapisan depan. `prettier` dan `svelte.configs.prettier` bertugas *mematikan* aturan format. Kalau aturan kustommu (yang bukan format) berada **sebelum** keduanya, itu tidak masalah untuk `no-console`/`no-unused-vars` karena bukan aturan format — tapi sebagai kebiasaan aman, taruh semua override kustommu **setelah** blok Prettier. Dengan begitu kamu tidak pernah perlu khawatir override-mu diam-diam dimatikan, apa pun jenis aturannya.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+**Urutan di flat config menentukan segalanya.** Letakkan `prettier` dan `...svelte.configs.prettier` **paling akhir** (sebelum blok `files` khusus `.svelte` boleh, tapi setelah semua preset aturan). Kalau kamu menaruh preset yang berisi aturan format *setelah* Prettier, aturan format itu hidup lagi dan kamu kembali ke "korektor vs penata letak" yang berebut — Prettier merapikan, ESLint mengeluh, berulang tanpa henti.
+</Callout>
+
+<Callout type="warning">
+**Flat config butuh ESLint 9+ dan tidak membaca `.eslintrc`.** Kalau proyek lamamu masih punya `.eslintrc.cjs`, ESLint versi baru akan mengabaikannya dan hanya memakai `eslint.config.js`. Jangan biarkan keduanya ada bersamaan — itu sumber kebingungan "kok aturan saya tidak jalan". Hapus file `.eslintrc.*` setelah migrasi.
+</Callout>
+
+<Callout type="tip">
+**ESLint bukan pengganti type-checking.** Linter mengejar pola & kualitas; ia tidak mengecek seluruh tipe seperti `tsc`. Di proyek Svelte, tetap jalankan `svelte-check` (lewat `npm run check`) untuk memvalidasi tipe di dalam markup `.svelte`. Pasangan idealnya: `lint` (ESLint + Prettier) **dan** `check` (svelte-check), keduanya di CI.
+</Callout>
+
+<Callout type="tip">
+**Jangan menambahkan aturan format ke ESLint.** Godaan umum: menyalakan aturan seperti `indent` atau `quotes` di ESLint. Jangan — itu tugas Prettier, dan kamu baru saja memasang `eslint-config-prettier` untuk mematikannya. Biarkan Prettier yang mengurus bentuk; pakai ESLint hanya untuk hal yang Prettier tidak bisa lihat (logika, pola, API berbahaya).
+</Callout>
+
+<Callout type="legacy">
+Konfigurasi gaya lama (`.eslintrc.json` / `.eslintrc.cjs` dengan `extends`, `parserOptions`, `overrides`) adalah dunia ESLint 8 ke bawah. `sv add eslint` selalu menghasilkan **flat config** modern. Kalau menemukan tutorial yang menyuruh `npm i eslint-plugin-svelte3` atau menulis `extends: ['plugin:svelte/recommended']`, itu sudah usang — `svelte3` sudah pensiun, diganti `eslint-plugin-svelte` (tanpa angka) dengan flat config.
+</Callout>
+
+<LegacyVsModern legacyLabel="ESLint lama (8.x)" modernLabel="Flat config (sv add eslint)" rows={[
+	{ legacy: '.eslintrc.cjs / .eslintrc.json', modern: 'eslint.config.js', note: 'Satu file flat config, di-export sebagai array.' },
+	{ legacy: "extends: ['plugin:svelte/recommended']", modern: '...svelte.configs.recommended', note: 'Import preset lalu sebar dengan ... ke array.' },
+	{ legacy: 'eslint-plugin-svelte3', modern: 'eslint-plugin-svelte', note: 'Plugin svelte3 sudah pensiun.' },
+	{ legacy: 'eslint-config-prettier di "extends"', modern: 'prettier diletakkan paling akhir di array', note: 'Urutan menentukan siapa menimpa siapa.' },
+	{ legacy: 'overrides: [{ files: ["*.svelte"] }]', modern: "{ files: ['**/*.svelte'], languageOptions: {...} }", note: 'Override jadi objek biasa dalam array.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/eslint" label="sv add eslint — referensi add-on resmi" />
+
+<DocsLink href="https://github.com/sveltejs/eslint-plugin-svelte" label="eslint-plugin-svelte — daftar aturan lengkap" />

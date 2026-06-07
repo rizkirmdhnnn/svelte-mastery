@@ -1,0 +1,372 @@
+---
+title: Types
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 25
+status: reference
+description: Dua sistem tipe SvelteKit — namespace App di app.d.ts yang kamu isi sendiri (Error, Locals, PageData, PageState, Platform) dan tipe ./$types yang di-generate otomatis (PageLoad, PageServerLoad, Actions, RequestHandler).
+docs: https://svelte.dev/docs/kit/types
+keywords: [app.d.ts, Locals, $types, PageServerLoad, Actions, Platform]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+SvelteKit dibangun di atas TypeScript, dan keamanan tipe yang kamu rasakan saat menulis `load`, `event.locals`, atau form action bukan kebetulan — ia berasal dari **dua sistem tipe yang saling melengkapi**. Memahami batas antara keduanya menghilangkan 90% kebingungan soal "tipe ini datang dari mana".
+
+Cara paling cepat memegangnya:
+
+- **Namespace `App`** (di `src/app.d.ts`) — **kamu yang menulis, SvelteKit yang membaca**. Ini sekumpulan interface kosong yang kamu isi untuk memberi tahu SvelteKit bentuk hal-hal milikmu sendiri: bentuk objek error, isi `event.locals`, data global halaman, dst. Kamu menulisnya **sekali**, dan SvelteKit menyebarkannya ke seluruh app.
+- **Tipe `./$types`** (di-generate) — **SvelteKit yang menulis, kamu yang membaca**. SvelteKit membaca struktur folder `src/routes` lalu **mencetak** tipe yang pas untuk tiap file: `PageLoad`, `PageServerLoad`, `Actions`, `RequestHandler`, params route, dan seterusnya. Kamu tinggal meng-`import` dan memakainya.
+
+Keduanya bertemu. Saat kamu mengetik `load` dengan `PageServerLoad` (dari `./$types`), parameter `event` di dalamnya sudah tahu `event.locals` berbentuk apa — karena bentuk itu kamu tulis di `App.Locals`. Jadi `App` (yang kamu isi) "mengisi" detail yang dipakai oleh `$types` (yang di-generate).
+
+### Analogi: kontrak induk vs. name-tag otomatis
+
+Bayangkan sebuah perusahaan besar dengan banyak cabang.
+
+**Namespace `App` adalah kontrak induk yang kamu tandatangani sekali di kantor pusat.** Di kontrak itu kamu menulis aturan main: "Setiap karyawan (`Locals`) punya field `user`", "Setiap laporan error (`Error`) wajib punya `message` dan boleh punya `code`". Begitu kontrak ditandatangani, **semua cabang** (server hooks, server `load`, `+server.js`, form actions) otomatis tunduk pada aturan itu tanpa perlu kamu jelaskan ulang. Inilah yang TypeScript sebut **declaration merging** — kamu "menempel" isi ke interface yang sudah disediakan SvelteKit.
+
+**Tipe `./$types` adalah name-tag yang dicetak otomatis tiap kali kamu masuk ke sebuah ruangan.** Saat kamu berada di folder `src/routes/blog/[slug]/`, mesin pencetak melihat ruangan itu punya segmen `[slug]`, lalu mencetak name-tag bertuliskan "params kamu = `{ slug: string }`". Pindah ke `src/routes/produk/[id]/`, name-tag baru tercetak: "params = `{ id: string }`". Kamu tidak pernah menulis name-tag itu sendiri — kamu hanya memakainya (`import`). Begitu kamu rename folder, name-tag-nya ikut berubah otomatis.
+
+Intinya: `App` = aturan yang **kamu** tetapkan untuk seluruh gedung; `./$types` = label yang **SvelteKit** cetak khusus per ruangan.
+
+### Buat yang datang dari React/Vue
+
+- Kalau di Next.js kamu pernah menulis `next-env.d.ts` atau `declare module` untuk memperluas tipe global, **`app.d.ts` adalah tempat serupa di SvelteKit** — tapi terstruktur lewat namespace `App` yang sudah disediakan, bukan augmentasi modul liar.
+- Mengetik `event.locals` mirip mengetik objek `req`/`context` di middleware Express/Next: di Express kamu sering melakukan `declare global { namespace Express { interface Request { user: User } } }`. Pola `App.Locals` SvelteKit adalah versi yang lebih rapi dan resmi dari trik itu.
+- Tipe `./$types` (params, data `load`, props) sebanding dengan **typed routes / typed loaders**: `LoaderFunctionArgs` di React Router/Remix, atau tipe yang di-generate TanStack Router. Bedanya, di SvelteKit ini muncul **otomatis dari konvensi file-based routing** tanpa kamu daftarkan apa pun.
+
+## 2. Ringkasan API
+
+### Namespace `App` (di `src/app.d.ts`)
+
+Semua interface di bawah default-nya kosong (kecuali `Error`). Kamu **memperluasnya** lewat declaration merging. Yang tidak kamu isi tetap aman dengan default-nya.
+
+| Interface | Default | Membentuk | Di-set di | Dibaca di |
+| --- | --- | --- | --- | --- |
+| `App.Error` | `{ message: string }` | bentuk objek error (expected & unexpected) | `error()`, hook `handleError` | `page.error`, `+error.svelte`, `$page.error` |
+| `App.Locals` | `{}` | bentuk `event.locals` | hook `handle` | server `load`, `+server.js`, actions, `handleError` |
+| `App.PageData` | `{}` | bagian **bersama** dari `page.data` | semua fungsi `load` | `page.data` ($app/state), child component |
+| `App.PageState` | `{}` | bentuk `page.state` (shallow routing) | `pushState`/`replaceState` (`$app/navigation`) | `page.state` |
+| `App.Platform` | `{}` | bentuk `event.platform` (binding adapter) | adapter (mis. Cloudflare) | server `load`, `+server.js`, hooks, actions |
+
+Catatan penting:
+
+- `App.Error` **wajib mempertahankan `message: string`** — halaman error bawaan dan fungsi `error()` mengandalkannya. Kamu boleh menambah field (mis. `code`, `id`), tapi jangan menghapus `message`.
+- `App.Locals` dan `App.Platform` hanya relevan di **konteks server**. Di universal `load` (`+page.js`) kamu **tidak** punya akses ke `event.locals`.
+- `App.PageData` sebaiknya pakai **properti opsional**, bukan index signature — biar bisa "menyatu" mulus dengan data spesifik tiap halaman.
+
+### Tipe yang di-generate (`./$types`)
+
+Tergantung file mana yang kamu tulis, SvelteKit menyediakan tipe berbeda dari modul relatif `./$types`. Semuanya sudah "tahu" params route tempat file itu berada.
+
+| Tipe | Dipakai di file | Untuk mengetik |
+| --- | --- | --- |
+| `PageLoad` | `+page.js` / `.ts` | fungsi `load` **universal** (jalan di server lalu client) |
+| `PageServerLoad` | `+page.server.js` / `.ts` | fungsi `load` **server-only** |
+| `LayoutLoad` | `+layout.js` / `.ts` | `load` universal milik layout |
+| `LayoutServerLoad` | `+layout.server.js` / `.ts` | `load` server-only milik layout |
+| `Actions` | `+page.server.js` / `.ts` | objek `actions` (form actions) |
+| `RequestHandler` | `+server.js` / `.ts` | handler `GET`/`POST`/`PUT`/`PATCH`/`DELETE` |
+| `PageData` | `+page.svelte`, return `load` | tipe gabungan hasil semua `load` untuk halaman ini |
+| `LayoutData` | `+layout.svelte`, return `load` | tipe gabungan hasil `load` untuk layout ini |
+| `ActionData` | `+page.svelte` | union hasil semua action (atau `null` bila belum submit) |
+| `PageProps` | `+page.svelte` (≥ 2.16) | `{ data: PageData; form: ActionData }` — props lengkap halaman |
+| `LayoutProps` | `+layout.svelte` (≥ 2.16) | `{ data: LayoutData; children: Snippet }` |
+| `PageParentData` | `+page.js` | tipe hasil `await parent()` di dalam `load` |
+| `LayoutParentData` | `+layout.js` | tipe hasil `await parent()` di dalam `load` layout |
+| `Snapshot` | `+page.svelte` | tipe untuk `export const snapshot` |
+| `EntryGenerator` | `+page(.server).js` | tipe fungsi `entries` (prerender route dinamis) |
+| `RequestEvent` | `+server.js`, actions | tipe objek `event` (jarang dipakai eksplisit) |
+
+Cara memakai berbeda antara JS dan TS:
+
+```ts
+// File .ts — impor tipe langsung, lalu anotasi nilai.
+import type { PageServerLoad } from './$types';
+export const load: PageServerLoad = async (event) => { /* ... */ };
+```
+
+```js
+// File .js — pakai komentar JSDoc (tidak butuh build TypeScript).
+/** @type {import('./$types').PageServerLoad} */
+export async function load(event) { /* ... */ }
+```
+
+Folder fisiknya ada di `.svelte-kit/types/` dan **regenerasi otomatis** lewat perintah `svelte-kit sync` (terpanggil saat `npm run dev`, `build`, dan skrip `prepare`/`postinstall`). Kamu tidak pernah mengeditnya, dan tidak perlu meng-commit-nya.
+
+## 3. Contoh kode
+
+```ts
+// src/app.d.ts — KAMU mengisi namespace App di sini (declaration merging).
+// Lihat https://svelte.dev/docs/kit/types#app.d.ts
+
+declare global {
+	namespace App {
+		// Bentuk objek error. WAJIB punya `message`; field lain opsional/tambahan.
+		interface Error {
+			message: string;
+			code?: string;
+		}
+
+		// Isi event.locals — diisi di hook `handle`, dibaca di server load/+server/actions.
+		interface Locals {
+			user: { id: string; name: string } | null;
+		}
+
+		// Data bersama yang muncul di page.data semua halaman (pakai properti OPSIONAL).
+		interface PageData {
+			flash?: { type: 'success' | 'error'; message: string };
+		}
+
+		// Bentuk page.state (untuk shallow routing via pushState/replaceState).
+		interface PageState {
+			modalProduk?: string;
+		}
+
+		// Binding dari adapter (contoh: Cloudflare Workers menaruh env di sini).
+		interface Platform {
+			env?: { COUNTER: KVNamespace };
+		}
+	}
+}
+
+// PENTING: ekspor kosong ini membuat file jadi MODUL, sehingga `declare global` valid.
+export {};
+```
+
+```ts
+// src/hooks.server.ts — handle MENGISI event.locals; tipenya dari App.Locals.
+import type { Handle } from '@sveltejs/kit';
+import { findUserBySession } from '$lib/server/auth';
+
+export const handle: Handle = async ({ event, resolve }) => {
+	const session = event.cookies.get('session');
+	// event.locals.user sudah diketik `{ id; name } | null` berkat App.Locals —
+	// kalau kamu menaruh bentuk yang salah, TypeScript langsung protes di sini.
+	event.locals.user = session ? await findUserBySession(session) : null;
+	return resolve(event);
+};
+```
+
+```ts
+// src/routes/dashboard/+page.server.ts — PageServerLoad + Actions dari ./$types.
+import { error, fail, redirect } from '@sveltejs/kit';
+import type { PageServerLoad, Actions } from './$types';
+
+export const load: PageServerLoad = async ({ locals }) => {
+	// locals.user diketik dari App.Locals — autocomplete penuh, no `any`.
+	if (!locals.user) {
+		// SvelteKit 2: redirect()/error() dipanggil TANPA `throw` (mereka throw sendiri).
+		redirect(303, '/login');
+	}
+	return { name: locals.user.name }; // -> ikut membentuk PageData
+};
+
+export const actions: Actions = {
+	rename: async ({ request, locals }) => {
+		if (!locals.user) error(401, { message: 'Belum login' }); // cocok App.Error
+		const data = await request.formData();
+		const name = String(data.get('name') ?? '');
+		if (!name) return fail(400, { error: 'Nama wajib diisi' });
+		// ...simpan...
+		return { success: true };
+	}
+};
+```
+
+```svelte
+<!-- src/routes/dashboard/+page.svelte — PageProps menggabungkan data + form -->
+<script lang="ts">
+	// PageProps (≥ SvelteKit 2.16) = { data: PageData; form: ActionData }.
+	// Satu tipe untuk seluruh props halaman, diakses lewat $props() Svelte 5.
+	import type { PageProps } from './$types';
+
+	let { data, form }: PageProps = $props();
+	//    ^ data.name diketik string   ^ form bisa { error } | { success } | null
+</script>
+
+<h1>Halo, {data.name}</h1>
+
+<form method="POST" action="?/rename">
+	<input name="name" />
+	<button>Ganti nama</button>
+	{#if form?.error}<p class="err">{form.error}</p>{/if}
+</form>
+```
+
+```ts
+// src/routes/api/produk/[id]/+server.ts — RequestHandler tahu params.id.
+import { json, error } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+
+export const GET: RequestHandler = async ({ params, locals }) => {
+	// params.id diketik `string` karena folder route punya segmen [id].
+	const produk = await locals.db?.getProduk(params.id);
+	if (!produk) error(404, { message: 'Produk tidak ada' });
+	return json(produk);
+};
+```
+
+## 4. Coba sendiri
+
+Modul ini soal **tipe** dan butuh project SvelteKit nyata (server, generator `$types`, TypeScript) — jadi tidak ada live preview di browser. Sebagai gantinya, ikuti "alur satu tipe" berikut: bagaimana satu deklarasi di `App.Locals` mengalir ke seluruh app. Bayangkan kamu sedang mengetik ini di editor dan perhatikan komentar bertanda.
+
+```ts
+// LANGKAH 1 — src/app.d.ts: deklarasikan SEKALI bentuk locals.
+declare global {
+	namespace App {
+		interface Locals {
+			user: { id: string; name: string } | null;
+			requestId: string;
+		}
+	}
+}
+export {};
+```
+
+```ts
+// LANGKAH 2 — src/hooks.server.ts: TypeScript MEMAKSA kamu mengisi sesuai bentuknya.
+import type { Handle } from '@sveltejs/kit';
+
+export const handle: Handle = async ({ event, resolve }) => {
+	event.locals.requestId = crypto.randomUUID(); // ✅ string — cocok
+	event.locals.user = null;                      // ✅ boleh null
+
+	// event.locals.user = 'budi';
+	//   ❌ ERROR: Type 'string' is not assignable to '{ id; name } | null'
+	// event.locals.role = 'admin';
+	//   ❌ ERROR: Property 'role' does not exist on type 'Locals'
+	//      (kamu lupa mendeklarasikannya di app.d.ts — typo ketahuan di compile)
+
+	return resolve(event);
+};
+```
+
+```ts
+// LANGKAH 3 — src/routes/+layout.server.ts: BACA locals, sudah type-safe gratis.
+import type { LayoutServerLoad } from './$types';
+
+export const load: LayoutServerLoad = async ({ locals }) => {
+	// locals.user diketik penuh — autocomplete .id / .name jalan, no casting.
+	return { user: locals.user, requestId: locals.requestId };
+};
+```
+
+Pelajarannya: kamu menulis bentuk `locals` **satu kali** di `app.d.ts`, dan tiga hal terjadi otomatis — (1) hook dipaksa mengisi dengan bentuk benar, (2) salah ketik field langsung jadi error compile, (3) setiap server `load`/`+server` yang membacanya mendapat tipe penuh tanpa anotasi tambahan. Perhatikan juga `locals` di langkah 3 tidak butuh `import` apa pun untuk tipenya — ia menempel pada `event` yang sudah dibentuk `LayoutServerLoad`.
+
+## 5. Latihan
+
+<Exercise title="Mengetik sesi login dari hook sampai komponen">
+Buat alur autentikasi minimal yang **type-safe dari ujung ke ujung**:
+
+1. Di `app.d.ts`, deklarasikan `App.Locals` agar `event.locals.user` bertipe `{ id: string; email: string } | null`, dan `App.Error` agar punya field tambahan `code?: string` selain `message`.
+2. Di `hooks.server.ts`, isi `event.locals.user` dari fungsi `getUser(event.cookies)` yang sudah tersedia (anggap mengembalikan tipe yang cocok).
+3. Di `src/routes/akun/+page.server.ts`, tulis `load` ber-tipe `PageServerLoad` yang: kalau `locals.user` null → `redirect(303, '/login')`; selain itu kembalikan `{ email: locals.user.email }`.
+4. Di `src/routes/akun/+page.svelte`, ketik props dengan `PageProps` dan tampilkan `data.email`.
+
+Gunakan API SvelteKit 2 (panggil `redirect`/`error` tanpa `throw`) dan Svelte 5 (`$props()`).
+
+{#snippet solution()}
+
+  ```ts
+  // src/app.d.ts
+  declare global {
+    namespace App {
+      interface Locals {
+        user: { id: string; email: string } | null;
+      }
+      interface Error {
+        message: string;
+        code?: string;
+      }
+    }
+  }
+  export {}; // wajib: jadikan file ini modul agar `declare global` valid
+  ```
+
+  ```ts
+  // src/hooks.server.ts
+  import type { Handle } from '@sveltejs/kit';
+  import { getUser } from '$lib/server/auth';
+
+  export const handle: Handle = async ({ event, resolve }) => {
+    // getUser harus mengembalikan { id; email } | null agar cocok App.Locals.
+    event.locals.user = await getUser(event.cookies);
+    return resolve(event);
+  };
+  ```
+
+  ```ts
+  // src/routes/akun/+page.server.ts
+  import { redirect } from '@sveltejs/kit';
+  import type { PageServerLoad } from './$types';
+
+  export const load: PageServerLoad = async ({ locals }) => {
+    // SvelteKit 2: redirect() throw sendiri, jangan diberi `throw` di depan.
+    if (!locals.user) redirect(303, '/login');
+    // Setelah guard di atas, TypeScript tahu locals.user bukan null lagi.
+    return { email: locals.user.email };
+  };
+  ```
+
+  ```svelte
+  <!-- src/routes/akun/+page.svelte -->
+  <script lang="ts">
+    import type { PageProps } from './$types';
+    let { data }: PageProps = $props();
+  </script>
+
+  <h1>Akun</h1>
+  <p>Email: {data.email}</p>
+  ```
+
+  Kunci: `App.Locals` dideklarasikan sekali lalu mengalir ke hook + semua server `load`; `redirect()` dipanggil tanpa `throw`; setelah `if (!locals.user) redirect(...)`, TypeScript mempersempit (`narrow`) tipe `locals.user` jadi non-null; `PageProps` memberi tipe `data` di komponen tanpa menyebut `PageData` manual.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="warning">
+Jangan lupa <code>export &#123;&#125;;</code> di akhir <code>app.d.ts</code>. Tanpa minimal satu <code>import</code>/<code>export</code>, TypeScript memperlakukan file itu sebagai <em>script</em> global, bukan <em>modul</em> — dan <code>declare global</code> hanya legal di dalam modul. Gejalanya: error <em>"Augmentations for the global scope can only be nested in external modules or ambient module declarations"</em>. Tambahkan <code>export &#123;&#125;;</code> dan error hilang.
+</Callout>
+
+<Callout type="warning">
+Kalau editormu bilang <code>Cannot find module './$types'</code>, tipe-nya belum di-generate. Jalankan <code>npm run dev</code> sekali (atau <code>npx svelte-kit sync</code>) agar folder <code>.svelte-kit/types</code> tercetak. Pastikan juga <code>tsconfig.json</code>-mu meng-<code>extends</code> <code>"./.svelte-kit/tsconfig.json"</code> — itulah yang memetakan alias <code>./$types</code> dan <code>$lib</code>. Tanpa <code>extends</code> ini, semua impor tipe SvelteKit gagal di-resolve.
+</Callout>
+
+<Callout type="pitfall">
+Pada <code>App.PageData</code>, hindari index signature seperti <code>[key: string]: unknown</code>. Memang menggoda agar "apa saja boleh", tapi itu melumpuhkan type-checking <code>page.data</code> di seluruh app dan bisa bentrok saat SvelteKit menggabungkan data spesifik tiap halaman. Pakai <strong>properti opsional</strong> (mis. <code>flash?: ...</code>) hanya untuk data yang benar-benar dibagi lintas halaman; sisanya biarkan datang dari return <code>load</code> per-route (yang sudah otomatis masuk <code>PageData</code> route itu).
+</Callout>
+
+<Callout type="pitfall">
+<code>App.Locals</code> dan <code>App.Platform</code> hanya hidup di <strong>server</strong>. Mengaksesnya dari universal <code>load</code> (<code>+page.js</code>) atau dari komponen klien adalah kesalahan konsep: <code>event.locals</code> tidak ada di sana. Kalau data dari <code>locals</code> perlu sampai ke komponen, kembalikan secara eksplisit dari server <code>load</code> (mis. <code>return &#123; user: locals.user &#125;</code>) supaya ia masuk ke <code>data</code>/<code>PageData</code> yang aman dikirim ke klien.
+</Callout>
+
+<Callout type="tip">
+Jangan pernah mengedit isi <code>.svelte-kit/types</code> dengan tangan — itu artefak generate yang ditimpa tiap <code>svelte-kit sync</code>. Tambahkan <code>.svelte-kit</code> ke <code>.gitignore</code> (template resmi sudah melakukannya) dan jangan di-commit. Sumber kebenaran tipe-mu ada di dua tempat saja: struktur folder <code>src/routes</code> (untuk <code>$types</code>) dan <code>src/app.d.ts</code> (untuk namespace <code>App</code>).
+</Callout>
+
+<Callout type="tip">
+Untuk halaman, <code>PageProps</code> (sejak 2.16) menggabungkan <code>data</code> dan <code>form</code> dalam satu tipe — lebih ringkas daripada mengetik <code>data</code> dan <code>form</code> terpisah. Pakai <code>let &#123; data, form &#125;: PageProps = $props()</code>. Untuk layout, padanannya <code>LayoutProps</code> yang menyertakan <code>children: Snippet</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "export let data: PageData;  // Svelte 4", modern: "let { data }: PageProps = $props();  // Svelte 5 + 2.16", note: 'props via runes; satu tipe untuk data+form' },
+	{ legacy: "$page.data (store, App.PageData)", modern: "page.data ($app/state, App.PageData)", note: 'App.PageData membentuk keduanya; akses beda' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/types" label="SvelteKit — Types (App namespace & generated $types)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-types" label="SvelteKit — $app/types (RouteId, Pathname, Asset; tipe se-aplikasi)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (handle mengisi event.locals)" />

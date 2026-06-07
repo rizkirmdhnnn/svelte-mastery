@@ -1,0 +1,227 @@
+---
+title: Building your app
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 1
+status: stable
+description: Memahami apa yang sebenarnya terjadi saat `vite build` membangun aplikasi SvelteKit — tahap analisis & prerender, peran adapter, flag `building`, dan cara menjalankan hasil build secara lokal.
+docs: https://svelte.dev/docs/kit/building-your-app
+keywords: [build, vite build, prerender, adapter, building, preview]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Selama ngoding kamu hidup di `npm run dev` — Vite dev server yang serba "live": tiap request dijalankan on-the-fly, HMR menyala, tidak ada yang dioptimasi. Itu mode kerja, bukan mode kirim. Saat aplikasimu siap dilepas ke dunia, kamu menjalankan `npm run build`, yang di balik layar memanggil `vite build`. Di sinilah aplikasimu berubah wujud dari "proyek yang dijalankan tooling" menjadi "artefak yang bisa dijalankan platform".
+
+Yang penting dipahami: `vite build` di SvelteKit bukan satu langkah, melainkan **dua tahap berurutan** yang sering tertukar.
+
+**Tahap 1 — Build (analisis + bundling + prerender).** Vite & SvelteKit meng-compile semua komponen `.svelte`, mem-bundle JavaScript/CSS, melakukan code-splitting, lalu menghasilkan tiga "wujud" kode: kode browser (yang dikirim ke klien), kode server (handler SSR), dan service worker bila ada. Di tahap ini juga SvelteKit **menganalisis** rute-rutemu dan **menjalankan prerender** untuk halaman yang memang bisa dirender saat build (lihat bagian prerender di bawah). Output tahap ini bersifat **netral platform** — sekumpulan modul plus sebuah handler yang tahu cara mengubah HTTP request jadi HTTP response, tapi belum tahu *di mana* ia akan dijalankan.
+
+**Tahap 2 — Adapt (adapter).** Adapter mengambil output netral tadi dan "menyetelnya untuk lingkungan tujuanmu" — membungkusnya jadi server Node mandiri, fungsi serverless Vercel, Cloudflare Worker, atau cuma tumpukan file statis. Adapter adalah lapisan paling akhir; kode aplikasimu tidak berubah, hanya cara ia dikemas.
+
+### Analogi: pabrik dan pengepakan
+
+Bayangkan kamu produksi cokelat. **Tahap 1 (build)** itu seperti pabrik: bahan mentah (source code) dilebur, dicetak, didinginkan, dan keluar jadi batangan cokelat jadi — produk yang sama apa pun negara tujuannya. **Tahap 2 (adapter)** itu bagian pengepakan & pengiriman: cokelat yang sama dibungkus berbeda tergantung tujuan — kotak tahan panas untuk dikirim ke daerah tropis, kemasan ritel untuk supermarket, atau palet curah untuk gudang. Cokelatnya identik; pembungkusnyalah yang menyesuaikan tujuan. Mengganti negara tujuan tidak berarti mengganti resep cokelat — cukup ganti cara mengepak. Itulah kenapa pindah dari Vercel ke VPS di SvelteKit cuma soal ganti adapter, bukan menulis ulang aplikasi.
+
+Buat kamu yang dari React/Vue: `vite build` di sini mirip `next build` atau `vite build` di Vue, tapi pemisahan **build vs adapt** lebih tegas. Di Next.js, langkah "menyesuaikan ke platform" agak menyatu dengan build dan paling mulus di Vercel. Di SvelteKit, langkah itu dipisah jadi entitas eksplisit bernama adapter yang kamu pilih sendiri.
+
+### Tahap analisis: mengapa ada flag `building`
+
+Ada satu jebakan halus di Tahap 1. Untuk bisa membundel dan menganalisis rute, SvelteKit perlu **meng-import** modul-modul `+page.js`, `+layout.js`, `+page.server.js`, dst. — dan meng-import sebuah modul berarti **menjalankan kode top-level**-nya. Kalau di top-level modulmu ada efek samping seperti "buka koneksi database" atau "panggil API eksternal", efek itu akan ikut tereksekusi **saat build**, di mesin CI yang mungkin tidak punya akses ke database produksi. Build bisa gagal atau menggantung hanya gara-gara analisis.
+
+Solusinya: SvelteKit menyediakan flag `building` dari `$app/environment`. Nilainya `true` selama proses build (termasuk saat prerendering) dan `false` saat aplikasi benar-benar berjalan menangani request. Bungkus efek samping yang tidak boleh jalan saat build dengan pengecekan `if (!building)`.
+
+### Prerender: kapan halaman dirender saat build
+
+Bagian dari Tahap 1 adalah **prerendering**: SvelteKit merender halaman tertentu menjadi HTML statis **saat build**, sehingga saat runtime tinggal disajikan tanpa komputasi. Sebuah halaman ikut di-prerender bila kamu menandainya dengan `export const prerender = true` (di `+page.js`/`+layout.js`), dan halaman itu memang aman dirender tanpa konteks request spesifik (tidak bergantung pada `cookies`, sesi user, dsb.). Halaman yang tidak ditandai akan dirender saat runtime oleh adapter (SSR) — kecuali kamu pakai `adapter-static` yang mengharuskan semuanya bisa di-prerender. Inti yang perlu diingat di modul ini: prerender adalah **pekerjaan yang dipindah dari runtime ke build-time**, dan ia terjadi di dalam `vite build`, bukan langkah terpisah.
+
+### Setelah build: menjalankan hasilnya
+
+`vite build` menghasilkan artefak, tapi tidak menjalankannya. Untuk mengetesnya secara lokal, SvelteKit menyediakan `vite preview` (`npm run preview`) yang menyajikan hasil build produksi di Node. Penting: preview **bukan reproduksi sempurna** dari hasil deploy — penyesuaian khusus adapter (mis. routing serverless, header platform) tidak diterapkan saat preview. Untuk menjalankan hasil build "sungguhan", kamu butuh menjalankan output adapter spesifik (mis. `node build` untuk `adapter-node`).
+
+## 2. Contoh kode
+
+Pertama, lihat skrip yang memicu seluruh proses ini. Di `package.json` proyek SvelteKit standar:
+
+```json
+{
+  "scripts": {
+    "dev": "vite dev",       // mode kerja: live, tidak dioptimasi
+    "build": "vite build",   // DUA TAHAP: build (analisis+prerender) lalu adapt (adapter)
+    "preview": "vite preview" // sajikan hasil build di Node untuk dicek lokal
+  }
+}
+```
+
+Berikutnya, pola guard `building` — ini idiom paling penting saat aplikasimu punya efek samping di level modul. Tanpa guard ini, build di CI bisa gagal karena mencoba menyentuh database yang tidak ada di sana.
+
+```js
+// src/lib/server/database.js (atau di mana pun ada efek samping top-level)
+import { building } from '$app/environment';
+import { initialiseDatabase } from '$lib/server/db-internal';
+
+// `building` === true selama `vite build` menganalisis & mem-prerender rute.
+// `building` === false saat app benar-benar melayani request (runtime).
+//
+// Tanpa guard ini, koneksi DB akan dibuka SAAT BUILD — di mesin CI yang
+// mungkin tidak punya akses ke DB produksi -> build gagal/menggantung.
+if (!building) {
+	initialiseDatabase();
+}
+```
+
+Flag yang sama berguna juga di dalam `load` atau hooks — misalnya melewati pemanggilan API saat prerender agar build tidak bergantung pada layanan eksternal:
+
+```js
+// src/routes/dashboard/+page.server.js
+import { building } from '$app/environment';
+
+export async function load({ fetch }) {
+	// Saat build (prerender/analisis), jangan tembak API live;
+	// kembalikan data kosong/placeholder agar build deterministik & cepat.
+	if (building) {
+		return { stats: null };
+	}
+
+	// Hanya jalan saat runtime (request nyata dari user).
+	const res = await fetch('/api/stats');
+	return { stats: await res.json() };
+}
+```
+
+Terakhir, adapter — lapisan Tahap 2 — dipasang di `svelte.config.js`. Inilah satu-satunya tempat kamu memberi tahu SvelteKit "bungkus hasil build ke bentuk apa".
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(),
+	kit: {
+		// Tahap 2 (adapt) memakai adapter INI untuk membungkus output Tahap 1.
+		// adapter-auto = deteksi platform CI otomatis (Vercel/Netlify/CF Pages).
+		// Ganti ke adapter spesifik (node/static/vercel/...) saat target jelas.
+		adapter: adapter()
+	}
+};
+```
+
+## 3. Coba sendiri
+
+Karena `vite build` menghasilkan artefak server/file (bukan komponen yang bisa dirender di browser), latihannya berupa menjalankan alur build di terminal proyek lokalmu dan mengamati outputnya. Ikuti langkah beranotasi berikut.
+
+```bash
+# 1) Build produksi — ini menjalankan KEDUA tahap sekaligus:
+#    Tahap 1: Vite compile + bundle + analisis rute + prerender (jika ada).
+#    Tahap 2: adapter membungkus hasilnya ke target deploy.
+npm run build
+
+# Perhatikan log build: kamu akan lihat baris seperti
+#   "Prerendered N pages" -> itu Tahap 1 sedang merender HTML saat build.
+#   lalu pesan dari adapter -> itu Tahap 2 (adapt) mengepak output.
+
+# 2) Cek lokal hasil build dengan preview server (disajikan di Node):
+npm run preview          # default http://localhost:4173
+# CATATAN: preview BUKAN reproduksi sempurna deploy-mu. Penyesuaian khusus
+# adapter (routing serverless, header platform, edge runtime) TIDAK diterapkan
+# di sini. Ia hanya untuk memastikan bundel produksimu jalan secara umum.
+
+# 3) Lihat artefak yang dihasilkan (isi tergantung adapter):
+ls -la .svelte-kit/output # output internal Tahap 1 (client/ & server/)
+# Jika pakai adapter-node, kamu akan dapat folder build/ siap dijalankan:
+#   node build            # menjalankan server produksi sungguhan
+```
+
+Untuk membuktikan flag `building` ke dirimu sendiri, tambahkan log sementara dan amati kapan ia muncul.
+
+```js
+// src/routes/+layout.server.js (eksperimen sementara)
+import { building } from '$app/environment';
+
+// Saat `npm run build`: baris ini tercetak di TERMINAL BUILD (building = true).
+// Saat `npm run preview` lalu buka halaman: tercetak di server log (building = false).
+console.log('[demo] building =', building);
+
+export const load = () => ({});
+```
+
+## 4. Latihan
+
+<Exercise title="Cegah build gagal karena efek samping & pahami dua tahap">
+Sebuah tim melaporkan: `npm run dev` lancar, tapi `npm run build` di CI **gagal** dengan error koneksi database. Ternyata `src/lib/server/cache.js` membuka koneksi Redis di top-level modul, dan modul itu di-import oleh sebuah `+page.server.js`.
+
+1. Jelaskan **mengapa** kode top-level itu ikut jalan saat build padahal tidak ada user yang mengakses halaman.
+2. Perbaiki `cache.js` agar koneksi hanya dibuka saat runtime, bukan saat build.
+3. Sebutkan di tahap mana (1 atau 2) masalah ini terjadi, dan kenapa adapter tidak bisa memperbaikinya.
+
+{#snippet solution()}
+
+  ```js
+  // 1) MENGAPA ikut jalan saat build:
+  //    Untuk menganalisis & mem-prerender rute, SvelteKit harus meng-IMPORT
+  //    semua modul rute (+page.server.js dst). Meng-import sebuah modul =
+  //    menjalankan kode TOP-LEVEL-nya. Karena cache.js di-import oleh sebuah
+  //    +page.server.js, koneksi Redis-nya ikut dibuka SAAT BUILD di CI —
+  //    di mana Redis produksi tidak tersedia -> build gagal.
+
+  // 2) PERBAIKAN: guard efek samping dengan flag `building`.
+  // src/lib/server/cache.js
+  import { building } from '$app/environment';
+  import { createClient } from 'redis';
+
+  let client;
+
+  if (!building) {
+    // Hanya dijalankan saat runtime (building === false), bukan saat build.
+    client = createClient({ url: process.env.REDIS_URL });
+    await client.connect();
+  }
+
+  export { client };
+
+  // (Alternatif lebih rapi: lazy-init — buka koneksi pada pemakaian pertama
+  //  di dalam fungsi, sehingga top-level modul tidak punya efek samping sama sekali.)
+  ```
+
+  ```text
+  3) Masalah terjadi di TAHAP 1 (build/analisis), saat SvelteKit meng-import
+     modul rute untuk dianalisis & di-prerender. Adapter (Tahap 2) baru jalan
+     SETELAH Tahap 1 selesai — jadi kalau Tahap 1 sudah crash, adapter tidak
+     pernah sempat berjalan dan tidak bisa "menyelamatkan" build. Solusinya
+     ada di kode aplikasi (guard `building`), bukan di pemilihan adapter.
+  ```
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menaruh efek samping (buka koneksi DB/Redis, panggil API, baca file rahasia) di <strong>top-level</strong> modul yang ter-import oleh rute, tanpa guard <code>if (!building)</code>. Saat <code>vite build</code> menganalisis rute, ia meng-import modul-modul itu dan menjalankan kode top-level-nya — sehingga efek samping ikut tereksekusi di mesin CI yang sering tidak punya akses ke layanan produksi. Akibatnya build gagal atau menggantung, padahal <code>npm run dev</code> tampak baik-baik saja.
+</Callout>
+
+<Callout type="warning">
+<code>npm run preview</code> (<code>vite preview</code>) <strong>bukan</strong> reproduksi sempurna dari aplikasi yang sudah di-deploy. Ia menyajikan bundel produksi di Node, tapi <em>penyesuaian khusus adapter</em> — routing serverless, header platform, batasan edge runtime — tidak diterapkan. Jadi "jalan di preview" tidak menjamin "jalan di Vercel/Cloudflare". Untuk uji yang lebih dekat ke produksi, jalankan output adapter spesifik (mis. <code>node build</code> untuk <code>adapter-node</code>) atau deploy ke environment preview platformmu.
+</Callout>
+
+<Callout type="tip">
+Ingat urutannya: <code>vite build</code> = <strong>build dulu (analisis + prerender), baru adapt (adapter)</strong>. Kalau buildmu error sebelum ada pesan dari adapter, masalahnya di Tahap 1 (kode/analisis/prerender rute) — periksa efek samping & rute yang gagal di-prerender. Kalau error muncul setelah "prerendered N pages" dan menyebut nama adapter, barulah itu urusan Tahap 2 (konfigurasi/target deploy).
+</Callout>
+
+<Callout type="tip">
+Flag <code>building</code> bernilai <code>true</code> juga saat <strong>prerendering</strong>, bukan cuma saat analisis. Jadi <code>if (building)</code> di dalam <code>load</code> berguna untuk memberi data placeholder agar halaman tetap bisa di-prerender tanpa menembak API live — lalu data sungguhan diisi saat runtime. Ini bikin build lebih deterministik dan tidak bergantung pada ketersediaan layanan eksternal saat CI berjalan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/building-your-app" label="SvelteKit — Building your app (vite build, building, preview)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (Tahap 2: menyetel build ke target deploy)" />
+<DocsLink href="https://svelte.dev/docs/kit/page-options" label="SvelteKit — Page options (prerender, ssr, csr)" />

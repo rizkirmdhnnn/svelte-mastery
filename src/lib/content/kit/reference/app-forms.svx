@@ -1,0 +1,389 @@
+---
+title: $app/forms
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 7
+status: reference
+description: Referensi modul $app/forms SvelteKit — enhance, applyAction, dan deserialize untuk progressive enhancement pada form actions.
+docs: https://svelte.dev/docs/kit/$app-forms
+keywords: [enhance, applyAction, deserialize, progressive-enhancement, form-actions]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/forms` adalah modul virtual SvelteKit yang berisi **tiga fungsi** untuk membuat HTML form "naik kelas": `enhance`, `applyAction`, dan `deserialize`. Ketiganya berputar di sekitar satu ide besar bernama **progressive enhancement**.
+
+Idenya begini. Form actions SvelteKit dirancang supaya `<form method="POST">` **tetap bekerja tanpa JavaScript sama sekali** — browser men-submit form, server menjalankan action, lalu mengirim balik halaman baru. Itu pondasi yang kokoh: bisa diakses, tahan banting, jalan di koneksi lemot, dan tidak rusak walau JS gagal dimuat. Tapi pengalamannya kuno: setiap submit memicu **full page reload** (layar berkedip, posisi scroll hilang, semua state komponen di-reset).
+
+`$app/forms` adalah lapisan yang **menambahkan** kenyamanan SPA **di atas** pondasi yang sudah jalan itu — bukan menggantinya. Begitu JavaScript aktif, `enhance` mencegat submit, mengirimnya lewat `fetch` di belakang layar, lalu menerapkan hasilnya **tanpa reload**. Kalau JS mati? Form jatuh kembali ke perilaku HTML asli, dan tetap berfungsi. Itulah arti "progressive": fitur dasar untuk semua orang, peningkatan untuk yang JS-nya hidup.
+
+### Analogi: pintu geser otomatis di mall
+
+Bayangkan form-mu adalah pintu masuk mall.
+
+- **Tanpa enhancement** = pintu dorong biasa. Selalu bisa dibuka, siapa pun, kapan pun, bahkan saat listrik mati. Ini `<form method="POST">` polos — pasti jalan, tapi kamu harus mendorong (reload halaman).
+- **Dengan `enhance`** = sensor otomatis dipasang **di atas** pintu yang sama. Saat listrik (JavaScript) menyala, pintu membuka mulus sendiri tanpa kamu menyentuhnya (tanpa reload). Saat listrik padam, pintu **tidak mengunci** — kamu tinggal dorong seperti biasa.
+
+Yang penting: sensor itu **tidak mengganti** engsel pintu. Kalau ada vendor yang mencopot engsel lalu cuma memasang sensor (yaitu form yang cuma jalan dengan JS), pintu jadi rapuh — mati listrik, orang terkurung. `enhance` sengaja mempertahankan engselnya.
+
+### Tiga fungsi, tiga tingkat kendali
+
+Ketiga ekspor `$app/forms` sebenarnya satu keluarga dengan tingkat "kerjakan-sendiri" yang berbeda:
+
+- **`enhance`** — tingkat tertinggi, paling otomatis. Pasang `use:enhance` di `<form>`, selesai. Ia menangani fetch, parsing hasil, update prop `form`, invalidate data, dan reset form. Kamu cukup intervensi lewat callback kalau perlu.
+- **`applyAction`** — tingkat menengah. "Terapkan satu `ActionResult` ke state aplikasi seperti yang `enhance` lakukan." Berguna saat kamu sudah punya hasil action (mis. dari fetch manual) dan ingin SvelteKit memperbarui `page.form`, `page.status`, atau melakukan redirect/error sesuai isi hasil itu.
+- **`deserialize`** — tingkat terendah, paling manual. Saat kamu menembak action lewat `fetch` sendiri, **response-nya bukan JSON biasa**. SvelteKit menserialisasi hasil action dengan format khusus (devalue) agar tipe seperti `Date`, `BigInt`, `Map`, atau `RegExp` selamat. `deserialize` mengubah teks response itu kembali jadi objek `ActionResult` yang benar. `JSON.parse` biasa akan merusak tipe-tipe tersebut.
+
+Urutan mentalnya: `enhance` memakai `applyAction` di dalamnya, dan `applyAction` bekerja dengan `ActionResult` yang biasanya dihasilkan `deserialize`. Kamu turun ke level lebih rendah hanya saat butuh kendali penuh.
+
+<Callout type="tip">
+Untuk 90% kasus, kamu hanya butuh <code>use:enhance</code> tanpa argumen apa pun. <code>applyAction</code> dan <code>deserialize</code> baru relevan saat kamu meng-handle submit secara manual (mis. form di dalam modal kompleks, upload dengan progress bar, atau submit dari tombol non-form).
+</Callout>
+
+## 2. Contoh kode
+
+```svelte
+<!-- src/routes/contact/+page.svelte — enhance paling sederhana -->
+<script>
+	import { enhance } from '$app/forms';
+
+	// `form` = hasil ActionResult terakhir (juga tersedia via page.form).
+	let { form } = $props();
+</script>
+
+<!-- TANPA argumen: enhance memakai perilaku default penuh:
+     1. submit via fetch (tanpa reload)
+     2. set prop `form` dari hasil action
+     3. jalankan invalidateAll() agar semua load di-refresh
+     4. reset field form jika type === 'success'
+     5. kelola fokus seperti navigasi normal -->
+<form method="POST" action="?/send" use:enhance>
+	<input name="email" type="email" required />
+	<button>Kirim</button>
+
+	{#if form?.success}
+		<p class="ok">Terkirim!</p>
+	{:else if form?.error}
+		<p class="err">{form.error}</p>
+	{/if}
+</form>
+```
+
+```svelte
+<!-- src/routes/contact/+page.svelte — enhance dengan SubmitFunction kustom -->
+<script>
+	import { enhance } from '$app/forms';
+
+	let { form } = $props();
+	let submitting = $state(false);
+</script>
+
+<form
+	method="POST"
+	action="?/send"
+	use:enhance={({ formElement, formData, action, cancel, submitter }) => {
+		// === FASE 1: jalan SEBELUM request dikirim ===
+		// `formData` bisa dimodifikasi di sini, mis. tambah field tersembunyi:
+		formData.append('submittedAt', String(Date.now()));
+
+		// `cancel()` membatalkan submit (mis. gagal validasi sisi klien):
+		if (!String(formData.get('email')).includes('@')) {
+			cancel();
+			return; // tidak lanjut ke fase 2
+		}
+
+		submitting = true;
+
+		// === FASE 2: kembalikan callback -> jalan SETELAH server merespons ===
+		return async ({ result, update }) => {
+			// `result` = ActionResult dari server (success/failure/redirect/error).
+			// `update()` menerapkan perilaku DEFAULT enhance secara manual.
+			// Karena kita mengembalikan callback, default TIDAK jalan otomatis —
+			// kita harus memanggil update() sendiri kalau menginginkannya.
+			await update();
+			submitting = false;
+
+			if (result.type === 'success') {
+				console.log('Berhasil:', result.data);
+			}
+		};
+	}}
+>
+	<input name="email" type="email" required />
+	<button disabled={submitting}>{submitting ? 'Mengirim…' : 'Kirim'}</button>
+</form>
+```
+
+<Callout type="warning">
+Begitu kamu <strong>mengembalikan sebuah callback</strong> dari <code>SubmitFunction</code>, perilaku default <code>enhance</code> (set <code>form</code>, invalidate, reset) <strong>tidak lagi otomatis</strong>. Kamu wajib memanggil <code>update()</code> di dalam callback itu untuk mendapatkannya kembali. Kalau kamu tidak mengembalikan callback sama sekali (cukup jalankan efek lalu <code>return</code> kosong), default tetap berlaku.
+</Callout>
+
+```svelte
+<!-- src/routes/+page.svelte — mengatur update() lewat opsinya -->
+<form
+	method="POST"
+	action="?/save"
+	use:enhance={() => {
+		return async ({ update }) => {
+			// reset: false  -> JANGAN kosongkan field setelah sukses
+			//                  (berguna untuk form "tambah lagi" beruntun)
+			// invalidateAll: false -> JANGAN re-run semua load
+			//                  (kalau kamu tahu tidak ada data yang perlu refresh)
+			await update({ reset: false, invalidateAll: false });
+		};
+	}}
+>
+	<input name="title" />
+	<button>Simpan</button>
+</form>
+```
+
+## 3. Coba sendiri
+
+Modul ini butuh server (form actions hidup di `+page.server.js`), jadi tidak bisa dijalankan di playground browser. Sebagai gantinya, berikut pola **manual** lengkap yang memakai ketiga fungsi sekaligus — `deserialize` + `applyAction` — untuk meng-handle submit tanpa `use:enhance`. Ini berguna saat kamu butuh kontrol penuh (mis. progress upload, submit dari luar `<form>`, atau logika kompleks sebelum/sesudah).
+
+```svelte
+<!-- src/routes/upload/+page.svelte — handle submit manual dengan deserialize + applyAction -->
+<script>
+	import { applyAction, deserialize } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
+
+	let { form } = $props();
+
+	// Tipe event: submit dari sebuah <form> sungguhan.
+	/** @param {SubmitEvent & { currentTarget: HTMLFormElement }} event */
+	async function handleSubmit(event) {
+		event.preventDefault(); // kita tangani sendiri, cegah submit native
+
+		const formData = new FormData(event.currentTarget);
+
+		// Tembak action secara manual. event.currentTarget.action berisi
+		// URL action (mis. '/upload?/save').
+		const response = await fetch(event.currentTarget.action, {
+			method: 'POST',
+			body: formData
+			// Catatan: kalau ada +server.js di rute yang sama, fetch POST
+			// akan diarahkan ke sana. Untuk memaksa ke action di +page.server.js,
+			// tambahkan header: { 'x-sveltekit-action': 'true' }
+		});
+
+		// PENTING: response action BUKAN JSON biasa — ia diserialisasi devalue
+		// agar Date/BigInt/Map selamat. deserialize() mengubahnya jadi ActionResult.
+		// JANGAN pakai JSON.parse di sini.
+		/** @type {import('@sveltejs/kit').ActionResult} */
+		const result = deserialize(await response.text());
+
+		if (result.type === 'success') {
+			// Re-run semua load secara manual (enhance melakukannya otomatis).
+			await invalidateAll();
+		}
+
+		// applyAction menerapkan hasil ke state app: mengisi page.form / prop form,
+		// melakukan redirect jika type === 'redirect', menampilkan error page
+		// jika type === 'error', dst. — persis seperti yang enhance lakukan internal.
+		applyAction(result);
+	}
+</script>
+
+<form method="POST" action="?/save" onsubmit={handleSubmit}>
+	<input name="file" type="file" />
+	<button>Unggah</button>
+
+	{#if form?.error}
+		<p class="err">{form.error}</p>
+	{/if}
+</form>
+```
+
+<Callout type="tip">
+Pola di atas adalah <em>persis</em> yang dilakukan <code>use:enhance</code> di balik layar (minus penanganan fokus & beberapa detail). Memahaminya membuat <code>enhance</code> tidak lagi terasa "ajaib" — ia hanya pembungkus rapi dari <code>fetch</code> + <code>deserialize</code> + <code>applyAction</code> + <code>invalidateAll</code>.
+</Callout>
+
+## 4. Ringkasan API
+
+### Ekspor `$app/forms`
+
+| Ekspor | Jenis | Ringkas |
+| --- | --- | --- |
+| `enhance` | action Svelte | Pasang di `<form>` lewat `use:enhance` untuk progressive enhancement. |
+| `applyAction` | fungsi async | Terapkan satu `ActionResult` ke state app (form, status, redirect, error). |
+| `deserialize` | fungsi | Ubah teks response action (format devalue) menjadi objek `ActionResult`. |
+
+### Tanda tangan
+
+| Fungsi | Tanda tangan (disederhanakan) |
+| --- | --- |
+| `enhance` | `enhance(form: HTMLFormElement, submit?: SubmitFunction): { destroy(): void }` |
+| `applyAction` | `applyAction(result: ActionResult): Promise<void>` |
+| `deserialize` | `deserialize(text: string): ActionResult` |
+
+Catatan: `enhance` dipakai sebagai **action** (`use:enhance`), jadi argumen `form_element` di-supply otomatis oleh Svelte; yang kamu tulis hanyalah `use:enhance` (tanpa argumen) atau `use:enhance={submitFunction}`.
+
+### `SubmitFunction` — bentuk callback `enhance`
+
+Fungsi yang kamu berikan ke `enhance` menerima **satu objek** berisi:
+
+| Properti | Tipe | Guna |
+| --- | --- | --- |
+| `action` | `URL` | URL action tujuan submit. |
+| `formData` | `FormData` | Data form; **boleh dimodifikasi** sebelum dikirim. |
+| `formElement` | `HTMLFormElement` | Elemen `<form>` yang di-submit. |
+| `controller` | `AbortController` | Untuk membatalkan request via `controller.abort()`. |
+| `submitter` | `HTMLElement \| null` | Elemen pemicu submit (tombol yang diklik). |
+| `cancel()` | `() => void` | Batalkan submit sepenuhnya (tidak ada request dikirim). |
+
+`SubmitFunction` boleh mengembalikan (opsional) sebuah **callback pasca-respons** yang menerima objek berisi:
+
+| Properti | Tipe | Guna |
+| --- | --- | --- |
+| `result` | `ActionResult` | Hasil action dari server. |
+| `update(opts?)` | `(opts?) => Promise<void>` | Jalankan perilaku default `enhance`. |
+| `formElement` | `HTMLFormElement` | Elemen form yang di-submit. |
+| `action` | `URL` | URL action tujuan. |
+| `formData` | `FormData` | Data yang dikirim. |
+
+### Opsi `update(options?)`
+
+| Opsi | Tipe | Default | Efek |
+| --- | --- | --- | --- |
+| `reset` | `boolean` | `true` | Bila `false`, field form **tidak** dikosongkan setelah sukses. |
+| `invalidateAll` | `boolean` | `true` | Bila `false`, `load` **tidak** dijalankan ulang setelah submit. |
+
+### Varian `ActionResult`
+
+`ActionResult` adalah union dengan diskriminator `type`. Bentuk tiap varian:
+
+| `type` | Properti | Kapan muncul |
+| --- | --- | --- |
+| `'success'` | `status: number`, `data?: Record<string, any>` | Action `return` objek biasa (atau tanpa return). `data` = nilai yang di-`return`. |
+| `'failure'` | `status: number`, `data?: Record<string, any>` | Action memanggil `fail(status, data)`. `data` = argumen kedua `fail`. |
+| `'redirect'` | `status: number`, `location: string` | Action memanggil `redirect(status, location)`. |
+| `'error'` | `status?: number`, `error: any` | Terjadi error tak tertangani / `error()` dilempar. |
+
+<Callout type="tip">
+Selalu cek <code>result.type</code> dulu sebelum mengakses propertinya. Hanya varian <code>success</code> &amp; <code>failure</code> yang punya <code>data</code>; <code>redirect</code> punya <code>location</code>; <code>error</code> punya <code>error</code>. TypeScript akan mempersempit tipe otomatis setelah kamu memeriksa <code>type</code> (discriminated union).
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Form 'tambah todo' yang tidak reset + tampilkan failure">
+Buat halaman SvelteKit untuk menambah item todo. Targetkan empat hal:
+
+1. Form tetap bekerja **tanpa JavaScript** (pakai form action `?/add`).
+2. Di-enhance dengan `use:enhance` dan `SubmitFunction` kustom.
+3. Setelah sukses, **jangan reset** field (agar user bisa mengetik item berikutnya cepat), tapi **tetap refresh** daftar todo.
+4. Kalau action mengembalikan `fail(...)`, tampilkan pesan error-nya.
+
+Tulis `+page.server.js` (action) dan `+page.svelte` (form ter-enhance). Anggap `addTodo(text)` dan `getTodos()` tersedia.
+
+{#snippet solution()}
+
+  ```js
+  // src/routes/todos/+page.server.js
+  import { fail } from '@sveltejs/kit';
+  import { addTodo, getTodos } from '$lib/server/db';
+
+  export async function load() {
+    return { todos: await getTodos() };
+  }
+
+  export const actions = {
+    add: async ({ request }) => {
+      const data = await request.formData();
+      const text = String(data.get('text') ?? '').trim();
+
+      if (!text) {
+        // fail() menghasilkan ActionResult type 'failure' -> form.error.
+        // Catatan: fail/error/redirect dipanggil TANPA `throw` di depannya.
+        return fail(400, { error: 'Teks todo tidak boleh kosong' });
+      }
+
+      await addTodo(text);
+      // return objek biasa -> ActionResult type 'success'.
+      return { success: true };
+    }
+  };
+  ```
+
+  ```svelte
+  <!-- src/routes/todos/+page.svelte -->
+  <script>
+    import { enhance } from '$app/forms';
+
+    let { data, form } = $props();
+    let submitting = $state(false);
+  </script>
+
+  <form
+    method="POST"
+    action="?/add"
+    use:enhance={() => {
+      submitting = true;
+      return async ({ update }) => {
+        // reset: false -> field 'text' tidak dikosongkan setelah sukses.
+        // invalidateAll default true -> load() jalan lagi, daftar ter-refresh.
+        await update({ reset: false });
+        submitting = false;
+      };
+    }}
+  >
+    <input name="text" placeholder="Todo baru…" />
+    <button disabled={submitting}>{submitting ? 'Menyimpan…' : 'Tambah'}</button>
+
+    {#if form?.error}
+      <p class="err">{form.error}</p>
+    {/if}
+  </form>
+
+  <ul>
+    {#each data.todos as todo}
+      <li>{todo.text}</li>
+    {/each}
+  </ul>
+  ```
+
+  Kunci: `update({ reset: false })` mempertahankan isi field sambil tetap menjalankan `invalidateAll` default; `fail(400, { error })` menghasilkan `ActionResult` `failure` yang nyangkut di prop `form`; semua tetap berfungsi tanpa JS karena pondasinya form action asli.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan parse response action mentah dengan <code>JSON.parse</code>. SvelteKit menserialisasi hasil action memakai <strong>devalue</strong>, bukan JSON polos, supaya tipe seperti <code>Date</code>, <code>BigInt</code>, <code>Map</code>, dan <code>RegExp</code> bertahan. Pakai <code>deserialize()</code> dari <code>$app/forms</code>. <code>JSON.parse</code> akan melempar error atau diam-diam merusak tipe-tipe tersebut.
+</Callout>
+
+<Callout type="warning">
+Begitu <code>SubmitFunction</code>-mu <strong>mengembalikan callback</strong>, perilaku default <code>enhance</code> berhenti otomatis. Lupa memanggil <code>update()</code> di dalam callback adalah bug klasik: form ter-submit, server merespons, tapi prop <code>form</code> tidak pernah ter-update dan layar terlihat "diam". Solusinya: panggil <code>await update()</code>, atau kalau memang ingin menangani sendiri sepenuhnya, panggil <code>applyAction(result)</code> manual.
+</Callout>
+
+<Callout type="warning">
+Kalau ada <code>+server.js</code> di rute yang sama dengan <code>+page.server.js</code>, request <code>fetch</code> POST manual-mu bisa nyasar ke <code>+server.js</code> alih-alih ke form action. Untuk memaksanya ke action di <code>+page.server.js</code>, kirim header <code>'x-sveltekit-action': 'true'</code>. (Dengan <code>use:enhance</code> hal ini sudah diurus otomatis.)
+</Callout>
+
+<Callout type="tip">
+<code>applyAction</code> bukan cuma untuk mengisi <code>form</code> — ia juga <strong>memproses redirect dan error</strong>. Kalau action mengembalikan <code>redirect</code>, <code>applyAction</code> akan benar-benar memindahkan halaman; kalau <code>error</code>, ia menampilkan halaman error. Jadi setelah <code>fetch</code> manual, panggil <code>applyAction(result)</code> agar perilaku ini konsisten dengan <code>enhance</code>.
+</Callout>
+
+<Callout type="pitfall">
+<code>enhance</code> adalah API <strong>Svelte 5 modern</strong> dan menggantikan pola lama: handler <code>on:submit</code> manual + <code>fetch</code> + <code>createEventDispatcher</code>. Untuk kode baru, jangan menulis listener submit sendiri kecuali benar-benar butuh kontrol penuh — <code>use:enhance</code> sudah menangani fetch, serialisasi, invalidate, reset, dan fokus sekaligus.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'on:submit|preventDefault + fetch manual + JSON.parse', modern: 'use:enhance', note: 'enhance mengurus fetch + deserialize + applyAction sekaligus' },
+	{ legacy: "createEventDispatcher('submit')", modern: "SubmitFunction callback ({ result, update })", note: 'hasil action lewat ActionResult, bukan event' },
+	{ legacy: 'JSON.parse(await res.text())', modern: 'deserialize(await res.text())', note: 'devalue menjaga Date/BigInt/Map' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-forms" label="SvelteKit — $app/forms (enhance, applyAction, deserialize)" />
+<DocsLink href="https://svelte.dev/docs/kit/form-actions" label="SvelteKit — Form actions (fail, ActionResult, +page.server.js)" />

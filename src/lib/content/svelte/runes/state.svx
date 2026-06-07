@@ -1,0 +1,323 @@
+---
+title: $state
+product: svelte
+section: runes
+sectionTitle: Runes
+sectionOrder: 2
+order: 2
+status: stable
+description: Menandai nilai sebagai reaktif dengan $state, memahami deep reactivity lewat Proxy, serta varian $state.raw, $state.snapshot, dan class fields.
+docs: https://svelte.dev/docs/svelte/$state
+keywords: [state, reactivity, proxy, snapshot, runes, class-fields]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Rune `$state` adalah cara kamu menandai sebuah nilai sebagai **reaktif**. Begitu sebuah variabel "diberi mantra" `$state`, Svelte mulai mengawasinya: setiap kali nilainya berubah, semua bagian UI dan semua nilai turunan yang bergantung padanya akan ikut diperbarui otomatis.
+
+Yang penting dipahami sejak awal: hasil `$state(0)` **bukan** sebuah object pembungkus atau function. Untuk nilai primitif, ia tetap terasa seperti angka biasa. Kamu membacanya langsung (`count`), dan mengubahnya dengan assignment JavaScript biasa (`count++` atau `count = 5`). Tidak ada `.value`, tidak ada setter. Kompilator Svelte-lah yang diam-diam menambahkan pelacakan di balik layar.
+
+### Analogi: papan tulis ajaib
+
+Bayangkan kamu punya **papan tulis ajaib**. Di papan itu kamu tulis satu angka, misalnya harga satuan = 10. Lalu di bawahnya kamu tulis rumus-rumus yang bergantung pada angka itu: subtotal, pajak, total. Di papan tulis biasa, kalau kamu menghapus angka 10 dan menggantinya jadi 20, semua rumus di bawahnya tetap menampilkan hasil lama — kamu harus menghitung ulang dan menulis ulang semuanya satu per satu.
+
+Papan tulis ajaib berbeda. Begitu kamu ganti satu angka, **semua hitungan yang bergantung padanya langsung berubah sendiri** di depan matamu. Itulah `$state`: kamu cukup mengubah satu nilai sumber, dan Svelte yang mengurus "menulis ulang" seluruh konsekuensinya di layar.
+
+Kunci dari analogi ini: kamu hanya mengubah angka sumbernya. Kamu tidak pernah menyentuh hasil hitungannya secara manual. Inilah perbedaan besar dengan React, di mana kamu memanggil setter; di Svelte, kamu cukup **memutasi nilainya langsung**.
+
+### Deep reactivity lewat Proxy
+
+Untuk nilai primitif (angka, string, boolean), `$state` sederhana: ganti nilainya, UI ikut. Tapi bagaimana dengan object dan array? Di sinilah Svelte 5 melakukan sesuatu yang elegan.
+
+Saat kamu menulis `let user = $state({ name: 'Budi', age: 20 })`, Svelte tidak menyimpan object biasa. Ia membungkusnya dengan **Proxy** — objek "perantara" bawaan JavaScript yang bisa menyadap setiap operasi baca dan tulis pada properti, termasuk pemanggilan method seperti `array.push()`. Karena itu, kamu boleh menulis `user.age = 21` atau `todos.push(item)`, dan Svelte tetap tahu ada perubahan, lalu memperbarui UI.
+
+Ini disebut **deep reactivity**: pembungkusan Proxy berlaku **rekursif**. Object di dalam object, array di dalam object — semuanya ikut dibungkus saat diakses, sehingga mutasi sedalam apa pun (mis. `todos[0].done = true`) tetap terdeteksi dan hanya memicu update pada bagian yang benar-benar bergantung. Bagi yang dari Vue, ini terasa familiar: `reactive()` di Vue 3 juga memakai Proxy dengan prinsip serupa.
+
+Ada satu batas penting yang sering bikin orang bingung: rekursi pembungkusan ini **berhenti di class instance dan object hasil `Object.create()`**. Jadi kalau kamu menaruh sebuah instance class biasa ke dalam `$state` object, properti di dalam instance itu tidak otomatis reaktif — kamu harus menandai field-nya sendiri dengan `$state` di dalam class-nya (lihat bagian class fields di bawah).
+
+<Callout type="tip">
+Karena <code>$state</code> object adalah Proxy, kamu tidak perlu trik <em>immutable update</em> seperti <code>setUser(&#123; ...user, age: 21 &#125;)</code> ala React. Cukup <code>user.age = 21</code>. Lebih sedikit boilerplate, dan lebih dekat ke JavaScript biasa.
+</Callout>
+
+<Callout type="warning">
+Detail halus dari docs resmi: saat kamu memperbarui properti sebuah Proxy state, <strong>object asli yang kamu oper ke <code>$state(...)</code> tidak ikut dimutasi</strong>. Yang kamu pegang dan mutasi adalah Proxy-nya, bukan referensi mentah aslinya. Jadi jangan berasumsi variabel lama yang menunjuk ke object asli akan ikut berubah.
+</Callout>
+
+### `$state.raw` — reaktivitas dangkal (non-deep)
+
+Kadang kamu tidak butuh deep reactivity, atau justru ingin menghindarinya — misalnya menyimpan object besar yang isinya tidak pernah kamu mutasi sebagian, atau struktur yang lebih efisien diganti utuh sekaligus. Untuk itu ada `$state.raw`.
+
+Nilai `$state.raw` **tidak dibungkus Proxy**. Konsekuensinya: kamu tidak bisa memutasi propertinya (`obj.x = 1` tidak akan memicu update). Satu-satunya cara mengubahnya adalah **mengganti seluruh nilai** dengan reassignment: `obj = { ...obj, x: 1 }`. Ini justru mirip pola React. Keuntungannya, untuk data besar yang hanya diganti secara utuh, `$state.raw` lebih murah karena Svelte tak perlu memasang Proxy berlapis. (Catatan: isi sebuah `$state.raw` boleh saja berupa array dari object `$state` yang reaktif sendiri-sendiri — kombinasi ini sah.)
+
+### `$state.snapshot` — salinan statis "beku"
+
+Karena `$state` object sebenarnya adalah Proxy, kalau kamu mengopernya ke kode luar yang tidak paham Proxy — misalnya `JSON.stringify`, `structuredClone`, library pihak ketiga, atau saat logging — kamu bisa dapat hasil aneh atau warning. `$state.snapshot(value)` mengembalikan **salinan biasa (plain object) yang bukan reaktif** dari nilai state pada saat itu, seperti memotret papan tulis: hasil jepretan tidak akan berubah lagi meski papan aslinya berubah.
+
+Satu detail dari docs: kalau nilainya punya method `toJSON()`, snapshot akan mengkloning hasil `toJSON()` itu, bukan struktur mentahnya. Gunakan `$state.snapshot` saat kamu butuh "data mentah apa adanya" untuk dikirim keluar dari dunia reaktif Svelte.
+
+### Class fields
+
+`$state` tidak hanya untuk variabel di `<script>`. Kamu juga bisa memakainya sebagai **field di dalam sebuah class**, dan kompilator akan mengubah field itu menjadi pasangan getter/setter yang menunjuk ke private field reaktif. Ini berguna kalau kamu ingin memodelkan domain (mis. `Todo`, `Cart`) sebagai class yang punya state reaktif sendiri.
+
+Ada satu jebakan klasik: kalau sebuah method class mengakses `this`, lalu method itu dilempar sebagai callback (mis. ke `onclick`), `this` bisa hilang. Solusinya pakai **arrow function** sebagai field agar `this` tetap terikat ke instance.
+
+## 2. Contoh kode
+
+```svelte
+<script>
+	// State primitif: ganti nilai → UI ikut berubah.
+	let count = $state(0);
+
+	// State object: dibungkus Proxy → boleh dimutasi langsung (deep).
+	let user = $state({ name: 'Budi', age: 20 });
+
+	// State array: push/splice pun terdeteksi karena Proxy.
+	let todos = $state([{ text: 'Belajar runes', done: false }]);
+
+	function birthday() {
+		// Mutasi properti langsung — tanpa setter, tanpa spread.
+		user.age += 1;
+	}
+
+	function addTodo() {
+		// push() memodifikasi array di tempat, tetap reaktif.
+		todos.push({ text: 'Tugas baru', done: false });
+	}
+</script>
+
+<button onclick={() => count++}>count: {count}</button>
+<button onclick={birthday}>{user.name} berumur {user.age}</button>
+<button onclick={addTodo}>Tambah todo ({todos.length})</button>
+```
+
+Perhatikan tidak ada satu pun setter atau spread "wajib". Object dan array dimutasi seperti JavaScript biasa, dan UI tetap sinkron berkat Proxy.
+
+```svelte
+<script>
+	// $state.raw: TIDAK dibungkus Proxy → mutasi properti diabaikan.
+	let config = $state.raw({ theme: 'dark', fontSize: 14 });
+
+	function toggleTheme() {
+		// SALAH (tidak memicu update karena bukan Proxy):
+		// config.theme = 'light';
+
+		// BENAR: ganti seluruh nilai dengan reassignment.
+		config = { ...config, theme: config.theme === 'dark' ? 'light' : 'dark' };
+	}
+</script>
+
+<button onclick={toggleTheme}>Tema: {config.theme}</button>
+```
+
+```svelte
+<script>
+	// $state sebagai class field → setiap instance punya state reaktif sendiri.
+	class Todo {
+		text = $state('');
+		done = $state(false);
+
+		constructor(text) {
+			this.text = text;
+		}
+
+		// Arrow function sebagai field → 'this' tetap terikat saat dipakai
+		// sebagai callback onclick, tidak akan "kehilangan" instance.
+		toggle = () => {
+			this.done = !this.done;
+		};
+	}
+
+	let todo = new Todo('Belajar class fields');
+</script>
+
+<!-- Mengubah todo.done lewat method → UI ikut, karena 'done' adalah $state field. -->
+<button onclick={todo.toggle}>
+	{todo.text} — {todo.done ? 'selesai' : 'belum'}
+</button>
+```
+
+```svelte
+<script>
+	let user = $state({ name: 'Sari', roles: ['admin'] });
+
+	function simpan() {
+		// $state.snapshot melepas Proxy → aman untuk JSON / kirim ke server.
+		const plain = $state.snapshot(user);
+		console.log(JSON.stringify(plain)); // {"name":"Sari","roles":["admin"]}
+		// 'plain' adalah salinan beku: mengubah user nanti tidak mengubah plain.
+	}
+</script>
+
+<button onclick={simpan}>Simpan snapshot</button>
+```
+
+## 3. Coba sendiri
+
+Mainkan beberapa jenis state sekaligus di bawah. Tambahkan item ke array dengan `push`, naikkan umur lewat mutasi langsung, toggle status lewat method class, dan perhatikan kamu tidak pernah memanggil setter apa pun. Coba juga klik "Ambil snapshot" lalu ubah profil — nilai snapshot tidak ikut berubah karena ia salinan beku.
+
+<Playground code={`<script>
+	let count = $state(0);
+	let profil = $state({ nama: 'Budi', umur: 20 });
+	let daftar = $state(['belajar $state']);
+	let foto = $state(null);
+	class Tugas {
+		teks = $state('');
+		selesai = $state(false);
+		constructor(teks) {
+			this.teks = teks;
+		}
+		toggle = () => {
+			this.selesai = !this.selesai;
+		};
+	}
+	let tugas = new Tugas('Coba class field');
+	function tambahItem() {
+		daftar.push('item ke-' + (daftar.length + 1));
+	}
+	function ambilSnapshot() {
+		foto = $state.snapshot(profil);
+	}
+</script>
+<h3>count: {count}</h3>
+<button onclick={() => count++}>count++</button>
+<h3>{profil.nama}, umur {profil.umur}</h3>
+<button onclick={() => profil.umur++}>Ulang tahun</button>
+<button onclick={() => (profil.nama = 'Sari')}>Ganti nama</button>
+<h3>daftar ({daftar.length})</h3>
+<ul>
+	{#each daftar as d}
+		<li>{d}</li>
+	{/each}
+</ul>
+<button onclick={tambahItem}>Tambah item</button>
+<h3>Class field</h3>
+<button onclick={tugas.toggle}>
+	{tugas.teks} — {tugas.selesai ? 'selesai' : 'belum'}
+</button>
+<h3>Snapshot beku</h3>
+<button onclick={ambilSnapshot}>Ambil snapshot profil</button>
+{#if foto}
+	<p>Snapshot: {foto.nama}, {foto.umur} (tidak ikut berubah)</p>
+{/if}`} />
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="State reaktif lokal"
+	svelte={`<script>
+  // Object dibungkus Proxy → mutasi langsung aman.
+  let user = $state({ name: 'Budi', age: 20 });
+</script>
+<button onclick={() => user.age++}>
+  {user.name}: {user.age}
+</button>`}
+	react={`import { useState } from 'react';
+function Profile() {
+  const [user, setUser] = useState({ name: 'Budi', age: 20 });
+  // Wajib setter + update immutable (spread), bukan mutasi.
+  return (
+    <button onClick={() => setUser({ ...user, age: user.age + 1 })}>
+      {user.name}: {user.age}
+    </button>
+  );
+}`}
+	vue={`<script setup>
+import { ref } from 'vue';
+// ref → akses & ubah lewat .value di <script>.
+const user = ref({ name: 'Budi', age: 20 });
+</script>
+<template>
+  <!-- Di template .value otomatis di-unwrap. -->
+  <button @click="user.age++">{{ user.name }}: {{ user.age }}</button>
+</template>`}
+	diff={{ react: [6], vue: [4] }}
+	note="useState butuh setter & update immutable (spread). Vue ref butuh .value di script (auto-unwrap di template). $state bisa dimutasi langsung tanpa setter maupun .value."
+/>
+
+## 5. Latihan
+
+<Exercise title="Keranjang belanja reaktif">
+Buat sebuah komponen keranjang belanja sederhana. Pakai `$state` berisi array object item, masing-masing punya `nama` dan `qty`. Sediakan tombol untuk menambah qty sebuah item (mutasi langsung), dan tombol untuk menambah item baru ke array (pakai `push`). Tampilkan total qty memakai perhitungan biasa.
+
+Bonus: tambahkan tombol "Cetak" yang menyimpan `$state.snapshot` dari keranjang ke `console.log`, lalu jelaskan kenapa kita pakai snapshot dan bukan langsung mengoper array-nya.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	// Array object dibungkus Proxy → mutasi dalam (qty) terdeteksi.
+	let keranjang = $state([
+		{ nama: 'Kopi', qty: 1 },
+		{ nama: 'Gula', qty: 2 }
+	]);
+
+	// Perhitungan turunan biasa; akan dibahas tuntas di lesson $derived.
+	let total = $derived(keranjang.reduce((s, i) => s + i.qty, 0));
+
+	function tambahQty(item) {
+		// Mutasi properti langsung — tak perlu menyalin array.
+		item.qty += 1;
+	}
+
+	function tambahItem() {
+		// push() memodifikasi array di tempat, tetap reaktif.
+		keranjang.push({ nama: 'Item baru', qty: 1 });
+	}
+
+	function cetak() {
+		// snapshot melepas Proxy → object biasa, aman untuk log/kirim.
+		console.log($state.snapshot(keranjang));
+	}
+</script>
+
+<ul>
+	{#each keranjang as item}
+		<li>
+			{item.nama}: {item.qty}
+			<button onclick={() => tambahQty(item)}>+1</button>
+		</li>
+	{/each}
+</ul>
+
+<p>Total qty: {total}</p>
+<button onclick={tambahItem}>Tambah item</button>
+<button onclick={cetak}>Cetak (snapshot)</button>
+```
+
+Kita pakai `$state.snapshot` di `cetak()` karena `keranjang` sebenarnya adalah **Proxy**. Kalau langsung di-`console.log` atau di-`JSON.stringify`, kamu bisa melihat representasi Proxy yang membingungkan, atau memicu warning. `$state.snapshot` mengembalikan plain object/array biasa — potret beku data saat itu — yang aman dikirim ke server, di-stringify, atau diserahkan ke library lain.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>$state.raw</code> <strong>tidak</strong> reaktif terhadap mutasi properti. Menulis <code>config.theme = 'light'</code> pada nilai <code>$state.raw</code> tidak akan memperbarui UI. Satu-satunya cara: ganti seluruh nilai dengan reassignment, mis. <code>config = &#123; ...config, theme: 'light' &#125;</code>. Kalau lupa ini, kamu akan bingung kenapa layar "tidak bergerak".
+</Callout>
+
+<Callout type="warning">
+Karena <code>$state</code> object adalah Proxy, mengirimnya mentah-mentah ke <code>JSON.stringify</code>, <code>structuredClone</code>, atau library pihak ketiga bisa berperilaku tak terduga. Bungkus dengan <code>$state.snapshot(value)</code> dulu untuk mendapat salinan biasa yang bukan reaktif.
+</Callout>
+
+<Callout type="pitfall">
+Saat kamu melakukan destructuring dari <code>$state</code> object, mis. <code>const &#123; age &#125; = user</code>, variabel <code>age</code> hanyalah salinan nilai pada saat itu dan <strong>kehilangan reaktivitas</strong>. Untuk tetap reaktif, akses lewat objeknya: <code>user.age</code>.
+</Callout>
+
+<Callout type="pitfall">
+Di dalam class, method biasa yang memakai <code>this</code> bisa kehilangan konteks saat dipakai sebagai callback (mis. <code>onclick=&#123;todo.toggle&#125;</code>), karena <code>this</code> menjadi <code>undefined</code>. Pakai <strong>arrow function field</strong> (<code>toggle = () =&gt; &#123; ... &#125;</code>) supaya <code>this</code> tetap menunjuk instance.
+</Callout>
+
+<Callout type="tip">
+Mutasi langsung (<code>arr.push(...)</code>, <code>obj.x = 1</code>) adalah fitur, bukan kemalasan. Ini menghilangkan seluruh boilerplate <em>immutable update</em> ala React. Pakai <code>$state.raw</code> hanya kalau kamu sengaja ingin reaktivitas dangkal atau menghindari biaya Proxy untuk data besar yang selalu diganti utuh.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/$state" label="$state — dokumentasi resmi Svelte" />

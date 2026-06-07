@@ -1,0 +1,399 @@
+---
+title: @sveltejs/kit
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 1
+status: reference
+description: Referensi lengkap modul @sveltejs/kit — helper error/redirect/json/text/fail, type guard isHttpError/isRedirect/isActionFailure, plus tipe inti RequestHandler, RequestEvent, Actions, Handle, dan Cookies.
+docs: https://svelte.dev/docs/kit/@sveltejs-kit
+keywords: [error, redirect, json, fail, RequestHandler, Cookies]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`@sveltejs/kit` adalah "paket pusat" SvelteKit. Hampir semua hal lain (`$app/*`, adapter, `$env/*`) berdiri di atasnya, tapi paket inti ini sendiri isinya kecil dan tajam: segelintir **helper fungsi** untuk dipakai di kode server-mu, beberapa **type guard**, dan kumpulan **tipe TypeScript** yang membentuk "kontrak" antara kodemu dan framework.
+
+Penting untuk meletakkan ini di peta mental yang benar. Kalau kamu datang dari Express/Nest, kamu terbiasa mengimpor `Router`, `Request`, `Response`, middleware, dsb. dari satu paket framework. Di SvelteKit, **request dan response sudah berupa objek Web standar** (`Request`/`Response` dari Fetch API) — jadi `@sveltejs/kit` tidak perlu menyediakan ulang itu. Yang ia sediakan justru "perekat" di sekitarnya: cara cepat membungkus data jadi `Response` (`json`, `text`), cara memutus alur dengan sinyal khusus (`error`, `redirect`, `fail`), dan cara mengenali sinyal-sinyal itu lagi nanti (`isHttpError`, `isRedirect`, `isActionFailure`).
+
+### Analogi: rambu lalu lintas, bukan jalan
+
+Bayangkan request mengalir di jalan tol dari klien ke handler-mu lalu balik lagi. SvelteKit tidak menyuruhmu membangun jalannya — itu sudah ada (Web `Request`/`Response`). Yang diberikan `@sveltejs/kit` adalah **rambu-rambu** yang bisa kamu pasang di tengah jalan:
+
+- `json()` / `text()` — "gerbang keluar" siap pakai yang merapikan kendaraan (data) jadi format response yang benar.
+- `error()` — rambu "STOP, ada masalah". Begitu dipasang, mobil berhenti total di sini dan dialihkan ke halaman error.
+- `redirect()` — rambu "putar balik ke alamat lain".
+- `fail()` — rambu khusus jalur form: "submit gagal, tapi tetap kembali ke halaman yang sama sambil bawa pesan kesalahan" (bukan crash).
+- `isHttpError()` / `isRedirect()` / `isActionFailure()` — "detektor" untuk mengenali rambu mana yang tadi terpasang, berguna saat kamu menangkapnya di `try/catch`.
+
+### Tiga karakter yang WAJIB kamu hafal
+
+Ada tiga fungsi yang perilakunya beda dari fungsi biasa, dan ini sumber bug paling sering bagi pendatang baru:
+
+1. **`error()`** dan **`redirect()`** **melempar (throw) sendiri.** Mereka tidak mengembalikan nilai — tipe baliknya `never`. Begitu dipanggil, eksekusi baris setelahnya **tidak pernah jalan**. Inilah perubahan besar SvelteKit 2: dulu (Kit 1) kamu menulis `throw error(...)`; sekarang `throw`-nya sudah di dalam, jadi cukup `error(...)`.
+
+2. **`fail()`** justru **TIDAK** melempar. Ia hanya membuat objek `ActionFailure` yang kamu **`return`** dari sebuah form action. Bedakan baik-baik: `error` = "ini exception, hentikan semuanya"; `fail` = "ini hasil normal yang kebetulan gagal validasi, kirim balik ke form".
+
+Memahami tiga karakter ini membuat 80% penggunaan `@sveltejs/kit` jadi otomatis. Sisanya adalah tipe-tipe untuk meng-annotate handler-mu, yang kita bedah lengkap di bawah.
+
+## 2. Referensi fungsi & type guard
+
+Berikut tabel lengkap export runtime (fungsi yang benar-benar bisa kamu panggil). Semua diimpor dari `@sveltejs/kit`.
+
+| Fungsi | Tanda tangan | Balikan | Catatan kunci |
+| --- | --- | --- | --- |
+| `error` | `error(status, body?)` | `never` (throw) | `status` 400–599. `body` boleh `string` atau objek `App.Error`. **Throw sendiri.** |
+| `redirect` | `redirect(status, location)` | `never` (throw) | `status` 300–308 (umum: 303/307/308). `location` `string` atau `URL`. **Throw sendiri.** |
+| `json` | `json(data, init?)` | `Response` | Serialize `data` jadi JSON + set `Content-Type: application/json`. |
+| `text` | `text(body, init?)` | `Response` | Bungkus `string` jadi response + set `Content-Type: text/plain`. |
+| `fail` | `fail(status, data?)` | `ActionFailure<T>` | **TIDAK throw** — kamu `return` ini dari form action. `data` ikut terkirim balik ke `form`. |
+| `isHttpError` | `isHttpError(e, status?)` | `boolean` (type guard) | `true` jika `e` berasal dari `error()`. `status` opsional untuk mempersempit. |
+| `isRedirect` | `isRedirect(e)` | `boolean` (type guard) | `true` jika `e` berasal dari `redirect()`. |
+| `isActionFailure` | `isActionFailure(e)` | `boolean` (type guard) | `true` jika `e` berasal dari `fail()`. |
+| `normalizeUrl` | `normalizeUrl(url)` | objek `{ url, denormalize }` | (Kit 2.18+) Lepas suffix internal SvelteKit dari URL; jarang dipakai langsung. |
+| `VERSION` | konstanta `string` | `string` | Versi SvelteKit yang sedang berjalan, mis. untuk logging. |
+
+### `error(status, body?)`
+
+```js
+import { error } from '@sveltejs/kit';
+
+export function GET({ params }) {
+	const post = db.getPost(params.id);
+
+	// Bentuk pendek: body string -> jadi { message: 'Tidak ditemukan' }
+	if (!post) error(404, 'Tidak ditemukan');
+
+	// Bentuk objek: kalau kamu memperluas App.Error (mis. tambah `code`)
+	// kamu bisa kirim field tambahan yang nanti terbaca di +error.svelte.
+	if (post.private) error(403, { message: 'Akses ditolak', code: 'PRIVATE' });
+
+	return json(post);
+	// Catatan: TAK PERLU `return` setelah error() — baris ini tak tercapai
+	// kalau error() terpanggil, karena ia sudah throw.
+}
+```
+
+### `redirect(status, location)`
+
+```js
+import { redirect } from '@sveltejs/kit';
+
+export function load({ locals, url }) {
+	// Belum login -> lempar ke /login, simpan tujuan asal di query.
+	// 303 See Other = pola standar "setelah aksi, pindah ke halaman lain".
+	if (!locals.user) redirect(303, '/login?next=' + url.pathname);
+
+	// 307 = sementara (jangan di-cache), 308 = permanen (boleh di-cache).
+	return { user: locals.user };
+}
+```
+
+### `json(data, init?)` dan `text(body, init?)`
+
+```js
+import { json, text } from '@sveltejs/kit';
+
+export function GET() {
+	// json(): set Content-Type application/json + JSON.stringify sekaligus.
+	return json({ ok: true, items: [1, 2, 3] });
+}
+
+export async function POST({ request }) {
+	const body = await request.json();
+	const created = db.create(body);
+
+	// Argumen kedua (init) = ResponseInit standar: status + headers.
+	return json(created, {
+		status: 201,
+		headers: { Location: '/api/items/' + created.id }
+	});
+}
+
+export function HEAD() {
+	// text() untuk balasan teks polos (mis. health check, webhook ack).
+	return text('pong', { headers: { 'Cache-Control': 'no-store' } });
+}
+```
+
+### `fail(status, data?)` — khusus form actions
+
+```js
+import { fail } from '@sveltejs/kit';
+
+export const actions = {
+	default: async ({ request }) => {
+		const data = await request.formData();
+		const email = data.get('email');
+
+		// Validasi gagal: JANGAN error() (itu bikin halaman error penuh).
+		// fail() mengembalikan 400 + data, lalu HALAMAN YANG SAMA dirender ulang
+		// dengan `form` terisi data ini — UX form yang benar.
+		if (!email) {
+			return fail(400, { email, missing: true });
+		}
+
+		await db.subscribe(email);
+		return { success: true };
+	}
+};
+```
+
+Di `+page.svelte`, hasil `fail()` masuk ke prop `form` (lewat `let { form } = $props()`), sehingga kamu bisa menampilkan pesan kesalahan sambil mempertahankan input pengguna — sesuatu yang tidak bisa dilakukan `error()`.
+
+### Type guard: `isHttpError`, `isRedirect`, `isActionFailure`
+
+Ketiganya berguna ketika kamu **membungkus** kode dalam `try/catch`. Karena `error()` dan `redirect()` melempar, sebuah `catch` yang lapar bisa tak sengaja menelan sinyal-sinyal itu.
+
+```js
+import { error, isHttpError, isRedirect } from '@sveltejs/kit';
+
+export async function load({ params }) {
+	try {
+		return await ambilData(params.id); // mungkin memanggil error(404,...) di dalam
+	} catch (e) {
+		// Kalau ini "error" SvelteKit (404/403/...), biarkan ia lanjut naik.
+		if (isHttpError(e, 404)) throw e;        // status opsional: cek 404 spesifik
+		if (isRedirect(e)) throw e;              // redirect juga harus diteruskan
+
+		// Hanya error tak terduga (DB down, dll.) yang kita ubah jadi 500.
+		error(500, 'Gagal memuat data');
+	}
+}
+```
+
+`isActionFailure(e)` jarang dipakai di kode aplikasi biasa, tapi berguna saat menulis util/middleware yang ingin membedakan hasil `fail()` dari hasil sukses sebuah action.
+
+## 3. Referensi tipe inti
+
+Tipe-tipe ini tidak menghasilkan kode runtime apa pun — mereka murni "kontrak" TypeScript. Kebanyakan kamu **tidak mengimpornya langsung** dari `@sveltejs/kit`; sebagai gantinya kamu mengambil versi yang sudah di-generate per-rute dari `'./$types'` (lebih akurat karena tahu `params` apa yang tersedia di rute itu). Tabel ini menjelaskan bentuk dasarnya.
+
+| Tipe | Bentuk inti | Dipakai di |
+| --- | --- | --- |
+| `RequestHandler` | `(event: RequestEvent) => MaybePromise<Response>` | `+server.js` (GET/POST/...) |
+| `RequestEvent` | objek: `request`, `params`, `url`, `cookies`, `fetch`, `locals`, `setHeaders`, `getClientAddress`, `route`, `platform`, `isDataRequest`, `isSubRequest` | argumen tiap handler/action/hook |
+| `Load` | `(event: LoadEvent) => MaybePromise<OutputData>` | `+page.js` / `+layout.js` (universal) |
+| `ServerLoad` | `(event: ServerLoadEvent) => MaybePromise<OutputData>` | `+page.server.js` / `+layout.server.js` |
+| `Action` | `(event: RequestEvent) => MaybePromise<OutputData>` | satu form action |
+| `Actions` | `Record<string, Action>` | objek `export const actions` |
+| `Handle` | `({ event, resolve }) => MaybePromise<Response>` | `hooks.server.js` |
+| `HandleFetch` | `({ event, request, fetch }) => MaybePromise<Response>` | hook untuk mencegat `fetch` di server |
+| `HandleServerError` / `HandleClientError` | `({ error, event, status, message }) => MaybePromise<App.Error \| void>` | mengubah error tak tertangani |
+| `Cookies` | objek: `get`, `getAll`, `set`, `delete`, `serialize` | `event.cookies` |
+| `Config` / `KitConfig` | bentuk `svelte.config.js` | konfigurasi proyek |
+| `HttpError` | `{ status: number, body: App.Error }` | yang dilempar `error()` |
+| `Redirect` | `{ status, location: string }` | yang dilempar `redirect()` |
+| `ActionFailure<T>` | `{ status: number, data: T }` | yang dikembalikan `fail()` |
+
+### `RequestEvent` — objek yang kamu terima di mana-mana
+
+Hampir setiap handler, action, dan hook menerima objek `RequestEvent`. Mengenali field-nya = mengenali "apa yang bisa kuambil dari sebuah request".
+
+```ts
+// src/routes/api/items/[id]/+server.ts
+import { json } from '@sveltejs/kit';
+// './$types' di-generate SvelteKit; RequestHandler di sini sudah tahu
+// bahwa params hanya berisi { id: string } untuk rute ini.
+import type { RequestHandler } from './$types';
+
+export const GET: RequestHandler = async (event) => {
+	const {
+		params,           // { id } dari segmen [id] -> params.id ter-type string
+		url,              // URL standar: url.searchParams, url.pathname
+		request,          // Request web standar: request.json(), request.headers
+		cookies,          // baca/tulis cookie (lihat tipe Cookies di bawah)
+		fetch,            // fetch ber-context SvelteKit (path relatif, bawa cookie)
+		locals,           // data per-request yang diisi di hooks (mis. locals.user)
+		setHeaders,       // setHeaders({ 'Cache-Control': 'max-age=60' })
+		getClientAddress, // getClientAddress() -> IP klien
+		route,            // route.id -> '/api/items/[id]'
+		isDataRequest,    // true bila ini permintaan data internal SvelteKit
+		isSubRequest      // true bila dipanggil via event.fetch dari handler lain
+	} = event;
+
+	const item = await db.get(params.id);
+	setHeaders({ 'Cache-Control': 'max-age=60' });
+	return json(item);
+};
+```
+
+### `Cookies` — `event.cookies`
+
+```ts
+import type { RequestHandler } from './$types';
+
+export const POST: RequestHandler = ({ cookies }) => {
+	// get / getAll
+	const token = cookies.get('session'); // string | undefined
+
+	// set: opsi WAJIB menyertakan `path`. httpOnly/secure/sameSite disarankan.
+	cookies.set('session', 'abc123', {
+		path: '/',
+		httpOnly: true,
+		secure: true,
+		sameSite: 'lax',
+		maxAge: 60 * 60 * 24 * 7 // 1 minggu (detik)
+	});
+
+	// delete: juga butuh `path` yang sama dengan saat set.
+	cookies.delete('temp', { path: '/' });
+
+	return new Response(null, { status: 204 });
+};
+```
+
+### `Actions` & `Handle`
+
+```ts
+// src/routes/contact/+page.server.ts
+import { fail, redirect } from '@sveltejs/kit';
+import type { Actions } from './$types';
+
+export const actions: Actions = {
+	send: async ({ request }) => {
+		const data = await request.formData();
+		if (!data.get('msg')) return fail(400, { missing: true });
+		await kirimPesan(data);
+		redirect(303, '/contact/terima-kasih'); // throw sendiri
+	}
+};
+```
+
+```ts
+// src/hooks.server.ts
+import type { Handle } from '@sveltejs/kit';
+
+export const handle: Handle = async ({ event, resolve }) => {
+	// Isi locals untuk request ini SEBELUM handler/route jalan.
+	event.locals.user = await cariUserDariCookie(event.cookies.get('session'));
+
+	// resolve() menjalankan route yang cocok dan menghasilkan Response.
+	const response = await resolve(event);
+	response.headers.set('x-powered-by', 'sveltekit');
+	return response;
+};
+```
+
+## 4. Coba sendiri
+
+Modul ini butuh runtime server (handler membaca `request`, set cookie, baca `locals`), jadi tidak ada live playground. Berikut satu file `+server.js` yang memakai banyak export sekaligus; jalankan di proyek SvelteKit lalu ketuk dengan `curl` untuk melihat tiap helper bekerja.
+
+```js
+// src/routes/api/demo/+server.js
+import { json, text, error, redirect } from '@sveltejs/kit';
+
+export function GET({ url, setHeaders }) {
+	const mode = url.searchParams.get('mode');
+
+	// json(): balas objek sebagai JSON
+	if (mode === 'json') {
+		setHeaders({ 'Cache-Control': 'no-store' });
+		return json({ ok: true, at: Date.now() });
+	}
+
+	// text(): balas teks polos
+	if (mode === 'text') return text('halo dunia');
+
+	// redirect(): throw sendiri -> 302/307/...; baris setelahnya tak jalan
+	if (mode === 'go') redirect(307, '/api/demo?mode=json');
+
+	// error(): throw sendiri -> respon error 400; sisa fungsi tak tercapai
+	error(400, 'mode tidak dikenal: pakai ?mode=json|text|go');
+}
+```
+
+```bash
+# Jalankan dev server lebih dulu:
+npm run dev          # default http://localhost:5173
+
+# json() -> { "ok": true, "at": ... } + header Cache-Control
+curl -i "http://localhost:5173/api/demo?mode=json"
+
+# text() -> "halo dunia" dengan Content-Type text/plain
+curl -i "http://localhost:5173/api/demo?mode=text"
+
+# redirect() -> lihat status 307 + header Location (jangan ikuti otomatis)
+curl -i "http://localhost:5173/api/demo?mode=go"
+
+# error() -> status 400 + body error SvelteKit
+curl -i "http://localhost:5173/api/demo"
+```
+
+Perhatikan: setelah `redirect()` atau `error()`, tidak ada `return` — memang tidak perlu, karena keduanya sudah melempar dan menghentikan fungsi di titik itu.
+
+## 5. Ringkasan API
+
+Cheat-sheet untuk dilirik cepat. Impor semua dari `@sveltejs/kit`.
+
+```ts
+import {
+	error,            // error(status, body?) -> never (THROW). 400–599.
+	redirect,         // redirect(status, location) -> never (THROW). 300–308.
+	json,             // json(data, init?) -> Response (Content-Type: application/json)
+	text,             // text(body, init?) -> Response (Content-Type: text/plain)
+	fail,             // fail(status, data?) -> ActionFailure  (RETURN, bukan throw)
+	isHttpError,      // isHttpError(e, status?) -> e dari error()?
+	isRedirect,       // isRedirect(e)           -> e dari redirect()?
+	isActionFailure,  // isActionFailure(e)      -> e dari fail()?
+	VERSION           // string versi SvelteKit
+} from '@sveltejs/kit';
+
+// Tipe (umumnya ambil dari './$types', tapi bisa juga dari sini):
+import type {
+	RequestHandler,   // (event: RequestEvent) => MaybePromise<Response>
+	RequestEvent,     // { request, params, url, cookies, fetch, locals, ... }
+	Load, ServerLoad, // tipe fungsi load (universal / server-only)
+	Action, Actions,  // form action(s)
+	Handle,           // hook server: ({ event, resolve }) => Response
+	Cookies,          // event.cookies: get/getAll/set/delete/serialize
+	Config            // bentuk svelte.config.js
+} from '@sveltejs/kit';
+```
+
+Aturan praktis cepat:
+
+- Mau balas data ke klien? `json()` (objek) atau `text()` (string), atau `new Response(...)` untuk kontrol penuh (mis. `204`, stream, file).
+- Mau menghentikan dengan error? `error(status, ...)` — tanpa `throw`.
+- Mau memindahkan klien? `redirect(status, location)` — tanpa `throw`.
+- Form gagal validasi? `return fail(status, data)` — bukan `error`.
+- Menangkap di `try/catch`? Pakai `isHttpError`/`isRedirect` untuk meneruskan sinyal SvelteKit, jangan ditelan.
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menulis <code>throw error(...)</code> atau <code>throw redirect(...)</code> di SvelteKit 2. Kedua fungsi sudah <strong>melempar sendiri</strong> (tipe baliknya <code>never</code>). Menambahkan <code>throw</code> di depan adalah pola SvelteKit 1 yang sekarang membingungkan TypeScript (mis. memunculkan "unreachable code"). Cukup tulis <code>error(404, '...')</code> dan <code>redirect(303, '/login')</code>.
+</Callout>
+
+<Callout type="warning">
+<code>try/catch</code> bisa menelan <code>error()</code> dan <code>redirect()</code> tanpa kamu sadari, karena keduanya bekerja dengan cara <em>throw</em>. Kalau handler-mu memanggil fungsi lain yang di dalamnya memakai <code>error()</code>/<code>redirect()</code>, dan kamu membungkusnya dengan <code>catch (e) &#123; ... &#125;</code> lalu mengubah semua jadi <code>500</code>, kamu akan merusak alur 404/redirect yang sah. Solusi: di blok <code>catch</code>, teruskan ulang sinyal SvelteKit dengan <code>if (isHttpError(e) || isRedirect(e)) throw e;</code> sebelum menangani error tak terduga.
+</Callout>
+
+<Callout type="tip">
+Bedakan <code>error()</code> vs <code>fail()</code> berdasarkan UX yang kamu mau. <code>error()</code> = pindah ke halaman error penuh (<code>+error.svelte</code>) — cocok untuk 404/403/500. <code>fail()</code> = tetap di halaman form yang sama, mengisi prop <code>form</code> dengan data + pesan, mempertahankan input pengguna — cocok untuk validasi form. Salah pilih = pengalaman buruk (form yang gagal validasi tidak seharusnya melempar pengguna ke halaman error).
+</Callout>
+
+<Callout type="legacy">
+Pola lama yang masih beredar: mengembalikan objek polos <code>&#123; status, body &#125;</code> dari endpoint, memakai nama fungsi huruf kecil (<code>get</code>/<code>post</code>), atau <code>throw error(...)</code> gaya Kit 1. Di SvelteKit 2 handler <strong>harus</strong> mengembalikan <code>Response</code> (pakai <code>json()</code>/<code>text()</code>/<code>new Response()</code>), nama fungsi huruf besar (<code>GET</code>/<code>POST</code>), dan <code>error()</code>/<code>redirect()</code> dipanggil tanpa <code>throw</code>.
+</Callout>
+
+<LegacyVsModern
+	rows={[
+		{ legacy: 'throw error(404, msg)', modern: 'error(404, msg)', note: 'Kit 2: error() throw sendiri' },
+		{ legacy: 'throw redirect(303, loc)', modern: 'redirect(303, loc)', note: 'sama: tanpa throw' },
+		{ legacy: 'return { status, body }', modern: 'return json(body, { status })', note: 'handler balas Response standar' },
+		{ legacy: 'export function get() {}', modern: 'export function GET() {}', note: 'nama method huruf besar' }
+	]}
+/>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/@sveltejs-kit" label="SvelteKit — @sveltejs/kit (error, redirect, json, text, fail, type guards, tipe inti)" />
+<DocsLink href="https://svelte.dev/docs/kit/form-actions" label="SvelteKit — Form actions (penggunaan fail() & prop form)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (tipe Handle, HandleFetch, HandleError)" />

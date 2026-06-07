@@ -1,0 +1,211 @@
+---
+title: "{@debug ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 11
+status: stable
+description: Mendebug nilai reaktif langsung dari markup; mencetak ke console dan memicu breakpoint debugger tiap nilai berubah, hanya saat development.
+docs: https://svelte.dev/docs/svelte/@debug
+keywords: [debug, breakpoint, debugger, console, dev-only]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Kamu sudah kenal keluarga **tag** Svelte — sintaks satu baris di dalam kurawal yang diawali `@`, seperti `{@html ...}` dan `{@const ...}`. `{@debug ...}` adalah anggota keluarga itu yang khusus untuk **men-debug**: ia hidup langsung di markup-mu, bukan di `<script>`.
+
+Pertanyaan wajar dari orang React/Vue: "kenapa butuh tag khusus? Kan tinggal `console.log`?" Jawabannya: `console.log(x)` di dalam `<script>` Svelte hanya berjalan **sekali**, saat komponen pertama kali dibuat. Setelah itu, walau `x` berubah berkali-kali, log-nya diam. Untuk melihat tiap perubahan kamu harus repot membungkusnya dengan `$effect`. `{@debug x}` melakukan itu untukmu secara otomatis: **tiap kali `x` berubah, ia mencetak nilai terbaru** — plus satu kemampuan ekstra yang `console.log` tidak punya.
+
+### Analogi: CCTV dengan sensor gerak
+
+Bayangkan `{@debug saldo}` sebagai **kamera CCTV bersensor gerak** yang kamu pasang mengarah ke satu variabel. Selama variabel itu diam, kamera tidur. Begitu nilainya **bergerak** (berubah), dua hal terjadi sekaligus:
+
+1. Kamera **memotret** — mencetak nilai `saldo` (dan variabel lain yang kamu daftarkan) ke console, lengkap dengan label.
+2. Kalau kamu sedang **menatap layar ruang monitor** (DevTools/F12 terbuka), seluruh gedung **dibekukan** — eksekusi JavaScript berhenti tepat di titik itu, persis seperti `debugger` statement, supaya kamu bisa memeriksa semua state pada momen perubahan tersebut. Kalau DevTools tertutup, kamera tetap memotret tapi tidak membekukan apa-apa.
+
+Jadi `{@debug}` itu ringkasnya: `console.log` reaktif **+** breakpoint `debugger` yang reaktif, dijahit jadi satu tag.
+
+### Daftar variabel, bukan ekspresi
+
+`{@debug a, b, c}` menerima **daftar nama variabel** dipisah koma. Ia mencetak ketiganya dan berhenti kalau salah satu dari mereka berubah. Penting — dan sering bikin tersandung: **hanya nama variabel telanjang yang boleh**. Ekspresi seperti `{@debug user.firstname}`, `{@debug items[0]}`, `{@debug !isReady}`, atau `{@debug typeof user === 'object'}` **tidak valid** dan akan ditolak compiler. Alasannya: tag ini melacak *identitas variabel* untuk tahu kapan harus memotret, bukan mengevaluasi ekspresi sembarang. (Untungnya kalau kamu men-debug `user`, kamu tetap melihat seluruh isi objeknya termasuk `user.firstname` — jadi men-debug variabel induknya biasanya sudah cukup.)
+
+### `{@debug}` tanpa argumen
+
+Tag kosong `{@debug}` (tanpa nama variabel apa pun) berarti: **pasang breakpoint yang menyala pada *setiap* perubahan state apa pun** di komponen itu. Ini palu godam — berguna saat kamu benar-benar buta dan ingin berhenti pada perubahan apa saja, tapi cepat menjengkelkan karena berhenti terus-menerus.
+
+### Hanya hidup saat development
+
+`{@debug}` adalah alat development. Saat kamu build untuk produksi, Svelte **membuangnya sepenuhnya** — tidak ada console.log, tidak ada breakpoint, nol jejak di bundle akhir. Jadi aman membiarkannya sementara saat menelusuri bug, tapi ia bukan untuk logika aplikasi.
+
+Untuk pembaca React/Vue: tidak ada padanan langsung di template kedua framework itu. Di React kamu menaruh `console.log` di body render atau di `useEffect`, lalu mengandalkan React DevTools; di Vue kamu pakai `console.log` di computed atau Vue DevTools. `{@debug}` menggabungkan "log saat berubah" dan "breakpoint" menjadi satu sintaks deklaratif di markup, yang tidak punya kembaran persis di sana.
+
+## 2. Contoh kode
+
+Penggunaan dasar — daftarkan satu atau beberapa variabel:
+
+```svelte
+<script>
+	let count = $state(0);
+	let user = $state({ nama: 'Sinta', role: 'admin' });
+</script>
+
+<button onclick={() => count++}>tambah</button>
+<button onclick={() => (user.role = 'editor')}>ganti role</button>
+
+<!-- Memotret 'count' DAN 'user' tiap salah satunya berubah.
+     Dengan DevTools terbuka, eksekusi berhenti di sini. -->
+{@debug count, user}
+```
+
+Yang **boleh** vs yang **tidak boleh** — `{@debug}` cuma menerima nama variabel:
+
+```svelte
+<script>
+	let user = $state({ nama: 'Sinta', umur: 27 });
+	let items = $state([10, 20, 30]);
+</script>
+
+<!-- ✅ BOLEH: nama variabel telanjang -->
+{@debug user, items}
+
+<!-- ❌ TIDAK BOLEH (error compiler): ini ekspresi, bukan nama variabel -->
+<!-- {@debug user.nama} -->
+<!-- {@debug items[0]} -->
+<!-- {@debug user.umur > 18} -->
+
+<!-- ✅ Solusi: bungkus ekspresinya jadi variabel dulu via {@const}
+     (di dalam blok) lalu debug variabel itu -->
+{#if user}
+	{@const dewasa = user.umur > 18}
+	{@debug dewasa}
+	<p>{user.nama} — {dewasa ? 'dewasa' : 'belum'}</p>
+{/if}
+```
+
+`{@debug}` tanpa argumen — breakpoint pada setiap perubahan state:
+
+```svelte
+<script>
+	let a = $state(1);
+	let b = $state(2);
+</script>
+
+<button onclick={() => a++}>a</button>
+<button onclick={() => b++}>b</button>
+
+<!-- Berhenti (kalau DevTools terbuka) tiap 'a' ATAU 'b' ATAU
+     state lain mana pun berubah. Palu godam — pakai seperlunya. -->
+{@debug}
+```
+
+## 3. Coba sendiri
+
+Karena efek utama `{@debug}` adalah mencetak ke console (dan membekukan eksekusi bila DevTools terbuka), **buka DevTools dulu (F12)** sebelum mengeklik. Tiap kali `count` atau `user` berubah, kamu akan melihat log nilainya di console; kalau panel DevTools aktif, eksekusi juga berhenti seperti breakpoint pada baris `{@debug ...}`.
+
+<Playground code={`<script>
+	let count = $state(0);
+	let user = $state({ nama: 'Sinta', skor: 10 });
+</script>
+<h3>Demo tag debug</h3>
+<div style="display: flex; gap: 8px;">
+	<button onclick={() => count++}>count = {count}</button>
+	<button onclick={() => user.skor++}>user.skor = {user.skor}</button>
+</div>
+{@debug count, user}
+<p style="margin-top: 12px; font-size: 14px; color: #555;">
+	Buka DevTools (F12) lalu klik tombol. Tiap 'count' atau 'user'
+	berubah, Svelte mencetak nilainya ke console. Kalau panel DevTools
+	terbuka, eksekusi ikut berhenti seperti breakpoint pada baris itu.
+</p>`} />
+
+<Callout type="tip">
+Kalau eksekusi berhenti dan halaman terasa "membeku", itu fitur — bukan bug. Tekan tombol <strong>Resume</strong> (F8) di panel Sources DevTools untuk melanjutkan, atau tutup DevTools agar breakpoint tidak aktif sama sekali.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Telusuri kenapa diskon tidak muncul">
+Kamu punya komponen kasir. Variabel `subtotal` benar, tapi badge "Diskon!" yang seharusnya muncul saat belanja `>= 100000` kadang tidak tampil dan kamu tidak tahu kenapa. Tugasmu:
+
+1. Buat `keranjang` berisi beberapa item `{ nama, harga, qty }` (pakai `$state`).
+2. Hitung `subtotal` dengan `$derived` (jumlah `harga * qty` semua item).
+3. Pasang `{@debug}` untuk memantau `keranjang` dan `subtotal` sekaligus, supaya kamu bisa melihat nilainya tiap berubah.
+4. Kamu butuh memantau ekspresi `subtotal >= 100000`, tapi `{@debug subtotal >= 100000}` ilegal. Akali dengan `{@const}` di dalam blok lalu debug variabel hasilnya.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let keranjang = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh', harga: 12000, qty: 1 }
+	]);
+
+	// subtotal dihitung ulang otomatis tiap 'keranjang' berubah
+	let subtotal = $derived(
+		keranjang.reduce((sum, it) => sum + it.harga * it.qty, 0)
+	);
+</script>
+
+<!-- Memotret kedua variabel tiap salah satunya berubah.
+     'keranjang' nama variabel -> boleh. 'subtotal' juga. -->
+{@debug keranjang, subtotal}
+
+<ul>
+	{#each keranjang as item}
+		<li>
+			{item.nama} x{item.qty}
+			<button onclick={() => item.qty++}>+</button>
+		</li>
+	{/each}
+</ul>
+
+<!-- subtotal >= 100000 adalah EKSPRESI, tak boleh langsung di-@debug.
+     Bungkus jadi variabel 'dapatDiskon' via @const, lalu debug itu. -->
+{#if true}
+	{@const dapatDiskon = subtotal >= 100000}
+	{@debug dapatDiskon}
+	<p>
+		Subtotal: Rp {subtotal.toLocaleString('id-ID')}
+		{#if dapatDiskon}<strong>Diskon!</strong>{/if}
+	</p>
+{/if}
+```
+
+Dengan `{@debug keranjang, subtotal}` kamu melihat angka pasti tiap klik `+`, dan dengan men-debug `dapatDiskon` kamu tahu persis kapan ambang `100000` terlewati — tanpa menebak-nebak.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>&#123;@debug&#125;</code> <strong>hanya menerima nama variabel</strong>, bukan ekspresi. <code>&#123;@debug user.nama&#125;</code>, <code>&#123;@debug items[0]&#125;</code>, dan <code>&#123;@debug a &gt; b&#125;</code> semuanya error compiler. Kalau perlu memantau sebuah ekspresi, hitung dulu jadi variabel — pakai <code>&#123;@const x = ...&#125;</code> di dalam blok atau sebuah <code>$derived</code> di <code>&lt;script&gt;</code> — lalu <code>&#123;@debug x&#125;</code>. Catatan: men-debug variabel objek (mis. <code>user</code>) sudah memperlihatkan seluruh isinya, jadi kamu jarang benar-benar perlu men-debug satu propertinya.
+</Callout>
+
+<Callout type="warning">
+Breakpoint hanya menyala <strong>kalau DevTools terbuka</strong>. Kalau kamu menaruh <code>&#123;@debug&#125;</code> lalu heran kenapa eksekusi tidak berhenti, kemungkinan besar panel DevTools-mu tertutup. Bagian <em>log</em>-nya tetap muncul di console; bagian <em>pause</em>-nya butuh DevTools aktif.
+</Callout>
+
+<Callout type="warning">
+<code>&#123;@debug&#125;</code> <strong>tanpa argumen</strong> berhenti pada <em>setiap</em> perubahan state mana pun di komponen — gampang bikin kamu terjebak berhenti berkali-kali. Pakai hanya saat benar-benar buta arah, dan begitu menemukan tersangkanya, ganti dengan versi bertarget <code>&#123;@debug namaVariabel&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+<code>&#123;@debug&#125;</code> adalah alat <strong>dev-only</strong> — Svelte membuangnya total saat build produksi, jadi tidak akan bocor ke pengguna. Tetap saja, jangan menyandarkan logika apa pun padanya; anggap ia perancah sementara yang dicabut setelah bug ketemu.
+</Callout>
+
+<Callout type="tip">
+Kalau kamu hanya butuh <em>melihat</em> nilai berubah tanpa eksekusi membeku, <code>$inspect(x)</code> sering lebih nyaman: ia nge-log tiap perubahan (tanpa breakpoint), menerima banyak argumen, bisa di-rangkai <code>$inspect(x).with(...)</code> untuk kustom, dan sama-sama otomatis hilang di produksi. Pakai <code>&#123;@debug&#125;</code> saat kamu butuh <strong>menjeda</strong> dan memeriksa state pada momen perubahan; pakai <code>$inspect</code> saat cukup mengintip alirannya.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/@debug" label={`{@debug} — dokumentasi resmi Svelte`} />

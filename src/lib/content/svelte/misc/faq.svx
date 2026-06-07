@@ -1,0 +1,251 @@
+---
+title: Frequently asked questions
+product: svelte
+section: misc
+sectionTitle: Misc
+sectionOrder: 7
+order: 8
+status: stable
+description: Kumpulan pertanyaan umum seputar Svelte — dukungan, perbandingan, format kode, routing, mobile, testing, HMR — beserta peta ekosistem dan padanannya di React/Vue.
+docs: https://svelte.dev/docs/svelte/faq
+keywords: [faq, ekosistem, routing, testing, prettier, sveltekit]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Halaman FAQ resmi Svelte bukan tutorial dan bukan referensi API. Ia menjawab satu pertanyaan besar yang selalu muncul saat kamu pindah ekosistem: **"Tool ini hidupnya di mana, dan kalau aku butuh X, aku harus pakai apa?"** Karena kamu sudah datang dari React dan Vue, sebenarnya kamu tidak sedang belajar konsep baru — kamu sedang **memetakan ulang** kebiasaan yang sudah kamu punya ke nama-nama baru.
+
+### Analogi: meja informasi di mal besar
+
+Bayangkan kamu masuk ke mal yang sangat besar untuk pertama kalinya. Kamu tidak tahu lantai berapa toko sepatu, di mana toilet, atau di mana food court. Yang kamu cari pertama kali adalah **meja informasi** di lobi. Petugasnya tidak menjual apa pun — dia hanya menunjuk: "Sepatu di lantai 2, toilet di ujung kiri, food court di lantai 4."
+
+FAQ adalah meja informasi itu. Ia tidak mengajarkan cara memakai router, tapi memberi tahu **router-nya bernama SvelteKit dan ada di mana**. Di React kamu sudah hafal isi malnya (routing → Next.js/React Router, testing → Vitest + Testing Library, format → Prettier). Di Svelte, isi malnya mirip — cuma papan namanya beda. FAQ inilah yang menerjemahkan papan nama itu.
+
+### Peta cepat: kebiasaanmu vs nama di Svelte
+
+Sebelum masuk tabel besar, ini "kamus pindahan" yang paling sering dicari. Banyak yang ternyata **tool yang sama persis** — Svelte tidak membuat ulang roda, ia menumpang ekosistem Vite.
+
+| Kalau di React/Vue kamu pakai... | Di Svelte/SvelteKit jadi... | Catatan |
+|---|---|---|
+| Next.js / Nuxt (routing + SSR) | **SvelteKit** | Meta-framework resmi, file-based routing |
+| Vitest / Jest | **Vitest** | Sama persis — Svelte memang berbasis Vite |
+| `@testing-library/react` | `@testing-library/svelte` | API hampir identik |
+| Playwright / Cypress | **Playwright / Cypress** | Sama, tak ada versi khusus Svelte |
+| Prettier (jsx/vue) | Prettier + `prettier-plugin-svelte` | Plugin resmi |
+| `eslint-plugin-react` / `eslint-plugin-vue` | `eslint-plugin-svelte` | Flat config |
+| React Native / Capacitor | **Tauri / Capacitor** | Bungkus SPA, bukan UI native |
+
+### Tabel tanya-jawab ringkas
+
+Ini inti halaman FAQ — pertanyaan yang paling sering ditanya pendatang baru, beserta jawaban padatnya. Bagian setelah tabel akan membahas yang butuh contoh kode.
+
+| Pertanyaan | Jawaban singkat |
+|---|---|
+| Mulai belajar dari mana? | Tutorial interaktif resmi di `svelte.dev/tutorial` (satu konsep per langkah). Docs dipakai sebagai referensi, bukan bacaan urut. |
+| Cari bantuan ke mana? | **Docs** untuk sintaks, **Stack Overflow** untuk error/kode, **Discord & Reddit** untuk diskusi arsitektur & best practice, **Svelte Society** untuk kurasi buku/video. |
+| Ada extension editor? | Ya — extension resmi **Svelte for VS Code** (didukung Svelte Language Server: highlight, autocomplete, diagnostics, hover docs). |
+| Cara format otomatis? | **Prettier** + paket `prettier-plugin-svelte`. |
+| Cara linting? | `eslint-plugin-svelte` (mendukung ESLint flat config). |
+| Cara dokumentasi komponen? | Komentar khusus berlabel `@component` di atas file `.svelte`; isinya muncul saat hover di editor (mendukung Markdown). |
+| Svelte scalable? | Ya — dipakai produksi oleh banyak perusahaan; bundling per-komponen membuatnya ringan saat aplikasi membesar. |
+| Ada library komponen UI? | Banyak — daftarnya ada di halaman *packages* / `sveltesociety.dev`. |
+| Cara routing? | **SvelteKit**, router resmi berbasis file (paralel dengan Next.js & Nuxt). Untuk SPA murni ada juga router komunitas. |
+| Bikin app mobile? | Bungkus SvelteKit (mode SPA) dengan **Tauri** atau **Capacitor** untuk akses kamera, geolokasi, push notification. |
+| Kenapa style tak terpakai dihapus? | Disengaja, untuk mencegah kebocoran scope. Class yang tak terdeteksi saat compile pakai `:global(...)`. |
+| Ganti judul tab (`<title>`)? | Lewat `<svelte:head>` (Svelte murni) atau di `+page`/`load` (SvelteKit). |
+| HMR (hot reload)? | Native di SvelteKit lewat Vite + `svelte-hmr`. |
+| Cara testing? | **Unit**: Vitest. **Komponen**: `@testing-library/svelte` + jsdom (atau Playwright CT). **E2E**: Playwright. |
+| Svelte v2 masih ada? | Maintenance minimal saja; dokumentasinya tetap di `v2.svelte.dev`. |
+
+### Kenapa ekosistemnya terasa lebih "kecil" tapi tidak kurang
+
+Satu kesan umum dari pendatang React: "kok library pihak ketiganya lebih sedikit?" Itu benar secara jumlah, tapi sering menyesatkan. Banyak hal yang di React butuh library (mis. state management seperti Redux/Zustand, atau animasi seperti Framer Motion) di Svelte **sudah jadi bagian bahasa**: reaktivitas via runes, store bawaan, dan modul `svelte/transition`, `svelte/motion`, `svelte/animate`. Jadi "lebih sedikit paket" sering berarti "lebih sedikit yang perlu dipasang", bukan "kurang lengkap". Plus-minusnya objektif: ekosistem React tetap menang dalam keberagaman komponen UI siap pakai dan jawaban Stack Overflow.
+
+## 2. Contoh kode
+
+Tiga pertanyaan FAQ ini paling sering butuh kode nyata: mendokumentasikan komponen, mengatur judul halaman, dan menangani style global.
+
+```svelte
+<!--
+@component
+Kartu produk: menampilkan nama & harga, memanggil `onbuy` saat tombol diklik.
+
+- `name` (string, wajib) — nama produk
+- `price` (number, wajib) — harga dalam rupiah
+- `onbuy` (() => void, opsional) — dipanggil saat tombol beli diklik
+
+Komentar @component ini muncul otomatis saat kamu hover <ProductCard />
+di file lain — mirip JSDoc, tapi khusus komponen Svelte.
+-->
+<script lang="ts">
+	interface Props {
+		name: string;
+		price: number;
+		onbuy?: () => void;
+	}
+	let { name, price, onbuy }: Props = $props();
+</script>
+
+<article>
+	<h3>{name}</h3>
+	<p>Rp{price.toLocaleString('id-ID')}</p>
+	<button onclick={onbuy}>Beli</button>
+</article>
+```
+
+```svelte
+<!-- Mengatur judul tab browser — Svelte murni -->
+<script>
+	let count = $state(0);
+</script>
+
+<!-- <svelte:head> menyuntik elemen ke <head> dokumen.
+     Judul ikut reaktif: berubah tiap count berubah. -->
+<svelte:head>
+	<title>Keranjang ({count})</title>
+	<meta name="description" content="Halaman keranjang belanja" />
+</svelte:head>
+
+<button onclick={() => count++}>Tambah ({count})</button>
+```
+
+```svelte
+<style>
+	/* Style di-scope otomatis ke komponen ini saja.
+	   Aturan yang tidak dipakai akan DIHAPUS compiler. */
+	p {
+		color: navy;
+	}
+
+	/* :global menembus scope. Wajib untuk:
+	   - class yang dibuat saat runtime (mis. dari string HTML)
+	   - elemen anak dari komponen lain (mis. konten Markdown). */
+	:global(.markdown a) {
+		color: crimson;
+		text-decoration: underline;
+	}
+</style>
+```
+
+## 3. Coba sendiri
+
+Modul ini soal ekosistem & tooling (butuh konfigurasi proyek nyata), jadi tidak ada live playground. Sebagai gantinya, ini contoh **testing** yang beranotasi — salah satu pertanyaan FAQ paling penting. Perhatikan dua level berbeda: menguji logika murni vs menguji komponen.
+
+```js
+// cart.test.js — UNIT test: menguji logika bisnis, tanpa DOM sama sekali.
+// Sama persis seperti yang kamu tulis di React/Vue, karena ini cuma Vitest.
+import { describe, it, expect } from 'vitest';
+import { hitungTotal } from './cart.js';
+
+describe('hitungTotal', () => {
+	it('menjumlahkan harga x qty', () => {
+		const isi = [{ harga: 1000, qty: 2 }, { harga: 500, qty: 3 }];
+		expect(hitungTotal(isi)).toBe(3500); // 2000 + 1500
+	});
+});
+```
+
+```js
+// Counter.test.js — COMPONENT test: render komponen, lalu cek DOM-nya.
+// Mirip @testing-library/react — render + screen + query peran (role).
+import { render, screen } from '@testing-library/svelte';
+import { expect, test } from 'vitest';
+import Counter from './Counter.svelte';
+
+test('menampilkan nilai awal dari prop', () => {
+	// props dioper lewat opsi kedua render(), bukan JSX
+	render(Counter, { props: { start: 5 } });
+	expect(screen.getByRole('button')).toHaveTextContent('5');
+});
+```
+
+Untuk **end-to-end** (menjalankan seluruh aplikasi di browser asli), Svelte tidak punya alat khusus — kamu pakai **Playwright** atau **Cypress** persis seperti di proyek React/Vue. Pola tiga lapis ini (unit → komponen → e2e) identik lintas framework; yang berbeda hanya satu baris: paket `@testing-library/svelte`, bukan `/react`.
+
+## 4. Latihan
+
+<Exercise title="Dokumentasikan komponen + atur judul halaman">
+Buat sebuah komponen `UserCard.svelte` (Svelte 5, TypeScript) yang:
+
+1. Punya komentar `@component` yang menjelaskan kegunaan dan daftar prop-nya, sehingga muncul saat di-hover.
+2. Menerima prop `name: string` dan `online: boolean` lewat `$props()`.
+3. Mengatur judul tab menjadi `Profil — <nama>` lewat `<svelte:head>` (judul harus reaktif terhadap `name`).
+4. Punya satu aturan style yang di-scope (mis. warna nama) dan satu aturan `:global` (mis. menata `body`).
+
+{#snippet solution()}
+
+```svelte
+<!--
+@component
+Kartu profil pengguna: menampilkan nama & status online,
+sekaligus mengatur judul tab browser sesuai nama.
+
+- `name` (string, wajib) — nama pengguna
+- `online` (boolean, wajib) — true bila pengguna sedang online
+-->
+<script lang="ts">
+	interface Props {
+		name: string;
+		online: boolean;
+	}
+	let { name, online }: Props = $props();
+</script>
+
+<!-- Judul reaktif: berubah otomatis kalau prop name berubah -->
+<svelte:head>
+	<title>Profil — {name}</title>
+</svelte:head>
+
+<article>
+	<h3 class="nama">{name}</h3>
+	<p>{online ? 'Online' : 'Offline'}</p>
+</article>
+
+<style>
+	/* di-scope ke komponen ini saja */
+	.nama {
+		color: teal;
+	}
+
+	/* :global untuk menata elemen di luar scope komponen */
+	:global(body) {
+		font-family: system-ui, sans-serif;
+	}
+</style>
+```
+
+Kunci jawaban: `@component` ditulis sebagai komentar HTML paling atas, sebelum `<script>`. Judul reaktif "gratis" karena `<svelte:head>` ikut dalam sistem reaktivitas Svelte — tidak perlu `useEffect` seperti di React (`document.title = ...`). Dan `:global(body)` perlu, karena `body` bukan milik komponen ini sehingga tanpa `:global` aturannya akan dihapus compiler.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>"Style-ku hilang setelah build!"</strong> — Penyebab paling umum: kamu menata sebuah class yang nama atau elemennya baru muncul saat <em>runtime</em> (mis. dari HTML hasil <code>{`{@html ...}`}</code>, library pihak ketiga, atau anak komponen lain). Compiler tidak melihat class itu di markup, jadi menghapus aturannya. Solusinya bukan mematikan fitur ini, tapi membungkus aturan tadi dengan <code>:global(...)</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Tauri/Capacitor bukan React Native.</strong> Keduanya membungkus aplikasi <em>web</em>-mu (SvelteKit mode SPA) dalam sebuah webview lalu memberi jembatan ke API native (kamera, geolokasi, dsb). UI-nya tetap HTML/CSS, <em>bukan</em> komponen native asli seperti React Native. Plusnya: kamu pakai ulang 100% skill web. Minusnya: performa & "rasa native" murni tidak sepenuhnya setara aplikasi native. Pilih sesuai kebutuhan, jangan berharap paradigma React Native.
+</Callout>
+
+<Callout type="tip">
+Untuk routing, mulailah dari <strong>SvelteKit</strong> kecuali kamu benar-benar butuh SPA tanpa server sama sekali. Router komunitas (mis. <code>page.js</code>, <code>svelte-routing</code>) memang ada, tapi SvelteKit memberi SSR, prerendering, data loading, dan HMR sekaligus — analog dengan memilih Next.js daripada React Router polos di dunia React.
+</Callout>
+
+<Callout type="tip">
+Manfaatkan <strong>Svelte Language Server</strong>: pasang extension resmi "Svelte for VS Code", lalu jalankan <code>svelte-check</code> di CI. Editor hanya memeriksa file yang terbuka; <code>svelte-check</code> memindai seluruh proyek termasuk type-error di markup <code>.svelte</code> yang luput dari <code>tsc</code> biasa.
+</Callout>
+
+<Callout type="legacy">
+Kalau kamu menemukan tutorial lama yang menyebut <strong>Sapper</strong>, itu pendahulu SvelteKit dan sudah <em>deprecated</em> — semua proyek baru memakai SvelteKit. Begitu pula konten untuk <strong>Svelte v2</strong> (di <code>v2.svelte.dev</code>) hanya untuk maintenance; semua materi modern memakai Svelte 5 dengan runes.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/faq" label="Frequently asked questions — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/kit/introduction" label="SvelteKit — router & meta-framework resmi" />

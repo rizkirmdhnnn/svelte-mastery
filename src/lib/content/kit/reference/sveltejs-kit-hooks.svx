@@ -1,0 +1,347 @@
+---
+title: '@sveltejs/kit/hooks'
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 2
+status: reference
+description: Modul @sveltejs/kit/hooks beserta fungsi sequence() untuk merangkai banyak handle jadi satu rantai middleware, lengkap dengan urutan resolve dan transformPageChunk.
+docs: https://svelte.dev/docs/kit/@sveltejs-kit-hooks
+keywords: [sequence, handle, hooks, middleware, transformPageChunk, resolve]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Hati-hati membedakan dua hal yang namanya mirip:
+
+- **File hooks** — `src/hooks.server.js` dan `src/hooks.js`. Di sinilah kamu menulis fungsi `handle`, `handleFetch`, `handleError`, `reroute`, `transport`. (Itu dibahas di modul *Hooks*.)
+- **Modul `@sveltejs/kit/hooks`** — sebuah paket utilitas kecil yang kamu **import**. Isinya cuma satu fungsi: **`sequence`**. Modul inilah yang kita bedah di sini.
+
+Kenapa `sequence` ada? Karena SvelteKit hanya menerima **satu** `export const handle`. Padahal kebutuhan lintas-route biasanya banyak dan beda-beda: autentikasi, i18n, logging/timing, header keamanan, rate limit. Kalau semua dijejalkan ke satu fungsi `handle` raksasa, file-nya jadi susah dibaca, susah dites, dan susah diatur urutannya. `sequence(...handlers)` menjawab ini: kamu tulis tiap urusan sebagai fungsi `handle` terpisah, lalu `sequence` merangkainya jadi satu `handle` gabungan.
+
+Bagi yang dari Express/Koa/NestJS: ini persis **middleware chain**. Tiap handler memanggil `resolve(event)` untuk "lanjut ke berikutnya" — analog `next()`. Yang membuat pola ini elegan adalah **model onion (bawang)**: request mengalir **turun** menembus tiap lapisan (bagian *sebelum* `resolve`), menyentuh inti (route dirender), lalu response mengalir **naik** menembus lapisan yang sama dalam urutan terbalik (bagian *sesudah* `resolve`).
+
+### Analogi: jalur perakitan dua arah
+
+Bayangkan paket (request) lewat ban berjalan melewati beberapa stasiun (handler). Saat **berangkat** ke mesin perakit (render route), tiap stasiun mengerjakan tugas "pra" sesuai urutan pemasangannya: stasiun 1, lalu stasiun 2, dst. Setelah barang jadi, ban berjalan **mundur**: barang kembali lewat stasiun 2 dulu (tugas "pasca"), baru stasiun 1. Stasiun pertama adalah yang **pertama menyapa** request dan **terakhir menyentuh** response. Itulah mengapa di `sequence(a, b)`, fungsi `a` memproses request lebih dulu tapi membungkus response paling akhir.
+
+Bagian yang sering bikin kaget: tiap handler boleh mengoper **opsi** ke `resolve(event, opts)` (yaitu `transformPageChunk`, `preload`, `filterSerializedResponseHeaders`). Saat banyak handler mengoper opsi yang sama, `sequence` harus memutuskan siapa yang menang dan dalam urutan apa mereka jalan. Aturannya tidak seragam antar-opsi — dan justru inilah inti pengetahuan modul ini.
+
+## 2. Contoh kode
+
+Pemakaian paling umum: pecah beberapa tanggung jawab, gabung dengan `sequence`.
+
+```js
+// src/hooks.server.js
+import { redirect } from '@sveltejs/kit';
+import { sequence } from '@sveltejs/kit/hooks';
+
+// Handler 1: autentikasi. Mengisi locals, dipakai handler/route berikutnya.
+/** @type {import('@sveltejs/kit').Handle} */
+async function authentication({ event, resolve }) {
+	const sessionId = event.cookies.get('session');
+	event.locals.user = sessionId ? await getUser(sessionId) : null;
+
+	if (event.url.pathname.startsWith('/admin') && !event.locals.user) {
+		// redirect() melempar sendiri di SvelteKit 2 — TANPA `throw`.
+		redirect(303, '/login');
+	}
+
+	return resolve(event); // serahkan ke handler berikutnya di rantai
+}
+
+// Handler 2: header keamanan, dioprek SETELAH route dirender.
+/** @type {import('@sveltejs/kit').Handle} */
+async function securityHeaders({ event, resolve }) {
+	const response = await resolve(event);
+	response.headers.set('x-frame-options', 'SAMEORIGIN');
+	return response;
+}
+
+// Urutan argumen = urutan eksekusi "pra".
+// authentication jalan duluan (set locals), securityHeaders membungkus paling luar.
+export const handle = sequence(authentication, securityHeaders);
+```
+
+Sekarang bagian yang dalam: apa yang terjadi saat **dua handler sama-sama** mengoper opsi ke `resolve`. Contoh kanonik di bawah ini sengaja menaruh `console.log` di setiap titik supaya urutannya kelihatan.
+
+```js
+// src/hooks.server.js
+import { sequence } from '@sveltejs/kit/hooks';
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function first({ event, resolve }) {
+	console.log('first: pre-processing');
+	const response = await resolve(event, {
+		transformPageChunk: ({ html }) => {
+			// transformPageChunk di-apply TERBALIK -> ini jalan PALING AKHIR
+			console.log('first: transform');
+			return html;
+		},
+		preload: () => {
+			// preload forward order & "first wins" -> punya `first` yang dipakai
+			console.log('first: preload');
+			return true;
+		}
+	});
+	console.log('first: post-processing');
+	return response;
+}
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function second({ event, resolve }) {
+	console.log('second: pre-processing');
+	const response = await resolve(event, {
+		transformPageChunk: ({ html }) => {
+			console.log('second: transform');
+			return html;
+		},
+		preload: () => {
+			// TIDAK akan terpanggil — `first` sudah "menang" untuk preload
+			console.log('second: preload');
+			return true;
+		},
+		filterSerializedResponseHeaders: () => {
+			// hanya `second` yang punya opsi ini -> dialah yang dipakai
+			console.log('second: filterSerializedResponseHeaders');
+			return true;
+		}
+	});
+	console.log('second: post-processing');
+	return response;
+}
+
+export const handle = sequence(first, second);
+```
+
+Output di terminal (urutannya bukan kebetulan — ini kontrak resmi `sequence`):
+
+```text
+first: pre-processing
+first: preload
+second: pre-processing
+second: filterSerializedResponseHeaders
+second: transform
+first: transform
+second: post-processing
+first: post-processing
+```
+
+Perhatikan tiga hal:
+
+1. **`first: preload` muncul, `second: preload` tidak.** Untuk `preload`, opsi handler **pertama** yang mendefinisikannya "menang", sisanya diabaikan.
+2. **`second: transform` jalan sebelum `first: transform`.** Untuk `transformPageChunk`, semua di-merge tapi di-apply **terbalik** (handler terakhir dulu).
+3. **`post-processing` juga terbalik** dari `pre-processing` — `second` selesai dulu, baru `first`. Itu efek model onion.
+
+## 3. Coba sendiri
+
+Modul ini butuh server SvelteKit sungguhan (`src/hooks.server.js`, `resolve`, cookie), jadi tidak bisa dijalankan di live playground browser. Sebagai gantinya, pahami **peta aliran**-nya, lalu reproduksi contoh `first`/`second` di proyek lokalmu dan amati terminalnya.
+
+```text
+sequence(first, second)  — model onion untuk SATU request
+─────────────────────────────────────────────────────────
+  request masuk
+      │
+      ▼
+  [ first  ] pre-processing ............ (1)
+      │ resolve(event, optsFirst)
+      ▼
+  [ second ] pre-processing ............ (2)
+      │ resolve(event, optsSecond)
+      ▼
+  ( render route: load -> +page -> HTML )
+      │   ▲
+      │   │  transformPageChunk di-apply TERBALIK:
+      │   │    second.transform .......... (lalu)
+      │   │    first.transform  .......... (paling akhir)
+      ▼   │
+  [ second ] post-processing ........... (naik duluan)
+      │
+      ▼
+  [ first  ] post-processing ........... (naik paling akhir)
+      │
+      ▼
+  Response ke klien
+```
+
+Resep aturan opsi (hafalkan ini, sisanya tinggal turunan):
+
+- `transformPageChunk` -> **semua dipanggil**, urutan **terbalik** (handler terakhir ke pertama).
+- `preload` -> **first wins** (handler pertama yang punya opsi ini saja yang dipakai).
+- `filterSerializedResponseHeaders` -> sama seperti `preload` (**first wins**).
+
+Eksperimen cepat di proyek lokal: tempel timing supaya kamu melihat rantai benar-benar jalan tiap request.
+
+```js
+// src/hooks.server.js
+import { sequence } from '@sveltejs/kit/hooks';
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function timer({ event, resolve }) {
+	const start = performance.now();
+	const response = await resolve(event);
+	const ms = Math.round(performance.now() - start);
+	// Karena `timer` paling kiri, ia mengukur SELURUH rantai (termasuk handler lain).
+	console.log(event.request.method, event.url.pathname, ms + 'ms');
+	return response;
+}
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function nonce({ event, resolve }) {
+	// transformPageChunk: ganti placeholder %nonce% di HTML akhir.
+	return resolve(event, {
+		transformPageChunk: ({ html }) => html.replace('%nonce%', crypto.randomUUID())
+	});
+}
+
+export const handle = sequence(timer, nonce);
+```
+
+Buka beberapa halaman, lihat terminal: tiap navigasi mencetak satu baris timing dari `timer`. Karena `timer` membungkus `nonce`, angka ms-nya sudah termasuk kerja `nonce`.
+
+## 4. Ringkasan API
+
+Modul `@sveltejs/kit/hooks` mengekspor **tepat satu** fungsi.
+
+| Export | Jenis | Tanda tangan | Keterangan |
+| --- | --- | --- | --- |
+| `sequence` | function | `sequence(...handlers: Handle[]): Handle` | Merangkai banyak fungsi `handle` jadi satu `handle` gabungan, gaya middleware. |
+
+Tipe-tipe yang relevan (diambil dari `@sveltejs/kit`); union pakai pipe ditaruh di blok kode agar tidak merusak tabel:
+
+```ts
+// Satu-satunya export @sveltejs/kit/hooks:
+function sequence(...handlers: Handle[]): Handle;
+
+// Bentuk sebuah fungsi handle (argumen yang diterima tiap handler):
+type Handle = (input: {
+	event: RequestEvent;
+	resolve: (event: RequestEvent, opts?: ResolveOptions) => MaybePromise<Response>;
+}) => MaybePromise<Response>;
+
+// Argumen kedua resolve() — INI yang di-merge oleh sequence():
+interface ResolveOptions {
+	transformPageChunk?: (input: { html: string; done: boolean }) => MaybePromise<string | undefined>;
+	filterSerializedResponseHeaders?: (name: string, value: string) => boolean;
+	preload?: (input: { type: 'font' | 'css' | 'js' | 'asset'; path: string }) => boolean;
+}
+```
+
+Aturan merge tiap opsi `resolve` saat dipakai di banyak handler dalam satu `sequence`:
+
+| Opsi `resolve` | Urutan di bawah `sequence()` | Akibatnya |
+| --- | --- | --- |
+| `transformPageChunk` | reverse order, **semua di-merge** | tiap chunk HTML lewat transform handler **terakhir** dulu, lalu mundur ke handler pertama |
+| `preload` | forward order, **first wins** | hanya `preload` dari handler **pertama** yang mendefinisikannya yang dipakai; sisanya diabaikan tanpa peringatan |
+| `filterSerializedResponseHeaders` | forward order, **first wins** | sama persis seperti `preload` |
+
+Catatan parameter:
+
+- **`transformPageChunk({ html, done })`** — `html` adalah potongan stream (bukan dijamin dokumen utuh), `done` bernilai `true` untuk chunk terakhir. Placeholder gaya `%nonce%` / `%sveltekit.head%` dijamin **tidak** terpotong di tengah, jadi `.replace('%nonce%', ...)` aman; tapi jangan melakukan pencarian string yang bisa terbelah antar-chunk. Return `string` baru atau `undefined` (biarkan apa adanya).
+- **`filterSerializedResponseHeaders(name, value)`** — secara default header dari response `fetch` di `load` **tidak** diserialisasi ke klien; return `true` untuk header yang ingin diteruskan.
+- **`preload({ type, path })`** — menentukan file mana yang dimasukkan ke `<head>` sebagai preload/modulepreload; `type` salah satu dari `font` / `css` / `js` / `asset`. Default-nya memuat `js` dan `css`.
+
+## 5. Latihan
+
+<Exercise title="Rangkai tiga handle + tebak urutannya">
+Susun `src/hooks.server.js` dengan TIGA fungsi `handle` lalu gabungkan pakai `sequence()`:
+
+1. `requestId` — buat `crypto.randomUUID()`, simpan ke `event.locals.requestId`, lalu `console.log('requestId: pre')` sebelum `resolve` dan `console.log('requestId: post')` sesudahnya.
+2. `authGuard` — baca cookie `session`, isi `event.locals.user` via `getUser()` (anggap sudah ada). Kalau path diawali `/admin` dan user kosong, panggil `redirect(303, '/login')` (ingat: **tanpa** `throw`).
+3. `securityHeaders` — panggil `resolve(event)`, set header `x-content-type-options: nosniff`, lalu return response.
+4. `export const handle = sequence(requestId, authGuard, securityHeaders)`.
+
+Pertanyaan bonus: jika request normal (bukan `/admin`), dalam urutan apa `requestId: pre` dan `requestId: post` tercetak relatif terhadap render route?
+
+{#snippet solution()}
+
+  ```js
+  // src/hooks.server.js
+  import { redirect } from '@sveltejs/kit';
+  import { sequence } from '@sveltejs/kit/hooks';
+
+  // (1) ID per-request untuk korelasi log.
+  /** @type {import('@sveltejs/kit').Handle} */
+  async function requestId({ event, resolve }) {
+  	event.locals.requestId = crypto.randomUUID();
+  	console.log('requestId: pre');
+  	const response = await resolve(event);
+  	console.log('requestId: post');
+  	return response;
+  }
+
+  // (2) Autentikasi + proteksi /admin.
+  /** @type {import('@sveltejs/kit').Handle} */
+  async function authGuard({ event, resolve }) {
+  	const sessionId = event.cookies.get('session');
+  	event.locals.user = sessionId ? await getUser(sessionId) : null;
+
+  	if (event.url.pathname.startsWith('/admin') && !event.locals.user) {
+  		// redirect() melempar sendiri di SvelteKit 2 — JANGAN pakai `throw`.
+  		redirect(303, '/login');
+  	}
+
+  	return resolve(event); // lanjut ke securityHeaders
+  }
+
+  // (3) Header keamanan, dioprek setelah route dirender.
+  /** @type {import('@sveltejs/kit').Handle} */
+  async function securityHeaders({ event, resolve }) {
+  	const response = await resolve(event);
+  	response.headers.set('x-content-type-options', 'nosniff');
+  	return response;
+  }
+
+  // (4) Urutan = urutan "pra". requestId paling luar (membungkus semuanya).
+  export const handle = sequence(requestId, authGuard, securityHeaders);
+  ```
+
+  Jawaban bonus: `requestId: pre` tercetak **sebelum** route dirender (saat request "turun"),
+  dan `requestId: post` tercetak **setelah** seluruh rantai + render selesai (saat response "naik").
+  Karena `requestId` argumen paling kiri, ia adalah lapisan terluar — pertama menyapa, terakhir menutup.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Urutan argumen <code>sequence()</code> menentukan segalanya.</strong> Handler paling kiri memproses request <strong>paling dulu</strong> (bagian sebelum <code>resolve</code>) dan response <strong>paling akhir</strong> (bagian sesudah <code>resolve</code>). Jadi taruh autentikasi/pengisi <code>locals</code> di awal (supaya handler setelahnya bisa membacanya), dan taruh pembungkus response (header, kompresi) lebih akhir. Salah urutan = handler membaca <code>event.locals</code> yang belum terisi.
+</Callout>
+
+<Callout type="pitfall">
+<strong><code>preload</code> dan <code>filterSerializedResponseHeaders</code> memakai aturan "first wins".</strong> Kalau dua handler sama-sama mengoper salah satu opsi ini ke <code>resolve</code>, hanya milik handler <strong>pertama</strong> yang dipakai — yang lain diabaikan diam-diam, tanpa error. Mudah bikin bingung ("kenapa <code>filter</code>-ku tidak jalan?"). Pastikan opsi semacam ini hanya didefinisikan di <strong>satu</strong> handler.
+</Callout>
+
+<Callout type="warning">
+<strong><code>transformPageChunk</code> di-apply terbalik.</strong> Berbeda dari <code>preload</code>, semua <code>transformPageChunk</code> tetap dipanggil (di-merge), tapi urutannya <strong>mundur</strong>: handler terakhir mentransformasi chunk lebih dulu, handler pertama paling akhir. Kalau dua transform mengganti placeholder yang sama, yang "menang" adalah yang jalan terakhir (handler pertama). Selain itu <code>html</code> hanyalah potongan stream, bukan dokumen utuh — jangan mengandalkan pencarian string yang bisa terbelah antar-chunk; placeholder <code>%...%</code> aman karena dijamin tidak terpotong.
+</Callout>
+
+<Callout type="tip">
+Tiap fungsi <code>handle</code> tetap wajib mengembalikan <code>Response</code> — biasanya hasil <code>await resolve(event)</code>. Pola yang gampang dites: satu file kecil per urusan (auth, i18n, logging, header), masing-masing export fungsi <code>handle</code>-nya, lalu di <code>hooks.server.js</code> cukup <code>export const handle = sequence(...)</code>. Ini bikin kamu bisa unit-test tiap handler terpisah dan menukar urutannya dengan mengubah satu baris.
+</Callout>
+
+<Callout type="legacy">
+Di dalam handler, jangan pakai gaya SvelteKit 1 <code>throw redirect(...)</code> / <code>throw error(...)</code> — di SvelteKit 2 cukup <code>redirect(...)</code> / <code>error(...)</code> tanpa <code>throw</code> (mereka melempar sendiri). Juga: opsi lama <code>resolve(event, &#123; transformPage &#125;)</code> sudah dihapus; sekarang gunakan <code>transformPageChunk</code> yang bekerja per-potongan stream.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="SvelteKit 1 (legacy)"
+	modernLabel="SvelteKit 2 (modern)"
+	rows={[
+		{ legacy: 'throw redirect(303, "/login")', modern: 'redirect(303, "/login")', note: 'di dalam handle; redirect/error melempar sendiri' },
+		{ legacy: 'resolve(event, { transformPage })', modern: 'resolve(event, { transformPageChunk })', note: 'transform per-chunk HTML, bukan halaman utuh' }
+	]}
+/>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/@sveltejs-kit-hooks" label="SvelteKit — @sveltejs/kit/hooks (sequence)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (handle, resolve, transformPageChunk)" />

@@ -1,0 +1,314 @@
+---
+title: Errors
+product: kit
+section: advanced
+sectionTitle: Advanced
+sectionOrder: 4
+order: 3
+status: stable
+description: Memahami dua jenis error di SvelteKit (expected lewat error() vs unexpected), merendernya dengan +error.svelte & page.error, mengatur status/message, memusatkan logging lewat handleError, dan mengetik error App.Error.
+docs: https://svelte.dev/docs/kit/errors
+keywords: [errors, error, handleError, error-boundary, app-error, status]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Setiap aplikasi web pasti menemui momen "ada yang salah": data tidak ketemu, user tidak berhak, atau database tiba-tiba tumbang. Pertanyaan desainnya bukan *"apakah error akan terjadi"* (pasti terjadi), melainkan *"bagaimana aplikasimu merespons saat itu terjadi"* — apakah ia tampil sopan dan aman, atau malah memuntahkan stack trace yang membocorkan isi dapurmu ke pengunjung. Modul ini soal itu: model error SvelteKit, dan kenapa modelnya dibikin seperti ini.
+
+### Dua jenis error: expected vs unexpected
+
+Ini pembedaan terpenting di seluruh modul, jadi pahami baik-baik. SvelteKit membagi error menjadi **dua jenis**, dan cara menanganinya berbeda.
+
+**Analogi: pegawai bank.** Bayangkan kamu teller bank. Ada dua macam "masalah" yang bisa muncul saat melayani nasabah:
+
+1. **Masalah yang sudah kamu antisipasi** — saldo tidak cukup, nomor rekening tidak ditemukan, formulir belum lengkap. Ini bukan "kerusakan"; ini bagian normal dari pekerjaan. Kamu punya respons yang sopan dan jelas: "Mohon maaf, saldo Anda tidak mencukupi." Nasabah paham apa yang salah dan apa yang harus dilakukan. Inilah **expected error**: kamu *sengaja* melemparkannya dengan fungsi `error()` dari `@sveltejs/kit`, lengkap dengan kode status (mis. 404, 403) dan pesan yang aman ditampilkan ke user.
+
+2. **Masalah yang TIDAK kamu antisipasi** — tiba-tiba listrik mati, komputer hang, atau brankas macet karena bug mekanik. Kamu tidak bisa menjelaskannya ke nasabah secara detail (menyebut "kabel X korslet di ruang server" malah membingungkan dan bisa membocorkan info internal). Yang pantas hanyalah: "Maaf, ada gangguan teknis, mohon coba lagi." Inilah **unexpected error**: error apa pun yang dilempar BUKAN lewat `error()` — misalnya `TypeError`, `cannot read property of undefined`, koneksi database putus. SvelteKit menganggapnya berbahaya, jadi di production ia **menyembunyikan detail aslinya**.
+
+Kenapa pembedaan ini penting? Karena **keamanan dan UX**. Expected error boleh tampil apa adanya ke user (kamu yang menulis pesannya, jadi pasti aman). Unexpected error TIDAK boleh, karena pesan aslinya sering memuat detail teknis internal (path file, query SQL, nama variabel). SvelteKit menerapkan kebijakan ini otomatis dengan aturan sederhana:
+
+- Pakai `error()` → "aku percaya pesan ini, **tampilkan apa adanya**".
+- Lempar `Error` biasa (atau biarkan error naik begitu saja) → "ini bug, **sensor di production**".
+
+Konkretnya, untuk unexpected error di production SvelteKit mengganti responsnya jadi generik: status **500** dengan body `{ "message": "Internal Error" }`. Detail aslinya tidak ikut — ia hanya dicatat ke log server (dan dikirim ke hook `handleError`, lihat nanti). Di mode `dev` justru sebaliknya: pesan asli + stack trace tetap ditampilkan, supaya kamu bisa men-debug. Jadi jangan kaget kalau "rahasia" yang kamu lihat di `vite dev` hilang begitu di-`build`.
+
+### Ke mana error "jatuh": +error.svelte
+
+Saat error terjadi selama `load` atau saat render, SvelteKit tidak menampilkan halaman setengah jadi. Ia naik ke atas pohon rute, mencari komponen **`+error.svelte` terdekat**, lalu merendernya menggantikan halaman yang gagal itu. Layout di atasnya tetap utuh — jadi header/sidebar-mu tetap tampil, hanya bagian dalamnya yang diganti dengan UI error.
+
+**Analogi: sekring listrik bertingkat.** Rumahmu punya sekring per-ruangan dan satu sekring utama. Kalau korsleting di kamar mandi, idealnya cukup sekring kamar mandi yang turun — ruangan lain tetap menyala. Hanya kalau tak ada sekring lokal, sekring utama yang turun dan seisi rumah gelap. `+error.svelte` bekerja persis begitu: letakkan di folder rute tertentu untuk menangkap error rute itu & turunannya secara lokal; letakkan di `src/routes/+error.svelte` sebagai "sekring utama" (fallback global).
+
+Bagi yang datang dari React, ini mirip **error boundary** (`componentDidCatch` / `<ErrorBoundary>`); di Nuxt mirip `error.vue`. Bedanya: di SvelteKit, error boundary ini **terikat pada hierarki rute**, bukan sekadar hierarki komponen — posisinya di pohon folder yang menentukan cakupannya.
+
+Ada satu sudut yang sering bikin bingung: kalau error terjadi di **`load` milik root layout** (`src/routes/+layout.server.js`), maka `src/routes/+error.svelte` *tidak bisa* dipakai — sebab komponen error itu dirender *di dalam* layout yang barusan gagal. Untuk kasus pamungkas ini SvelteKit jatuh ke file HTML statis `src/error.html` (lihat bagian Contoh).
+
+### page.error & page.status
+
+Di dalam `+error.svelte`, kamu butuh tahu *apa* yang salah agar bisa menampilkan UI yang sesuai. SvelteKit menyediakannya lewat objek `page` dari `$app/state`:
+
+- **`page.status`** — kode HTTP-nya (404, 403, 500, ...). Berguna untuk bercabang: tampilan "halaman tak ditemukan" berbeda dari "akses ditolak".
+- **`page.error`** — objek error-nya. Bentuk minimalnya adalah `{ message: string }`. Inilah objek yang sama yang kamu kirim lewat `error()`, atau yang dikembalikan `handleError` untuk unexpected error.
+
+### Bentuk error bisa kamu perluas: App.Error
+
+Secara default error cuma `{ message }`. Tapi sering kamu ingin lebih — misalnya `code` untuk dibaca program, atau `errorId` untuk dikorelasikan dengan log server ("tunjukkan kode ini ke support"). SvelteKit membiarkanmu **memperluas tipe error** lewat interface `App.Error` di `src/app.d.ts`. Begitu kamu mendeklarasikannya, TypeScript akan menuntut setiap pemanggilan `error()` (dan setiap `return` dari `handleError`) mematuhi bentuk itu. Satu syarat: `message: string` wajib selalu ada — itu kontrak minimum SvelteKit.
+
+### handleError: tempat memusatkan logging
+
+Untuk unexpected error, kamu biasanya ingin dua hal: (1) **mencatatnya** ke sistem pemantauan (Sentry, Logflare, dsb.) dengan detail asli, dan (2) **menyajikan** pesan aman ke user. Hook `handleError` adalah tempat keduanya bertemu. Ia dipanggil **hanya untuk unexpected error** — error dari `error()` (expected) tidak lewat sini, karena memang sudah "beres" by design. Anggap `handleError` sebagai **ruang kendali pusat**: tiap kali ada kebakaran tak terduga, alarmnya berbunyi di sini, kamu catat di buku log dengan detail lengkap, lalu yang diumumkan ke publik hanya pesan yang sudah dirapikan.
+
+## 2. Contoh kode
+
+Mulai dari expected error di `load`. Perhatikan: di **SvelteKit 2**, `error()` melempar sendiri — JANGAN tulis `throw` di depannya.
+
+```js
+// src/routes/produk/[id]/+page.server.js
+import { error } from '@sveltejs/kit';
+
+export async function load({ params }) {
+	const produk = await db.getProduk(params.id);
+
+	// EXPECTED ERROR: kita SENGAJA menandai "tidak ditemukan".
+	// error() men-throw sendiri -> baris setelah ini tak akan jalan.
+	if (!produk) {
+		error(404, 'Produk tidak ditemukan'); // bentuk pendek: status + string pesan
+	}
+
+	// Bentuk objek: harus cocok dengan App.Error (message wajib, sisanya bebas).
+	if (produk.privat) {
+		error(403, { message: 'Produk ini privat', code: 'FORBIDDEN' });
+	}
+
+	return { produk };
+}
+```
+
+Komponen `+error.svelte` menangkap error itu dan menampilkannya. Letaknya menentukan cakupan:
+
+```svelte
+<!-- src/routes/+error.svelte  (sekring utama / fallback global) -->
+<script>
+	import { page } from '$app/state'; // SvelteKit 2: $app/state, BUKAN $app/stores
+</script>
+
+<!-- page.status = kode HTTP, page.error = objek error (mis. { message }) -->
+<h1>{page.status}</h1>
+<p>{page.error?.message}</p>
+
+{#if page.status === 404}
+	<a href="/">Kembali ke beranda</a>
+{:else}
+	<!-- Untuk unexpected error (500), page.error.message DI PRODUCTION sudah
+	     otomatis jadi "Internal Error" (atau yang kamu kembalikan dari
+	     handleError), jadi aman ditampilkan apa adanya. -->
+	<p>Terjadi kesalahan. Coba muat ulang halaman.</p>
+{/if}
+```
+
+Untuk **memusatkan logging** unexpected error dan membentuk pesan amannya, pakai hook `handleError`:
+
+```js
+// src/hooks.server.js
+import * as Sentry from '@sentry/sveltekit';
+
+/** @type {import('@sveltejs/kit').HandleError} */
+export async function handleError({ error, event, status, message }) {
+	// Di sini HANYA unexpected error yang masuk (bukan yang dari error()).
+	// `error`   = objek error asli (boleh punya detail sensitif).
+	// `event`   = RequestEvent (punya url, route, dsb.).
+	// `status`  = 500 untuk error tak terduga dari kodemu.
+	// `message` = pesan aman bawaan SvelteKit ("Internal Error").
+	const errorId = crypto.randomUUID();
+
+	// (1) CATAT detail asli ke pemantauan — ini tempatnya, bukan di +error.svelte.
+	Sentry.captureException(error, {
+		extra: { errorId, path: event.url.pathname }
+	});
+
+	// (2) KEMBALIKAN objek yang akan jadi page.error di +error.svelte.
+	//     JANGAN bocorkan detail asli; cukup pesan generik + id untuk korelasi.
+	//     Bentuknya harus cocok dengan App.Error.
+	return {
+		message: 'Maaf, terjadi gangguan. Tim kami sudah diberi tahu.',
+		errorId
+	};
+}
+```
+
+Memperluas bentuk error lewat `App.Error` supaya `code`/`errorId` ikut diketik:
+
+```ts
+// src/app.d.ts
+declare global {
+	namespace App {
+		interface Error {
+			message: string;   // WAJIB — kontrak minimum SvelteKit
+			code?: string;     // mis. 'FORBIDDEN', dibaca program
+			errorId?: string;  // korelasi dengan log server
+		}
+	}
+}
+
+export {};
+```
+
+Terakhir, fallback statis untuk kasus pamungkas (error di root layout, di `handle`, atau di `+server.js` saat respons HTML diminta). SvelteKit mengganti placeholder `%sveltekit.status%` dan `%sveltekit.error.message%`:
+
+```html
+<!-- src/error.html -->
+<!DOCTYPE html>
+<html lang="id">
+	<head>
+		<meta charset="utf-8" />
+		<title>%sveltekit.error.message%</title>
+	</head>
+	<body>
+		<h1>Yah, ada yang salah (%sveltekit.status%)</h1>
+		<p>%sveltekit.error.message%</p>
+	</body>
+</html>
+```
+
+## 3. Coba sendiri
+
+Error handling butuh server & build SvelteKit sungguhan (rute, hook, mode production), jadi tidak bisa dijalankan di playground browser. Sebagai gantinya, pakai **peta keputusan** dan **langkah uji lokal** berikut untuk melatih intuisi, lalu praktikkan di proyekmu.
+
+```text
+PETA KEPUTUSAN: error jenis apa, pakai apa?
+──────────────────────────────────────────────
+"Ini bagian normal alur" (404 not found, 403 forbidden,
+401 unauthorized, 400 input salah)
+   -> error(status, pesan)        // EXPECTED. Pesan aman tampil ke user.
+                                   // Panggil TANPA `throw` (SvelteKit 2).
+
+"Ini seharusnya tak pernah terjadi" (db down, bug, undefined)
+   -> biarkan naik / lempar Error biasa   // UNEXPECTED.
+      Production: SvelteKit menyensor pesannya jadi "Internal Error".
+      Logging-nya: tangani di handleError (hooks.server.js).
+
+Mau pindah halaman, bukan menampilkan error? (mis. belum login)
+   -> redirect(303, '/login')     // juga TANPA `throw` di SvelteKit 2.
+
+UI saat error  -> +error.svelte (lokal = cakupan sempit; root = global)
+Data error     -> page.status + page.error  (dari '$app/state')
+Bentuk error   -> perluas App.Error di src/app.d.ts (message wajib)
+```
+
+```bash
+# Uji "expected vs unexpected" dengan mata kepala sendiri:
+# 1) Buat src/routes/coba/+page.server.js berisi:  error(418, 'Aku teko');
+# 2) Buat src/routes/coba/+error.svelte yg menampilkan page.status & page.error.message
+# 3) Buka /coba  ->  tampil 418 + pesanmu (expected: pesan UTUH).
+#
+# 4) Ganti isinya jadi:  throw new Error('rahasia internal: koneksi db gagal');
+# 5) Jalankan `vite dev` lalu buka /coba  ->  kamu MASIH lihat pesan asli (utk debug).
+# 6) Jalankan `vite build && vite preview` (mode production) lalu buka /coba
+#    ->  page.error.message jadi generik "Internal Error", BUKAN teks rahasiamu.
+#    Itulah penyensoran otomatis SvelteKit untuk unexpected error.
+```
+
+<Callout type="tip">
+Cara cepat menghafal: kalau kamu yang <em>menulis</em> pesannya dengan <code>error()</code>, SvelteKit percaya dan menampilkannya. Kalau pesannya datang dari error yang <em>tak kamu kendalikan</em>, SvelteKit curiga dan menyensornya di production. Aturan ini berlaku otomatis — kamu tidak perlu menambah konfigurasi apa pun.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Bedakan dan tangani error dengan benar">
+Sebuah rute `src/routes/akun/[id]/+page.server.js` punya `load` yang: (a) mengambil user dari database; (b) hanya boleh diakses pemiliknya. Tulis `load` yang menangani tiga kondisi berikut dengan **jenis error yang tepat**, plus jelaskan singkat alasannya:
+
+1. User dengan `id` tersebut tidak ada di database.
+2. User ada, tapi yang sedang login (`locals.user`) bukan pemiliknya.
+3. Pemanggilan `db.getUser()` melempar exception tak terduga (mis. koneksi DB putus) — apa yang harus kamu lakukan (atau justru TIDAK lakukan)?
+
+Lalu, tulis kerangka `src/routes/akun/+error.svelte` yang menampilkan pesan berbeda untuk status 404 vs 403.
+
+{#snippet solution()}
+
+  ```js
+  // src/routes/akun/[id]/+page.server.js
+  import { error } from '@sveltejs/kit';
+
+  export async function load({ params, locals }) {
+  	// (3) JANGAN bungkus db.getUser dengan try/catch hanya untuk "merapikan".
+  	//     Kalau DB putus, itu UNEXPECTED -> biarkan naik. SvelteKit akan
+  	//     menyensor pesannya di production & memanggil handleError utk logging.
+  	//     Menangkapnya lalu melempar error(500, e.message) malah BERBAHAYA:
+  	//     kamu jadi membocorkan detail internal ke user.
+  	const user = await db.getUser(params.id);
+
+  	// (1) EXPECTED: tidak ditemukan. 404 + pesan aman. Tanpa `throw`.
+  	if (!user) {
+  		error(404, 'Pengguna tidak ditemukan');
+  	}
+
+  	// (2) EXPECTED: bukan pemilik. 403 forbidden. Tanpa `throw`.
+  	if (user.id !== locals.user?.id) {
+  		error(403, 'Kamu tidak boleh mengakses akun ini');
+  	}
+
+  	return { user };
+  }
+  ```
+
+  ```svelte
+  <!-- src/routes/akun/+error.svelte -->
+  <script>
+  	import { page } from '$app/state';
+  </script>
+
+  {#if page.status === 404}
+  	<h1>404 — Akun tidak ada</h1>
+  	<p>{page.error?.message}</p>
+  	<a href="/">Beranda</a>
+  {:else if page.status === 403}
+  	<h1>403 — Akses ditolak</h1>
+  	<p>{page.error?.message}</p>
+  {:else}
+  	<h1>{page.status} — Terjadi kesalahan</h1>
+  	<p>Coba muat ulang halaman.</p>
+  {/if}
+  ```
+
+  Intinya: 404 & 403 adalah bagian normal alur -> `error()` (expected, pesan boleh utuh). Kegagalan DB bukan -> biarkan naik (unexpected, otomatis disensor & bisa dilog di `handleError`). Jangan pernah membungkus error tak terduga menjadi `error()` dengan pesan aslinya.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Di SvelteKit 2, <code>error()</code> dan <code>redirect()</code> <strong>melempar sendiri</strong> — jangan tulis <code>throw</code> di depannya. Pola yang benar (dan yang dipakai dokumentasi): <code>error(404, 'pesan')</code>. Ini berubah dari SvelteKit 1 yang dulu menulis <code>throw error(...)</code>. Konsekuensi penting: kalau kamu memanggil <code>error()</code> di dalam blok <code>try/catch</code>, ia akan ikut tertangkap <code>catch</code>-mu seperti error biasa. Pakai <code>isHttpError(e)</code> / <code>isRedirect(e)</code> dari <code>@sveltejs/kit</code> untuk membedakannya dari error sungguhan, lalu lempar ulang (<code>throw e</code>) bila itu memang HttpError/Redirect.
+</Callout>
+
+<Callout type="warning">
+Jangan pernah membungkus error tak terduga menjadi <code>error()</code> dengan pesan aslinya, mis. <code>error(500, e.message)</code>. Karena pesan dari <code>error()</code> dianggap "aman ditampilkan", kamu jadi membocorkan detail internal (path file, query SQL, dll.) ke pengunjung — justru kebalikan dari yang seharusnya. Untuk error tak terduga: biarkan naik, lalu tangani logging-nya di <code>handleError</code>. Di sanalah detail asli dicatat ke sistem pemantauan, sementara user hanya melihat pesan generik.
+</Callout>
+
+<Callout type="warning">
+<code>+error.svelte</code> hanya menangkap error dari <code>load</code> dan (dengan dukungan eksperimental) saat render — ia <strong>tidak</strong> menangkap error yang dilempar di <code>+server.js</code> (route API) atau di hook <code>handle</code>. Untuk kasus itu, respons error berupa JSON (jika klien minta JSON) atau HTML dari <code>src/error.html</code>. Begitu pula error di <code>load</code> milik <em>root layout</em>: <code>src/routes/+error.svelte</code> tak bisa merendernya, jadi jatuh ke <code>src/error.html</code>. Sediakan file itu agar halaman pamungkas tetap rapi.
+</Callout>
+
+<Callout type="tip">
+<code>handleError</code> ada dua varian: <code>hooks.server.js</code> (server, <code>event</code> bertipe <code>RequestEvent</code>) dan <code>hooks.client.js</code> (browser, <code>event</code> bertipe <code>NavigationEvent</code>). Implementasikan keduanya agar error sisi-klien (mis. saat navigasi/hydration) juga ikut tercatat. Dan satu aturan keras: <strong>handleError tidak boleh melempar error sendiri</strong> — kalau ia gagal, kamu kehilangan jaring pengaman terakhirmu. Bungkus operasi yang berisiko (kirim ke Sentry, dll.) dengan aman.
+</Callout>
+
+<Callout type="legacy">
+Di <code>+error.svelte</code>, gunakan <code>page</code> dari <code>$app/state</code> (SvelteKit 2). Modul lama memakai store <code>page</code> dari <code>$app/stores</code> yang diakses dengan prefiks <code>$</code> (mis. <code>$page.status</code>). Itu masih jalan tapi sudah dianggap pendekatan lama; <code>$app/state</code> berbasis runes dan tidak butuh prefiks <code>$</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'throw error(404, msg)', modern: 'error(404, msg)', note: 'SvelteKit 2: error() melempar sendiri, tanpa throw' },
+	{ legacy: 'throw redirect(303, url)', modern: 'redirect(303, url)', note: 'sama: redirect() melempar sendiri' },
+	{ legacy: "import { page } from '$app/stores'  ->  $page.error", modern: "import { page } from '$app/state'  ->  page.error", note: 'state berbasis runes, tanpa prefiks $' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/errors" label="SvelteKit — Errors (expected vs unexpected, error(), page.error, error.html)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (handleError: signature, logging, App.Error)" />

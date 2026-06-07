@@ -1,0 +1,279 @@
+---
+title: tailwindcss
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 11
+status: stable
+description: Add-on tailwindcss untuk sv — pasang Tailwind v4 di SvelteKit lewat satu perintah, pahami konfigurasi CSS-first, plugin typography/forms, dan cara memakai utility class bersama scoped style Svelte.
+docs: https://svelte.dev/docs/cli/tailwind
+keywords: [tailwindcss, sv add, tailwind v4, utility class, theme, vite plugin]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Tailwind CSS adalah pendekatan **utility-first**: alih-alih menulis kelas bernama (`.card`, `.btn-primary`) lalu mendefinisikan gayanya di blok CSS terpisah, kamu merangkai banyak kelas kecil bertujuan-tunggal langsung di markup — `class="flex gap-4 rounded-lg bg-white p-6 shadow"`. Setiap kelas melakukan satu hal: `p-6` itu `padding: 1.5rem`, `flex` itu `display: flex`, dan seterusnya.
+
+Slogan resmi add-on ini satu kalimat: *"rapidly build modern websites without ever leaving your HTML."* Itu inti filosofinya — kamu hampir tidak pernah pindah ke file `.css`; semua keputusan visual terjadi di tempat kamu menulis markup.
+
+### Analogi: lego vs furnitur custom
+
+Menulis CSS klasik itu seperti **memesan furnitur custom**: untuk tiap komponen kamu menggambar desain (`.card { ... }`), kirim ke tukang, tunggu jadi. Rapi, tapi tiap kebutuhan baru berarti satu pesanan baru, dan lama-lama gudangmu penuh stylesheet yang saling tindih dan susah dibersihkan ("apakah kelas `.card-v2` ini masih dipakai?").
+
+Tailwind itu seperti **balok lego standar**: kamu tidak memesan apa-apa, tinggal ambil balok ukuran `p-4`, `gap-2`, `text-lg` dari kotak yang sama dan susun di tempat. Karena semua orang memakai kotak balok yang sama, ukuran dan jaraknya konsisten otomatis (skala spacing, skala warna, skala font sudah ditentukan), dan kamu tidak pernah menamai apa pun. Trade-off-nya: markup jadi "ramai" oleh kelas. Itu kritik paling umum terhadap Tailwind, dan jujur saja memang begitu — kita bahas plus-minusnya di Tips.
+
+### Kenapa Tailwind butuh build step (dan kenapa itu Vite plugin)
+
+Tailwind bukan file CSS statis yang kamu `<link>`. Ada **build step** yang memindai kode kamu, melihat kelas mana yang benar-benar dipakai, lalu menghasilkan CSS hanya untuk kelas-kelas itu. Jadi meskipun Tailwind "punya" jutaan kombinasi utility, yang sampai ke browser hanya yang kamu sentuh. Inilah kenapa di Svelte/Vite ia hadir sebagai **plugin Vite** (`@tailwindcss/vite`), bukan sekadar dependency biasa — ia perlu ikut dalam proses build untuk melakukan pemindaian itu.
+
+### Apa yang `sv add tailwindcss` kerjakan
+
+Memasang Tailwind manual itu beberapa langkah yang gampang kelewat satu: install paket, daftarkan plugin di `vite.config`, buat file CSS entry-point, lalu import CSS itu di layout. Lupa satu, `bg-red-500` diam-diam tidak ngefek dan kamu bingung. Perintah berikut merangkum semuanya:
+
+```sh
+npx sv add tailwindcss
+```
+
+Sesuai dokumentasi, add-on ini menyetel konfigurasi mengikuti panduan resmi "Tailwind for SvelteKit", memasang plugin Vite, lalu memperbarui file: untuk proyek SvelteKit ia menyentuh `app.css` dan `+layout.svelte` (untuk proyek Vite non-SvelteKit: `app.css` dan `App.svelte`). Kalau Prettier sudah terpasang, integrasinya juga diurus.
+
+### Tailwind v4: konfigurasi pindah dari JS ke CSS
+
+Ini perubahan besar yang wajib kamu tahu, terutama kalau pernah pakai Tailwind v3. Di v3 kamu mengonfigurasi lewat file JavaScript `tailwind.config.js` (mendaftarkan `content`, `theme`, `plugins`) plus biasanya `postcss.config.js`. **Tailwind v4 membalik itu**: konfigurasi sekarang **CSS-first**. Tidak ada lagi `tailwind.config.js` wajib, tidak ada PostCSS terpisah, dan deteksi file (`content`) berjalan **otomatis**. Entry-point-nya cukup satu baris:
+
+```css
+@import 'tailwindcss';
+```
+
+Tema, warna brand, font, plugin — semua dideklarasikan di dalam CSS itu juga (lewat aturan `@theme` dan `@plugin`), bukan di objek JavaScript. Lebih ringkas, dan satu sumber kebenaran ada di file CSS.
+
+### Hubungannya dengan scoped style Svelte
+
+Kalau datang dari React, Tailwind mungkin satu-satunya cara kamu mendapat "isolasi" gaya yang nyaman. Di Svelte ceritanya menarik: Svelte **sudah** memberi scoped style otomatis lewat blok `<style>` per komponen. Jadi di Svelte, Tailwind dan scoped style bukan saingan — keduanya hidup berdampingan. Banyak orang pakai utility Tailwind untuk layout & spacing sehari-hari (cepat, konsisten), lalu turun ke blok `<style>` scoped untuk hal yang lebih rumit (animasi kompleks, selector turunan, gaya yang ingin di-tema lewat CSS variable). Kamu tidak harus memilih salah satu.
+
+## 2. Contoh kode
+
+Perintah dasar dan dua varian dengan plugin opsional — jalankan dari **root proyek**:
+
+```sh
+# Pasang Tailwind v4 standar
+npx sv add tailwindcss
+
+# Sekaligus aktifkan plugin Typography (kelas `prose` untuk konten artikel)
+npx sv add tailwindcss="plugins:typography"
+
+# Atau plugin Forms (reset & gaya elemen form yang waras)
+npx sv add tailwindcss="plugins:forms"
+```
+
+Setelah perintah jalan, beginilah file yang dihasilkan. Entry-point CSS (`src/app.css`):
+
+```css
+/* Satu baris ini menarik seluruh Tailwind v4 — base, components, utilities.
+   Tidak perlu @tailwind base/components/utilities terpisah seperti era v3. */
+@import 'tailwindcss';
+
+/* Kalau kamu memilih plugin saat sv add, barisnya muncul di sini.
+   Plugin v4 dimuat lewat directive @plugin di CSS, BUKAN require() di file JS. */
+@plugin '@tailwindcss/typography';
+@plugin '@tailwindcss/forms';
+```
+
+Plugin Vite didaftarkan di `vite.config.ts` (perhatikan urutannya — `tailwindcss()` sebelum `sveltekit()`):
+
+```ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+import tailwindcss from '@tailwindcss/vite'; // ditambahkan otomatis
+
+export default defineConfig({
+	// tailwindcss() diselipkan ke array plugins yang sudah ada
+	plugins: [tailwindcss(), sveltekit()]
+});
+```
+
+Dan CSS-nya di-import sekali di root layout (`src/routes/+layout.svelte`) supaya berlaku ke seluruh halaman:
+
+```svelte
+<script>
+	import '../app.css'; // ditambahkan otomatis oleh sv add
+
+	let { children } = $props();
+</script>
+
+{@render children()}
+```
+
+Menyesuaikan tema (warna brand, font) — semua di CSS lewat aturan `@theme`:
+
+```css
+@import 'tailwindcss';
+
+/* Variabel di dalam @theme otomatis menjadi utility.
+   --color-brand-500 -> bisa dipakai sebagai bg-brand-500, text-brand-500, border-brand-500, dll.
+   --font-display    -> menjadi utility font-display. */
+@theme {
+	--color-brand-500: oklch(0.72 0.15 195);
+	--color-brand-600: oklch(0.62 0.15 195);
+	--font-display: 'Inter', sans-serif;
+}
+```
+
+Memakai kelas di komponen Svelte — termasuk kelas kondisional ala Svelte 5:
+
+```svelte
+<script>
+	let active = $state(false);
+</script>
+
+<!-- Kelas statis: layout, spacing, warna langsung di markup -->
+<div class="flex items-center gap-4 rounded-lg bg-white p-6 shadow-md">
+	<!-- Svelte 5 menerima ARRAY/OBJECT di atribut class (ala clsx).
+	     'btn' selalu ada; 'bg-brand-600' hanya saat active true. -->
+	<button
+		class={['btn rounded-md px-4 py-2 text-white', active ? 'bg-brand-600' : 'bg-gray-400']}
+		onclick={() => (active = !active)}
+	>
+		{active ? 'Aktif' : 'Nonaktif'}
+	</button>
+</div>
+```
+
+## 3. Coba sendiri
+
+<Callout type="warning">
+Modul ini sengaja <strong>tanpa Playground</strong> interaktif. Utility Tailwind hanya muncul kalau plugin Vite ikut memindai kode saat build — sesuatu yang tidak terjadi di preview browser mandiri. Jadi di sini kita pakai contoh statis beranotasi; jalankan di proyek SvelteKit asli (yang sudah <code>sv add tailwindcss</code>) untuk melihat hasilnya.
+</Callout>
+
+Komponen kartu produk kecil. Perhatikan bagaimana seluruh keputusan visual hidup di markup, dan bagaimana state Svelte 5 ikut mengubah kelas:
+
+```svelte
+<script>
+	let { name = 'Kopi Susu', price = 18000, soldOut = false } = $props();
+	let liked = $state(false);
+</script>
+
+<!-- 'group' memungkinkan anak bereaksi saat kartu di-hover lewat 'group-hover:'.
+     'transition' + 'hover:-translate-y-1' memberi animasi angkat halus. -->
+<article
+	class="group max-w-xs rounded-2xl border border-gray-200 bg-white p-5 transition hover:-translate-y-1 hover:shadow-lg"
+>
+	<div class="flex items-start justify-between gap-3">
+		<h3 class="text-lg font-semibold text-gray-900">{name}</h3>
+
+		<!-- Kelas kondisional: warna ikon hati bergantung state 'liked'.
+		     Bentuk objek {kelas: boolean} juga didukung Svelte 5. -->
+		<button
+			class={['text-xl leading-none', { 'text-red-500': liked, 'text-gray-300': !liked }]}
+			onclick={() => (liked = !liked)}
+			aria-label="Suka"
+		>
+			&#9829;
+		</button>
+	</div>
+
+	<p class="mt-1 text-sm text-gray-500">
+		Rp {price.toLocaleString('id-ID')}
+	</p>
+
+	<!-- Spread/struktur klasik: tombol disable saat soldOut.
+	     'disabled:opacity-50' & 'disabled:cursor-not-allowed' adalah variant kondisi. -->
+	<button
+		class="mt-4 w-full rounded-lg bg-brand-500 py-2 font-medium text-white
+		       transition group-hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+		disabled={soldOut}
+	>
+		{soldOut ? 'Habis' : 'Tambah ke keranjang'}
+	</button>
+</article>
+```
+
+Kalau kamu memasang plugin **typography**, kelas `prose` langsung menata blok HTML panjang (misalnya hasil render Markdown) tanpa perlu menyentuh tiap elemen:
+
+```svelte
+<!-- Tanpa prose, <h2>/<p>/<ul> di sini polos karena Tailwind me-reset gaya default.
+     'prose' mengembalikan tipografi yang enak dibaca untuk konten artikel. -->
+<article class="prose prose-lg max-w-none">
+	{@html artikelHtml}
+</article>
+```
+
+## 4. Latihan
+
+<Exercise title="Pasang Tailwind + plugin, lalu rakit badge status">
+Dua bagian:
+
+1. Tulis **satu perintah** `sv add` yang memasang Tailwind sekaligus plugin **typography**, non-interaktif.
+2. Buat komponen `StatusBadge` (satu file `.svelte`) dengan prop `status` bernilai `'online' | 'offline'`. Pakai **utility Tailwind** (bukan blok `<style>`) untuk: bentuk pill, padding kecil, teks putih, dan warna latar hijau saat `online`, abu-abu saat `offline`. Gunakan sintaks kelas kondisional Svelte 5.
+
+{#snippet solution()}
+
+```sh
+# 1. Opsi inline plugins:typography — tanpa prompt.
+npx sv add tailwindcss="plugins:typography"
+```
+
+```svelte
+<!-- 2. StatusBadge.svelte -->
+<script>
+	let { status = 'offline' } = $props();
+	let online = $derived(status === 'online');
+</script>
+
+<!-- Array: kelas dasar selalu ada; warna latar bergantung 'online'.
+     'rounded-full' = pill, 'px-2.5 py-0.5' = padding kecil, 'text-xs' = teks ringkas. -->
+<span
+	class={[
+		'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-white',
+		online ? 'bg-green-500' : 'bg-gray-400'
+	]}
+>
+	{online ? 'Online' : 'Offline'}
+</span>
+```
+
+Catatan: di sini `$derived` dipakai untuk menghitung boolean dari prop — jangan pakai pola lama `$:` reactive statement (itu Svelte 4).
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong><code>@apply</code> di blok <code>&lt;style&gt;</code> Svelte butuh <code>@reference</code>.</strong> Setiap blok <code>&lt;style&gt;</code> komponen Svelte diproses Tailwind secara <em>terpisah</em>, jadi ia tidak otomatis tahu tema/utility kamu. Kalau menulis <code>@apply text-brand-500</code> di sana, kamu harus menambahkan baris referensi ke CSS utama di atasnya, mis. <code>@reference "../app.css";</code> (sesuaikan path). Tanpa itu, build error "cannot apply unknown utility class". Alternatif paling sederhana: hindari <code>@apply</code> di komponen — cukup tulis utility langsung di markup, atau pakai CSS variable tema (mis. <code>color: var(--color-brand-500)</code>) yang tidak butuh <code>@reference</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Tailwind v4 menargetkan browser modern saja.</strong> Mesin v4 memakai fitur CSS baru (cascade layers, <code>@property</code>, <code>color-mix()</code>), sehingga butuh Safari 16.4+, Chrome 111+, dan Firefox 128+. Untuk situs publik biasa ini aman, tapi kalau kamu wajib mendukung browser lawas, ketahuilah trade-off ini sebelum memilih v4.
+</Callout>
+
+<Callout type="tip">
+<strong>Utility vs scoped <code>&lt;style&gt;</code> — pakai keduanya sesuai porsi.</strong> Tailwind unggul untuk layout, spacing, dan warna yang berulang (cepat, konsisten, tanpa menamai apa pun). Tapi saat markup mulai penuh sesak kelas, atau kamu butuh selector turunan / animasi <code>@keyframes</code> / theming via CSS variable, turun saja ke blok <code>&lt;style&gt;</code> scoped milik Svelte. Tidak ada aturan "harus murni Tailwind"; kekuatan Svelte justru di kebebasan mencampur keduanya.
+</Callout>
+
+<Callout type="legacy">
+Tutorial Tailwind <strong>v3</strong> menyuruh bikin <code>tailwind.config.js</code> (dengan array <code>content</code>) dan <code>postcss.config.js</code>, lalu menulis <code>@tailwind base; @tailwind components; @tailwind utilities;</code>. Di <strong>v4</strong> (yang dipasang <code>sv add</code>) semua itu usang: cukup <code>@import 'tailwindcss';</code>, deteksi file otomatis, plugin lewat <code>@plugin</code>, dan tema lewat <code>@theme</code> — tanpa file JS atau PostCSS. Kalau menyalin setup lama, kamu malah menambah berkas yang tak diperlukan.
+</Callout>
+
+Ringkasan pergeseran v3 (JS-config) ke v4 (CSS-first) yang dipasang `sv add`:
+
+<LegacyVsModern legacyLabel="Tailwind v3 (JS config)" modernLabel="Tailwind v4 (CSS-first)" rows={[
+	{ legacy: '@tailwind base; @tailwind components; @tailwind utilities;', modern: "@import 'tailwindcss';", note: 'satu baris entry-point' },
+	{ legacy: 'tailwind.config.js + content: [...]', modern: 'tidak ada — deteksi file otomatis', note: 'tak perlu daftar path' },
+	{ legacy: 'theme: { colors: {...} } di file JS', modern: '@theme { --color-brand-500: ... }', note: 'tema hidup di CSS' },
+	{ legacy: "plugins: [require('@tailwindcss/forms')]", modern: "@plugin '@tailwindcss/forms';", note: 'plugin via directive CSS' },
+	{ legacy: 'butuh postcss.config.js', modern: 'cukup plugin @tailwindcss/vite', note: 'tanpa PostCSS terpisah' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/tailwind" label="sv add tailwindcss — referensi add-on (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-add" label="sv add — daftar semua add-on & flag" />

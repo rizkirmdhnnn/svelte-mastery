@@ -1,0 +1,245 @@
+---
+title: <svelte:boundary>
+product: svelte
+section: special-elements
+sectionTitle: Special elements
+sectionOrder: 5
+order: 1
+status: stable
+description: Menangkap error saat render dan menampilkan UI cadangan (serta loading) secara deklaratif lewat snippet failed, pending, dan callback onerror.
+docs: https://svelte.dev/docs/svelte/svelte-boundary
+keywords: [svelte-boundary, error-boundary, failed, pending, reset]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Bayangkan UI-mu adalah pohon komponen: satu komponen induk merender beberapa anak, tiap anak merender cucu, dan seterusnya. Sekarang, apa yang terjadi kalau satu cucu jauh di dalam pohon melempar error **saat di-render** — misalnya ia mengakses `data.user.nama` padahal `data.user` ternyata `null`?
+
+Tanpa pengaman, jawabannya brutal: Svelte tidak tahu cara melanjutkan render, jadi seluruh pohon di atasnya ikut runtuh. Hasilnya layar kosong (blank screen). Satu bug kecil di pojok halaman bisa mematikan **semua** yang lain — header, sidebar, tombol logout — padahal mereka baik-baik saja.
+
+`&lt;svelte:boundary&gt;` adalah cara menahan kerusakan itu di satu area. Ia "memagari" sebagian pohon: kalau ada error di dalam pagar, error itu **ditangkap di pagar** dan tidak merembet ke luar. Bagian halaman lain tetap hidup dan interaktif.
+
+### Analogi: jaring pengaman di bawah trapeze
+
+Pikirkan pertunjukan sirkus. Para pemain trapeze (komponen-komponen di dalam boundary) melakukan gerakan berisiko tinggi. Tanpa pengaman, kalau satu pemain **jatuh** (error saat render), pertunjukan langsung bubar — lampu menyala, penonton pulang (app crash, layar putih).
+
+`&lt;svelte:boundary&gt;` adalah **jaring pengaman** yang dibentangkan tepat di bawah area berisiko itu. Kalau pemain jatuh, jaring **menangkapnya** dan panitia segera menampilkan **acara cadangan** di panggung yang sama (snippet `failed`) — sementara sisa pertunjukan di panggung lain terus berjalan. Dan kalau pemain sudah siap lagi, panitia bisa **mengulang adegan dari awal** (fungsi `reset`).
+
+Dua catatan penting dari analogi ini, yang akan kita kupas: jaring hanya menangkap orang yang **jatuh dari trapeze itu** (error saat render). Ia tidak menangkap penonton yang tersandung di lorong (error di event handler), dan tidak menangkap orang yang jatuh setelah pertunjukan bubar dan lampu sudah mati (error async setelah render selesai).
+
+### Tiga kendali: `failed`, `pending`, `onerror`
+
+Sebuah boundary punya tiga "tuas" yang bisa kamu pasang. Minimal satu harus ada — boundary tanpa salah satu dari ini tidak melakukan apa-apa, error tetap menembus ke atas.
+
+- **`failed` (snippet)** — UI cadangan yang ditampilkan saat error tertangkap. Snippet ini menerima dua argumen: `error` (objek error yang ditangkap) dan `reset` (fungsi untuk membangun ulang isi boundary dari nol). Saat error tertangkap, isi lama boundary **dibuang** dan diganti oleh snippet ini.
+- **`pending` (snippet)** — UI loading yang ditampilkan selama ekspresi `await` di dalam boundary sedang diselesaikan. Ini menjadikan boundary bukan cuma "penangkap error" tapi juga "penampung state async".
+- **`onerror` (function)** — callback `(error, reset)` yang dipanggil saat error terjadi. Gunanya untuk **efek samping**: kirim error ke layanan monitoring (Sentry, log server), bukan untuk merender UI. UI cadangan tetap urusan `failed`.
+
+`failed` dan `onerror` bisa dipakai bersamaan: `onerror` melapor ke sistem, `failed` menampilkan pesan ramah ke pengguna.
+
+### Kaitan dengan React & Vue
+
+Kalau kamu dari React, ini persis **Error Boundary** — tapi tanpa harus menulis class component dengan `getDerivedStateFromError`/`componentDidCatch`. Di Svelte semuanya deklaratif lewat markup. Bonusnya: `&lt;svelte:boundary&gt;` menggabungkan dua peran yang di React terpisah — penangkap error **dan** batas `Suspense` untuk loading — dalam satu elemen. Di Vue, error boundary biasanya dirakit manual lewat hook `onErrorCaptured` di komponen pembungkus; di sini kamu cukup membentangkan satu tag.
+
+### Kenapa hanya error saat render?
+
+Ini bagian yang paling sering disalahpahami, jadi penting dipahami "mengapa"-nya. Boundary bekerja dengan **membungkus proses render** isinya dalam sesuatu yang mirip `try/catch`. Maka ia hanya bisa menangkap apa yang terjadi **selama** proses render itu berjalan.
+
+Event handler seperti `onclick` **tidak** berjalan saat render — ia berjalan nanti, dipicu oleh klik pengguna, jauh setelah render selesai. Begitu pula kode di dalam `setTimeout` atau `.then()` yang jalan belakangan. Saat itu, "render" sudah lama selesai dan `try/catch` imajiner tadi sudah ditutup. Karena itu error di tempat-tempat tersebut **lolos** dari jaring. Untuk kasus itu, pakai `try/catch` biasa di dalam handler-nya — kita tunjukkan caranya di bawah.
+
+## 2. Contoh kode
+
+Bentuk paling dasar: bungkus komponen berisiko, sediakan snippet `failed` dengan tombol retry.
+
+```svelte
+<script>
+	import Profil from './Profil.svelte';
+</script>
+
+<!-- Kalau <Profil> melempar error SAAT RENDER (mis. mengakses
+     properti dari data yang ternyata null), boundary menangkapnya
+     dan menampilkan snippet failed sebagai gantinya. -->
+<svelte:boundary>
+	<Profil />
+
+	{#snippet failed(error, reset)}
+		<div class="kartu-error">
+			<p>Komponen gagal dimuat: {error.message}</p>
+			<!-- reset() membuang isi lama lalu membangun ulang dari nol.
+			     Aman dipanggil dari klik pengguna seperti ini. -->
+			<button onclick={reset}>Muat ulang</button>
+		</div>
+	{/snippet}
+</svelte:boundary>
+```
+
+Menggabungkan `onerror` (untuk logging) dengan `pending` (untuk loading async). Perhatikan pembagian peran: `onerror` melapor, `failed` menampilkan, `pending` menunggu.
+
+```svelte
+<script>
+	function laporKeMonitoring(error, reset) {
+		// EFEK SAMPING saja: kirim ke Sentry/log server.
+		// Jangan render UI di sini — itu tugas snippet failed.
+		console.error('[boundary]', error);
+		// reset boleh disimpan untuk dipakai nanti, tapi JANGAN dipanggil
+		// sinkron di sini (lihat Tips & Pitfalls).
+	}
+</script>
+
+<svelte:boundary onerror={laporKeMonitoring}>
+	<!-- pending tampil selama await pertama kali diselesaikan.
+	     Catatan: markup {await ...} adalah fitur async eksperimental
+	     (butuh experimental.async di config compiler). -->
+	<p>{await muatHargaSaham()}</p>
+
+	{#snippet pending()}
+		<p>Mengambil harga…</p>
+	{/snippet}
+
+	{#snippet failed(error)}
+		<p>Gagal memuat harga: {error.message}</p>
+	{/snippet}
+</svelte:boundary>
+```
+
+Yang **tidak** ditangkap, dan cara benar menanganinya. Error di dalam `onclick` lolos dari boundary karena handler berjalan setelah render:
+
+```svelte
+<script>
+	let pesanError = $state('');
+
+	function aksiBerisiko() {
+		throw new Error('Sesuatu meledak di handler');
+	}
+
+	function handleClick() {
+		// Boundary TIDAK akan menolong di sini — pakai try/catch sendiri.
+		try {
+			aksiBerisiko();
+		} catch (e) {
+			pesanError = e.message;
+		}
+	}
+</script>
+
+<svelte:boundary>
+	<!-- SALAH KAPRAH: berharap boundary menangkap error onclick ini.
+	     Ia TIDAK akan tertangkap karena onclick jalan di luar render. -->
+	<button onclick={handleClick}>Klik aman</button>
+	{#if pesanError}<p>Error ditangani manual: {pesanError}</p>{/if}
+</svelte:boundary>
+```
+
+## 3. Coba sendiri
+
+Peraga di bawah ini menunjukkan inti `&lt;svelte:boundary&gt;`: fungsi `aman()` dipanggil **di dalam markup** (jadi ia berjalan saat render). Begitu `count` melewati 3, ia melempar error — dan jaring menangkapnya, mengganti isi boundary dengan snippet `failed`. Tombol "Pulihkan" memperbaiki penyebabnya (set `count = 0`) lalu memanggil `reset()` untuk membangun ulang isi boundary.
+
+Coba tekan "Tambah" beberapa kali sampai melewati 3, lalu "Pulihkan".
+
+<Playground code={`<script>
+	let count = $state(0);
+	// Fungsi ini dipanggil SAAT RENDER (di dalam markup di bawah).
+	// Kalau count > 3 ia melempar error, dan svelte:boundary menangkapnya.
+	function aman(n) {
+		if (n > 3) throw new Error('Angka kelewat besar: ' + n);
+		return n;
+	}
+</script>
+<button onclick={() => count++}>Tambah (sekarang {count})</button>
+<svelte:boundary>
+	<p>Nilai terverifikasi: {aman(count)}</p>
+	{#snippet failed(error, reset)}
+		<div style="border: 1px solid crimson; padding: 10px; border-radius: 8px;">
+			<p style="color: crimson; margin: 0 0 8px;">Jaring menangkap: {error.message}</p>
+			<button onclick={() => { count = 0; reset(); }}>Pulihkan</button>
+		</div>
+	{/snippet}
+</svelte:boundary>`} />
+
+## 4. Latihan
+
+<Exercise title="Kartu profil dengan jaring pengaman">
+Buat satu komponen `App.svelte` berisi kartu profil yang merender `user.nama` dan `user.kota`. Sediakan tombol "Rusak data" yang menyetel `user = null` — ini akan membuat akses `user.nama` melempar error **saat render**.
+
+Bungkus kartu dengan `&lt;svelte:boundary&gt;` sehingga:
+
+1. Saat error terjadi, snippet `failed` menampilkan pesan error dan tombol **"Pulihkan"**.
+2. Tombol "Pulihkan" harus mengisi ulang `user` dengan data valid **lebih dulu**, baru memanggil `reset()`.
+3. Tambahkan `onerror` yang mencatat error ke `console.error` (anggap ini logging ke monitoring).
+
+Petunjuk: urutan di tombol pulihkan penting — perbaiki penyebabnya dulu (`user = {...}`), baru `reset()`. Kalau kebalik, `reset()` akan membangun ulang isi yang masih rusak.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let user = $state({ nama: 'Sari', kota: 'Bandung' });
+
+	// bikin render error: user.nama akan melempar saat user null
+	function rusak() {
+		user = null;
+	}
+
+	// efek samping: catat ke monitoring. Tidak merender apa pun.
+	function lapor(error) {
+		console.error('profil gagal:', error.message);
+	}
+</script>
+
+<button onclick={rusak}>Rusak data</button>
+
+<svelte:boundary onerror={lapor}>
+	<!-- saat user === null, user.nama melempar -> boundary menangkap -->
+	<h2>{user.nama}</h2>
+	<p>Kota: {user.kota}</p>
+
+	{#snippet failed(error, reset)}
+		<p>Profil tidak bisa ditampilkan: {error.message}</p>
+		<!-- perbaiki PENYEBAB dulu, baru reset() membangun ulang -->
+		<button onclick={() => { user = { nama: 'Sari', kota: 'Bandung' }; reset(); }}>
+			Pulihkan
+		</button>
+	{/snippet}
+</svelte:boundary>
+```
+
+Inti jawabannya: `&lt;svelte:boundary&gt;` menangkap error saat `user.nama` dievaluasi **selama render**, lalu menampilkan `failed`. `onerror` dipakai untuk logging (efek samping), sementara `failed` mengurus UI. Tombol "Pulihkan" memperbaiki state penyebab **sebelum** `reset()` — kalau `reset()` dipanggil saat `user` masih `null`, isi boundary akan dibangun ulang lalu langsung error lagi.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+`&lt;svelte:boundary&gt;` adalah jaring untuk error <strong>saat render</strong>, bukan jaring serba bisa. Error di dalam event handler (`onclick`), di dalam `setTimeout`, atau di kode async yang berjalan <em>setelah</em> render <strong>tidak</strong> akan tertangkap — kode itu berjalan di luar proses render. Untuk kasus tersebut, pakai `try/catch` biasa di dalam handler-nya.
+</Callout>
+
+<Callout type="pitfall">
+Boundary tanpa salah satu dari `failed`, `pending`, atau `onerror` <strong>tidak melakukan apa-apa</strong> — error tetap menembus ke atas seolah boundary-nya tak ada. Minimal sediakan satu agar boundary "aktif".
+</Callout>
+
+<Callout type="warning">
+Snippet `pending` hanya muncul saat boundary <strong>pertama kali dibuat</strong>. Untuk update async berikutnya (mis. mengganti query setelah data awal sudah tampil), `pending` tidak muncul lagi — gunakan `$effect.pending()` untuk mendeteksi loading lanjutan.
+</Callout>
+
+<Callout type="tip">
+Jangan panggil `reset()` secara <strong>sinkron</strong> selagi error masih ditangani (mis. langsung di dalam `onerror`) — Svelte akan melempar runtime error. Aman-nya: panggil `reset` dari aksi pengguna (klik tombol di snippet `failed`). Kalau kamu memang memperbaiki penyebab di `onerror`, perbaiki state-nya dulu lalu tunggu siklus selesai dengan `await tick()` sebelum `reset()`.
+</Callout>
+
+<Callout type="tip">
+Letakkan boundary <strong>se-dekat mungkin</strong> dengan bagian berisiko, jangan cuma satu raksasa di root. Boundary kecil di sekitar satu widget membuat sisa halaman tetap hidup saat widget itu jatuh; satu boundary di root berarti error kecil di pojok bisa menutup seluruh layar — justru menghapus keuntungan utamanya.
+</Callout>
+
+<Callout type="warning">
+Di server (SSR), secara default error saat render menggagalkan <strong>seluruh</strong> render halaman, bukan hanya boundary-nya. Sejak Svelte 5.51 kamu bisa memberi opsi `transformError` ke fungsi `render()` (dari `svelte/server`) agar error di-serialize menjadi objek dan snippet `failed` ter-hidrasi di browser.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-boundary" label="<svelte:boundary> — dokumentasi resmi Svelte" />

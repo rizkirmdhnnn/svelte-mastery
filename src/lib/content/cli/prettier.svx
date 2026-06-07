@@ -1,0 +1,235 @@
+---
+title: prettier
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 8
+status: stable
+description: Add-on prettier untuk sv — pasang Prettier + prettier-plugin-svelte, integrasi ESLint, dan script format/lint dengan satu perintah.
+docs: https://svelte.dev/docs/cli/prettier
+keywords: [prettier, sv add, formatter, eslint, prettier-plugin-svelte, format]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Prettier adalah **opinionated code formatter** — alat yang menata ulang tampilan kode (indentasi, kutip, spasi, panjang baris, koma) secara otomatis dan konsisten. Kata kunci di sini "opinionated": Prettier sengaja punya sedikit pilihan. Ia tidak menanyakan "kamu mau 2 atau 4 spasi?" lalu menyerahkan padamu — ia memutuskan, dan semua orang di tim mengikuti keputusan yang sama. Debat soal gaya berhenti karena tidak ada lagi yang bisa diperdebatkan.
+
+Add-on `prettier` pada CLI `sv` memasang dan mengonfigurasi semua itu untukmu dengan satu perintah: `npx sv add prettier`. Kalau kamu sudah pernah `npm install --save-dev prettier prettier-plugin-svelte`, bikin `.prettierrc`, lalu menambah script di `package.json` secara manual — add-on ini melakukan tepat itu, plus menyambungkannya ke ESLint kalau ESLint sudah ada di proyekmu.
+
+### Analogi: penata letak vs editor naskah
+
+Bayangkan kamu menyerahkan sebuah artikel ke penerbit. Ada **dua orang** yang menanganinya:
+
+- **Penata letak (layouter)** — tidak peduli isi tulisanmu benar atau salah. Tugasnya cuma merapikan tampilan: rata kiri-kanan, jarak antar paragraf seragam, font konsisten. **Itu Prettier.** Ia tidak tahu (dan tidak peduli) apakah kodemu punya bug; ia hanya membuatnya **terlihat** rapi.
+- **Editor naskah** — membaca isinya: "kalimat ini ambigu", "variabel ini tidak pernah dipakai", "kamu lupa `await` di sini". **Itu ESLint.** Ia menangkap masalah logika dan kualitas, bukan sekadar tampilan.
+
+Dua peran ini berbeda dan saling melengkapi. Salah satu kebingungan paling umum pemula adalah mengira Prettier dan ESLint itu saingan yang harus dipilih salah satu. Tidak — kamu memakai **keduanya**: Prettier untuk tampilan, ESLint untuk kualitas. Add-on `prettier` justru membuat keduanya berdamai (lebih lanjut di bawah).
+
+> Di React/Vue pun pola ini identik: Prettier + ESLint berjalan berdampingan. Bedanya di Svelte ada satu bahan tambahan — `prettier-plugin-svelte`.
+
+### Kenapa butuh `prettier-plugin-svelte`?
+
+Prettier inti hanya paham bahasa yang ia kenal: JavaScript, TypeScript, CSS, HTML, JSON, Markdown. File `.svelte` **bukan** salah satunya — ia campuran aneh antara markup mirip-HTML, blok `<script>`, blok `<style>`, plus sintaks khusus Svelte seperti `{#each}`, `{@render}`, dan runes `$state`. Tanpa bantuan, Prettier tidak tahu cara mem-parse file `.svelte`.
+
+`prettier-plugin-svelte` adalah "kamus tambahan" yang mengajari Prettier membaca dan merapikan file `.svelte`. Add-on `sv add prettier` memasang plugin ini dan mendaftarkannya di config, jadi kamu tidak perlu memikirkannya. Ini sepadan dengan `prettier-plugin-tailwindcss` di dunia Tailwind, atau bagaimana Vue butuh dukungan parser khusus untuk file `.vue`.
+
+### Kenapa Prettier dan ESLint bisa "berkelahi"?
+
+Sebagian aturan ESLint juga menyentuh **gaya** (mis. "wajib titik koma", "wajib kutip tunggal"). Kalau aturan gaya ESLint tidak setuju dengan keputusan Prettier, kamu dapat lingkaran setan: Prettier merapikan → ESLint berteriak "salah!" → kamu perbaiki → Prettier merapikan lagi. Mereka saling membatalkan.
+
+Solusinya adalah paket bernama **`eslint-config-prettier`**: sebuah config yang tugasnya **mematikan semua aturan gaya ESLint** yang tumpang tindih dengan Prettier. Hasilnya pembagian tugas jadi tegas: Prettier mengurus gaya, ESLint hanya mengurus kualitas/bug. Saat kamu menjalankan `sv add prettier` di proyek yang sudah punya ESLint, add-on ini otomatis menambahkan `eslint-config-prettier` ke `eslint.config.js`-mu. Kamu tidak perlu setup manual.
+
+### Apa saja yang dipasang `sv add prettier`?
+
+Ringkasnya, perintah ini melakukan empat hal:
+
+1. **Memasang dependensi**: `prettier` dan `prettier-plugin-svelte` (sebagai `devDependencies`).
+2. **Membuat file config**: `.prettierrc` (aturan format) dan `.prettierignore` (file yang dilewati).
+3. **Menambah script** `package.json`: `format` (memformat) dan `lint` (mengecek).
+4. **Mengintegrasikan ESLint** (kalau ada): menambah `eslint-config-prettier` ke config ESLint-mu supaya keduanya tidak berkelahi.
+
+## 2. Contoh kode
+
+```bash
+# Pasang add-on prettier ke proyek SvelteKit yang sudah ada.
+# Jalankan dari root proyek (folder yang ada package.json-nya).
+npx sv add prettier
+
+# sv akan mendeteksi package manager-mu (npm/pnpm/yarn/bun)
+# dan otomatis menjalankan install setelah file dibuat.
+```
+
+```json
+// .prettierrc — aturan format default yang dibuat sv.
+// (File asli berformat JSON murni; komentar ini hanya untuk penjelasan.)
+{
+	"useTabs": true,
+	"singleQuote": true,
+	"trailingComma": "none",
+	"printWidth": 100,
+	"plugins": ["prettier-plugin-svelte"],
+	"overrides": [
+		{
+			"files": "*.svelte",
+			"options": { "parser": "svelte" }
+		}
+	]
+}
+```
+
+Bagian terpenting di `.prettierrc` adalah dua baris terakhir: `"plugins": ["prettier-plugin-svelte"]` mendaftarkan plugin, dan blok `overrides` memberi tahu Prettier "untuk file `*.svelte`, pakai parser `svelte`". Empat baris di atasnya (`useTabs`, `singleQuote`, dst.) adalah pilihan gaya yang bebas kamu ubah sesuai selera tim.
+
+```json
+// package.json — script yang ditambahkan (potongan).
+{
+	"scripts": {
+		"format": "prettier --write .",
+		"lint": "prettier --check . && eslint ."
+	}
+}
+```
+
+Perhatikan perbedaan dua flag:
+
+- `prettier --write .` — **mengubah** file: merapikan dan menyimpan. Inilah `npm run format`.
+- `prettier --check .` — **tidak mengubah** apa pun, hanya melaporkan file mana yang belum rapi lalu keluar dengan kode error kalau ada. Inilah yang dipakai di `lint` (dan CI). Kalau proyekmu tidak punya ESLint, script `lint` hanya berisi `prettier --check .` tanpa bagian `&& eslint .`.
+
+```js
+// eslint.config.js (flat config) — bagian yang disuntik add-on prettier.
+// Tanda // CONTOH menandai 2 baris yang ditambahkan sv.
+import js from '@eslint/js';
+import svelte from 'eslint-plugin-svelte';
+import prettier from 'eslint-config-prettier'; // CONTOH: import config penonaktif aturan gaya
+import ts from 'typescript-eslint';
+
+export default ts.config(
+	js.configs.recommended,
+	...ts.configs.recommended,
+	...svelte.configs['flat/recommended'],
+	prettier,                              // CONTOH: matikan aturan gaya ESLint umum
+	...svelte.configs['flat/prettier'],    // CONTOH: matikan aturan gaya khusus file .svelte
+	{
+		// ...sisa config-mu tetap
+	}
+);
+```
+
+Urutan penting: `prettier` dan `...svelte.configs['flat/prettier']` harus diletakkan **paling akhir** (setelah config rekomendasi), karena di flat config "yang terakhir menang". Mereka bertugas mematikan aturan, jadi harus dijalankan setelah aturan-aturan itu dinyalakan.
+
+## 3. Coba sendiri
+
+Add-on ini operasi CLI + file config, jadi tidak ada live playground. Sebagai gantinya, lihat efek nyata `npm run format` pada satu file `.svelte` yang berantakan:
+
+```svelte
+<!-- SEBELUM — penuh inkonsistensi: kutip ganda, spasi acak, indentasi 4 spasi -->
+<script>
+    let   name = $state("dunia")
+        let  count=$state( 0 )
+</script>
+
+<h1>Halo {name}</h1>
+    <button onclick={()=>count++}>
+  Klik: {count}
+</button>
+```
+
+```svelte
+<!-- SESUDAH `npm run format` — Prettier menyeragamkan semuanya -->
+<script>
+	let name = $state('dunia');
+	let count = $state(0);
+</script>
+
+<h1>Halo {name}</h1>
+<button onclick={() => count++}> Klik: {count} </button>
+```
+
+Yang berubah: indentasi jadi tab, kutip ganda `"dunia"` jadi tunggal `'dunia'`, titik koma ditambahkan, spasi liar dirapikan, dan markup yang miring diluruskan. Tidak ada satu pun logika yang berubah — `name`, `count`, dan handler tetap persis sama. Itulah Prettier: hanya tampilan.
+
+```bash
+# Alur kerja sehari-hari setelah add-on terpasang:
+
+npm run format     # rapikan SEMUA file di proyek (prettier --write .)
+
+npm run lint       # cek tanpa mengubah; gagal kalau ada yang belum rapi
+                   # (prettier --check . && eslint .)
+
+# Memformat satu file/satu folder saja (tanpa lewat script):
+npx prettier --write src/routes/+page.svelte
+```
+
+```bash
+# .prettierignore — daftar yang dilewati Prettier.
+# sv mengisinya dengan file lock package manager (yang tak perlu/tak boleh diformat):
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lockb
+
+# Tambahkan sendiri folder hasil build / generated bila perlu:
+build/
+.svelte-kit/
+```
+
+## 4. Latihan
+
+<Exercise title="Pasang Prettier dan jadikan format sebagai gerbang CI">
+Kamu punya proyek SvelteKit yang sudah ada ESLint-nya, tapi belum ada Prettier. Lakukan tiga hal: (1) tambahkan add-on prettier lewat `sv`; (2) tulis perintah yang **hanya mengecek** format tanpa mengubah file (untuk dijalankan di pipeline CI, supaya PR yang belum diformat ditolak); (3) jelaskan kenapa kamu memakai `--check`, bukan `--write`, di CI.
+
+{#snippet solution()}
+
+```bash
+# 1) Pasang add-on. Karena ESLint sudah ada, sv otomatis menambahkan
+#    eslint-config-prettier ke eslint.config.js agar keduanya tak berkelahi.
+npx sv add prettier
+
+# 2) Perintah pengecekan untuk CI — ini sudah menjadi script `lint`
+#    yang dibuat sv, jadi cukup panggil:
+npm run lint
+#    yang menjalankan: prettier --check . && eslint .
+#    Atau panggil langsung kalau hanya mau cek format:
+npx prettier --check .
+```
+
+3) Di CI kita pakai `--check`, bukan `--write`, karena tujuan CI adalah **memverifikasi**, bukan memperbaiki. `--check` tidak mengubah file apa pun; ia hanya melaporkan file yang belum rapi lalu keluar dengan **exit code non-nol** sehingga pipeline gagal. Itu memaksa kontributor merapikan kode di mesin mereka (`npm run format`) sebelum PR di-merge. Kalau CI memakai `--write`, ia akan diam-diam mengubah file di runner — perubahan yang lalu hilang dan tidak pernah masuk ke repo, sehingga repo tetap berantakan tanpa ada yang sadar.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menjalankan Prettier sebagai <em>aturan ESLint</em> (paket <code>eslint-plugin-prettier</code>). Pendekatan itu menjalankan Prettier di dalam ESLint dan melaporkan tiap selisih format sebagai error ESLint — lambat dan membuat output lint penuh "noise" merah soal spasi. Pendekatan modern yang dipakai <code>sv</code>: jalankan Prettier <strong>terpisah</strong> (script <code>format</code>), dan gunakan <code>eslint-config-prettier</code> cuma untuk <strong>mematikan</strong> aturan gaya ESLint. Format dan kualitas jadi dua proses berbeda yang tidak saling mengganggu.
+</Callout>
+
+<Callout type="warning">
+File <code>.svelte</code> tidak akan terformat (atau malah error parse) kalau <code>prettier-plugin-svelte</code> tidak terdaftar di <code>.prettierrc</code>. Pastikan ada <code>"plugins": ["prettier-plugin-svelte"]</code> dan blok <code>overrides</code> untuk <code>*.svelte</code>. Kalau kamu pasang Prettier manual (tanpa <code>sv add</code>), inilah bagian yang paling sering terlupa.
+</Callout>
+
+<Callout type="tip">
+Aktifkan <strong>Format on Save</strong> di editor (di VS Code: set <code>"editor.defaultFormatter": "esbenp.prettier-vscode"</code> dan <code>"editor.formatOnSave": true</code>) supaya file dirapikan tiap kamu menyimpan. Lalu tetap pasang <code>npm run lint</code> (yang memakai <code>--check</code>) di CI sebagai jaring pengaman — editor hanya merapikan file yang kamu buka, CI memindai seluruh repo.
+</Callout>
+
+<Callout type="tip">
+Gunakan <code>.prettierignore</code> untuk melewati folder hasil generate seperti <code>build/</code> dan <code>.svelte-kit/</code>, serta file lock. Memformat ulang file generate itu sia-sia (akan ditimpa lagi) dan bisa bikin diff kotor. <code>sv</code> sudah mengisi file lock untukmu; sisanya tambahkan sesuai kebutuhan proyek.
+</Callout>
+
+Beda pendekatan lama vs cara `sv` sekarang:
+
+<LegacyVsModern rows={[
+	{ legacy: 'eslint-plugin-prettier (Prettier sebagai rule ESLint)', modern: 'eslint-config-prettier (mematikan rule gaya saja)', note: 'Prettier dijalankan terpisah, bukan di dalam ESLint.' },
+	{ legacy: 'Setup manual: install + tulis .prettierrc + plugin', modern: 'npx sv add prettier', note: 'Satu perintah mengurus dependensi, config, script, dan integrasi ESLint.' },
+	{ legacy: '.eslintrc + eslintignore (config lama)', modern: 'eslint.config.js flat config', note: 'sv menyuntik prettier ke flat config modern.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/prettier" label="sv add prettier — dokumentasi resmi add-on" />
+<DocsLink href="https://prettier.io/docs/options" label="Daftar opsi konfigurasi Prettier (.prettierrc)" />

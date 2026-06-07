@@ -1,0 +1,182 @@
+---
+title: @sveltejs/kit/node/polyfills
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 3
+status: reference
+description: Fungsi installPolyfills() yang memasang Web API (crypto, File) sebagai global di Node — dipakai adapter agar kode universal SvelteKit jalan di server.
+docs: https://svelte.dev/docs/kit/@sveltejs-kit-node-polyfills
+keywords: [polyfills, installPolyfills, node, adapter, crypto, File]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Modul `@sveltejs/kit/node/polyfills` isinya cuma **satu fungsi**: `installPolyfills()`. Tugasnya sederhana tapi penting — memasang beberapa **Web API standar** (seperti `crypto` dan `File`) sebagai variabel **global** di lingkungan Node.js, supaya kode yang mengasumsikan API itu ada bisa berjalan tanpa `ReferenceError`.
+
+Kenapa ini perlu ada? Karena SvelteKit ditulis dengan filosofi **"web standar dulu"**. `load`, form actions, `+server.js`, dan hooks-mu berurusan dengan objek `Request`/`Response`/`Headers` yang bentuknya sama persis dengan yang ada di browser. Itu enak: satu cara berpikir untuk klien dan server. Masalahnya, Node.js **dulunya tidak punya** API-API web itu sebagai global — `fetch`, `Request`, `Response`, `Headers`, `crypto`, `File` semuanya khas-browser dan absen di Node lama. Jadi kalau kode server-mu (atau kode SvelteKit sendiri) menyentuh `new File(...)` di Node yang belum mengenalnya, programnya langsung meledak.
+
+`installPolyfills()` adalah jembatan yang menutup celah itu: ia "menambal" (polyfill) global yang hilang sebelum kode aplikasimu sempat menyentuhnya.
+
+### Analogi: pindah ke rumah lama
+
+Bayangkan resep masakanmu (kode universal SvelteKit) ditulis dengan asumsi dapur punya **microwave, blender, dan oven**. Resep itu jalan mulus di apartemen modern yang dapurnya sudah lengkap. Tapi begitu kamu pindah ke **rumah tua** (Node versi lama) yang dapurnya cuma punya kompor, resepmu macet di langkah "panaskan pakai microwave" — alatnya tidak ada.
+
+`installPolyfills()` adalah **tukang** yang datang lebih dulu dan memasang alat-alat yang hilang itu, jadi resepmu yang sama persis bisa jalan tanpa diubah. Yang menarik: **rumah-rumah modern sekarang sudah datang dengan microwave & blender bawaan** (Node 18+ sudah punya `fetch`/`Request`/`Response`/`Headers` secara native). Jadi si tukang kini hampir nganggur — dia tinggal memasang sisa gadget yang masih kurang, yaitu `crypto` dan `File`. Itu sebabnya daftar yang dipasang `installPolyfills()` **menyusut** dari tahun ke tahun.
+
+### Siapa yang memanggilnya? (Hampir selalu: adapter, bukan kamu)
+
+Ini bagian penting yang sering disalahpahami. Kamu **nyaris tidak pernah** memanggil `installPolyfills()` sendiri di kode aplikasi (`+page.server.js`, `+server.js`, dst.). Yang memanggilnya adalah **adapter** — terutama `@sveltejs/adapter-node`. Saat server hasil build mulai start, entry adapter memanggil `installPolyfills()` **paling awal**, sebelum request pertama ditangani, supaya seluruh kode universalmu aman.
+
+Kapan kamu memanggilnya manual? Praktis hanya di dua skenario:
+
+1. Kamu **menulis adapter sendiri** (custom adapter berbasis Node). Lihat modul "Writing adapters".
+2. Kamu menjalankan modul server SvelteKit **di luar** entrypoint adapter — misalnya skrip Node terpisah, test runner, atau custom server yang merakit handler sendiri — **dan** kamu menargetkan versi Node yang belum punya global tersebut.
+
+### Untuk yang datang dari React / Vue
+
+Konsep "polyfill global di server" ini bukan hal baru. Di ekosistem React/Vue kamu mungkin pernah:
+
+- Menambahkan `whatwg-fetch` atau `core-js` agar API modern tersedia di runtime lama.
+- Memakai `node-fetch` untuk menambal `fetch` di Node lawas saat SSR.
+- Mengandalkan Next.js yang **otomatis** mem-polyfill `fetch` secara global di server-nya.
+
+`installPolyfills()` adalah versi SvelteKit dari kebiasaan itu — bedanya, ia di-bundle resmi dan dipanggil otomatis oleh adapter, jadi kamu jarang menyentuhnya langsung.
+
+## 2. Contoh kode
+
+Tiga skenario realistis. Perhatikan: di kode aplikasi normal kamu **tidak** menulis ini — adapter sudah melakukannya.
+
+```js
+// scripts/prerender-sitemap.js
+// Menjalankan kode server SvelteKit di LUAR adapter (skrip Node mandiri).
+// Karena tidak lewat entry adapter, kita pasang polyfill sendiri.
+import { installPolyfills } from '@sveltejs/kit/node/polyfills';
+
+// Panggil SEKALI, SEDINI mungkin — sebelum modul lain yang menyentuh
+// `crypto`/`File` di-import. Di Node lama, tanpa ini -> ReferenceError.
+installPolyfills();
+
+// Baru setelah ini aman meng-import & menjalankan logika server:
+const { renderRoutes } = await import('./server-logic.js');
+await renderRoutes();
+```
+
+```js
+// custom-server.js
+// Contoh menjalankan handler hasil adapter-node di dalam server Express
+// buatan sendiri. handler.js sudah meng-handle request; tapi kalau kamu
+// menambah logika server lain yang menyentuh File/crypto sebelum handler,
+// pasang polyfill lebih dulu untuk aman di Node lama.
+import { installPolyfills } from '@sveltejs/kit/node/polyfills';
+installPolyfills(); // idempoten & murah — aman dipanggil di awal
+
+import express from 'express';
+import { handler } from './build/handler.js'; // output @sveltejs/adapter-node
+
+const app = express();
+app.use('/healthz', (req, res) => res.end('ok'));
+app.use(handler); // serahkan sisanya ke SvelteKit
+app.listen(3000);
+```
+
+```js
+// Di dalam SEBUAH custom adapter — pola yang dipakai adapter-node sendiri.
+// File entry server (yang dijalankan `node build`) memanggil installPolyfills()
+// paling atas, sebelum apa pun yang menyentuh Web API global.
+import { installPolyfills } from '@sveltejs/kit/node/polyfills';
+
+installPolyfills(); // <- garis pertama yang "menyalakan" Web API di Node
+
+// ...baru kemudian: import Server dari hasil build, set manifest, listen, dll.
+```
+
+## 3. Coba sendiri
+
+Karena modul ini hidup di sisi **server/Node** (bukan komponen yang bisa dirender di browser), tidak ada live playground. Latih intuisimu dengan **mengecek langsung** apa yang sudah dipunyai Node-mu, lalu lihat efek `installPolyfills()`.
+
+```bash
+# 1) Cek global apa saja yang SUDAH native di Node kamu (tanpa SvelteKit):
+node -e "console.log('fetch:', typeof fetch, '| Request:', typeof Request, '| crypto:', typeof globalThis.crypto, '| File:', typeof File)"
+
+# Node 20/22 (modern): fetch: function | Request: function | crypto: object | File: function
+#   -> semua sudah ada; installPolyfills() nyaris tak menambah apa-apa.
+# Node 16 (lama):       fetch: undefined | Request: undefined | crypto: undefined | File: undefined
+#   -> di sinilah polyfill bekerja menambal yang hilang.
+```
+
+```js
+// demo-polyfill.mjs — lihat efek "sebelum vs sesudah".
+// (Jalankan di Node yang belum punya `File` global untuk melihat perubahannya.)
+console.log('Sebelum:', typeof globalThis.File); // mungkin 'undefined' di Node lama
+
+import { installPolyfills } from '@sveltejs/kit/node/polyfills';
+installPolyfills();
+
+console.log('Sesudah:', typeof globalThis.File); // 'function' — sekarang tersedia
+const f = new File(['halo'], 'catatan.txt', { type: 'text/plain' });
+console.log(f.name, f.size); // catatan.txt 4  -> objek File standar Web siap dipakai
+```
+
+<Callout type="tip">
+Di proyek SvelteKit normal, <strong>jangan</strong> taruh <code>installPolyfills()</code> di <code>+page.server.js</code>/<code>+server.js</code>. Adapter sudah memanggilnya di entry server, jadi <code>File</code> &amp; <code>crypto</code> dijamin ada saat <code>load</code>/action-mu jalan. Eksperimen di atas murni untuk <em>memahami</em> apa yang terjadi di balik layar.
+</Callout>
+
+## 4. Ringkasan API
+
+Modul `@sveltejs/kit/node/polyfills` mengekspor tepat satu fungsi.
+
+| Export | Tanda tangan (TypeScript) | Parameter | Mengembalikan | Memasang global |
+| --- | --- | --- | --- | --- |
+| `installPolyfills` | `function installPolyfills(): void;` | — (tidak ada) | `void` | `crypto`, `File` |
+
+**Detail global yang dipasang** (pada SvelteKit 2 terbaru):
+
+| Global | Apa itu | Kenapa dipolyfill |
+| --- | --- | --- |
+| `crypto` | Implementasi Web Crypto API (`globalThis.crypto`, mis. `crypto.subtle`, `crypto.randomUUID()`) | Dipakai kode universal/SvelteKit untuk hashing, UUID, dll.; absen di Node yang sangat lama |
+| `File` | Konstruktor Web `File` (sub-tipe dari `Blob`) untuk merepresentasikan berkas, mis. dari upload `FormData` | Dibutuhkan saat memproses unggahan multipart di form actions; baru native di Node yang lebih baru |
+
+**Catatan penting soal cakupan yang menyusut.** Versi SvelteKit/Node lama dulu memasang **lebih banyak** global lewat fungsi ini — termasuk `fetch`, `Headers`, `Request`, `Response`, dan `ReadableStream`. Seiring Node menambahkan API tersebut secara **native** (mulai Node 18), daftar yang perlu ditambal terus mengecil hingga kini tinggal `crypto` &amp; `File`. Jadi kalau kamu membaca tutorial atau kode lama yang bilang "installPolyfills memasang `fetch`/`Request`/`Response`", itu **benar untuk versinya** — bukan salah, hanya usang.
+
+<LegacyVsModern rows={[
+  { legacy: 'installPolyfills() memasang fetch, Headers, Request, Response, ReadableStream, crypto, File', modern: 'installPolyfills() cukup memasang crypto & File', note: 'Sisanya kini native di Node 18+, jadi tak perlu ditambal lagi.' },
+  { legacy: 'Butuh node-fetch / undici manual untuk fetch di server', modern: 'fetch global tersedia bawaan; di load() pakai event.fetch', note: 'event.fetch memberi bonus: ikut cookie, resolusi rute internal, dan SSR fetch.' }
+]} />
+
+**Sifat fungsi:**
+
+- **Idempoten secara praktis** — aman dipanggil lebih dari sekali; ia hanya memastikan global ada. Tetap, idealnya panggil **sekali** dan **sedini mungkin**.
+- **Tanpa argumen, mengembalikan `void`** — efeknya murni *side effect* (memodifikasi `globalThis`).
+- **Khusus Node** — modul ini ada di bawah path `@sveltejs/kit/node/...`. Jangan meng-import-nya di kode yang dibundel untuk browser atau edge runtime.
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan memanggil <code>installPolyfills()</code> di dalam kode aplikasi rutin (<code>+server.js</code>, <code>+page.server.js</code>, hooks). Adapter Node sudah memanggilnya di entry server <strong>sebelum</strong> request pertama, jadi memanggil ulang di route hanya menambah kebisingan tanpa manfaat. Tempatnya yang sah cuma: <em>custom adapter</em> atau <em>skrip/custom-server</em> yang berjalan di luar entry adapter.
+</Callout>
+
+<Callout type="warning">
+Ini modul <strong>khusus Node</strong> (<code>@sveltejs/kit/node/polyfills</code>). Adapter edge — <code>adapter-cloudflare</code> atau <code>adapter-vercel</code> dengan <code>runtime: 'edge'</code> — <strong>tidak</strong> memakainya, karena runtime edge sudah menyediakan Web API standar sendiri. Meng-import modul <code>/node/...</code> ke dalam kode yang berakhir di edge bisa gagal build atau crash saat runtime.
+</Callout>
+
+<Callout type="legacy">
+Kalau menemukan kode/tutorial lama yang menulis sesuatu seperti "<code>installPolyfills()</code> menambahkan <code>fetch</code>, <code>Headers</code>, <code>Request</code>, <code>Response</code> ke global", jangan bingung — itu perilaku versi lama. Di Node modern (18+) keempatnya sudah native, jadi fungsi ini kini hanya menambal <code>crypto</code> &amp; <code>File</code>. Untuk melakukan HTTP request di <code>load</code>, jangan andalkan global <code>fetch</code> mentah — pakai <code>event.fetch</code> agar dapat penanganan cookie, kredensial, dan rute internal yang benar.
+</Callout>
+
+<Callout type="tip">
+Pakai versi Node yang masih didukung (lihat <code>engines</code> di paket SvelteKit, umumnya Node 18+). Pada Node modern, <code>crypto</code> &amp; <code>File</code> pun sudah native, sehingga <code>installPolyfills()</code> nyaris menjadi <em>no-op</em> defensif. Artinya kamu jarang perlu memikirkannya — tapi tahu apa fungsinya membuat pesan error "<code>File is not defined</code>" di server lama langsung masuk akal: itu pertanda polyfill tidak terpasang.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/@sveltejs-kit-node-polyfills" label="SvelteKit — @sveltejs/kit/node/polyfills (installPolyfills)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapter-node" label="SvelteKit — adapter-node (yang memanggil installPolyfills untukmu)" />
+<DocsLink href="https://svelte.dev/docs/kit/writing-adapters" label="SvelteKit — Writing custom adapters (kapan kamu memanggilnya sendiri)" />

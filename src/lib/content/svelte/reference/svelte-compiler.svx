@@ -1,0 +1,406 @@
+---
+title: svelte/compiler
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 5
+status: reference
+description: Referensi modul svelte/compiler — compile, compileModule, parse, preprocess, migrate, dan VERSION beserta opsi dan bentuk hasilnya.
+docs: https://svelte.dev/docs/svelte/svelte-compiler
+keywords: [compiler, compile, preprocess, parse, migrate, AST]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Svelte itu unik karena ia bukan library runtime seperti React, melainkan sebuah **compiler**. Komponen `.svelte` yang kamu tulis tidak dikirim apa adanya ke browser — ia diterjemahkan dulu menjadi modul JavaScript biasa yang langsung memanipulasi DOM. Mesin penerjemah itulah isi paket `svelte/compiler`.
+
+Analoginya: `svelte/compiler` adalah **mesin di balik kap mobil**. Sehari-hari kamu cuma menyetir mobil (menjalankan `npm run dev` lewat Vite), dan kamu hampir tidak pernah membuka kapnya. Tapi mesin itu selalu bekerja: setiap kali kamu menyimpan file `.svelte`, di belakang layar `vite-plugin-svelte` memanggil `compile()` untukmu. Modul ini adalah mesin yang sama yang dipakai REPL svelte.dev, plugin Rollup/webpack, ekstensi editor, dan tooling apa pun yang perlu "mengerti" sintaks Svelte.
+
+Kalau kamu datang dari React/Vue, padanannya kira-kira begini: `svelte/compiler` itu seperti **Babel + plugin JSX**, atau seperti `@vue/compiler-sfc` yang mengubah `.vue` Single File Component menjadi `render function`. Bedanya, hasil compile Svelte tidak butuh runtime virtual DOM — outputnya kode yang lebih "telanjang".
+
+**Kapan kamu memanggil modul ini secara langsung?** Jarang, tapi nyata:
+
+- Menulis **build tool / plugin bundler** sendiri (mis. integrasi esbuild kustom).
+- Membuat **playground / REPL** yang meng-compile kode pengguna di browser.
+- Menulis **test** yang mau memeriksa output kompilasi atau jumlah warning.
+- Membuat **preprocessor** (TypeScript, SCSS, PostCSS, Markdown seperti mdsvex) — ini yang paling sering disentuh developer biasa.
+- Menjalankan **migrasi** otomatis dari Svelte 4 ke Svelte 5.
+
+### Peta isi `svelte/compiler`
+
+Modul ini mengekspor sekelompok fungsi. Tiga yang utama mengubah string kode menjadi sesuatu; sisanya pelengkap.
+
+| Export | Tanda tangan | Sinkron? | Fungsi singkat |
+| --- | --- | --- | --- |
+| `compile` | `(source, options) => CompileResult` | sync | Kompilasi sebuah komponen `.svelte` menjadi modul JS (+ CSS). |
+| `compileModule` | `(source, options) => CompileResult` | sync | Kompilasi file `.svelte.js` / `.svelte.ts` (runes di luar komponen). |
+| `parse` | `(source, options) => AST` | sync | Ubah source jadi AST (pohon sintaks), tanpa membuat kode. |
+| `preprocess` | `(source, group, options) => Promise<Processed>` | **async** | Jalankan hook transformasi sebelum `compile` (mis. SCSS → CSS). |
+| `migrate` | `(source, options) => { code }` | sync | Tulis ulang kode Svelte 4 menjadi Svelte 5 (runes, `onclick`, snippet). |
+| `parseCss` | `(source) => AST.CSS.StyleSheetFile` | sync | Parse satu stylesheet CSS menjadi AST. |
+| `print` | `(ast, options) => { code, map }` | sync | Kebalikan `parse`: AST modern → source code. |
+| `walk` | `() => never` | — | **Deprecated.** Pakai `walk` dari paket `estree-walker`. |
+| `VERSION` | `string` | — | Versi Svelte yang sedang dipakai (mis. `'5.x.x'`). |
+
+Mari kita bedah yang penting.
+
+### `compile()` — jantungnya
+
+`compile(source, options)` menerima **string** isi file `.svelte` dan opsi, lalu mengembalikan objek `CompileResult`. Ini operasi **sinkron** (tidak `await`). Bentuk hasilnya:
+
+| Field | Tipe | Isi |
+| --- | --- | --- |
+| `js` | `{ code: string, map: SourceMap }` | Modul JavaScript hasil terjemahan + source map. |
+| `css` | `null \| { code, map, hasGlobal }` | CSS hasil scoping; `null` jika komponen tak punya `<style>`. |
+| `warnings` | `Warning[]` | Daftar peringatan compiler (a11y, unused CSS, dll.). |
+| `metadata` | `{ runes: boolean }` | Info kompilasi, mis. apakah komponen dikompilasi dalam mode runes. |
+| `ast` | `AST.Root` | Pohon sintaks komponen (berguna untuk tooling/linting). |
+
+Yang sering bikin pendatang bingung: `compile` **tidak pernah throw** untuk peringatan biasa. A11y warning, CSS tak terpakai, dll. masuk ke array `warnings`, bukan exception. Yang membuat `compile` throw adalah **error sintaks** yang benar-benar tak bisa dilanjutkan.
+
+#### Opsi penting `CompileOptions`
+
+`CompileOptions` adalah perluasan dari `ModuleCompileOptions` (lihat di bawah) ditambah opsi khusus komponen:
+
+| Opsi | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `generate` | `'client' \| 'server' \| false` | `'client'` | Target output: kode browser, kode SSR, atau hanya analisis (`false`). |
+| `dev` | `boolean` | `false` | Tambah pengecekan & info debug saat runtime. |
+| `css` | `'injected' \| 'external'` | `'external'` | `injected` = CSS ditempel ke JS (sisip via `<style>` saat runtime); `external` = CSS dipisah agar bundler mengurusnya. |
+| `runes` | `boolean \| undefined` | `undefined` | `true`/`false` memaksa mode; `undefined` = deteksi otomatis dari isi komponen. |
+| `filename` | `string` | — | Nama file untuk pesan error & source map. |
+| `name` | `string` | dari `filename` | Nama class JS hasil compile. |
+| `customElement` | `boolean` | `false` | Hasilkan constructor custom element, bukan komponen Svelte biasa. |
+| `namespace` | `'html' \| 'svg' \| 'mathml'` | `'html'` | Namespace elemen default. |
+| `cssHash` | `(args) => string` | — | Fungsi pembuat nama class scoped (mis. `svelte-xxxxx`). |
+| `preserveComments` | `boolean` | `false` | Pertahankan komentar HTML di output. |
+| `preserveWhitespace` | `boolean` | `false` | Pertahankan whitespace apa adanya. |
+| `sourcemap` | `object \| string` | `null` | Source map awal untuk digabung (mis. hasil preprocess). |
+| `modernAst` | `boolean` | `false` | Kembalikan AST format modern (akan jadi default di v6). |
+| `accessors` | `boolean` | `false` | Buat getter/setter untuk props — **deprecated di mode runes**. |
+
+<Callout type="legacy">
+Nama nilai <code>generate</code> dan <code>css</code> berubah dari Svelte 4. Dulu <code>generate: 'dom'</code> / <code>'ssr'</code>; sekarang <code>'client'</code> / <code>'server'</code>. Dulu <code>css: true/false</code>; sekarang <code>'injected'</code> / <code>'external'</code>. Kalau kamu menyalin konfigurasi compiler dari tutorial lama, sesuaikan nilainya.
+</Callout>
+
+### `compileModule()` — runes di luar komponen
+
+Sejak Svelte 5, kamu bisa menulis runes (`$state`, `$derived`, ...) di file `.svelte.js` atau `.svelte.ts` biasa — bukan hanya di dalam `<script>` komponen. File seperti itu **tidak** punya markup, jadi tidak bisa lewat `compile()`. Untuk itulah `compileModule(source, options)`: ia mengompilasi modul JS/TS yang mengandung runes menjadi JS biasa. Hasilnya `CompileResult` yang sama, hanya saja `css` selalu `null` (tidak ada `<style>`).
+
+`compileModule` hanya menerima `ModuleCompileOptions` (subset dari `CompileOptions`):
+
+| Opsi | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `generate` | `'client' \| 'server' \| false` | `'client'` | Target output. |
+| `dev` | `boolean` | `false` | Mode dev. |
+| `filename` | `string` | — | Nama file untuk debug & source map. |
+| `rootDir` | `string` | `process.cwd()` | Akar proyek; mencegah path absolut bocor ke output. |
+| `warningFilter` | `(warning) => boolean` | — | Kembalikan `false` untuk membuang warning tertentu. |
+| `experimental.async` | `boolean` | — | Izinkan `await` di dalam `$derived`/ekspresi (v5.36+). |
+
+### `parse()` — hanya pohon, tanpa kode
+
+`parse(source, options)` mengubah string komponen menjadi **AST** (Abstract Syntax Tree) tanpa menghasilkan JavaScript apa pun. Berguna untuk tooling: linter, formatter, ekstraksi metadata, codemod. Ada dua format AST:
+
+```ts
+// AST modern (Svelte 5+) — disarankan untuk tooling baru
+parse(source, { modern: true }): AST.Root;
+
+// AST legacy (default sekarang) — akan dihapus di v7
+parse(source, { modern: false }): Record<string, any>;
+```
+
+Opsi `modern` saat ini default `false` di Svelte 5, tapi akan menjadi `true` di v6 dan dihapus di v7. Untuk kode baru, **selalu set `modern: true`** agar aman ke depan. Ada juga opsi `loose: true` untuk mentolerir sintaks tak lengkap (berguna saat parsing sambil mengetik di editor).
+
+### `preprocess()` — gerbang sebelum compile
+
+`preprocess(source, preprocessor, options)` adalah satu-satunya fungsi di sini yang **async** (mengembalikan `Promise`). Tugasnya: menjalankan transformasi pada source **sebelum** diberikan ke `compile`. Inilah cara `<script lang="ts">`, `<style lang="scss">`, dan mdsvex bekerja — mereka semua preprocessor yang mengubah sintaks non-standar menjadi sesuatu yang dimengerti compiler Svelte.
+
+Argumen kedua adalah `PreprocessorGroup` (atau array-nya). Sebuah group punya hingga tiga hook:
+
+```ts
+interface PreprocessorGroup {
+	name?: string;        // nama untuk debugging
+	markup?: MarkupPreprocessor;  // dapat SELURUH isi file
+	script?: Preprocessor;        // dapat isi tiap <script>
+	style?: Preprocessor;         // dapat isi tiap <style>
+}
+```
+
+Urutan jalan: `markup` dulu (sekali, untuk seluruh file), lalu `script` dan `style` (untuk tiap blok yang cocok). Tiap hook menerima objek opsi dan boleh mengembalikan `Processed` (atau `void` kalau tidak mengubah apa-apa):
+
+| Hook | Menerima | Untuk |
+| --- | --- | --- |
+| `markup` | `{ content, filename }` | Mengolah seluruh file (mis. mdsvex, custom syntax). |
+| `script` | `{ content, attributes, markup, filename }` | Mengolah isi tiap `<script>` (mis. TS → JS). |
+| `style` | `{ content, attributes, markup, filename }` | Mengolah isi tiap `<style>` (mis. SCSS → CSS). |
+
+Bentuk `Processed` yang dikembalikan:
+
+| Field | Tipe | Isi |
+| --- | --- | --- |
+| `code` | `string` | Kode hasil transformasi (wajib). |
+| `map` | `string \| object` | Source map (opsional tapi sangat dianjurkan). |
+| `dependencies` | `string[]` | File lain yang ikut "diawasi" untuk HMR (mis. `@import` SCSS). |
+| `attributes` | `Record<string, string \| boolean>` | Atribut tag yang diperbarui. |
+
+### `migrate()` — autopilot Svelte 4 → 5
+
+`migrate(source, options)` menulis ulang kode Svelte 4 menjadi Svelte 5: `export let` → `$props()`, `$:` → `$derived`/`$effect`, `on:click` → `onclick`, `<slot>` → snippet + `{@render}`, dan seterusnya. Inilah mesin di balik perintah CLI `npx sv migrate svelte-5`. Hasilnya objek `{ code: string }`. Kalau sebuah komponen terlalu rumit untuk dimigrasi otomatis, fungsi ini akan throw atau menyisipkan komentar penanda — jadi tetap perlu review manual.
+
+### `VERSION`
+
+Konstanta string berisi versi Svelte aktif (diambil dari `package.json` Svelte). Berguna untuk logging tooling atau pengecekan kompatibilitas: `import { VERSION } from 'svelte/compiler'`.
+
+## 2. Contoh kode
+
+```js
+// compile-demo.js — memanggil compiler secara langsung (jalankan dengan Node)
+import { compile, VERSION } from 'svelte/compiler';
+
+const source = `
+<script>
+	let count = $state(0);
+</script>
+
+<button onclick={() => count++}>klik: {count}</button>
+
+<style>
+	button { color: tomato; }
+</style>
+`;
+
+// compile() itu SINKRON — tak perlu await.
+const result = compile(source, {
+	filename: 'Counter.svelte', // untuk pesan error & source map
+	generate: 'client',         // 'client' | 'server' | false
+	dev: true,                  // tambah pengecekan runtime
+	runes: true                 // paksa mode runes (atau undefined = auto-detect)
+});
+
+console.log('Svelte', VERSION);
+console.log(result.js.code);          // string: modul JavaScript hasil terjemahan
+console.log(result.css?.code);        // string CSS, atau undefined jika css === null
+console.log(result.warnings.length);  // array warning (a11y, unused CSS, dll.)
+console.log(result.metadata.runes);   // true — dikompilasi dalam mode runes
+```
+
+```js
+// compile-module-demo.js — untuk file .svelte.js / .svelte.ts (runes tanpa markup)
+import { compileModule } from 'svelte/compiler';
+
+const source = `
+let count = $state(0);
+export function increment() {
+	count++;
+}
+export const getCount = () => count;
+`;
+
+const result = compileModule(source, {
+	filename: 'counter.svelte.js',
+	generate: 'client',
+	dev: false
+});
+
+// Sama seperti compile(), tapi result.css SELALU null (tak ada <style>).
+console.log(result.js.code);
+```
+
+```js
+// preprocess-demo.js — preprocessor sederhana yang async
+import { preprocess } from 'svelte/compiler';
+
+const source = `
+<h1>Tahun build: @@YEAR@@</h1>
+<style lang="custom">body { margin: 0 }</style>
+`;
+
+// PreprocessorGroup: punya hook markup / script / style.
+const myPreprocessor = {
+	name: 'demo',
+	// markup: dapat SELURUH isi file, dipanggil sekali.
+	markup({ content, filename }) {
+		return {
+			code: content.replaceAll('@@YEAR@@', String(new Date().getFullYear()))
+		};
+	},
+	// style: dapat isi tiap <style>. Di sini cuma melewatkan apa adanya.
+	style({ content }) {
+		return { code: content };
+	}
+};
+
+// preprocess() ASYNC — wajib await.
+const processed = await preprocess(source, myPreprocessor, {
+	filename: 'Page.svelte'
+});
+
+console.log(processed.code); // <h1>Tahun build: 2026</h1> ...
+```
+
+```js
+// parse-demo.js — dapatkan AST tanpa menghasilkan kode
+import { parse } from 'svelte/compiler';
+
+const ast = parse('<button onclick={() => x++}>{x}</button>', {
+	modern: true // WAJIB untuk kode baru (default akan jadi true di v6)
+});
+
+console.log(ast.type);     // 'Root'
+console.log(ast.fragment); // pohon node template (elemen, tag, blok, dst.)
+```
+
+## 3. Coba sendiri
+
+Modul ini berjalan di **build time / Node**, bukan di browser, jadi tidak ada live playground di sini — kita pakai contoh statis yang bisa kamu jalankan sendiri di terminal.
+
+Buat file `inspect.mjs` di sebuah proyek yang sudah meng-install `svelte`, lalu jalankan `node inspect.mjs`. Skrip ini meng-compile satu komponen lalu "mengintip" tiap bagian hasilnya — cara paling cepat memahami apa yang sebenarnya dihasilkan Svelte.
+
+```js
+// inspect.mjs — intip hasil compile() bagian demi bagian
+import { compile, VERSION } from 'svelte/compiler';
+
+const source = `
+<script>
+	let { nama = 'dunia' } = $props();   // Svelte 5: props lewat $props()
+	let jumlah = $state(0);
+</script>
+
+<!-- img tanpa alt sengaja, untuk memunculkan a11y warning -->
+<img src="x.png" />
+<button onclick={() => jumlah++}>Halo {nama}: {jumlah}</button>
+
+<style>
+	button { font-weight: bold; }
+	.tak-dipakai { color: red; }  /* CSS ini tak terpakai → warning */
+</style>
+`;
+
+const out = compile(source, { filename: 'Demo.svelte', dev: true });
+
+console.log('Versi Svelte :', VERSION);
+console.log('Mode runes   :', out.metadata.runes); // true (deteksi dari $props/$state)
+console.log('Punya CSS    :', out.css !== null);   // true
+console.log('CSS global?  :', out.css?.hasGlobal); // false
+
+// Warning TIDAK membuat compile throw — mereka dikumpulkan di array.
+console.log('Jumlah warning:', out.warnings.length); // >= 2 (a11y + unused CSS)
+for (const w of out.warnings) {
+	console.log(`  [${w.code}] ${w.message}`);
+}
+
+// js.code adalah string modul JS yang akan dijalankan browser.
+console.log('\n--- potongan JS ---');
+console.log(out.js.code.slice(0, 200), '...');
+```
+
+Hal-hal yang patut kamu perhatikan saat menjalankannya:
+
+- `out.metadata.runes` bernilai `true` walau kamu tidak menulis `runes: true` — compiler **mendeteksi** runes dari adanya `$props()`/`$state()`.
+- `out.warnings` berisi minimal dua entri: a11y untuk `<img>` tanpa `alt`, dan `css_unused_selector` untuk `.tak-dipakai`. Compile **tetap berhasil** — inilah kenapa kamu memfilter warning lewat `warningFilter`, bukan lewat try/catch.
+- `out.js.map` dan `out.css.map` adalah source map; bundler memakainya agar stack trace menunjuk ke file `.svelte` aslimu, bukan ke kode hasil generate.
+
+## 4. Latihan
+
+<Exercise title="Tulis preprocessor sederhana dan jalankan lewat preprocess()">
+
+Buat skrip Node yang mendefinisikan sebuah `PreprocessorGroup` lalu menjalankannya dengan `preprocess()`. Preprocessor-mu harus:
+
+1. Punya hook `markup` yang mengganti setiap token `@@BUILD_TIME@@` di seluruh file dengan ISO timestamp saat ini.
+2. Punya hook `style` yang menambahkan baris komentar `/* diproses */` di awal setiap blok `<style>`.
+3. Mengembalikan objek `Processed` yang benar (minimal field `code`) dari tiap hook.
+
+Petunjuk: ingat `preprocess()` itu **async**, jadi panggil dengan `await`. Hook yang tidak ingin mengubah apa-apa boleh mengembalikan `void` (tidak `return` apa pun).
+
+{#snippet solution()}
+
+```js
+// build-preprocessor.mjs
+import { preprocess } from 'svelte/compiler';
+
+const source = [
+	'<p>Dibangun pada @@BUILD_TIME@@</p>',
+	'<style>',
+	'  p { color: navy; }',
+	'</style>'
+].join('\n');
+
+// Sebuah PreprocessorGroup: kumpulan hook markup/script/style.
+const stampBuild = {
+	name: 'stamp-build',
+
+	// markup: menerima SELURUH isi file, dipanggil sekali.
+	markup({ content }) {
+		const now = new Date().toISOString();
+		// Wajib kembalikan { code }. Boleh sertakan map untuk source map.
+		return { code: content.replaceAll('@@BUILD_TIME@@', now) };
+	},
+
+	// style: menerima isi tiap <style> (tanpa tag-nya).
+	style({ content }) {
+		return { code: '/* diproses */\n' + content };
+	}
+	// (tidak ada hook script → blok <script> dibiarkan apa adanya)
+};
+
+// preprocess() ASYNC — wajib await. Argumen ketiga opsi (filename).
+const result = await preprocess(source, stampBuild, {
+	filename: 'Build.svelte'
+});
+
+console.log(result.code);
+// <p>Dibangun pada 2026-06-06T...Z</p>
+// <style>/* diproses */
+//   p { color: navy; }
+// </style>
+```
+
+Inti pelajarannya: `preprocess` memisahkan **transformasi sintaks** (yang kamu kuasai) dari **kompilasi** (urusan Svelte). Hook `markup` melihat file utuh, sementara `style`/`script` hanya melihat isi blok masing-masing — itulah kenapa SCSS/TS bisa dipasang sebagai hook spesifik tanpa harus mem-parsing seluruh komponen. Selalu kembalikan field `code`; kalau hook tidak mengubah apa pun, kembalikan `void` agar Svelte tahu boleh melewatinya.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>preprocess()</code> itu <strong>async</strong> (mengembalikan <code>Promise</code>), sedangkan <code>compile()</code>, <code>compileModule()</code>, <code>parse()</code>, dan <code>migrate()</code> semuanya <strong>sinkron</strong>. Lupa <code>await</code> di depan <code>preprocess</code> bikin kamu memegang sebuah Promise dan mengira preprocessing "tidak jalan". Urutan yang benar: <code>const processed = await preprocess(...)</code> dulu, baru <code>compile(processed.code, ...)</code>.
+</Callout>
+
+<Callout type="warning">
+<code>compile()</code> <strong>tidak throw</strong> untuk peringatan biasa — a11y, CSS tak terpakai, dll. semua masuk ke <code>result.warnings</code>. Yang membuatnya throw hanyalah error sintaks fatal. Jadi jangan mengandalkan <code>try/catch</code> untuk menangkap warning; iterasi <code>result.warnings</code> atau pasang <code>warningFilter</code> di opsi.
+</Callout>
+
+<Callout type="legacy">
+Nilai opsi berubah sejak Svelte 4: <code>generate: 'dom' | 'ssr'</code> menjadi <code>'client' | 'server'</code>, dan <code>css: true/false</code> menjadi <code>'injected' | 'external'</code>. Selain itu <code>walk()</code> dari <code>svelte/compiler</code> kini <strong>deprecated</strong> — impor <code>walk</code> dari paket <code>estree-walker</code>. Untuk <code>parse()</code>, set <code>modern: true</code> sekarang; format legacy akan dihapus di v7.
+</Callout>
+
+<Callout type="tip">
+Di proyek SvelteKit/Vite biasa kamu <strong>tidak perlu</strong> memanggil <code>compile</code>/<code>preprocess</code> sendiri — <code>@sveltejs/vite-plugin-svelte</code> sudah melakukannya. Cukup daftarkan preprocessor di <code>svelte.config.js</code> lewat opsi <code>preprocess</code> (mis. <code>vitePreprocess()</code> untuk TypeScript). Panggil API <code>svelte/compiler</code> langsung hanya saat membuat tooling, REPL, atau test.
+</Callout>
+
+<Callout type="tip">
+Selalu teruskan <code>filename</code> ke <code>compile</code>/<code>preprocess</code>, dan rantai source map antar tahap. Tanpa <code>filename</code>, pesan error dan source map jadi anonim sehingga stack trace runtime menunjuk ke kode hasil generate, bukan ke file <code>.svelte</code> aslimu — sangat menyulitkan saat debugging.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: "generate: 'dom'", modern: "generate: 'client'", note: 'Target output browser di Svelte 5.' },
+	{ legacy: "generate: 'ssr'", modern: "generate: 'server'", note: 'Target output SSR.' },
+	{ legacy: 'css: true / false', modern: "css: 'injected' / 'external'", note: 'Cara menangani CSS hasil compile.' },
+	{ legacy: "import { walk } from 'svelte/compiler'", modern: "import { walk } from 'estree-walker'", note: 'walk() compiler kini deprecated.' },
+	{ legacy: 'parse(source) // AST legacy', modern: 'parse(source, { modern: true })', note: 'Format legacy dihapus di v7.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-compiler" label="svelte/compiler — referensi lengkap (compile, parse, preprocess, migrate)" />
+<DocsLink href="https://svelte.dev/docs/svelte/compiler-warnings" label="Daftar kode compiler warnings" />
+<DocsLink href="https://svelte.dev/docs/svelte/compiler-errors" label="Daftar kode compiler errors" />
+<DocsLink href="https://svelte.dev/docs/cli/sv-migrate" label="sv migrate — CLI di balik migrate()" />

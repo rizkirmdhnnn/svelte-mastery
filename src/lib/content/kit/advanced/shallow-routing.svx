@@ -1,0 +1,334 @@
+---
+title: Shallow routing
+product: kit
+section: advanced
+sectionTitle: Advanced
+sectionOrder: 4
+order: 8
+status: stable
+description: Memasukkan state ke riwayat browser tanpa benar-benar berpindah halaman, untuk pola seperti modal yang bisa ditutup dengan tombol Back.
+docs: https://svelte.dev/docs/kit/shallow-routing
+keywords: [shallow routing, pushState, replaceState, page.state, preloadData]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Biasanya di SvelteKit, **satu URL = satu halaman**. Kamu klik link, URL berubah, route baru di-`load`, komponen baru di-render. Itu navigasi "normal" (deep routing). **Shallow routing** adalah kebalikannya: kamu mengubah **riwayat browser** (history) tanpa benar-benar berpindah ke route lain. Halaman yang sedang tampil tetap sama; kamu hanya menempelkan sepotong *state* ke entri history saat ini atau membuat entri baru.
+
+Kenapa ini berguna? Karena ada banyak "keadaan UI" yang secara intuitif **layak masuk ke tombol Back**, tapi tidak layak jadi halaman penuh. Contoh paling klasik: **modal**.
+
+### Masalah yang dipecahkan: modal dan tombol Back
+
+Bayangkan galeri foto. User klik sebuah foto, muncul modal besar menampilkan foto itu. Pertanyaannya: ketika user menekan tombol **Back** browser (atau swipe-back di HP), apa yang user *harapkan* terjadi?
+
+Hampir semua orang berharap **modal-nya tertutup** — bukan terlempar keluar dari galeri ke halaman sebelumnya. Tapi kalau modal cuma sebuah `boolean` di state komponen (`let open = $state(false)`), tombol Back tidak tahu apa-apa soal modal itu. Back akan membawa user keluar dari galeri sepenuhnya. Pengalaman yang bikin frustrasi, terutama di mobile.
+
+Shallow routing menyelesaikan ini dengan cara **mendaftarkan "modal sedang terbuka" sebagai entri di riwayat browser**. Sekarang Back punya sesuatu untuk di-*pop*: ia menghapus entri itu, dan modal pun tertutup. Tidak ada navigasi, tidak ada re-render halaman, tidak ada `load` yang jalan ulang.
+
+### Analogi: pembatas buku, bukan pindah buku
+
+Kalau navigasi normal itu seperti **menutup satu buku lalu mengambil buku lain dari rak**, shallow routing itu seperti **menyelipkan pembatas buku (bookmark) di halaman yang sedang kamu baca**. Bukunya tetap terbuka di halaman yang sama. Pembatas itu cuma menandai "ada sesuatu di sini" — misalnya "modal terbuka". Tarik pembatasnya keluar (tekan Back), dan kamu tetap di halaman yang sama, hanya tanda itu yang hilang.
+
+Atau, kalau kamu datang dari React/Vue: ini mirip menaruh state di `history.pushState` secara manual (lewat History API browser), tapi SvelteKit membungkusnya jadi reaktif dan terintegrasi dengan sistem routing-nya. Kalau di Next.js kamu pernah memakai *intercepting routes* + *parallel routes* (folder `(.)foo` dan `@modal`) untuk pola "foto sebagai modal", shallow routing adalah jawaban SvelteKit untuk kebutuhan yang sama — tapi jauh lebih eksplisit dan tanpa konvensi folder yang rumit.
+
+### Tiga alat utama
+
+Semua ini berasal dari `$app/navigation`, plus pembacaan state dari `$app/state`:
+
+- **`pushState(url, state)`** — membuat **entri history baru** dengan objek `state` custom, **tanpa** menavigasi ke route lain. Setelah ini, tombol Back akan menghapus entri tersebut.
+- **`replaceState(url, state)`** — **mengganti** entri history saat ini (tidak menambah entri baru). Berguna saat kamu ingin mengubah state tanpa menambah satu langkah Back.
+- **`page.state`** — objek state yang barusan kamu set, dibaca secara **reaktif** dari `$app/state`. Saat user menekan Back/Forward, `page.state` otomatis ikut berubah, dan UI-mu bereaksi.
+- **`preloadData(href)`** — memuat data `load` milik sebuah route **lebih awal**, supaya saat modal dibuka isinya sudah siap (tidak ada kedipan "loading").
+
+Argumen pertama `pushState`/`replaceState` adalah **URL relatif** terhadap URL sekarang. Kalau kamu mau tetap di URL yang persis sama (cuma menambah state), pakai string kosong `''`. Kalau kamu mau URL ikut berubah (misalnya jadi `/photos/3` supaya bisa di-share atau di-refresh sebagai halaman penuh), berikan href tujuan.
+
+### Kenapa `page.state` dan bukan variabel biasa?
+
+Inti filosofinya: **state yang dikelola history harus dibaca dari history**, bukan dari variabel lepas. Kalau kamu menyimpan "modal terbuka" di `let open = $state(true)` *sekaligus* memanggil `pushState`, kamu punya dua sumber kebenaran yang bisa tidak sinkron — tekan Back, history berubah, tapi `open` masih `true`. Dengan membaca **hanya** dari `page.state`, kamu menjadikan riwayat browser sebagai satu-satunya sumber kebenaran. Back/Forward "just works" karena UI-mu adalah cerminan langsung dari history.
+
+<Callout type="tip">
+Untuk type-safety, deklarasikan interface <code>App.PageState</code> di <code>src/app.d.ts</code>. Setelah itu, isi <code>page.state</code> dan argumen kedua <code>pushState</code>/<code>replaceState</code> akan diperiksa tipenya oleh TypeScript — jadi kamu tidak salah ketik nama field.
+</Callout>
+
+## 2. Contoh kode
+
+Mulai dari yang paling sederhana: modal yang ada di tombol Back, tanpa data tambahan dan tanpa mengubah URL.
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script>
+	import { pushState } from '$app/navigation';
+	import { page } from '$app/state';
+	import Modal from './Modal.svelte';
+
+	function showModal() {
+		// URL '' = tetap di URL sekarang. Kita cuma menempel state
+		// { showModal: true } ke entri history BARU. Tombol Back
+		// akan meng-pop entri ini.
+		pushState('', { showModal: true });
+	}
+</script>
+
+<button onclick={showModal}>Buka modal</button>
+
+<!-- page.state reaktif: saat Back menghapus entri, showModal jadi
+     undefined, blok ini hilang, modal tertutup. Tanpa re-render halaman. -->
+{#if page.state.showModal}
+	<Modal close={() => history.back()}>
+		<p>Tutup aku dengan tombol Back browser, atau tombol di bawah.</p>
+	</Modal>
+{/if}
+```
+
+Perhatikan tombol tutup memanggil `history.back()`, **bukan** menyetel variabel jadi `false`. Ini penting: kita menutup modal dengan cara yang sama seperti tombol Back browser — yaitu meng-*pop* entri history — supaya state UI dan riwayat browser selalu sinkron.
+
+Sekarang versi yang lebih kaya: **galeri foto** di mana tiap foto punya URL sungguhan (`/photos/[id]`), tapi saat diklik dari galeri ia muncul sebagai modal. Inilah pola andalan shallow routing.
+
+```svelte
+<!-- src/routes/photos/+page.svelte -->
+<script>
+	import { pushState, preloadData, goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import PhotoModal from './PhotoModal.svelte';
+
+	let { data } = $props();
+
+	async function openPhoto(e, href) {
+		// Hormati niat user. Klik tengah / Ctrl / Cmd (buka tab baru),
+		// atau layar kecil → biarkan navigasi default berjalan.
+		if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+		if (innerWidth < 640) return;
+		e.preventDefault();
+
+		// Jalankan load() milik /photos/[id] LEBIH AWAL, supaya saat
+		// modal muncul datanya sudah siap (tidak ada flash "loading").
+		const result = await preloadData(href);
+
+		if (result.type === 'loaded' && result.status === 200) {
+			// URL berubah jadi href (bisa di-share/di-refresh sebagai
+			// halaman penuh), TAPI komponen /photos/[id] TIDAK dimuat —
+			// kita cuma menempel datanya ke page.state.
+			pushState(href, { selected: result.data });
+		} else {
+			// preload gagal (mis. 404) → jatuh ke navigasi sungguhan.
+			goto(href);
+		}
+	}
+</script>
+
+{#each data.photos as photo (photo.id)}
+	<!-- href tetap valid: kalau JS mati / dibuka di tab baru, ini
+	     menavigasi ke halaman foto sungguhan. -->
+	<a href="/photos/{photo.id}" onclick={(e) => openPhoto(e, `/photos/${photo.id}`)}>
+		<img src={photo.thumb} alt={photo.alt} />
+	</a>
+{/each}
+
+<!-- Diisi oleh pushState. Back mengosongkan page.state → modal tertutup. -->
+{#if page.state.selected}
+	<PhotoModal photo={page.state.selected} close={() => history.back()} />
+{/if}
+```
+
+Kunci pola ini: route `/photos/[id]` **tetap ada sungguhan**. Saat dibuka dari galeri lewat shallow routing, ia tampil sebagai modal di atas galeri. Saat URL `/photos/3` di-refresh atau dibuka langsung, route `[id]` di-render sebagai halaman penuh seperti biasa. Satu URL, dua cara tampil — tergantung dari mana user datang.
+
+Agar type-safe, daftarkan bentuk `page.state` di file deklarasi global:
+
+```ts
+// src/app.d.ts
+declare global {
+	namespace App {
+		interface PageState {
+			// field opsional: kadang ada modal, kadang tidak
+			showModal?: boolean;
+			selected?: { id: number; url: string; alt: string };
+		}
+	}
+}
+
+export {};
+```
+
+## 3. Coba sendiri
+
+Shallow routing menyentuh History API browser dan integrasi router SvelteKit, jadi **tidak bisa dijalankan di playground komponen tunggal**. Tapi mari kita bedah alur lengkap "foto sebagai modal" supaya kamu paham apa yang terjadi di tiap titik.
+
+Anggap struktur folder seperti ini:
+
+```text
+src/routes/photos/
+├─ +page.server.ts      ← load daftar foto untuk galeri
+├─ +page.svelte         ← galeri + slot untuk modal
+└─ [id]/
+   ├─ +page.server.ts   ← load detail SATU foto (dipakai 2 cara)
+   └─ +page.svelte      ← halaman foto penuh (saat di-refresh/di-share)
+```
+
+Route `[id]/+page.server.ts` melakukan dua tugas sekaligus tanpa tahu konteksnya:
+
+```ts
+// src/routes/photos/[id]/+page.server.ts
+import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
+import { getPhoto } from '$lib/server/photos';
+
+export const load: PageServerLoad = async ({ params }) => {
+	const photo = getPhoto(params.id);
+	// SvelteKit 2: panggil error() TANPA throw — ia melempar sendiri.
+	if (!photo) error(404, 'Foto tidak ditemukan');
+	return { photo };
+};
+```
+
+Data inilah yang `preloadData('/photos/3')` ambil di muka. Saat `preloadData` selesai dengan `type: 'loaded'` dan `status: 200`, isinya (`result.data`) adalah objek `{ photo }` yang sama persis seperti yang akan diterima `[id]/+page.svelte` lewat `data`. Kita oper isi itu ke `page.state` lalu render modal-nya.
+
+Komponen `[id]/+page.svelte` (halaman penuh) bisa berbagi tampilan dengan modal. Pola yang rapi: bungkus tampilan foto jadi satu komponen, lalu pakai di dua tempat.
+
+```svelte
+<!-- src/routes/photos/[id]/+page.svelte (halaman penuh saat di-refresh) -->
+<script>
+	import PhotoView from './PhotoView.svelte';
+	let { data } = $props();
+</script>
+
+<!-- Versi standalone: dipakai saat URL dibuka langsung / di-refresh. -->
+<PhotoView photo={data.photo} />
+```
+
+```svelte
+<!-- src/routes/photos/PhotoModal.svelte (versi modal) -->
+<script>
+	import PhotoView from './[id]/PhotoView.svelte';
+	let { photo, close } = $props();
+</script>
+
+<div class="backdrop" onclick={close} role="presentation">
+	<div class="dialog" role="dialog" aria-modal="true">
+		<!-- Tampilan SAMA, cuma dibungkus backdrop + tombol tutup. -->
+		<PhotoView {photo} />
+		<button onclick={close}>Tutup</button>
+	</div>
+</div>
+```
+
+Alur lengkap saat user mengeklik foto dari galeri:
+
+1. `onclick` memanggil `openPhoto`. Karena bukan klik tab-baru dan layar cukup lebar, `e.preventDefault()` mencegah navigasi normal.
+2. `preloadData('/photos/3')` menjalankan `load` route `[id]` di latar belakang. (Kalau `<a>`-nya punya `data-sveltekit-preload-data`, request itu mungkin sudah jalan, dan `preloadData` memakai ulang yang sedang berjalan — tidak fetch dua kali.)
+3. `pushState('/photos/3', { selected: result.data })` mengubah URL jadi `/photos/3`, menambah satu entri history, dan mengisi `page.state.selected`.
+4. Blok `{#if page.state.selected}` menjadi truthy → `PhotoModal` muncul. Tidak ada `load` halaman galeri yang jalan ulang; galeri tetap di belakang modal.
+5. User menekan **Back** → browser meng-pop entri → `page.state` kembali kosong → modal hilang → URL kembali ke `/photos`. Mulus.
+
+Dan saat user **me-refresh** di `/photos/3`: tidak ada `page.state` (saat reload selalu kosong), tapi route `[id]` sungguhan ikut termuat sebagai halaman penuh. Itulah kenapa `href` di galeri harus tetap menunjuk URL valid — ia jadi jaring pengaman untuk refresh, share link, dan no-JS.
+
+## 4. Latihan
+
+<Exercise title="Filter sebagai entri history dengan replaceState">
+
+Kamu punya halaman daftar produk `/products`. Di atasnya ada beberapa tombol filter kategori ("Semua", "Baju", "Sepatu"). Permintaannya:
+
+1. Mengeklik filter **tidak** boleh memuat ulang halaman atau menjalankan `load`. Cukup menyaring `data.products` di klien.
+2. Filter aktif harus tersimpan di `page.state` (bukan variabel `$state` lepas), supaya kalau nanti kamu menambah pola Back/Forward, state-nya konsisten dengan history.
+3. Pakai `replaceState` (bukan `pushState`) untuk **mengganti** filter saat ini — kita tidak ingin tiap klik filter menambah satu langkah Back yang harus ditekan berkali-kali.
+
+Tulis `+page.svelte`-nya. Asumsikan `data.products` adalah array `{ id, name, category }`. Jelaskan kenapa `replaceState` lebih cocok daripada `pushState` di sini.
+
+{#snippet solution()}
+
+```svelte
+<!-- src/routes/products/+page.svelte -->
+<script>
+	import { replaceState } from '$app/navigation';
+	import { page } from '$app/state';
+
+	let { data } = $props();
+
+	const categories = ['Semua', 'Baju', 'Sepatu'];
+
+	// Baca filter dari page.state (sumber kebenaran), default 'Semua'.
+	let active = $derived(page.state.filter ?? 'Semua');
+
+	// Turunkan daftar tersaring dari filter aktif.
+	let visible = $derived(
+		active === 'Semua'
+			? data.products
+			: data.products.filter((p) => p.category === active)
+	);
+
+	function setFilter(cat) {
+		// '' = tetap di URL /products. replaceState MENGGANTI entri
+		// history saat ini, jadi tidak menumpuk langkah Back tiap klik.
+		replaceState('', { filter: cat });
+	}
+</script>
+
+<nav>
+	{#each categories as cat (cat)}
+		<button
+			class:active={active === cat}
+			onclick={() => setFilter(cat)}
+		>
+			{cat}
+		</button>
+	{/each}
+</nav>
+
+<ul>
+	{#each visible as p (p.id)}
+		<li>{p.name} <small>({p.category})</small></li>
+	{/each}
+</ul>
+```
+
+**Kenapa `replaceState`, bukan `pushState`:** filter adalah state yang "menggantikan dirinya sendiri" — pindah dari "Baju" ke "Sepatu" bukan dua langkah terpisah yang ingin kamu munduri satu per satu. Kalau pakai `pushState`, mengganti filter lima kali akan menambah lima entri history; user harus menekan Back lima kali hanya untuk keluar dari `/products`. Dengan `replaceState`, selalu ada **satu** entri filter yang ditimpa, jadi satu kali Back langsung membawa user keluar halaman. (Sebaliknya, untuk modal yang ingin "ditutup dengan Back", `pushState`-lah yang benar, karena di situ kita memang ingin Back punya sesuatu untuk di-pop.)
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Selalu sediakan fallback navigasi sungguhan.</strong> Shallow routing butuh JavaScript. Kalau JS belum/gagal dimuat, atau user membuka link di tab baru (Ctrl/Cmd-klik), atau me-refresh di URL hasil <code>pushState</code> — yang berlaku adalah navigasi normal ke route itu. Maka route tujuan (mis. <code>/photos/[id]</code>) <strong>harus sungguh ada</strong>, dan elemen pemicunya sebaiknya tetap berupa <code>&lt;a href&gt;</code> yang valid, bukan <code>&lt;div onclick&gt;</code>. Jangan <code>preventDefault</code> saat user menahan modifier atau pada layar kecil.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Jangan baca <code>page.state</code> seakan-akan ada saat SSR.</strong> Selama server-side rendering, <code>page.state</code> <strong>selalu objek kosong</strong>. Begitu juga saat halaman di-reload atau saat user kembali dari dokumen lain — state hasil <code>pushState</code> tidak ikut bertahan. Jadi modal/panel yang dibangun dengan shallow routing tidak akan muncul di HTML server; itu memang desainnya. Jangan jadikan <code>page.state</code> satu-satunya tempat data penting yang harus selamat dari refresh.
+</Callout>
+
+<Callout type="warning">
+<strong>Tutup dengan <code>history.back()</code>, bukan dengan menyetel variabel.</strong> Kalau kamu menutup modal lewat <code>let open = false</code> sementara entri history-nya masih ada, riwayat dan UI jadi tidak sinkron — tombol Forward bisa "menghidupkan" kembali modal yang seharusnya mati, atau Back malah melempar user keluar halaman. Jadikan <code>page.state</code> satu-satunya sumber kebenaran, dan ubah ia hanya lewat <code>pushState</code>/<code>replaceState</code>/<code>history.back()</code>.
+</Callout>
+
+<Callout type="tip">
+<strong><code>preloadData</code> hemat dobel-fetch.</strong> Kalau link-mu sudah memakai <code>data-sveltekit-preload-data="hover"</code>, request <code>load</code> mungkin sudah berjalan sebelum diklik. Memanggil <code>preloadData(href)</code> akan <strong>memakai ulang</strong> request yang sedang berjalan itu, bukan menembak ulang. Periksa <code>result.type === 'loaded'</code> dan <code>result.status === 200</code> sebelum memakai <code>result.data</code>; untuk kasus lain (redirect/error), jatuh ke <code>goto(href)</code> sebagai navigasi normal.
+</Callout>
+
+<Callout type="legacy">
+<strong>Sumber <code>page.state</code> berubah di SvelteKit 2.12.</strong> <code>page.state</code> dari <code>$app/state</code> (berbasis rune Svelte 5) baru tersedia sejak 2.12. Di versi lebih lama atau di Svelte 4, kamu memakai <code>$page.state</code> dari store <code>$app/stores</code> (<code>import &#123; page &#125; from '$app/stores'</code>, lalu <code>$page.state</code>). API <code>pushState</code>/<code>replaceState</code>/<code>preloadData</code> sendiri sama; yang berbeda hanya cara membaca state-nya.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Lama / pola lain"
+	modernLabel="Shallow routing (SvelteKit 2.12+)"
+	rows={[
+		{ legacy: "let open = $state(false) untuk modal", modern: "pushState('', { showModal: true })", note: "Back menutup modal; state ikut history" },
+		{ legacy: "$page.state dari $app/stores", modern: "page.state dari $app/state", note: "rune-based, sejak 2.12" },
+		{ legacy: "modal fetch datanya sendiri saat dibuka", modern: "preloadData(href) lalu pushState(href, data)", note: "data siap sebelum modal muncul, tanpa kedipan" },
+		{ legacy: "history.pushState(...) manual via History API", modern: "pushState/replaceState dari $app/navigation", note: "terintegrasi router & reaktif lewat page.state" }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/shallow-routing" label="SvelteKit — Shallow routing (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-navigation" label="SvelteKit — $app/navigation (pushState, replaceState, preloadData, goto)" />
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-state" label="SvelteKit — $app/state (page.state)" />

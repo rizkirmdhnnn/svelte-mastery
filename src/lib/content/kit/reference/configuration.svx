@@ -1,0 +1,351 @@
+---
+title: Configuration
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 23
+status: reference
+description: Referensi lengkap svelte.config.js — semua opsi kit (adapter, alias, csp, csrf, env, files, paths, prerender, router, serviceWorker, version, dll.) beserta tipe & nilai default.
+docs: https://svelte.dev/docs/kit/configuration
+keywords: [svelte.config.js, kit config, csp, prerender, paths, adapter]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`svelte.config.js` adalah **satu-satunya panel kontrol** untuk seluruh perilaku build & runtime SvelteKit. Berbeda dengan banyak framework lain yang menyebar konfigurasinya ke banyak file (`next.config.js` + `tsconfig` + variabel lingkungan + file platform), SvelteKit memusatkan hampir semuanya di satu objek: properti `kit`. Di situ kamu menentukan mau deploy ke mana (`adapter`), di mana file-filemu berada (`files`), bagaimana URL disusun (`paths`), aturan keamanan (`csp`, `csrf`), dan lusinan detail lain.
+
+Yang sering bikin bingung pendatang dari React/Vue: file ini dipakai oleh **tiga konsumen sekaligus**, bukan cuma satu. Pertama, **compiler Svelte** membaca field di luar `kit` (terutama `compilerOptions` dan `preprocess`). Kedua, **SvelteKit** membaca seluruh isi `kit`. Ketiga, **`vite-plugin-svelte`** dan tooling editor (`svelte-language-server`, generator `tsconfig`) ikut mengintip file ini. Jadi `svelte.config.js` bukan "config SvelteKit" murni — ia adalah config gabungan untuk seluruh ekosistem Svelte di proyekmu.
+
+### Analogi: panel sekring rumah
+
+Bayangkan `svelte.config.js` seperti **kotak sekring (panel listrik) di rumah**. Kamu jarang membukanya, tapi saat membukanya, semua sakelar penting ada di sana dalam satu tempat: sakelar untuk dapur (`adapter` — ke mana listrik "deploy" disalurkan), sakelar untuk tata letak kabel (`files` & `paths`), sakelar pengaman/proteksi (`csp` & `csrf`), dan sakelar untuk fitur eksperimental yang masih dites (`experimental`). Kamu tidak perlu menyentuh sebagian besar sakelar — nilai default-nya sudah waras. Tapi ketika kamu butuh mengubah perilaku global (mis. men-deploy aplikasi di sub-path `/app`), kamu tahu persis ke panel mana harus pergi: tidak ada "config tersembunyi" di sudut lain rumah.
+
+### Mengapa hampir semua opsi punya default
+
+Filosofi SvelteKit adalah **convention over configuration**: file kosong pun (selama `adapter` ada) menghasilkan aplikasi yang jalan. Hampir setiap opsi di tabel bawah punya nilai default yang sengaja dipilih agar 90% proyek tidak perlu menyentuhnya. Karena itu, cara membaca dokumen ini bukan "aku harus mengisi semua ini", melainkan "ketika butuh X, opsi mana yang harus kuubah". Banyak opsi (`files`, `appDir`, `moduleExtensions`) sebenarnya jarang disentuh dan ada terutama untuk kasus monorepo, migrasi, atau integrasi tooling lain.
+
+### Bentuk minimal file
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	// Field di luar `kit` dibaca oleh COMPILER & preprocessor, bukan SvelteKit:
+	preprocess: vitePreprocess(),
+
+	// Semua opsi SvelteKit hidup di dalam `kit`:
+	kit: {
+		adapter: adapter()
+	}
+};
+
+export default config;
+```
+
+Anotasi `@type {import('@sveltejs/kit').Config}` itu penting: ia memberi autocomplete & pengecekan tipe di editor untuk seluruh objek, sehingga kamu tahu opsi apa yang valid tanpa menghafal.
+
+## 2. Referensi opsi `kit`
+
+Semua opsi di bawah berada di dalam `config.kit`. Tipe ditulis sesuai `KitConfig` SvelteKit 2. Kolom **Default** adalah nilai yang dipakai bila kamu tidak menyetelnya.
+
+### Inti & lokasi
+
+| Opsi | Tipe | Default | Fungsi |
+| --- | --- | --- | --- |
+| `adapter` | `Adapter` | — (wajib untuk build) | Membungkus output `vite build` ke platform tujuan (Node/Vercel/static/dll.). Tanpa ini, `vite build` gagal. |
+| `alias` | `Record<string, string>` | `{}` | Alias path impor kustom. Mis. `{ $comp: 'src/lib/components' }`. SvelteKit menambahkannya ke `tsconfig`/`jsconfig` otomatis. |
+| `appDir` | `string` | `"_app"` | Nama subfolder tempat aset build (JS/CSS) ditaruh, relatif ke `paths.base`. Ubah hanya jika nama ini bentrok dengan rutemu. |
+| `outDir` | `string` | `".svelte-kit"` | Folder kerja internal SvelteKit (file hasil-generate, type). Bukan output build akhir — itu ditentukan adapter. |
+| `moduleExtensions` | `string[]` | `['.js', '.ts']` | Ekstensi file yang dianggap modul rute (mis. tambah `'.gql'`). |
+| `files` | objek (lihat di bawah) | lihat di bawah | Memetakan ulang lokasi file/folder spesial. Lihat tabel "files" terpisah. |
+
+### `files` — peta lokasi file spesial
+
+Berguna untuk monorepo atau struktur non-standar. Semua relatif ke root proyek.
+
+| Sub-opsi | Tipe | Default | Isi |
+| --- | --- | --- | --- |
+| `files.assets` | `string` | `"static"` | Aset statis yang disalin apa adanya (favicon, robots.txt). |
+| `files.lib` | `string` | `"src/lib"` | Folder yang dipetakan ke alias `$lib`. |
+| `files.routes` | `string` | `"src/routes"` | Folder filesystem router (`+page`, `+server`, dll.). |
+| `files.params` | `string` | `"src/params"` | Matcher parameter rute (`[id=integer]`). |
+| `files.hooks.client` | `string` | `"src/hooks.client"` | Hooks sisi klien. |
+| `files.hooks.server` | `string` | `"src/hooks.server"` | Hooks sisi server (`handle`, `handleError`). |
+| `files.hooks.universal` | `string` | `"src/hooks"` | Hooks universal (jalan di kedua sisi). |
+| `files.serviceWorker` | `string` | `"src/service-worker"` | Entry service worker. |
+| `files.appTemplate` | `string` | `"src/app.html"` | Template HTML pembungkus (placeholder `%sveltekit.head%` dll.). |
+| `files.errorTemplate` | `string` | `"src/error.html"` | Halaman fallback saat error terjadi sebelum app sempat dirender. |
+
+### `paths` — URL & base path
+
+| Sub-opsi | Tipe | Default | Fungsi |
+| --- | --- | --- | --- |
+| `paths.base` | `''` atau `` `/${string}` `` | `''` | Prefix path jika app tidak di-host di root domain (mis. `'/app'` untuk `situs.com/app`). Wajib dipakai lewat `base` dari `$app/paths`. |
+| `paths.assets` | `''` / `` `https://${string}` `` | `''` | URL absolut tempat aset di-host (mis. CDN terpisah). |
+| `paths.relative` | `boolean` | `true` | `true` = path aset di HTML relatif (lebih portabel, bisa pindah host). `false` = absolut (butuh `paths.base`/`assets` benar). |
+
+### `prerender` — kontrol SSG
+
+Mengatur bagaimana halaman yang `prerender = true` dirender jadi HTML saat build.
+
+| Sub-opsi | Tipe | Default | Fungsi |
+| --- | --- | --- | --- |
+| `prerender.concurrency` | `number` | `1` | Berapa halaman dirender paralel. Naikkan jika prerender lambat & I/O-bound. |
+| `prerender.crawl` | `boolean` | `true` | Otomatis temukan halaman lain dengan mengikuti link `<a>` dari `entries`. |
+| `prerender.entries` | `Array<'*' \| '/path'>` | `['*']` | Titik awal crawl. `'*'` = semua rute non-dinamis. Tambah path manual (mis. `'/blog/x'`) untuk rute dinamis yang tak ter-link. |
+| `prerender.handleHttpError` | `'fail'\|'ignore'\|'warn'\| fn` | `'fail'` | Apa yang terjadi saat prerender ketemu response error (mis. 404 internal). `'fail'` = hentikan build. |
+| `prerender.handleMissingId` | `'fail'\|'ignore'\|'warn'\| fn` | `'fail'` | Saat link `#hash` menunjuk id yang tak ada di halaman tujuan. |
+| `prerender.handleEntryGeneratorMismatch` | `'fail'\|'ignore'\|'warn'\| fn` | `'fail'` | Saat `entries` yang di-generate tak cocok dengan rute aktual. |
+| `prerender.origin` | `string` | `'http://sveltekit-prerender'` | Nilai `url.origin` selama prerender (memengaruhi `fetch` relatif & `url`). |
+
+Fungsi handler (`handleHttpError` dkk.) menerima objek `details` berisi info rute/error sehingga kamu bisa memutuskan per-kasus (mis. abaikan 404 dari pihak ketiga tapi gagalkan yang internal).
+
+### `csp` & `csrf` — keamanan
+
+| Opsi | Tipe | Default | Fungsi |
+| --- | --- | --- | --- |
+| `csp.mode` | `'hash'\|'nonce'\|'auto'` | `'auto'` | Cara CSP men-allowlist script inline. `'hash'` cocok untuk konten statis; `'nonce'` untuk dinamis; `'auto'` memilih sesuai prerender/SSR. |
+| `csp.directives` | `CspDirectives` | `{}` | Directive CSP yang di-enforce (mis. `{ 'script-src': ['self'] }`). SvelteKit menambah hash/nonce-nya sendiri otomatis. |
+| `csp.reportOnly` | `CspDirectives` | `{}` | Sama seperti `directives` tapi mode laporan (header `Content-Security-Policy-Report-Only`) — tidak memblokir, hanya melapor. |
+| `csrf.checkOrigin` | `boolean` | `true` | *(deprecated)* Tolak submit form lintas-origin (proteksi CSRF). Diganti `trustedOrigins`. |
+| `csrf.trustedOrigins` | `string[]` | `[]` | Daftar origin tambahan yang boleh mengirim request lintas-origin (selain origin app sendiri). |
+
+### `env` — variabel lingkungan
+
+| Sub-opsi | Tipe | Default | Fungsi |
+| --- | --- | --- | --- |
+| `env.dir` | `string` | `"."` | Folder tempat file `.env` dicari. |
+| `env.publicPrefix` | `string` | `"PUBLIC_"` | Prefix var yang AMAN diekspos ke klien (lewat `$env/*/public`). |
+| `env.privatePrefix` | `string` | `""` | Prefix var yang HANYA boleh di server. `""` = semua tanpa prefix publik dianggap privat. |
+
+### `serviceWorker`, `router`, `version`, `output`
+
+| Opsi | Tipe | Default | Fungsi |
+| --- | --- | --- | --- |
+| `serviceWorker.register` | `'auto'\|'manual'\| false` | `'auto'` | `'auto'` = SvelteKit auto-mendaftarkan SW jika ada `src/service-worker`. `false` = kamu daftar manual. |
+| `serviceWorker.files` | `(filepath: string) => boolean` | (semua kecuali file tersembunyi) | Filter file mana yang masuk ke `$service-worker` build manifest. |
+| `router.type` | `'pathname'\|'hash'` | `'pathname'` | `'hash'` membuat routing berbasis `#/path` — berguna untuk host yang tak bisa rewrite ke `index.html`. |
+| `router.resolution` | `'client'\|'server'` | `'client'` | Di mana rute "diselesaikan". `'server'` menyembunyikan manifest rute (rute tak terekspos di klien) tapi butuh round-trip. |
+| `version.name` | `string` | (hash konten build) | Penanda versi app. Saat berubah, SvelteKit bisa mendeteksi deploy baru. |
+| `version.pollInterval` | `number` (ms) | `0` | Seberapa sering klien cek versi baru. `0` = tidak polling. Picu event `updated` di `$app/state`. |
+| `output.preloadStrategy` | `'modulepreload'\|'preload-js'\|'preload-mjs'` | `'modulepreload'` | Cara SvelteKit memuat-awal modul JS. Ubah jika target browser lama. |
+| `output.bundleStrategy` | `'split'\|'single'\|'inline'` | `'split'` | `'split'` = code-splitting normal. `'single'` = satu bundle. `'inline'` = semua aset di-inline (untuk distribusi file tunggal). |
+
+### Opsi lain-lain
+
+| Opsi | Tipe | Default | Fungsi |
+| --- | --- | --- | --- |
+| `inlineStyleThreshold` | `number` (byte) | `0` | CSS di bawah ambang ini di-inline ke `<head>` (kurangi request). `0` = jangan inline. |
+| `embedded` | `boolean` | `false` | Set `true` jika app ditanam di dalam halaman lain (memengaruhi listener event global). |
+| `typescript.config` | `(config) => config \| void` | — | Hook untuk memodifikasi `tsconfig` yang di-generate SvelteKit. |
+| `experimental` | objek | `{}` | Fitur belum-stabil (mis. `remoteFunctions`, `tracing`). Bisa berubah/dihapus antar versi minor. |
+
+<Callout type="tip">
+Jangan hafal seluruh tabel. Pola praktisnya: tulis <code>kit: &#123; adapter: adapter() &#125;</code> dulu, lalu <strong>kembali ke dokumen ini hanya saat punya kebutuhan spesifik</strong> ("aku perlu deploy di sub-path" → <code>paths.base</code>; "aku perlu CSP" → <code>csp.directives</code>). Editor + anotasi <code>@type</code> akan menuntunmu ke sub-opsi yang valid.
+</Callout>
+
+## 3. Coba sendiri
+
+Konfigurasi ini hanya bisa diuji di proyek SvelteKit nyata (memengaruhi build/server), jadi tidak ada live playground. Berikut beberapa resep konfigurasi nyata beranotasi — salin yang kamu butuhkan.
+
+```js
+// RESEP A — Deploy di sub-path (situs.com/app), bukan di root domain.
+// svelte.config.js
+import adapter from '@sveltejs/adapter-node';
+
+/** @type {import('@sveltejs/kit').Config} */
+export default {
+	kit: {
+		adapter: adapter(),
+		paths: {
+			base: '/app' // semua URL internal otomatis diawali /app
+			// relative: true (default) -> aset tetap portabel
+		}
+	}
+};
+
+// PENTING: di komponen, JANGAN hardcode "/foo". Impor `base` dan gabungkan:
+//   import { base } from '$app/paths';
+//   <a href="{base}/foo">  -> jadi /app/foo
+```
+
+```js
+// RESEP B — Content Security Policy yang ketat.
+// SvelteKit otomatis menyisipkan hash/nonce untuk script-nya sendiri;
+// kamu cukup mendeklarasikan kebijakan dasarnya.
+/** @type {import('@sveltejs/kit').Config} */
+export default {
+	kit: {
+		adapter: adapter(),
+		csp: {
+			mode: 'auto', // hash utk halaman prerender, nonce utk SSR
+			directives: {
+				'script-src': ['self'], // hanya script dari origin sendiri + hash Kit
+				'object-src': ['none']
+			},
+			reportOnly: {
+				// uji kebijakan tanpa benar-benar memblokir dulu:
+				'script-src': ['self'],
+				'report-uri': ['/csp-report']
+			}
+		}
+	}
+};
+```
+
+```js
+// RESEP C — Alias impor + lokasi file kustom (monorepo).
+/** @type {import('@sveltejs/kit').Config} */
+export default {
+	kit: {
+		adapter: adapter(),
+		alias: {
+			// pakai sebagai: import X from '$components/X.svelte'
+			$components: 'src/lib/components',
+			$utils: 'src/lib/utils'
+		},
+		files: {
+			// mis. routes ada di folder non-standar pada monorepo
+			routes: 'src/app/routes',
+			assets: 'public'
+		}
+	}
+};
+// SvelteKit menulis alias ini ke .svelte-kit/tsconfig.json otomatis,
+// jadi TypeScript & editor langsung mengenalinya.
+```
+
+```js
+// RESEP D — Mengatur prerender untuk rute dinamis yang tak ter-link.
+/** @type {import('@sveltejs/kit').Config} */
+export default {
+	kit: {
+		adapter: adapter(),
+		prerender: {
+			concurrency: 4, // render 4 halaman paralel (lebih cepat)
+			entries: ['*', '/blog/artikel-rahasia'], // tambah rute yg tak ada link-nya
+			handleHttpError: ({ path, referrer, message }) => {
+				// abaikan 404 dari aset opsional, gagalkan sisanya:
+				if (path.startsWith('/optional-asset')) return;
+				throw new Error(message + ' (dari ' + (referrer ?? 'entry') + ')');
+			}
+		}
+	}
+};
+```
+
+<Callout type="warning">
+Mengubah <code>paths.base</code> tanpa memakai helper <code>base</code> dari <code>$app/paths</code> adalah sumber bug klasik: link dan <code>fetch</code> yang kamu tulis sebagai <code>"/api/x"</code> akan menunjuk ke <code>situs.com/api/x</code>, padahal app kamu di <code>situs.com/app</code>. Selalu rakit URL internal dengan <code>base</code>.
+</Callout>
+
+## 4. Ringkasan API
+
+Peta cepat: "aku mau X" → opsi `kit` mana.
+
+| Kebutuhan | Opsi |
+| --- | --- |
+| Tentukan target deploy | `adapter` |
+| Host di sub-path `/app` | `paths.base` (+ `base` dari `$app/paths`) |
+| Aset di CDN terpisah | `paths.assets` |
+| Alias impor (`$components`) | `alias` |
+| Pindahkan folder `routes`/`lib`/`static` | `files.*` |
+| Atur prerender (paralel/rute manual) | `prerender.concurrency`, `prerender.entries` |
+| Toleransi error saat prerender | `prerender.handleHttpError` |
+| Pasang Content-Security-Policy | `csp.directives` / `csp.mode` |
+| Izinkan form lintas-origin | `csrf.trustedOrigins` |
+| Ubah prefix env publik/privat | `env.publicPrefix` / `env.privatePrefix` |
+| Routing hash (`#/path`) | `router.type: 'hash'` |
+| Deteksi deploy baru di klien | `version.name` + `version.pollInterval` |
+| Inline CSS kecil | `inlineStyleThreshold` |
+| Service worker manual | `serviceWorker.register: 'manual'` |
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Banyak yang menaruh opsi SvelteKit langsung di root objek config (mis. <code>&#123; adapter: ... &#125;</code> di luar <code>kit</code>). Itu salah — opsi SvelteKit <strong>harus</strong> bersarang di dalam <code>kit</code>. Yang berada di root hanya field untuk compiler/preprocessor (<code>preprocess</code>, <code>compilerOptions</code>, <code>extensions</code>, <code>vitePlugins</code>). Salah taruh = opsi diam-diam diabaikan, tanpa error jelas.
+</Callout>
+
+<Callout type="warning">
+Opsi di bawah <code>kit.experimental</code> (mis. <code>remoteFunctions</code>, <code>tracing</code>, <code>instrumentation</code>) <strong>belum stabil</strong> dan bisa berubah perilaku atau dihapus di rilis minor mana pun — tanpa dianggap breaking change. Aman untuk eksperimen, tapi jangan andalkan di produksi tanpa mengunci versi SvelteKit dan membaca changelog tiap upgrade.
+</Callout>
+
+<Callout type="tip">
+<code>csrf.checkOrigin</code> kini <em>deprecated</em>. Di SvelteKit 2 terbaru, alih-alih mematikan proteksi origin sepenuhnya (yang berbahaya), tambahkan origin spesifik yang kamu percaya ke <code>csrf.trustedOrigins</code>. Ini mempertahankan proteksi CSRF default sambil mengizinkan integrasi lintas-origin yang memang kamu butuhkan.
+</Callout>
+
+<Callout type="tip">
+Selalu beri anotasi <code>/** @type &#123;import('@sveltejs/kit').Config&#125; */</code> di atas objek config. Tanpa itu, editor tidak tahu opsi apa yang valid; dengan itu, kamu dapat autocomplete penuh untuk setiap sub-opsi (<code>paths.</code>, <code>prerender.</code>, dst.) dan peringatan langsung saat salah ketik nama opsi.
+</Callout>
+
+## 6. Latihan
+
+<Exercise title="Susun svelte.config.js untuk tiga kebutuhan sekaligus">
+Tulis satu `svelte.config.js` lengkap untuk aplikasi dengan ketentuan berikut:
+
+1. Deploy sebagai server Node (`adapter-node`).
+2. Di-host di sub-path `/dashboard` (bukan root domain).
+3. Punya alias impor `$ui` yang menunjuk ke `src/lib/ui`.
+4. Variabel privat memakai prefix `SECRET_` (bukan default).
+
+Lalu jelaskan: di komponen, bagaimana cara membuat link ke `/settings` yang benar-benar mengarah ke `/dashboard/settings`?
+
+{#snippet solution()}
+
+  ```js
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-node';
+  import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+  /** @type {import('@sveltejs/kit').Config} */
+  const config = {
+    preprocess: vitePreprocess(),
+    kit: {
+      adapter: adapter(),          // (1) server Node
+      paths: {
+        base: '/dashboard'         // (2) host di sub-path
+      },
+      alias: {
+        $ui: 'src/lib/ui'          // (3) alias impor
+      },
+      env: {
+        privatePrefix: 'SECRET_'   // (4) var privat pakai prefix SECRET_
+      }
+    }
+  };
+
+  export default config;
+  ```
+
+  Di komponen, JANGAN tulis `<a href="/settings">` (itu mengarah ke root domain).
+  Gabungkan dengan `base`:
+
+  ```svelte
+  <script>
+    import { base } from '$app/paths';
+  </script>
+
+  <!-- menghasilkan /dashboard/settings -->
+  <a href="{base}/settings">Settings</a>
+  ```
+
+  Catatan: dengan `privatePrefix: 'SECRET_'`, hanya variabel berawalan
+  `SECRET_` yang bisa diimpor dari `$env/static/private` / `$env/dynamic/private`.
+  Variabel `PUBLIC_*` tetap untuk sisi klien (default `publicPrefix`).
+
+  {/snippet}</Exercise>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/configuration" label="SvelteKit — Configuration (svelte.config.js & opsi kit)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (opsi kit.adapter)" />
+<DocsLink href="https://svelte.dev/docs/kit/page-options" label="SvelteKit — Page options (prerender/ssr per-rute)" />

@@ -1,0 +1,310 @@
+---
+title: .svelte.js & .svelte.ts files
+product: svelte
+section: introduction
+sectionTitle: Introduction
+sectionOrder: 1
+order: 4
+status: stable
+description: File .svelte.js/.svelte.ts memungkinkan kamu memakai runes di luar komponen untuk membuat logika reaktif yang reusable dan state yang bisa di-share antar komponen.
+docs: https://svelte.dev/docs/svelte/svelte-js-files
+keywords: [svelte-js-files, shared-state, runes, reactive-module, getter]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sejauh ini kamu baru lihat satu "tempat" rune boleh hidup: di dalam komponen `.svelte`. Tapi ada satu masalah klasik: **bagaimana kalau dua komponen yang berbeda mau berbagi satu state yang sama?** Misalnya status login user, isi keranjang belanja, atau tema gelap/terang — datanya satu, tapi yang membacanya banyak komponen di berbagai sudut aplikasi.
+
+Di sinilah file **`.svelte.js`** dan **`.svelte.ts`** masuk. Aturan intinya satu kalimat dari docs resmi:
+
+> File `.svelte.js` dan `.svelte.ts` berperilaku seperti modul `.js`/`.ts` biasa, **bedanya kamu boleh memakai runes di dalamnya.**
+
+Jadi ini bukan komponen. Tidak ada markup, tidak ada `<style>`, tidak ada `<script>`. Ini cuma file JavaScript/TypeScript biasa — kamu `export` fungsi, konstanta, class, apa pun seperti modul normal. Yang istimewa: karena nama filenya mengandung infix `.svelte`, **compiler Svelte ikut memprosesnya**, sehingga `$state`, `$derived`, dan teman-temannya jadi valid di sini.
+
+**Kenapa harus ada penanda di nama file?** Karena reaktivitas Svelte itu produk *compiler*, bukan *runtime*. Saat kamu menulis `let n = $state(0)`, Svelte tidak menjalankan fungsi ajaib bernama `$state` — ia menulis ulang kode kamu menjadi JavaScript yang sudah tahu cara melacak perubahan. Compiler perlu tahu file mana yang harus diolah, dan tanda `.svelte` di nama file itulah sinyalnya. File `.ts` biasa (tanpa `.svelte`) tidak disentuh compiler, jadi `$state` di sana akan langsung error.
+
+Analogi yang enak: kalau komponen `.svelte` itu **aktor di panggung** (tampil, punya kostum, punya gerak), maka file `.svelte.ts` adalah **papan tulis besar di ruang kontrol di belakang panggung**. Tidak ikut tampil, tapi semua aktor bisa membaca dan menulis di papan itu. Begitu satu aktor mengubah angka di papan, semua aktor yang sedang memperhatikan papan tersebut otomatis menyesuaikan diri. Itulah inti "shared reactive state".
+
+Dua kegunaan utamanya:
+
+1. **Logika reaktif yang reusable** — pola yang kamu pakai berulang kali (misal counter, state yang sinkron ke `localStorage`, pelacak posisi mouse) cukup ditulis sekali sebagai fungsi/class, lalu dipakai di banyak komponen.
+2. **State yang di-share lintas komponen** — satu sumber kebenaran (single source of truth) yang dibaca dan diubah banyak komponen sekaligus, tanpa harus mengoper props turun-naik (prop drilling).
+
+Buat yang datang dari **React**: ini menggantikan banyak peran custom hooks (untuk logika reusable) sekaligus Context / Zustand / Redux (untuk shared state) — tapi tanpa Provider, tanpa boilerplate. State-nya hidup di modul, reaktivitasnya ikut ke mana pun ia dibaca. Buat yang dari **Vue**: ini sangat mirip "composable" (file `useXxx.js` berisi `ref`/`reactive` yang diekspor), bahkan lebih mirip lagi dengan pola Pinia setup-store. Bedanya, kamu tidak perlu memanggil `ref()`/`reactive()` sebagai fungsi runtime — `$state` adalah instruksi untuk compiler.
+
+### Satu jebakan besar yang wajib kamu paham duluan
+
+Ada satu aturan yang kalau tidak tahu, kamu akan kebingungan setengah hari: **kamu tidak boleh meng-`export` variabel `$state` yang kamu reassign (ganti nilainya) di top-level modul.** Contoh yang **TIDAK akan bekerja**:
+
+```js
+// ❌ counter.svelte.js — SALAH, reaktivitas putus saat diimpor
+export let count = $state(0);
+
+export function increment() {
+	count += 1;
+}
+```
+
+Kenapa? Kutipan docs resmi: *"Karena compiler hanya bekerja pada satu file dalam satu waktu, kalau file lain meng-import `count`, Svelte tidak tahu bahwa ia perlu membungkus setiap referensi dengan `$.get` dan `$.set`."*
+
+Analogi paling gampang: bayangkan `count` yang berupa angka biasa (primitive) itu seperti **angka yang kamu tulis di secarik kertas tempel, lalu kamu fotokopi dan bagikan**. Komponen lain memegang *fotokopinya*. Saat kamu mengubah angka di kertas asli, fotokopi di tangan orang lain tidak ikut berubah — mereka memegang salinan nilai lama. Reaktivitas putus di batas modul.
+
+Solusinya: **jangan share angka telanjang, share papan tulisnya.** Bungkus state dalam sebuah objek (atau class), lalu yang kamu ekspor adalah objek itu. Saat orang lain mengimpor objek, mereka memegang *referensi ke papan tulis yang sama*, bukan fotokopi angka. Detail dua cara perbaikannya ada di bagian Contoh kode.
+
+## 2. Contoh kode
+
+**Cara 1 — bungkus dalam objek (paling umum & paling ringkas).** Kuncinya: yang berubah adalah *properti di dalam objek* (`store.count`), bukan variabel `store`-nya sendiri. Objek-nya tetap, isinya yang bergerak — jadi compiler bisa melacaknya, dan importir memegang referensi yang sama.
+
+```ts
+// counter.svelte.ts
+// $state pada sebuah OBJEK boleh diexport: kita tak pernah reassign `counter`,
+// kita hanya mengubah `counter.count`.
+export const counter = $state({
+	count: 0
+});
+
+export function increment() {
+	counter.count += 1; // ubah properti, bukan variabel
+}
+```
+
+```svelte
+<!-- A.svelte -->
+<script>
+	import { counter, increment } from './counter.svelte.ts';
+</script>
+
+<!-- Membaca counter.count langsung; reaktif karena ini referensi objek yang sama -->
+<button onclick={increment}>Klik dari A: {counter.count}</button>
+```
+
+```svelte
+<!-- B.svelte: komponen LAIN, membaca & mengubah state yang SAMA -->
+<script>
+	import { counter, increment } from './counter.svelte.ts';
+</script>
+
+<p>B melihat nilai yang sama: {counter.count}</p>
+<button onclick={increment}>Klik dari B juga bisa</button>
+```
+
+Klik tombol di `A` → angka di `B` ikut naik, dan sebaliknya. Tidak ada Provider, tidak ada Context, tidak ada store boilerplate. Cukup `import`.
+
+**Cara 2 — pakai getter/setter function.** Kalau kamu memang ingin state-nya berupa primitive (bukan objek), jangan ekspor variabelnya; ekspor *fungsi yang mengakses variabel itu dari dalam modul*. Variabelnya tetap private di modul, dunia luar mengaksesnya lewat fungsi.
+
+```ts
+// counter2.svelte.ts
+let count = $state(0); // private, tidak diexport langsung
+
+export function getCount() {
+	return count; // baca lewat fungsi
+}
+
+export function increment() {
+	count += 1; // reassign aman, karena terjadi DI DALAM modul yang sama
+}
+```
+
+```svelte
+<!-- Pemakai.svelte -->
+<script>
+	import { getCount, increment } from './counter2.svelte.ts';
+</script>
+
+<!-- Panggil getCount() di markup; karena dibaca dalam konteks reaktif komponen,
+     ia akan ter-update saat count berubah. -->
+<button onclick={increment}>Klik: {getCount()}</button>
+```
+
+**Cara 3 — class dengan field `$state` (paling rapi untuk logika yang reusable).** Ini idiom yang makin populer di Svelte 5: bungkus state + perilakunya dalam satu class. Field `$state` dan `$derived` boleh dipakai langsung di body class.
+
+```ts
+// counter.svelte.ts
+export class Counter {
+	count = $state(0);
+	// $derived sebagai class field: otomatis ikut count
+	double = $derived(this.count * 2);
+
+	// Tulis method sebagai arrow-function field agar `this` tidak hilang
+	// saat method dioper sebagai event handler (lihat Tips & Pitfalls).
+	increment = () => {
+		this.count += 1;
+	};
+}
+
+// Satu instance dibagi seluruh app (shared). Mau instance per-komponen?
+// Cukup `new Counter()` di dalam komponen masing-masing.
+export const sharedCounter = new Counter();
+```
+
+```svelte
+<!-- Pakai.svelte -->
+<script>
+	import { sharedCounter } from './counter.svelte.ts';
+</script>
+
+<button onclick={sharedCounter.increment}>
+	{sharedCounter.count} (x2 = {sharedCounter.double})
+</button>
+```
+
+## 3. Coba sendiri
+
+Modul ini bukan jenis yang bisa dijalankan di playground satu-komponen — intinya justru **berbagi state antar beberapa file**. Jadi mari telusuri satu contoh nyata yang lengkap dan beranotasi: sebuah **state tema gelap/terang** yang dibaca tombol switch di header sekaligus dipakai untuk styling di mana-mana.
+
+```ts
+// theme.svelte.ts
+// Satu sumber kebenaran untuk tema, dibagi ke seluruh aplikasi.
+// Diekspor sebagai OBJEK (bukan boolean telanjang) supaya reaktif lintas modul.
+export const theme = $state({
+	dark: false
+});
+
+// Helper opsional supaya komponen tak perlu tahu detail bentuk objek.
+export function toggleTheme() {
+	theme.dark = !theme.dark; // ubah properti -> aman & reaktif
+}
+```
+
+```svelte
+<!-- HeaderToggle.svelte: tombol switch di pojok header -->
+<script>
+	import { theme, toggleTheme } from './theme.svelte.ts';
+</script>
+
+<button onclick={toggleTheme}>
+	{theme.dark ? '🌙 Gelap' : '☀️ Terang'}
+</button>
+```
+
+```svelte
+<!-- Page.svelte: komponen yang sama sekali tak terhubung ke HeaderToggle,
+     tapi ikut bereaksi karena membaca state yang sama -->
+<script>
+	import { theme } from './theme.svelte.ts';
+</script>
+
+<!-- Begitu user klik tombol di header, class di sini berubah otomatis -->
+<main class={theme.dark ? 'gelap' : 'terang'}>
+	<p>Tema sekarang: {theme.dark ? 'gelap' : 'terang'}</p>
+</main>
+```
+
+Yang terjadi di runtime: `theme` adalah satu objek reaktif yang hidup di modul `theme.svelte.ts`. `HeaderToggle` dan `Page` sama-sama meng-`import` objek yang **sama persis** (modul di-cache, jadi hanya dievaluasi sekali). Saat `toggleTheme()` mengubah `theme.dark`, Svelte tahu properti itu dibaca di kedua komponen, lalu memperbarui keduanya. Tidak ada event bus, tidak ada prop yang dioper, tidak ada Provider — cukup objek bersama.
+
+Coba bayangkan menambah komponen ketiga, misal `Footer.svelte`, yang juga butuh tahu tema: kamu tinggal `import { theme }` lagi. Tidak ada konfigurasi tambahan. Itulah kekuatan memindahkan state ke file `.svelte.ts`.
+
+## 4. Latihan
+
+<Exercise title="Buat shared cart state di file .svelte.ts">
+Bikin sebuah keranjang belanja sederhana yang state-nya hidup di file <code>cart.svelte.ts</code> dan bisa dibaca/diubah dari dua komponen berbeda: <code>ProductButton.svelte</code> (tombol "Tambah") dan <code>CartBadge.svelte</code> (badge jumlah item di header).
+
+Syarat:
+1. State harus tahan terhadap "putus reaktivitas lintas modul" (ingat aturan: jangan export <code>$state</code> primitive yang di-reassign).
+2. Sediakan fungsi <code>addItem()</code> dan sebuah nilai turunan <code>count</code> (jumlah item) yang otomatis ikut berubah.
+
+Petunjuk: bungkus dalam objek atau class, dan gunakan <code>$derived</code> untuk <code>count</code>.
+
+{#snippet solution()}
+
+```ts
+// cart.svelte.ts
+// State keranjang sebagai objek reaktif -> aman diexport & di-share.
+export const cart = $state({
+	items: []
+});
+
+// Nilai turunan: jumlah item. Karena $derived top-level di .svelte.ts butuh
+// dibaca dalam konteks reaktif, kita ekspor sebagai getter function agar selalu segar.
+export function count() {
+	return cart.items.length;
+}
+
+export function addItem(name) {
+	cart.items.push({ name });
+}
+```
+
+```svelte
+<!-- ProductButton.svelte -->
+<script>
+	import { addItem } from './cart.svelte.ts';
+</script>
+
+<button onclick={() => addItem('Kaos')}>Tambah ke keranjang</button>
+```
+
+```svelte
+<!-- CartBadge.svelte: komponen lain, membaca jumlah item yang SAMA -->
+<script>
+	import { count } from './cart.svelte.ts';
+</script>
+
+<span>🛒 {count()}</span>
+```
+
+Alternatif yang lebih rapi dengan class:
+
+```ts
+// cart.svelte.ts (versi class)
+export class Cart {
+	items = $state([]);
+	count = $derived(this.items.length);
+
+	addItem = (name) => {
+		this.items.push({ name });
+	};
+}
+
+export const cart = new Cart();
+```
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan export <code>$state</code> primitive yang kamu reassign.</strong> <code>export let count = $state(0)</code> lalu <code>count += 1</code> di modul itu akan <em>terlihat</em> jalan di file aslinya, tapi <strong>putus reaktivitas</strong> begitu diimpor file lain — importir memegang salinan nilai, bukan referensi hidup. Perbaikannya: bungkus dalam objek (<code>export const s = $state(&#123; count: 0 &#125;)</code> lalu ubah <code>s.count</code>), atau ekspor lewat getter/setter function. Aturan praktis: <em>yang diexport jangan pernah di-reassign; yang di-reassign jangan pernah diexport.</em>
+</Callout>
+
+<Callout type="warning">
+<strong>Destructuring memutus reaktivitas.</strong> Kalau kamu menulis <code>const &#123; dark &#125; = theme</code>, kamu menyalin nilai boolean saat itu — bukan referensi reaktif. Setelah itu <code>dark</code> tidak akan ikut berubah. Selalu baca lewat properti penuhnya (<code>theme.dark</code>) di tempat ia dipakai, bukan di-destructure di atas.
+</Callout>
+
+<Callout type="pitfall">
+<strong><code>$effect</code> tidak bisa dipanggil di top-level modul.</strong> <code>$effect</code> butuh "konteks efek" (biasanya datang dari proses inisialisasi komponen). Memanggilnya langsung di body file <code>.svelte.ts</code> akan melempar error <code>effect_orphan</code>. Kalau kamu memang butuh efek yang berdiri sendiri di luar komponen, bungkus dengan <code>$effect.root(() =&gt; &#123; ... &#125;)</code> yang mengembalikan fungsi cleanup yang <strong>wajib kamu panggil sendiri</strong> saat tidak lagi dibutuhkan. <code>$props</code> dan <code>$bindable</code> juga khusus komponen — tidak punya makna di file <code>.svelte.ts</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Hati-hati state level-modul di server (SSR/SvelteKit).</strong> State yang kamu deklarasikan di top-level <code>.svelte.ts</code> hidup di level <em>modul</em>. Di browser itu tidak masalah (satu user per tab). Tapi di server, modul di-cache satu kali per proses, sehingga state itu <strong>dibagi ke SEMUA request dari semua user</strong>. Menaruh data spesifik-user (mis. data login) di sana bisa bocor antar pengunjung. Untuk state per-user di SvelteKit, pakai mekanisme per-request (mis. Context API lewat <code>setContext</code>/<code>getContext</code> di <code>+layout</code>), bukan state modul global.
+</Callout>
+
+<Callout type="tip">
+<strong>Kalau pakai class, jaga <code>this</code>.</strong> Method biasa kehilangan <code>this</code> saat dioper sebagai event handler (<code>onclick=&#123;obj.method&#125;</code>). Dua solusi: tulis method sebagai arrow-function field (<code>increment = () =&gt; &#123; this.count++ &#125;</code>), atau panggil terbungkus (<code>onclick=&#123;() =&gt; obj.method()&#125;</code>). Sama persis seperti masalah <code>this</code> di class React sebelum era hooks.
+</Callout>
+
+<Callout type="tip">
+File <code>.svelte.js</code>/<code>.svelte.ts</code> adalah <strong>konsep yang sama sekali baru di Svelte 5</strong> — tidak ada padanannya di Svelte 4. Sebelumnya, satu-satunya cara berbagi state reaktif lintas komponen adalah <em>store</em> (<code>writable</code>/<code>readable</code> dari <code>svelte/store</code>). Store <strong>masih didukung penuh</strong> dan tetap berguna (mis. untuk integrasi RxJS atau API berbasis subscribe), tapi untuk state aplikasi biasa, runes di file <code>.svelte.ts</code> kini jadi idiom default karena lebih ringkas dan tak perlu <code>$</code>-prefix atau <code>subscribe</code>.
+</Callout>
+
+Perbandingan singkat pola lama (store) vs pola baru (rune di `.svelte.ts`) untuk shared state:
+
+<LegacyVsModern rows={[
+  { legacy: "import { writable } from 'svelte/store'", modern: "// cukup file .svelte.ts dengan $state", note: 'Tidak perlu import library store untuk state biasa.' },
+  { legacy: 'export const count = writable(0)', modern: 'export const s = $state({ count: 0 })', note: 'State sebagai objek reaktif, bukan store object.' },
+  { legacy: '$count di komponen (auto-subscribe)', modern: 's.count di komponen (langsung)', note: 'Tak perlu prefix $ atau berlangganan manual.' },
+  { legacy: 'count.set(1) / count.update(n => n+1)', modern: 's.count = 1 / s.count++', note: 'Assignment biasa, bukan method .set/.update.' }
+]} legacyLabel="Store (Svelte 4, masih valid)" modernLabel="Rune di .svelte.ts (Svelte 5)" />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-js-files" label="svelte.js & svelte.ts files — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/$state#Passing-state-across-modules" label="$state — Passing state across modules (penjelasan aturan export)" />

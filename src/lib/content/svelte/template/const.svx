@@ -1,0 +1,234 @@
+---
+title: "{@const ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 10
+status: stable
+description: "Mendeklarasikan konstanta lokal di dalam sebuah blok (each, if, snippet) memakai @const, lengkap dengan aturan penempatannya."
+docs: https://svelte.dev/docs/svelte/@const
+keywords: [const, template, konstanta, each, snippet]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di markup Svelte kamu sudah terbiasa menumpahkan JavaScript ke dalam kurawal: `{nama}`, `{harga * 2}`, `{user.alamat.kota}`. Itu **ekspresi** — Svelte mengevaluasinya lalu menaruh hasilnya di situ. Tapi ada satu hal yang tidak bisa kamu lakukan dengan ekspresi biasa: **memberi nama** ke sebuah hasil hitung supaya bisa dipakai ulang. Kamu tidak bisa menulis `let subtotal = ...` di tengah-tengah HTML, karena markup bukan blok JavaScript — tidak ada tempat untuk meletakkan pernyataan `let`/`const` di antara dua tag.
+
+`{@const x = ...}` adalah jalan keluarnya. Perhatikan tanda `@`-nya: ini bukan ekspresi yang menghasilkan teks di layar, melainkan sebuah **tag** — instruksi satu baris yang menyuruh Svelte melakukan sesuatu. `{@const}` berkata: "hitung nilai ini sekali, beri nama, dan biarkan namanya bisa dipakai di sisa blok ini."
+
+### Analogi: catatan kecil di pinggir kertas
+
+Bayangkan kamu sedang mengisi formulir faktur dengan tangan. Di kolom tiap baris kamu harus menulis `harga × qty` berkali-kali — di kolom subtotal, di kolom diskon, dan lagi di catatan kaki. Daripada menghitung ulang `18000 × 2` setiap kali (capek dan rawan salah), kamu menulis sekali di pinggir kertas: *"baris ini = 36.000"*, lalu tinggal merujuk angka itu. `{@const subtotal = item.harga * item.qty}` adalah catatan pinggir itu: dihitung **satu kali**, lalu namanya (`subtotal`) bisa dipakai di mana saja sepanjang baris itu.
+
+### Kenapa harus tag khusus? Soal scope.
+
+Di React kamu tidak butuh ini, karena `.map()` memberimu sebuah fungsi JavaScript asli — kamu tinggal menulis `const` di dalamnya:
+
+```jsx
+items.map((item) => {
+  const subtotal = item.harga * item.qty; // const JS biasa, bebas
+  return <li>{subtotal}</li>;
+});
+```
+
+Markup Svelte tidak punya "body fungsi" semacam itu di antara `{#each}` dan `{/each}` — yang ada hanyalah deretan tag. `{@const}` menambal kekosongan ini: ia membuat sebuah binding lokal yang **scope-nya hanya blok tempat ia berada**. Begitu blok berakhir, namanya hilang. Di Vue tidak ada padanan langsung sebersih ini; orang biasanya memakai `v-for` dengan ekspresi inline berulang, sebuah `computed`, atau memecah jadi komponen kecil.
+
+### Reaktif dan dihitung ulang otomatis
+
+`{@const}` bukan snapshot mati. Karena ia hidup di dalam markup yang reaktif, nilainya **dihitung ulang ketika dependensinya berubah**. Di dalam `{#each}`, ia dievaluasi sekali per item — dan kalau `item.harga` berubah, `subtotal` ikut menyesuaikan pada render berikutnya. Anggap saja seperti `$derived`, tapi yang scope-nya menempel pada blok, bukan pada seluruh komponen. Itu sebabnya kamu memakai `{@const}` justru untuk nilai yang bergantung pada **variabel lokal blok** (seperti `item` di dalam `{#each}`) — variabel yang tidak tersedia di `<script>` sama sekali.
+
+### Aturan penempatan (ini yang sering bikin error)
+
+`{@const}` **hanya boleh menjadi anak langsung** dari salah satu dari ini:
+
+- sebuah **blok**: `{#if}`, `{#each}`, `{#await}`, `{#key}`, atau `{#snippet}`,
+- sebuah **komponen**: `<Komponen> ... </Komponen>`,
+- atau `<svelte:boundary>`.
+
+Kata kuncinya **anak langsung**. Kalau kamu membungkusnya di dalam elemen HTML biasa — misalnya menaruh `{@const}` di dalam `<li>` yang ada di dalam `{#each}` — itu **error**, karena parent terdekatnya adalah `<li>`, bukan bloknya. Alasannya logis: scope di Svelte dibuka oleh blok dan komponen, bukan oleh elemen `<li>` atau `<div>`. Dan di top-level markup (di luar blok mana pun) `{@const}` juga dilarang — di sana kamu sudah punya scope `<script>`, jadi cukup deklarasikan `const` biasa di situ.
+
+## 2. Contoh kode
+
+Pola paling umum: nilai turunan di dalam `{#each}` yang dipakai berkali-kali dalam satu iterasi.
+
+```svelte
+<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh', harga: 12000, qty: 3 }
+	]);
+</script>
+
+<ul>
+	{#each items as item}
+		<!-- dihitung SEKALI per item, dipakai beberapa kali di bawah -->
+		{@const subtotal = item.harga * item.qty}
+		<li>
+			{item.nama} x{item.qty} = Rp {subtotal.toLocaleString('id-ID')}
+			{#if subtotal > 30000}<span>(transaksi besar)</span>{/if}
+		</li>
+	{/each}
+</ul>
+```
+
+Aturan penempatan — yang boleh vs yang bikin compiler marah:
+
+```svelte
+<!-- VALID: {@const} adalah anak LANGSUNG dari {#each} -->
+{#each rows as row}
+	{@const formatted = row.value.toFixed(2)}
+	<td>{formatted}</td>
+{/each}
+
+<!-- INVALID: parent terdekatnya <td> (elemen biasa), bukan blok -> ERROR -->
+{#each rows as row}
+	<td>
+		{@const formatted = row.value.toFixed(2)}
+		{formatted}
+	</td>
+{/each}
+
+<!-- INVALID: di top-level, di luar blok apa pun -> ERROR.
+     Untuk nilai global komponen, cukup taruh di <script>. -->
+{@const PAJAK = 0.11}
+```
+
+`{@const}` juga sah sebagai anak langsung sebuah `{#snippet}`, sebuah komponen, atau `<svelte:boundary>`. Ini berguna untuk merapikan logika di dalam snippet, atau mengubah/destrukturisasi data tepat sebelum dipakai (sekaligus membantu penyempitan tipe di TypeScript).
+
+```svelte
+<!-- Di dalam {#snippet} (snippet juga termasuk "blok") -->
+{#snippet baris(item)}
+	{@const label = item.nama.toUpperCase()}
+	<span>{label}: Rp {item.harga.toLocaleString('id-ID')}</span>
+{/snippet}
+
+<!-- Sebagai anak langsung sebuah <Komponen>: juga boleh -->
+<DataTable {rows}>
+	{@const judul = 'Menampilkan ' + rows.length + ' baris'}
+	<h2>{judul}</h2>
+</DataTable>
+
+<!-- Destructuring + penyempitan tipe yang rapi -->
+{#each entries as entry}
+	{@const { user, role } = entry}
+	<p>{user.nama} sebagai {role}</p>
+{/each}
+```
+
+## 3. Coba sendiri
+
+Geser slider diskon dan klik tombol `+` pada tiap baris. Perhatikan: `{@const subtotal}` dan `{@const setelahDiskon}` di dalam `{#each}` dihitung ulang otomatis tiap kali `qty` atau `diskonPersen` berubah, dan `{@const total}` di dalam `{#if}` ikut menyesuaikan. Kamu tidak menulis `$derived` sama sekali — Svelte menangani reaktivitasnya untukmu.
+
+<Playground code={`<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh', harga: 12000, qty: 3 },
+		{ nama: 'Donat', harga: 8000, qty: 5 }
+	]);
+	let diskonPersen = $state(10);
+</script>
+<h3>Struk belanja</h3>
+<label>
+	Diskon: {diskonPersen}%
+	<input type='range' min='0' max='50' bind:value={diskonPersen} />
+</label>
+<ul>
+	{#each items as item}
+		{@const subtotal = item.harga * item.qty}
+		{@const setelahDiskon = Math.round(subtotal * (1 - diskonPersen / 100))}
+		<li>
+			{item.nama} x{item.qty} = Rp {setelahDiskon.toLocaleString('id-ID')}
+			{#if subtotal !== setelahDiskon}
+				<s style='color:#999'>Rp {subtotal.toLocaleString('id-ID')}</s>
+			{/if}
+			<button onclick={() => item.qty++}>+</button>
+		</li>
+	{/each}
+</ul>
+{#if items.length > 0}
+	{@const total = items.reduce((s, it) => s + Math.round(it.harga * it.qty * (1 - diskonPersen / 100)), 0)}
+	<p><strong>Total: Rp {total.toLocaleString('id-ID')}</strong></p>
+{/if}`} />
+
+<Callout type="tip">
+Coba pindahkan baris <code>&#123;@const subtotal = ...&#125;</code> ke <em>dalam</em> elemen <code>&lt;li&gt;</code> di playground. Compiler langsung menolak dengan pesan bahwa <code>&#123;@const&#125;</code> harus jadi anak langsung sebuah blok. Itulah aturan penempatan yang sedang kita pelajari.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Tabel nilai mahasiswa dengan @const">
+Buat sebuah tabel rekap nilai:
+
+1. Punya array `mahasiswa` di `<script>`, tiap item `{ nama, nilai }` dengan `nilai` berupa array angka (mis. `[80, 90, 70]`).
+2. Pakai `{#each}` untuk menampilkan satu baris per mahasiswa.
+3. Di dalam `{#each}`, pakai `{@const}` untuk menghitung `avg` (rata-rata nilai) dan `{@const}` kedua untuk `lulus = avg >= 70`.
+4. Tampilkan nama, rata-rata (`avg.toFixed(1)`), dan status `LULUS`/`REMEDIAL` lewat `{#if}`/`{:else}` yang membaca `lulus`.
+
+Petunjuk: pastikan kedua `{@const}` berada sebagai anak **langsung** `{#each}` (sebelum `<tr>`), bukan di dalam `<tr>`/`<td>`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let mahasiswa = $state([
+		{ nama: 'Andi', nilai: [80, 90, 70] },
+		{ nama: 'Bunga', nilai: [60, 55, 65] },
+		{ nama: 'Citra', nilai: [95, 88, 92] }
+	]);
+
+	function rata(arr) {
+		return arr.reduce((a, b) => a + b, 0) / arr.length;
+	}
+</script>
+
+<table>
+	<tbody>
+		{#each mahasiswa as m}
+			<!-- kedua @const = anak langsung {#each}, sebelum <tr> -->
+			{@const avg = rata(m.nilai)}
+			{@const lulus = avg >= 70}
+			<tr>
+				<td>{m.nama}</td>
+				<td>{avg.toFixed(1)}</td>
+				<td>
+					{#if lulus}LULUS{:else}REMEDIAL{/if}
+				</td>
+			</tr>
+		{/each}
+	</tbody>
+</table>
+```
+
+Inti pelajarannya: `avg` dihitung sekali per mahasiswa lalu dipakai dua kali (di kolom rata-rata dan di kondisi `lulus`). Karena `avg` butuh `m` (variabel lokal `{#each}`) yang tidak ada di `<script>`, `{@const}` adalah satu-satunya cara bersih untuk memberinya nama.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Penempatan adalah sumber error nomor satu. <code>&#123;@const&#125;</code> harus jadi anak <strong>langsung</strong> dari sebuah blok (<code>&#123;#if&#125;</code>, <code>&#123;#each&#125;</code>, <code>&#123;#await&#125;</code>, <code>&#123;#key&#125;</code>, <code>&#123;#snippet&#125;</code>), sebuah <code>&lt;Komponen&gt;</code>, atau <code>&lt;svelte:boundary&gt;</code>. Membungkusnya di dalam <code>&lt;li&gt;</code>/<code>&lt;div&gt;</code> walau elemen itu ada di dalam <code>&#123;#each&#125;</code> tetap <strong>error</strong> — yang dilihat compiler adalah parent terdekat (elemen itu), bukan bloknya.
+</Callout>
+
+<Callout type="pitfall">
+Namanya <code>const</code> — artinya <strong>read-only</strong>. Kamu tidak bisa menugaskan ulang (<code>subtotal = ...</code>) dan tidak bisa mem-<code>bind:</code> ke sana. Kalau butuh nilai yang bisa diubah/diikat, pakai <code>$state</code> di <code>&lt;script&gt;</code>, bukan <code>&#123;@const&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+Pakai <code>&#123;@const&#125;</code> hanya saat nilainya bergantung pada <strong>variabel lokal blok</strong> (mis. <code>item</code> dari <code>&#123;#each&#125;</code>). Kalau nilai turunan hanya bergantung pada state komponen biasa, lebih baik deklarasikan <code>let x = $derived(...)</code> di <code>&lt;script&gt;</code> — lebih mudah di-test, bisa dipakai di banyak tempat, dan tidak mengotori markup.
+</Callout>
+
+<Callout type="tip">
+<code>&#123;@const&#125;</code> sangat berguna untuk <strong>destructuring</strong> dan <strong>penyempitan tipe (TypeScript)</strong>. Menulis <code>&#123;@const &#123; user, role &#125; = entry&#125;</code> sekali jauh lebih rapi daripada mengulang <code>entry.user</code>/<code>entry.role</code> di mana-mana, dan membantu compiler mempersempit tipe union sebelum dipakai di markup.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/@const" label={`{@const} — dokumentasi resmi Svelte`} />

@@ -1,0 +1,309 @@
+---
+title: "{#await ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 5
+status: stable
+description: "Menangani Promise langsung di markup lewat blok {#await}/{:then}/{:catch}, lengkap dengan state loading, sukses, dan error tanpa boilerplate."
+docs: https://svelte.dev/docs/svelte/await
+keywords: [await, then, catch, promise, async, loading-state]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Hampir setiap aplikasi punya momen "data belum sampai". Kamu memanggil API, dan untuk beberapa ratus milidetik berikutnya ada tiga kemungkinan masa depan: datanya **belum datang** (sedang dimuat), datanya **datang dengan selamat**, atau **gagal datang** (error jaringan, 404, dsb). Di JavaScript, "nilai yang baru ada nanti" itu namanya `Promise`.
+
+Pertanyaannya: bagaimana cara menampilkan ketiga kemungkinan itu di tampilan? Di React dan Vue, kamu biasanya harus "membongkar" Promise itu sendiri ke dalam beberapa potong state — satu untuk data, satu untuk error, satu untuk status loading — lalu menulis kondisi manual untuk memilih mana yang dirender. Svelte memilih jalan berbeda: ia memberi kamu blok template yang **mengerti bentuk sebuah Promise secara bawaan**. Itulah `{#await}`.
+
+Satu blok `{#await}` punya tiga cabang yang persis memetakan ketiga state Promise:
+
+- **pending** (di antara `{#await ...}` dan cabang berikutnya) — dirender selagi Promise belum selesai.
+- **`{:then value}`** — dirender saat Promise *fulfilled*, dan `value` adalah hasil resolve-nya.
+- **`{:catch error}`** — dirender saat Promise *rejected*, dan `error` adalah alasan gagalnya.
+
+### Analogi: pager restoran
+
+Bayangkan kamu memesan makanan di restoran cepat saji dan diberi sebuah *pager* (alat getar bernomor). Pager itu adalah Promise: sebuah janji bahwa "nanti akan ada makanan".
+
+- Selama pager belum bergetar, kamu **menunggu** sambil melihat papan "Pesananmu sedang dimasak" — itu cabang **pending**.
+- Saat pager bergetar dan kamu menerima nampan berisi makanan, kamu beralih ke meja makan — itu `{:then makanan}`, dan `makanan` adalah isi nampannya.
+- Kalau ternyata dapur kehabisan bahan dan kasir memanggilmu untuk refund, kamu beralih ke loket pengembalian — itu `{:catch alasan}`.
+
+Yang penting dari analogi ini: kamu **tidak perlu mengecek pager setiap detik secara manual** ("apakah sudah bergetar? apakah sudah? apakah sudah?"). Sistemnya yang memberitahumu saat statusnya berubah. Begitu pula `{#await}` — kamu cukup mendeskripsikan "tampilan untuk tiap kemungkinan", dan Svelte yang mengganti tampilan otomatis saat Promise berpindah state.
+
+### Reaktif: saat Promise-nya berganti
+
+Bagian yang paling sering bikin bingung pendatang dari React: `{#await}` mengawasi **ekspresi Promise**, bukan sekadar memanggilnya sekali. Kalau ekspresi yang kamu tunggu berubah jadi Promise *baru* (misalnya karena `id` berubah), blok `{#await}` otomatis kembali ke state pending dan menunggu Promise yang baru. Inilah kenapa pola idiomatiknya adalah menyimpan Promise di sebuah `$derived`, lalu menunggu variabel itu — bukan memanggil `fetch(...)` langsung di markup.
+
+## 2. Contoh kode
+
+```svelte
+<script>
+	let id = $state(1);
+
+	// Fungsi async biasa yang mengembalikan Promise.
+	async function loadUser(userId) {
+		const res = await fetch('/api/users/' + userId);
+		// Penting: fetch TIDAK throw untuk status 404/500.
+		// Kita lempar manual agar masuk ke cabang {:catch}.
+		if (!res.ok) throw new Error('Gagal memuat user ' + userId);
+		return res.json();
+	}
+
+	// $derived: setiap kali `id` berubah, `promise` jadi Promise BARU.
+	// {#await} di bawah otomatis kembali ke pending lalu menunggu yang baru.
+	let promise = $derived(loadUser(id));
+</script>
+
+<button onclick={() => id++}>User berikutnya (id {id})</button>
+
+<!--
+	Bentuk lengkap dengan ketiga cabang:
+	- pending : markup di antara {#await} dan {:then}
+	- {:then} : `user` adalah nilai hasil resolve
+	- {:catch}: `err` adalah alasan reject
+-->
+{#await promise}
+	<p>Memuat…</p>
+{:then user}
+	<p>Halo, {user.name}</p>
+{:catch err}
+	<p style="color:red">Error: {err.message}</p>
+{/await}
+```
+
+Tidak semua kasus butuh ketiga cabang. Svelte menyediakan beberapa **bentuk singkat** supaya markup tidak bertele-tele:
+
+```svelte
+<!-- 1) Tanpa state loading: bentuk singkat `then` di baris pembuka.
+     Cabang pending DILEWATI — berguna kalau loading-nya begitu cepat
+     sampai tak perlu ditampilkan, atau kalau kamu sudah punya skeleton lain. -->
+{#await promise then user}
+	<p>Halo, {user.name}</p>
+{/await}
+
+<!-- 2) {:catch} itu OPSIONAL. Kalau Promise-mu "tak mungkin gagal"
+     (atau error-nya kamu tangani di tempat lain), cukup pending + then. -->
+{#await promise}
+	<p>Memuat…</p>
+{:then user}
+	<p>Halo, {user.name}</p>
+{/await}
+
+<!-- 3) Sebaliknya, ada juga bentuk singkat `catch` kalau kamu HANYA
+     peduli pada kondisi error dan tak ingin merender data/pending. -->
+{#await promise catch err}
+	<p style="color:red">Error: {err.message}</p>
+{/await}
+```
+
+Trik lanjutan: karena `import()` dinamis juga mengembalikan Promise, `{#await}` adalah cara paling ringkas untuk **lazy-load komponen** tanpa library tambahan:
+
+```svelte
+<!--
+	import('./Chart.svelte') menghasilkan Promise berisi modul.
+	Modul itu punya properti `default` = komponen-nya.
+	Kita destructure langsung di cabang {:then}.
+-->
+{#await import('./Chart.svelte') then { default: Chart }}
+	<Chart data={data} />
+{/await}
+```
+
+## 3. Coba sendiri
+
+Di bawah ini Promise disimulasikan dengan `setTimeout` (kita tidak punya server di playground). Setiap percobaan **ke-3** sengaja dibuat gagal supaya kamu bisa melihat cabang `{:catch}` beraksi. Klik "Muat ulang" dan amati perpindahan pending → then/catch. Perhatikan juga: karena `promise` dibungkus `$derived`, mengubah `attempt` otomatis memicu pending lagi.
+
+<Playground code={`<script>
+	let attempt = $state(0);
+	// Simulasi panggilan jaringan: resolve setelah 800ms,
+	// tapi setiap percobaan ke-3 (indeks 2, 5, 8, ...) sengaja reject.
+	function muatData(n) {
+		return new Promise((resolve, reject) => {
+			setTimeout(() => {
+				if (n % 3 === 2) {
+					reject(new Error('Server sibuk pada percobaan ke-' + (n + 1)));
+				} else {
+					resolve({
+						nama: 'Pengguna #' + (n + 1),
+						jam: new Date().toLocaleTimeString()
+					});
+				}
+			}, 800);
+		});
+	}
+	// Promise BARU tiap kali attempt berubah -> {#await} kembali pending.
+	let promise = $derived(muatData(attempt));
+</script>
+<button onclick={() => attempt++}>Muat ulang (percobaan {attempt + 1})</button>
+{#await promise}
+	<p>Memuat data…</p>
+{:then data}
+	<p>Halo, {data.nama} — dimuat pukul {data.jam}</p>
+{:catch err}
+	<p style="color:red">Gagal: {err.message}</p>
+{/await}`} />
+
+<Callout type="tip">
+Coba ubah blok di atas jadi bentuk singkat <code>&#123;#await promise then data&#125;</code> dan hapus cabang <code>&#123;:catch&#125;</code>. Kamu akan melihat: saat percobaan ke-3 gagal, error-nya tidak lagi tertangani di template dan akan muncul di console. Itu bukti bahwa cabang <code>&#123;:catch&#125;</code> memang yang menangkap rejection.
+</Callout>
+
+## 4. Kalau di framework lain
+
+Inti perbandingannya: di Svelte, "tiga state Promise" itu sintaks bawaan; di React dan Vue, kamu merakitnya sendiri dari state primitif.
+
+<FrameworkCompare
+	task="Render promise"
+	svelte={`<script>
+  let { id } = $props();
+  async function loadUser(userId) {
+    const res = await fetch('/api/users/' + userId);
+    if (!res.ok) throw new Error('Gagal memuat');
+    return res.json();
+  }
+  // Promise baru tiap kali id berubah.
+  let promise = $derived(loadUser(id));
+</script>
+{#await promise}
+  <p>Memuat…</p>
+{:then user}
+  <p>Halo, {user.name}</p>
+{:catch err}
+  <p>Error: {err.message}</p>
+{/await}`}
+	react={`function Profile({ id }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetch('/api/users/' + id)
+      .then((r) => r.json())
+      .then(setData)
+      .catch(setError)
+      .finally(() => setLoading(false));
+  }, [id]);
+  if (loading) return <p>Memuat…</p>;
+  if (error) return <p>Error: {error.message}</p>;
+  return <p>Halo, {data.name}</p>;
+}`}
+	vue={`<script setup>
+import { ref, watchEffect } from 'vue';
+const props = defineProps(['id']);
+const data = ref(null);
+const error = ref(null);
+const loading = ref(true);
+watchEffect(async () => {
+  loading.value = true;
+  error.value = null;
+  try {
+    const r = await fetch('/api/users/' + props.id);
+    data.value = await r.json();
+  } catch (e) {
+    error.value = e;
+  } finally {
+    loading.value = false;
+  }
+});
+</script>
+<template>
+  <p v-if="loading">Memuat…</p>
+  <p v-else-if="error">Error: {{ error.message }}</p>
+  <p v-else>Halo, {{ data.name }}</p>
+</template>`}
+	diff={{ react: [2, 3, 4], vue: [4, 5, 6] }}
+	note="React mengelola tiga potong state (data/error/loading) secara manual lewat useState + useEffect; alternatif modern memakai <Suspense> + hook use(), tapi cabang error tetap butuh Error Boundary terpisah. Vue juga lazim memakai ref untuk tiga state itu; punya <Suspense> bawaan untuk fase pending, namun penanganan error butuh onErrorCaptured. Svelte menyatukan ketiga state ke dalam satu blok &#123;#await&#125;/&#123;:then&#125;/&#123;:catch&#125; tanpa state tambahan."
+/>
+
+<Callout type="tip">
+Perhatikan baris yang ditandai: di React dan Vue, sebagian besar baris awal komponen habis untuk "bookkeeping" tiga state. Itu bukan kelemahan mutlak — pendekatan manual memberi kontrol penuh (mis. menyimpan data lama selagi memuat data baru). Svelte menukar sebagian kontrol itu dengan keringkasan: untuk kasus umum "loading / sukses / error", satu blok sudah cukup.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Kutipan acak dengan loading & error">
+Buat satu komponen Svelte 5 yang menampilkan "kutipan" dari sebuah fungsi async `ambilKutipan()`. Fungsi itu menerima nomor percobaan dan mengembalikan `Promise` yang resolve berisi objek `&#123; teks, penulis &#125;` setelah jeda singkat, tetapi **reject** jika nomor percobaannya genap (untuk menguji cabang error).
+
+Syarat:
+1. Simpan Promise di sebuah `$derived` yang bergantung pada state `percobaan` (angka).
+2. Sediakan tombol "Kutipan baru" yang menaikkan `percobaan`.
+3. Render dengan `&#123;#await&#125;`: tampilkan "Memuat…" saat pending, teks + penulis saat sukses, dan pesan error saat gagal.
+
+Bonus: setelah berhasil, ubah jadi bentuk singkat `&#123;#await p then data&#125;` dan jelaskan pada dirimu sendiri apa konsekuensinya terhadap tampilan loading.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let percobaan = $state(1);
+
+	function ambilKutipan(n) {
+		return new Promise((resolve, reject) => {
+			setTimeout(() => {
+				// Percobaan genap sengaja gagal untuk menguji {:catch}.
+				if (n % 2 === 0) {
+					reject(new Error('Koneksi ke server kutipan terputus'));
+				} else {
+					resolve({
+						teks: 'Kode yang jelas hari ini, hemat waktu esok.',
+						penulis: 'Anonim #' + n
+					});
+				}
+			}, 600);
+		});
+	}
+
+	// Promise baru tiap kali `percobaan` berubah -> {#await} reaktif.
+	let kutipan = $derived(ambilKutipan(percobaan));
+</script>
+
+<button onclick={() => percobaan++}>Kutipan baru</button>
+
+{#await kutipan}
+	<p>Memuat…</p>
+{:then data}
+	<blockquote>
+		<p>"{data.teks}"</p>
+		<footer>— {data.penulis}</footer>
+	</blockquote>
+{:catch err}
+	<p style="color:red">Gagal: {err.message}</p>
+{/await}
+```
+
+Catatan bonus: kalau diubah jadi `{#await kutipan then data}`, cabang pending hilang sehingga **tidak ada tampilan "Memuat…"** — selama Promise belum resolve, area itu kosong. Untuk panggilan jaringan nyata yang bisa lambat, biasanya kamu tetap ingin cabang pending agar pengguna tahu sesuatu sedang berjalan.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan panggil fungsi async langsung di markup.</strong> Menulis <code>&#123;#await loadData(id)&#125;</code> berarti <code>loadData</code> dipanggil ulang setiap kali komponen me-render, sehingga membuat Promise baru terus-menerus dan blok bisa "berkedip" balik ke pending tanpa sebab. Simpan Promise di variabel reaktif: <code>let p = $derived(loadData(id))</code>, lalu tulis <code>&#123;#await p&#125;</code>. Dengan begitu Promise baru hanya dibuat saat <code>id</code> benar-benar berubah.
+</Callout>
+
+<Callout type="warning">
+<strong>Saat SSR, hanya cabang pending yang dirender.</strong> Di server, Svelte tidak menunggu Promise selesai — HTML awal yang dikirim ke browser berisi isi cabang <strong>pending</strong>, lalu di-resolve setelah hydration di sisi klien. Artinya data dari <code>&#123;:then&#125;</code> tidak ada di HTML pertama (kurang ideal untuk SEO atau menghindari "kedipan"). Kalau kamu butuh data sudah ter-render dari server di SvelteKit, ambil datanya di fungsi <code>load</code> dan teruskan sebagai prop biasa, bukan ditunggu di template.
+</Callout>
+
+<Callout type="tip">
+<strong>Nilai non-Promise pun aman.</strong> Kalau ekspresi yang kamu beri ke <code>&#123;#await&#125;</code> ternyata bukan Promise (misalnya datanya sudah ada, atau kadang <code>null</code>), Svelte langsung merender cabang <code>&#123;:then&#125;</code> dengan nilai apa adanya — termasuk saat SSR. Jadi blok ini aman dipakai untuk nilai yang "kadang Promise, kadang sudah jadi".
+</Callout>
+
+<Callout type="tip">
+<strong>Butuh data lama tetap tampil selagi memuat data baru?</strong> Itu justru hal yang TIDAK dilakukan <code>&#123;#await&#125;</code> secara default — ia kembali ke pending begitu Promise berganti. Kalau kamu ingin pola "stale-while-revalidate" (tetap menampilkan hasil lama sambil mengambil yang baru), kelola sendiri nilai terakhir di sebuah <code>$state</code> dan perbarui di dalam <code>.then()</code>, atau gunakan data dari <code>load</code> SvelteKit.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/await" label="&#123;#await ...&#125; — dokumentasi resmi Svelte" />

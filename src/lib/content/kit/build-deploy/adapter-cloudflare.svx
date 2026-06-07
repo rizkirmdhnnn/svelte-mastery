@@ -1,0 +1,324 @@
+---
+title: Cloudflare
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 7
+status: stable
+description: Deploy SvelteKit ke Cloudflare Workers/Pages dengan adapter-cloudflare — akses binding KV/R2/D1 lewat platform.env, konfigurasi wrangler, dan pahami batasan edge runtime.
+docs: https://svelte.dev/docs/kit/adapter-cloudflare
+keywords: [adapter-cloudflare, cloudflare workers, platform.env, bindings, wrangler]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`@sveltejs/adapter-cloudflare` adalah adapter resmi yang membungkus aplikasi SvelteKit-mu menjadi sebuah **Cloudflare Worker** — sepotong kode JavaScript yang berjalan di **edge**, yaitu ratusan data center Cloudflare yang tersebar di seluruh dunia, sedekat mungkin dengan penggunamu. Satu adapter ini menargetkan dua produk Cloudflare sekaligus: **Workers** (dengan fitur Static Assets, ini yang direkomendasikan sekarang) dan **Pages** (penawaran lama yang masih didukung).
+
+Bedanya dengan `adapter-node` itu fundamental, jadi penting dipahami. `adapter-node` menghasilkan **satu proses Node.js** yang kamu jalankan di satu server (VPS/Docker). Server itu hidup terus, punya akses penuh ke Node API (`fs`, `crypto` Node, modul native), dan menangani semua request dari satu lokasi. Cloudflare Worker kebalikannya: **tidak ada server yang hidup terus**. Kodemu "tidur", lalu dibangunkan sesaat ketika ada request, dijalankan di lokasi terdekat dengan pengguna, lalu tidur lagi. Runtime-nya bukan Node penuh, melainkan **`workerd`** — runtime berbasis V8 yang meniru Web standards (`fetch`, `Request`, `Response`, Web Crypto), bukan API Node.
+
+### Analogi: restoran pusat vs jaringan warung
+
+Bayangkan `adapter-node` itu **satu restoran besar di Jakarta**. Dapurnya lengkap — ada oven, deep fryer, mesin es krim, semua alat ada. Tapi kalau pelangganmu di Papua memesan, makanannya harus dikirim jauh: latency tinggi.
+
+`adapter-cloudflare` itu **jaringan warung yang sama di tiap kota**. Begitu ada pesanan di Papua, warung Papua yang melayani — cepat, dekat. Trade-off-nya, warung kecil tidak muat semua alat dapur restoran besar. Tidak ada oven raksasa (`fs`), tidak ada gudang bahan permanen (state di memori antar-request). Kalau resepmu butuh alat yang tidak ada di warung, makananmu gagal dimasak — padahal di restoran pusat tadi mulus. Inilah inti "batasan edge runtime": cepat dan global, tapi dapurnya lebih ramping.
+
+### Bindings: dari mana datanya kalau tidak ada Node?
+
+Kalau Worker tidak punya `fs` dan tidak hidup terus, bagaimana ia menyimpan data? Jawabannya: **bindings**. Cloudflare menyediakan layanan terkelola yang kamu "ikatkan" (bind) ke Worker:
+
+- **KV** (Workers KV) — key-value store global, cocok untuk cache, session, config. Cepat dibaca di mana saja, tapi konsistensinya *eventual*.
+- **R2** — object storage (mirip S3) untuk file/gambar/blob besar, tanpa biaya egress.
+- **D1** — database SQL (SQLite) serverless.
+- Selain itu ada Durable Objects, Queues, Service Bindings, Workers AI, dll.
+
+Konsep binding ini mungkin asing buat kamu yang dari React/Vue. Kamu **tidak** `npm install` lalu `import` koneksi database seperti biasa. Sebaliknya, binding **diinjeksikan oleh platform saat request** ke dalam objek `platform.env`. Anggap saja Cloudflare menyerahkan sebuah **kotak peralatan** ke Worker-mu di tiap request; isinya kamu deklarasikan lebih dulu di file konfigurasi `wrangler`. Polanya mirip **dependency injection**: kamu tidak membuat sendiri koneksinya, platform yang menyodorkannya. Nama binding (mis. `MY_KV`) adalah label yang kamu tempel di kotak itu, dan label itu harus sama persis antara `wrangler` config dan kode.
+
+### Di mana `platform` tersedia (dan di mana tidak)
+
+`platform` hanya ada di **konteks server**: `+server.js`, `+page.server.js`/`+layout.server.js` (load & form actions), dan `hooks.server.js`. Ia **tidak** ada di universal load (`+page.js`) maupun di komponen yang jalan di browser — logis, karena binding adalah resource sisi-server. Saat prerendering, `platform` juga `undefined` (tidak ada request nyata). Karena itu kamu hampir selalu mengaksesnya dengan optional chaining: `platform?.env.MY_KV`.
+
+## 2. Contoh kode
+
+Pemasangan adapter sama seperti adapter lain — import paket lalu panggil di `kit.adapter`.
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-cloudflare';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(),
+	kit: {
+		adapter: adapter({
+			// 'plaintext' (default): request aset yg tak cocok -> 404 polos.
+			// 'spa': render index.html sbg fallback (untuk app SPA).
+			fallback: 'plaintext',
+
+			// platformProxy mengatur EMULASI binding saat dev/preview lokal,
+			// memakai konfigurasi wrangler. Biasanya cukup default-nya.
+			platformProxy: {
+				// configPath: 'wrangler.jsonc',
+				// environment: undefined,
+				persist: true // simpan data KV/D1/R2 lokal antar-restart
+			}
+
+			// 'routes' di bawah HANYA berlaku untuk Cloudflare PAGES
+			// (mengontrol _routes.json). Di Workers, abaikan.
+			// routes: { include: ['/*'], exclude: ['<all>'] }
+		})
+	}
+};
+```
+
+Konfigurasi `wrangler` adalah tempat kamu **mendeklarasikan binding**. Inilah "manifest kotak peralatan" tadi — pakai `wrangler.jsonc` (atau `.json`/`.toml`).
+
+```jsonc
+// wrangler.jsonc — untuk Cloudflare Workers (Static Assets)
+{
+	"name": "svelte-app",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"compatibility_date": "2025-01-01",
+
+	// nodejs_als WAJIB: SvelteKit memakai AsyncLocalStorage internal.
+	// Tambah "nodejs_compat" kalau kodemu butuh polyfill Node lain.
+	"compatibility_flags": ["nodejs_als"],
+
+	// SvelteKit melayani aset statis lewat binding ASSETS ini.
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+
+	// --- BINDINGS: tiap "binding" jadi key di platform.env ---
+	"kv_namespaces": [
+		{ "binding": "MY_KV", "id": "<kv-namespace-id>" }
+	],
+	"r2_buckets": [
+		{ "binding": "MY_BUCKET", "bucket_name": "my-bucket" }
+	],
+	"d1_databases": [
+		{ "binding": "DB", "database_name": "my-db", "database_id": "<d1-id>" }
+	]
+}
+```
+
+Sekarang akses binding-nya lewat `platform.env` di endpoint atau server load. Perhatikan optional chaining `?.` dan penanganan `undefined`.
+
+```js
+// src/routes/api/visits/+server.js
+import { json, error } from '@sveltejs/kit';
+
+export async function GET({ platform }) {
+	// platform bisa undefined (mis. saat prerender / dev tanpa proxy).
+	const kv = platform?.env.MY_KV;
+	if (!kv) error(503, 'KV binding tidak tersedia');
+
+	// Workers KV: API-nya async, get/put/delete.
+	const current = Number((await kv.get('visits')) ?? '0');
+	const next = current + 1;
+	await kv.put('visits', String(next));
+
+	return json({ visits: next });
+}
+```
+
+```js
+// src/routes/products/+page.server.js — contoh D1 (SQL) di server load
+export async function load({ platform }) {
+	const db = platform?.env.DB;
+	if (!db) return { products: [] };
+
+	// D1 memakai prepared statement; bind() mencegah SQL injection.
+	const { results } = await db
+		.prepare('SELECT id, name, price FROM products WHERE price < ?')
+		.bind(100000)
+		.all();
+
+	return { products: results };
+}
+```
+
+Agar TypeScript tahu bentuk `platform.env`, deklarasikan interface `App.Platform` di `app.d.ts`.
+
+```ts
+// src/app.d.ts
+import type { KVNamespace, R2Bucket, D1Database } from '@cloudflare/workers-types';
+
+declare global {
+	namespace App {
+		interface Platform {
+			env: {
+				MY_KV: KVNamespace;
+				MY_BUCKET: R2Bucket;
+				DB: D1Database;
+			};
+			// objek bawaan request Cloudflare (negara, kota, dll.)
+			cf: CfProperties;
+			// untuk waitUntil(), dsb.
+			ctx: ExecutionContext;
+		}
+	}
+}
+
+export {};
+```
+
+## 3. Coba sendiri
+
+Karena modul ini butuh **runtime server Cloudflare** (binding tidak bisa diemulasi di playground browser), berikut alur kerja end-to-end yang bisa kamu jalankan langsung di proyekmu — beserta anotasi tiap langkah.
+
+```bash
+# 1) Pasang adapter & types
+npm i -D @sveltejs/adapter-cloudflare @cloudflare/workers-types wrangler
+
+# 2) Set adapter di svelte.config.js (lihat Bagian 2),
+#    lalu deklarasikan binding di wrangler.jsonc.
+
+# 3) Buat resource Cloudflare-nya & catat id-nya:
+npx wrangler kv namespace create MY_KV        # -> dapat "id"
+npx wrangler r2 bucket create my-bucket
+npx wrangler d1 create my-db                  # -> dapat "database_id"
+#    (salin id/database_id ke wrangler.jsonc)
+
+# 4) DEV LOKAL: `npm run dev` (vite) sudah meng-emulasi binding
+#    lewat platformProxy. Data KV/D1/R2 disimpan lokal di .wrangler/.
+npm run dev
+
+# 5) Build + uji dengan runtime Worker SUNGGUHAN (workerd):
+npm run build
+npx wrangler dev .svelte-kit/cloudflare/_worker.js   # Workers
+#   (untuk Pages: npx wrangler pages dev .svelte-kit/cloudflare)
+
+# 6) Deploy:
+npx wrangler deploy                # Workers
+#   (untuk Pages: npx wrangler pages deploy .svelte-kit/cloudflare)
+```
+
+Perhatikan langkah 4 vs 5. `vite dev` cepat dan enak buat ngoding, tapi binding-nya **diemulasi** (lokal, perkiraan). `wrangler dev` lebih lambat tapi memakai **workerd asli** — di sinilah batasan edge runtime betulan terasa. Selalu uji di `wrangler dev` sebelum deploy, supaya kode yang diam-diam mengandalkan Node API ketahuan sejak awal, bukan saat sudah di produksi.
+
+```js
+// Catatan praktis: untuk dev/build tanpa harus selalu online,
+// kamu bisa minta wrangler memakai resource LOKAL (default) atau
+// resource REMOTE yang sesungguhnya:
+//
+//   npx wrangler dev --remote     // pakai KV/D1/R2 sungguhan di Cloudflare
+//   npx wrangler dev              // pakai emulasi lokal (default, di .wrangler/)
+//
+// Saat emulasi lokal, `platform.env.MY_KV` tetap berfungsi —
+// itulah gunanya opsi platformProxy di adapter.
+```
+
+## 4. Latihan
+
+<Exercise title="Konfigurasi adapter-cloudflare untuk endpoint yang membaca KV">
+Kamu mau deploy SvelteKit ke **Cloudflare Workers**. Buat:
+
+1. `svelte.config.js` memakai `adapter-cloudflare`.
+2. `wrangler.jsonc` dengan binding KV bernama `SESSIONS`.
+3. Tipe `App.Platform` di `app.d.ts` untuk binding itu.
+4. Endpoint `GET /api/session/[id]` yang mengambil nilai dari KV `SESSIONS` berdasarkan `params.id`, mengembalikan 404 bila tidak ada, dan 503 bila binding tak tersedia.
+
+{#snippet solution()}
+
+  ```js
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-cloudflare';
+  import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+  export default {
+    preprocess: vitePreprocess(),
+    kit: { adapter: adapter() } // default sudah pas untuk Workers
+  };
+  ```
+
+  ```jsonc
+  // wrangler.jsonc
+  {
+    "name": "svelte-app",
+    "main": ".svelte-kit/cloudflare/_worker.js",
+    "compatibility_date": "2025-01-01",
+    "compatibility_flags": ["nodejs_als"],
+    "assets": {
+      "binding": "ASSETS",
+      "directory": ".svelte-kit/cloudflare"
+    },
+    "kv_namespaces": [
+      { "binding": "SESSIONS", "id": "<kv-id>" }
+    ]
+  }
+  ```
+
+  ```ts
+  // src/app.d.ts
+  import type { KVNamespace } from '@cloudflare/workers-types';
+
+  declare global {
+    namespace App {
+      interface Platform {
+        env: { SESSIONS: KVNamespace };
+      }
+    }
+  }
+
+  export {};
+  ```
+
+  ```js
+  // src/routes/api/session/[id]/+server.js
+  import { json, error } from '@sveltejs/kit';
+
+  export async function GET({ params, platform }) {
+    const kv = platform?.env.SESSIONS;
+    if (!kv) error(503, 'KV SESSIONS tidak tersedia');
+
+    const value = await kv.get(params.id);
+    if (value === null) error(404, 'Session tidak ditemukan');
+
+    return json({ id: params.id, value });
+  }
+  ```
+
+  Kunci: nama `"binding"` di `wrangler.jsonc` (`SESSIONS`) harus sama persis
+  dengan key di `platform.env.SESSIONS` dan di `App.Platform`. Pakai `error()`
+  tanpa `throw` (SvelteKit 2 sudah throw sendiri).
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>platform</code> bisa <code>undefined</code>! Ia hanya ada di konteks server (<code>+server.js</code>, <code>*.server.js</code>, <code>hooks.server.js</code>) dan <strong>tidak</strong> tersedia saat prerender, di universal <code>load</code> (<code>+page.js</code>), atau di kode browser. Selalu pakai optional chaining <code>platform?.env.MY_KV</code> dan tangani kasus tak-ada (mis. <code>error(503, ...)</code>). Mengandalkan <code>platform.env</code> langsung akan meledak di rute yang ternyata ikut diprerender.
+</Callout>
+
+<Callout type="warning">
+Runtime Cloudflare (<code>workerd</code>) <strong>bukan Node penuh</strong>. <code>fs</code> tidak tersedia — untuk membaca file ikutan, pakai <code>read()</code> dari <code>$app/server</code> atau prerender rutenya. Banyak modul Node butuh flag <code>"nodejs_compat"</code> di <code>wrangler</code> agar ter-polyfill, dan sebagian native module tetap tak bisa. Selain itu ada <strong>batas ukuran Worker</strong> (bundle terkompresi): kalau kena, pindahkan library berat agar di-import hanya di sisi klien, atau kurangi dependency. Uji dengan <code>wrangler dev</code> (workerd asli), bukan cuma <code>vite dev</code>.
+</Callout>
+
+<Callout type="tip">
+Bedakan binding <strong>lokal</strong> vs <strong>remote</strong> saat dev. Secara default <code>wrangler dev</code> dan emulasi <code>platformProxy</code> memakai data lokal (disimpan di folder <code>.wrangler/</code>), jadi aman bereksperimen tanpa menyentuh data produksi. Butuh data sungguhan? Jalankan <code>wrangler dev --remote</code>. Set <code>platformProxy.persist: true</code> agar isi KV/D1/R2 lokalmu tidak hilang tiap restart.
+</Callout>
+
+<Callout type="legacy">
+Kalau menemukan tutorial yang memakai <code>@sveltejs/adapter-cloudflare-workers</code>, itu adapter <strong>lama</strong> untuk "Workers Sites" dan kini <strong>deprecated</strong>. Untuk proyek baru pakai <code>@sveltejs/adapter-cloudflare</code> — satu adapter ini sudah menangani Cloudflare Pages maupun Workers (Static Assets). Migrasi: ganti paket adapter, hapus konfigurasi <code>site</code> lama, lalu tambahkan <code>assets.binding</code> + <code>assets.directory</code> di <code>wrangler</code> config.
+</Callout>
+
+<LegacyVsModern
+	rows={[
+		{ legacy: '@sveltejs/adapter-cloudflare-workers (Workers Sites)', modern: '@sveltejs/adapter-cloudflare (Pages + Workers Static Assets)', note: 'satu adapter untuk dua target' },
+		{ legacy: 'config "site" + "kv_namespaces __STATIC_CONTENT"', modern: 'assets: { binding: "ASSETS", directory: ".svelte-kit/cloudflare" }', note: 'aset statis lewat Static Assets' },
+		{ legacy: 'process.env / import koneksi DB sendiri', modern: 'platform.env.MY_BINDING (diinjeksi platform)', note: 'binding, bukan env var Node' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/adapter-cloudflare" label="SvelteKit — adapter-cloudflare (Workers & Pages)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (gambaran umum semua adapter)" />

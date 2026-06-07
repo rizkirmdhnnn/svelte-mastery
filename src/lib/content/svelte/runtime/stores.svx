@@ -1,0 +1,391 @@
+---
+title: Stores
+product: svelte
+section: runtime
+sectionTitle: Runtime
+sectionOrder: 6
+order: 1
+status: stable
+description: Memahami store Svelte (writable, readable, derived, custom store) dengan auto-subscribe $, plus kapan memilih store vs runes ($state di .svelte.ts) untuk state global.
+docs: https://svelte.dev/docs/svelte/stores
+keywords: [store, writable, readable, derived, auto-subscribe, runes]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sebelum runes hadir di Svelte 5, cara utama berbagi state **antar komponen** (state global) adalah lewat **store**. Store sudah ada sejak Svelte 3, masih sepenuhnya didukung di Svelte 5, dan dalam beberapa kasus justru lebih cocok dibanding runes. Jadi ini bukan API usang yang harus dihindari — ini alat lain di kotak perkakas yang sama, dengan kelebihan dan kekurangannya sendiri.
+
+Secara teknis, **store adalah objek apa pun yang punya method `subscribe`** mengikuti sebuah kontrak sederhana. Itu saja definisinya. Svelte tidak peduli store-mu dibuat pakai `writable()` bawaan atau pakai RxJS — selama ada `subscribe`, Svelte bisa "mendengarkan" perubahan nilainya.
+
+### Analogi: store itu seperti channel radio
+
+Bayangkan `writable(0)` sebagai sebuah **channel radio**. Channel ini punya satu nilai yang sedang "mengudara" saat ini. Siapa pun boleh:
+
+- **Mendengarkan** (`subscribe`) — tiap kali nilai berubah, pendengar langsung dapat siaran baru.
+- **Mengubah siaran** (`set` / `update`) — kalau channel-nya `writable`.
+
+Bedanya dengan variabel biasa: variabel biasa hanya bisa kamu baca kalau kamu pegang langsung. Channel radio bisa didengar dari **mana saja** di aplikasi, oleh berapa pun komponen sekaligus, tanpa mereka saling kenal. Itulah kenapa store cocok untuk state global: satu sumber siaran, banyak pendengar.
+
+Saat kamu `subscribe`, kamu juga dapat **fungsi untuk berhenti mendengarkan** (unsubscribe). Kalau lupa berhenti mendengar setelah komponen hancur, kamu bocor memori — pendengar mati tapi channel masih kirim siaran ke arahnya. Untungnya Svelte punya jalan pintas agar kamu tak perlu mengurus ini manual: prefix `$`.
+
+### Kontrak store (kenapa "objek dengan subscribe" itu cukup)
+
+Resminya, sebuah objek disebut store kalau memenuhi kontrak ini:
+
+1. Punya method `subscribe(fn)` yang **langsung memanggil `fn` dengan nilai saat ini** (jadi pendengar baru tak perlu menunggu perubahan berikutnya untuk tahu nilainya).
+2. `subscribe` mengembalikan **fungsi unsubscribe**.
+3. *Opsional* punya `set(value)` — kalau ada, store-nya **writable** dari luar.
+
+Karena cuma sependek itu, kamu bisa menulis store sendiri dari nol, atau membungkus pustaka observable lain (RxJS, dll) agar dianggap store oleh Svelte. Inilah keunggulan store yang tidak dimiliki runes: ia sebuah **kontrak terbuka**, bukan fitur compiler tertutup.
+
+### Auto-subscribe: prefix `$`
+
+Di dalam file `.svelte`, kalau ada store bernama `count`, kamu bisa menulis `$count` untuk membaca nilainya langsung di markup atau script. Tanda `$` ini menyuruh Svelte: "subscribe ke store ini saat komponen mulai, dan unsubscribe otomatis saat komponen hancur." Jadi kamu menulis `$count` seakan-akan ia variabel biasa, padahal di belakang layar Svelte mengelola seluruh siklus dengar-berhenti-dengar untukmu.
+
+Bahkan menulis `$count = 5` di-kompilasi menjadi `count.set(5)` (otomatis jadi store-mu harus `writable`). Praktis dan ringkas — tapi ingat, keajaiban `$` ini **hanya berlaku di dalam file `.svelte`**. Di file `.js`/`.ts` biasa, kamu harus `subscribe` manual atau pakai helper `get(store)`. Satu aturan lagi: store yang mau di-auto-subscribe harus dideklarasikan di **top-level** komponen — bukan di dalam `{#if}` atau di dalam fungsi.
+
+<Callout type="warning">
+Jangan bingungkan prefix <code>$</code> pada store dengan rune <code>$state</code>/<code>$derived</code>. <code>$count</code> (store) artinya "baca nilai store count". <code>$state(0)</code> (rune) adalah deklarasi reactive state. Keduanya pakai simbol <code>$</code> tapi mekanismenya berbeda total. Karena itu nama variabel biasa tidak boleh diawali <code>$</code> — itu jatah Svelte.
+</Callout>
+
+### Tiga jenis store bawaan
+
+Svelte menyediakan tiga factory dari modul `svelte/store`:
+
+- **`writable(nilaiAwal, start?)`** — channel yang bisa dibaca **dan** diubah. Punya `subscribe`, `set`, dan `update`. Ini yang paling sering dipakai. `set(v)` mengganti nilai langsung; `update(fn)` mengubah berdasarkan nilai lama (mis. `update(n => n + 1)`).
+- **`readable(nilaiAwal, start)`** — channel yang hanya bisa **dibaca** dari luar. Konsumen tidak boleh `set`. Cocok untuk hal yang sumbernya bukan UI: jam yang berdetak, posisi mouse, koneksi websocket. Fungsi `start` dipanggil saat pendengar **pertama** masuk, dan boleh mengembalikan fungsi cleanup yang dipanggil saat pendengar **terakhir** pergi.
+- **`derived(sumber, fn, nilaiAwal?)`** — channel yang nilainya **diturunkan** dari satu/beberapa store lain. Tiap kali store sumber berubah, store turunan ikut menghitung ulang. Mirip `$derived` rune, tapi bekerja pada store dan bisa dipakai di luar komponen.
+
+Argumen kedua `writable`/`readable` (sering disebut **start/stop notifier**) adalah trik penting: fungsi itu **baru jalan saat ada subscriber pertama**, dan fungsi cleanup yang ia kembalikan jalan saat **subscriber terakhir pergi**. Artinya `setInterval`, listener event, atau koneksi websocket di dalamnya hanya hidup selama benar-benar ada yang mendengarkan — hemat resource, dan tak ada timer nyangkut saat tidak ada yang butuh.
+
+### Custom store: bungkus writable, ekspos API terbatas
+
+Karena "store" hanyalah objek dengan `subscribe`, kamu bisa membuat **custom store**: buat `writable` di dalam sebuah fungsi, lalu kembalikan objek yang hanya membocorkan operasi yang kamu izinkan. Pola ini memberi kamu **enkapsulasi** — komponen luar tidak bisa sembarangan `set`, mereka hanya bisa memanggil method bernama yang kamu sediakan (mis. `increment`, `reset`).
+
+Analoginya: alih-alih membiarkan semua orang memutar tombol frekuensi radio sesuka hati, kamu kasih remote dengan tombol terbatas: "naikkan", "turunkan", "reset". Lebih aman dan niat kodenya lebih jelas. Ini padanan paling dekat dengan "slice" Redux atau "store" Pinia di dunia Svelte 4.
+
+### Lalu, kapan pakai store dan kapan pakai runes?
+
+Inilah pertanyaan inti di Svelte 5. Karena runes (`$state`) kini bisa dipakai **di luar** komponen lewat file ber-ekstensi `.svelte.js` / `.svelte.ts`, kamu bisa membuat state global tanpa store sama sekali. Aturan praktisnya:
+
+- **Pakai runes (`$state` di `.svelte.ts`)** untuk **mayoritas** state global aplikasi baru. Lebih sederhana, sintaksnya sama dengan state lokal, tak ada prefix `$`, dan deep-reactive untuk objek/array.
+- **Pakai store** ketika kamu butuh kontrak `subscribe` itu sendiri: aliran data asinkron yang rumit, integrasi dengan pustaka berbasis observable (RxJS), nilai yang hidup di luar siklus komponen (jam, geolocation, websocket via `readable`), atau saat kamu butuh objek yang bisa dioper dan di-subscribe secara eksplisit di file `.js` biasa.
+
+Singkatnya: **runes dulu, store kalau ada alasan kuat.** Keduanya bisa hidup berdampingan di proyek yang sama, dan Svelte 5 bahkan menyediakan jembatan dua arah `toStore` / `fromStore` (dibahas di Bagian 2) agar keduanya bisa saling dipakai.
+
+## 2. Contoh kode
+
+Tiga jenis store bawaan dan cara membacanya dengan auto-subscribe `$`.
+
+```svelte
+<script>
+	import { writable, readable, derived } from 'svelte/store';
+
+	// writable: bisa dibaca DAN diubah
+	const count = writable(0);
+
+	// readable: hanya bisa dibaca; "start" jalan saat subscriber PERTAMA masuk,
+	// fungsi yang dikembalikan = cleanup saat subscriber TERAKHIR pergi.
+	const time = readable(new Date(), (set) => {
+		const id = setInterval(() => set(new Date()), 1000);
+		return () => clearInterval(id); // dipanggil otomatis saat tak ada pendengar
+	});
+
+	// derived: nilai diturunkan dari store lain, hitung ulang otomatis
+	const double = derived(count, ($count) => $count * 2);
+</script>
+
+<!-- $count = auto-subscribe: subscribe saat mount, unsubscribe saat destroy -->
+<button onclick={() => count.update((n) => n + 1)}>count = {$count}</button>
+
+<!-- $count = 5 -> dikompilasi jadi count.set(5) -->
+<button onclick={() => ($count = 0)}>reset</button>
+
+<!-- $double ikut berubah tiap $count berubah -->
+<p>double = {$double}</p>
+
+<!-- $time berdetak tiap detik tanpa kita kelola subscribe manual -->
+<p>jam = {$time.toLocaleTimeString()}</p>
+```
+
+`derived` dari **beberapa** store sekaligus, dan versi asinkron dengan `set`.
+
+```js
+import { writable, derived } from 'svelte/store';
+
+const a = writable(2);
+const b = writable(3);
+
+// Banyak sumber: argumen pertama jadi array -> callback terima array nilai
+const sum = derived([a, b], ([$a, $b]) => $a + $b); // 5
+
+// Versi async: pakai parameter kedua `set`. Argumen ketiga = nilai awal
+// (dipakai sebelum set pertama terpanggil). Cocok untuk debounce/fetch.
+const delayed = derived(
+	a,
+	($a, set) => {
+		const id = setTimeout(() => set($a), 500);
+		return () => clearTimeout(id); // cleanup tiap kali $a berubah lagi
+	},
+	0 // nilai awal sementara menunggu setTimeout pertama
+);
+```
+
+Custom store: bungkus `writable`, ekspos hanya API yang aman.
+
+```js
+// counter-store.js  (file .js biasa — store TETAP jalan di sini, beda dengan runes)
+import { writable } from 'svelte/store';
+
+export function createCounter(initial = 0) {
+	// writable internal — TIDAK kita ekspos langsung
+	const { subscribe, set, update } = writable(initial);
+
+	return {
+		subscribe, // WAJIB diekspos agar tetap memenuhi kontrak "store" (bisa pakai $)
+		increment: () => update((n) => n + 1),
+		decrement: () => update((n) => n - 1),
+		reset: () => set(initial)
+		// sengaja TIDAK ekspos set/update mentah -> konsumen tak bisa asal-asalan
+	};
+}
+```
+
+Alternatif modern dengan runes di file `.svelte.ts` untuk state global — sering ini yang kamu mau.
+
+```ts
+// counter.svelte.ts  (ekstensi .svelte.ts WAJIB agar rune $state diizinkan di luar komponen)
+class Counter {
+	// $state deep-reactive; dibungkus class agar diekspor sebagai referensi objek
+	current = $state(0);
+
+	increment() {
+		this.current += 1;
+	}
+	reset() {
+		this.current = 0;
+	}
+}
+
+// satu instance dibagi ke seluruh aplikasi = state global, TANPA store & TANPA prefix $
+export const counter = new Counter();
+```
+
+Jembatan dua arah Svelte 5: `toStore` (rune → store) dan `fromStore` (store → rune).
+
+```ts
+import { toStore, fromStore } from 'svelte/store';
+
+// --- rune -> store: agar state berbasis rune bisa dipakai pustaka yang minta store ---
+let n = $state(0);
+// getter wajib; setter opsional (kalau diberi -> store-nya writable)
+const nStore = toStore(() => n, (v) => (n = v));
+// sekarang nStore.subscribe(...) / $nStore jalan seperti store biasa
+
+// --- store -> rune: baca store lama dengan gaya rune di .svelte.ts ---
+import { writable } from 'svelte/store';
+const legacy = writable(10);
+const r = fromStore(legacy);
+// akses r.current (reactive) alih-alih $legacy / subscribe manual
+```
+
+## 3. Coba sendiri
+
+Ubah-ubah kode di bawah. Perhatikan `$count` (auto-subscribe), store `derived` yang menghitung ulang sendiri, dan custom store dengan API terbatas. Semua hidup dalam satu komponen agar bisa jalan di playground.
+
+<Playground code={`<script>
+  import { writable, derived } from 'svelte/store';
+  // writable biasa
+  const count = writable(0);
+  // derived: nilai turunan, hitung ulang otomatis tiap count berubah
+  const double = derived(count, (c) => c * 2);
+  const label = derived(count, (c) => (c % 2 === 0 ? 'genap' : 'ganjil'));
+  // custom store: ekspos hanya increment & reset (tanpa set mentah)
+  function createCounter() {
+    const { subscribe, set, update } = writable(0);
+    return {
+      subscribe,
+      increment: () => update((n) => n + 1),
+      reset: () => set(0)
+    };
+  }
+  const safe = createCounter();
+</script>
+<h3>writable + derived</h3>
+<button onclick={() => count.update((n) => n + 1)}>count = {$count}</button>
+<button onclick={() => ($count = 0)}>reset count</button>
+<p>double = {$double}, ini bilangan {$label}</p>
+<h3>custom store (API terbatas)</h3>
+<p>safe = {$safe}</p>
+<button onclick={safe.increment}>increment</button>
+<button onclick={safe.reset}>reset</button>`} />
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="State global"
+	svelte={`// Cara modern Svelte 5: runes di file .svelte.ts
+// cart.svelte.ts
+export const cart = $state({ items: [], total: 0 });
+//
+export function addItem(item) {
+  cart.items.push(item);       // deep-reactive, boleh mutasi
+  cart.total += item.price;
+}
+//
+// Komponen apa pun:
+// import { cart, addItem } from './cart.svelte.ts'
+// akses cart.total langsung, tanpa prefix / hook / provider
+//
+// --- Alternatif (observable / RxLike): store ---
+// import { writable, derived } from 'svelte/store'
+// export const count = writable(0)
+// export const double = derived(count, ($c) => $c * 2)
+// di komponen: baca $count, $double (auto-subscribe)`}
+	react={`// Redux Toolkit / Zustand — perlu library terpisah + boilerplate
+// Zustand:
+import { create } from 'zustand';
+//
+export const useCart = create((set) => ({
+  items: [],
+  total: 0,
+  addItem: (item) =>
+    set((s) => ({
+      items: [...s.items, item],          // wajib immutable
+      total: s.total + item.price
+    }))
+}));
+//
+// Komponen:
+function Total() {
+  const total = useCart((s) => s.total); // selector untuk hindari re-render
+  return <span>{total}</span>;
+}`}
+	vue={`// Pinia — store resmi Vue, mirip konsep custom store
+import { defineStore } from 'pinia';
+//
+export const useCart = defineStore('cart', {
+  state: () => ({ items: [], total: 0 }),
+  actions: {
+    addItem(item) {
+      this.items.push(item);   // reactive, boleh mutasi
+      this.total += item.price;
+    }
+  }
+});
+//
+// Komponen:
+// const cart = useCart()
+// cart.total  (reactive otomatis)`}
+	diff={{ react: [11, 12, 13, 14], vue: [9, 10] }}
+	note="React perlu library terpisah (Zustand/Redux) + selector & immutability untuk performa. Vue Pinia mirip custom store Svelte: state + actions, boleh mutasi. Di Svelte 5 sering cukup runes di .svelte.ts (tanpa library, akses langsung); pakai store bila butuh pola observable/RxJS atau nilai yang hidup di luar komponen."
+/>
+
+## 5. Latihan
+
+<Exercise title="Custom store untuk to-do counter">
+
+Buat sebuah komponen yang memakai **custom store** bernama `todos` untuk mengelola daftar tugas. Persyaratan:
+
+1. Custom store dibuat dengan membungkus `writable([])`.
+2. Ekspos `subscribe`, `add(text)` (tambah `{ text, done: false }`), dan `toggle(index)` (balik nilai `done`).
+3. Jangan ekspos `set`/`update` mentah.
+4. Tampilkan jumlah tugas yang **belum selesai** memakai store `derived`.
+5. Baca semua store di markup dengan auto-subscribe `$`.
+
+Petunjuk: di `derived`, callback menerima nilai array-nya, lalu kamu `filter` yang `!done`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { writable, derived } from 'svelte/store';
+
+	function createTodos() {
+		const { subscribe, update } = writable([]);
+		return {
+			subscribe,
+			add: (text) => update((list) => [...list, { text, done: false }]),
+			toggle: (i) =>
+				update((list) =>
+					list.map((t, idx) => (idx === i ? { ...t, done: !t.done } : t))
+				)
+			// set/update mentah sengaja tidak diekspos
+		};
+	}
+
+	const todos = createTodos();
+	// store turunan: berapa yang belum selesai
+	const sisa = derived(todos, (list) => list.filter((t) => !t.done).length);
+
+	let teks = $state('');
+
+	function tambah() {
+		if (teks.trim()) {
+			todos.add(teks.trim());
+			teks = '';
+		}
+	}
+</script>
+
+<input bind:value={teks} placeholder="tugas baru" />
+<button onclick={tambah}>Tambah</button>
+
+<p>Belum selesai: {$sisa}</p>
+
+<ul>
+	{#each $todos as t, i}
+		<li>
+			<label>
+				<input type="checkbox" checked={t.done} onchange={() => todos.toggle(i)} />
+				{t.text}
+			</label>
+		</li>
+	{/each}
+</ul>
+```
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Auto-subscribe <code>$</code> hanya jalan di file <code>.svelte</code>.</strong> Di file <code>.js</code>/<code>.ts</code> biasa, menulis <code>$count</code> tidak ada artinya. Di sana kamu harus <code>subscribe</code> manual (dan ingat unsubscribe), atau pakai helper <code>get(store)</code> dari <code>svelte/store</code> untuk membaca nilai sekali tanpa subscribe. <code>get()</code> praktis untuk pembacaan sesaat, tapi tidak reaktif — ia hanya menjepret nilai saat itu juga, dan diam-diam membuat lalu membatalkan subscription, jadi <strong>jangan dipakai di jalur kode panas (hot path)</strong>.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Store harus dideklarasikan di top-level komponen.</strong> Auto-subscribe <code>$store</code> tidak boleh dipakai pada store yang dibuat di dalam <code>&#123;#if&#125;</code>, loop, atau di dalam sebuah fungsi — Svelte menyetel subscription saat komponen mulai, jadi referensinya harus stabil dan tersedia di level atas <code>&lt;script&gt;</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Hati-hati memory leak saat subscribe manual.</strong> <code>const unsub = store.subscribe(...)</code> WAJIB dipasangkan dengan <code>unsub()</code> saat tak dipakai lagi (mis. di dalam <code>onDestroy</code> atau di akhir sebuah efek). Auto-subscribe <code>$</code> mengurus ini untukmu — itu salah satu alasan utama memakainya di komponen. Ingat juga: nilai <code>writable</code> hilang saat halaman di-refresh; kalau perlu persist, simpan sendiri ke <code>localStorage</code> lewat <code>subscribe</code>.
+</Callout>
+
+<Callout type="tip">
+Untuk state global di proyek <strong>baru</strong>, mulai dari runes di <code>.svelte.ts</code> (lebih sederhana, deep-reactive, tanpa prefix). Beralih ke store hanya bila butuh kontrak <code>subscribe</code>: integrasi RxJS/observable, aliran async rumit, atau nilai yang sumbernya di luar komponen (jam, geolocation, websocket via <code>readable</code>). Butuh menyambung keduanya? Pakai <code>toStore</code>/<code>fromStore</code>.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4, pola <code>const x = writable(...)</code> di sebuah module lalu di-import ke banyak komponen adalah <em>cara standar</em> berbagi state global. Pola ini masih sah di Svelte 5, tetapi untuk kebanyakan kasus kini lebih disarankan runes global di <code>.svelte.ts</code>. Anggap store sebagai alat khusus (observable / luar-komponen), bukan lagi default.
+</Callout>
+
+<LegacyVsModern
+	rows={[
+		{ legacy: 'writable(0) di module untuk state global', modern: '$state(0) di field class, .svelte.ts', note: 'runes = default baru; store untuk kasus observable' },
+		{ legacy: '$count (auto-subscribe)', modern: 'counter.current (akses langsung)', note: 'runes tak butuh prefix $' },
+		{ legacy: 'derived(count, $c => $c * 2)', modern: '$derived(counter.current * 2)', note: 'rune $derived untuk state lokal/objek; store derived untuk observable' }
+	]}
+/>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/stores" label="Svelte Docs — Stores (writable / readable / derived)" />

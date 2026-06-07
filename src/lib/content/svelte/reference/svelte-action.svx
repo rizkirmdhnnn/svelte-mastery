@@ -1,0 +1,387 @@
+---
+title: svelte/action
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 2
+status: reference
+description: Tipe Action & ActionReturn dari svelte/action untuk membuat perilaku DOM lewat directive use:, plus cara mengetik parameter dan penerus modernnya, attachments.
+docs: https://svelte.dev/docs/svelte/svelte-action
+keywords: [action, ActionReturn, use directive, attachment, DOM]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sebuah **action** adalah fungsi yang dijalankan saat sebuah elemen DOM lahir, dipasang lewat directive `use:`. Fungsinya menerima `node` (elemen DOM-nya) dan parameter opsional, lalu boleh mengembalikan objek dengan dua method: `update` (dipanggil saat parameter berubah) dan `destroy` (dipanggil saat elemen dilepas dari DOM). Itu saja konsep intinya.
+
+Kenapa fitur ini ada? Karena Svelte template itu *deklaratif* — kamu menggambarkan "seperti apa UI seharusnya", bukan "langkah demi langkah memanipulasi DOM". Tapi ada banyak hal di dunia nyata yang hanya bisa dilakukan secara *imperatif*: memanggil `node.focus()`, menempelkan library pihak ketiga (tooltip seperti Tippy, datepicker seperti Flatpickr, chart seperti Chart.js), memasang `IntersectionObserver`, atau mendeteksi klik di luar sebuah dropdown. Action adalah **jembatan resmi antara dunia deklaratif Svelte dan dunia imperatif DOM** — sebuah kantong kecil untuk menaruh logika "sentuh DOM langsung" sambil tetap rapi: ia tahu kapan elemennya muncul dan kapan hilang, jadi kamu punya tempat pasti untuk setup dan cleanup.
+
+Analoginya: bayangkan elemen DOM sebagai sebuah ruangan kosong di gedung. Action adalah **kontraktor interior** yang kamu panggil begitu ruangan jadi (`node` diserahkan ke dia). Dia memasang furnitur (event listener, tooltip, observer). Saat penyewa ganti dan parameternya berubah, dia datang lagi untuk menyesuaikan (`update`). Dan saat ruangan dibongkar, dia wajib membereskan semua barang yang dia bawa (`destroy`) — kalau tidak, gedung penuh sampah yang menumpuk diam-diam (memory leak).
+
+Buat kamu yang datang dari React/Vue, mental model-nya gampang: action ≈ **custom hook React yang memakai `ref` + `useEffect`** (setup di body, cleanup di return), atau ≈ **custom directive Vue** (`v-tooltip`). Bedanya, action di Svelte jauh lebih ringan — cuma fungsi biasa, tanpa boilerplate.
+
+> **Fakta penting:** Modul `svelte/action` **tidak mengekspor satu pun nilai runtime**. Action ditulis sebagai fungsi JavaScript biasa. Yang kamu impor dari `svelte/action` hanyalah dua **tipe TypeScript** — `Action` dan `ActionReturn` — supaya fungsimu type-safe. Itulah kenapa import-nya selalu `import type { ... }`.
+
+Satu hal yang sering bikin pengguna baru salah paham: **`update` hanya bereaksi pada parameter yang kamu oper ke `use:`**, bukan pada state lain yang kebetulan kamu baca di dalam body action. Action *bukan* `$effect`. Kalau action-mu membaca beberapa potong state reaktif dan ingin re-run saat salah satunya berubah, action klasik tidak otomatis melakukannya — di situlah penerus modernnya, **attachments**, masuk (lihat bagian Ringkasan API).
+
+## 2. Contoh kode
+
+```ts
+// tooltip.ts — Action lengkap dengan tipe dari svelte/action
+import type { Action } from 'svelte/action';
+
+// Action<Element, Parameter>. Di sini elemen apa pun (HTMLElement),
+// parameter berupa string teks tooltip.
+export const tooltip: Action<HTMLElement, string> = (node, text) => {
+	let tip: HTMLDivElement | null = null;
+
+	const show = () => {
+		tip = document.createElement('div');
+		tip.className = 'tip';
+		tip.textContent = text; // membaca variabel `text` terkini lewat closure
+		document.body.appendChild(tip);
+	};
+	const hide = () => {
+		tip?.remove();
+		tip = null;
+	};
+
+	node.addEventListener('mouseenter', show);
+	node.addEventListener('mouseleave', hide);
+
+	return {
+		// dipanggil saat PARAMETER (text) berubah, mis. use:tooltip={pesanBaru}
+		update(next) {
+			text = next;
+			if (tip) tip.textContent = text;
+		},
+		// dipanggil saat elemen dilepas dari DOM — WAJIB bersih-bersih!
+		destroy() {
+			hide();
+			node.removeEventListener('mouseenter', show);
+			node.removeEventListener('mouseleave', hide);
+		}
+	};
+};
+// Pemakaian: <button use:tooltip={'Halo'}>Hover aku</button>
+```
+
+Action juga bisa **memancarkan event kustom** dan memberi tahu TypeScript tentang atribut/event baru itu lewat generic ketiga, `Attributes`:
+
+```ts
+// longpress.ts — parameter berupa objek, plus event kustom yang diketik
+import type { Action } from 'svelte/action';
+
+// Generic ketiga mendeklarasikan atribut/event tambahan yang diaktifkan action ini.
+// Di Svelte 5, listener event kustom ditulis sebagai atribut on<nama> (mis. onlongpress).
+type LongpressAttrs = {
+	onlongpress?: (e: CustomEvent<number>) => void;
+};
+
+export const longpress: Action<HTMLElement, { delay: number }, LongpressAttrs> = (
+	node,
+	{ delay }
+) => {
+	let timer: ReturnType<typeof setTimeout>;
+	let current = delay;
+
+	const down = () => {
+		timer = setTimeout(() => {
+			// dispatch CustomEvent; ditangkap oleh atribut onlongpress
+			node.dispatchEvent(new CustomEvent('longpress', { detail: current }));
+		}, current);
+	};
+	const up = () => clearTimeout(timer);
+
+	node.addEventListener('pointerdown', down);
+	node.addEventListener('pointerup', up);
+	node.addEventListener('pointerleave', up);
+
+	return {
+		update(param) {
+			current = param.delay; // parameter berubah → sesuaikan
+		},
+		destroy() {
+			clearTimeout(timer);
+			node.removeEventListener('pointerdown', down);
+			node.removeEventListener('pointerup', up);
+			node.removeEventListener('pointerleave', up);
+		}
+	};
+};
+// Pemakaian (type-safe berkat LongpressAttrs):
+// <button use:longpress={{ delay: 500 }} onlongpress={(e) => alert(e.detail)}>Tahan</button>
+```
+
+Untuk kode baru, padanan **modern** dari pola di atas adalah **attachment** (`{@attach ...}`) — reaktif penuh, jadi tak perlu `update` manual:
+
+```svelte
+<script lang="ts">
+	import type { Attachment } from 'svelte/attachments';
+
+	// Attachment = (element) => cleanup?. Factory di luar mengikat parameter.
+	function tooltip(teks: string): Attachment {
+		return (node) => {
+			const tip = document.createElement('div');
+			tip.textContent = teks;
+			// ... setup listener / append ...
+			return () => {
+				// cleanup: dipanggil sebelum re-run ATAU saat node dilepas
+				tip.remove();
+			};
+		};
+	}
+
+	let pesan = $state('Halo');
+</script>
+
+<!-- {@attach tooltip(pesan)} otomatis JALAN ULANG saat `pesan` berubah. -->
+<button {@attach tooltip(pesan)}>Hover</button>
+```
+
+## 3. Coba sendiri
+
+Playground ini memakai tiga action dalam satu komponen mandiri, supaya kamu melihat ketiga fase hidup action sekaligus:
+
+- `autofocus` — action **tanpa parameter**; cuma memanggil `node.focus()` saat elemen muncul (tak butuh `update`/`destroy`).
+- `tooltip` — action **dengan parameter**; coba ubah teks di input, lalu hover tombolnya — `update()` menyalin teks baru.
+- centang/hapus tombol kedua untuk memicu `destroy()` — perhatikan listener-nya dibersihkan saat elemen dilepas.
+
+```svelte
+<script>
+	let pesan = $state('Halo, aku tooltip!');
+	let tampilTombolKedua = $state(true);
+
+	// ACTION tanpa parameter: fokus otomatis saat elemen lahir.
+	function autofocus(node) {
+		node.focus();
+		// tidak mengembalikan apa-apa: tak perlu update/destroy
+	}
+
+	// ACTION dengan parameter: tooltip yang muncul saat hover.
+	function tooltip(node, teks) {
+		let tip = null;
+		function show() {
+			tip = document.createElement('div');
+			tip.textContent = teks;
+			tip.style.position = 'fixed';
+			tip.style.background = '#1f2937';
+			tip.style.color = 'white';
+			tip.style.padding = '4px 8px';
+			tip.style.borderRadius = '6px';
+			tip.style.fontSize = '12px';
+			tip.style.pointerEvents = 'none';
+			tip.style.zIndex = '50';
+			const r = node.getBoundingClientRect();
+			tip.style.left = r.left + 'px';
+			tip.style.top = (r.bottom + 6) + 'px';
+			document.body.appendChild(tip);
+		}
+		function hide() {
+			if (tip) { tip.remove(); tip = null; }
+		}
+		node.addEventListener('mouseenter', show);
+		node.addEventListener('mouseleave', hide);
+		return {
+			update(teksBaru) {
+				teks = teksBaru;                 // dipakai saat show() berikutnya
+				if (tip) tip.textContent = teks; // dan saat tooltip sedang tampil
+			},
+			destroy() {
+				hide();
+				node.removeEventListener('mouseenter', show);
+				node.removeEventListener('mouseleave', hide);
+			}
+		};
+	}
+</script>
+
+<p>1. Aku auto-fokus saat muncul:</p>
+<input use:autofocus placeholder="fokus otomatis" />
+
+<p>2. Ubah teks tooltip, lalu hover tombol:</p>
+<input bind:value={pesan} />
+<button use:tooltip={pesan}>Hover aku (update)</button>
+
+<p>
+	<label>
+		<input type="checkbox" bind:checked={tampilTombolKedua} />
+		tampilkan tombol kedua (uncheck = memicu destroy)
+	</label>
+</p>
+
+{#if tampilTombolKedua}
+	<button use:tooltip={'Aku akan di-destroy saat dilepas'}>Hover aku juga</button>
+{/if}
+```
+
+## 4. Ringkasan API
+
+`svelte/action` adalah modul **type-only**: tidak ada ekspor runtime, hanya dua interface untuk mengetik fungsi action-mu. Karena itu impornya selalu `import type { Action, ActionReturn } from 'svelte/action'`.
+
+### Tipe yang diekspor
+
+| Tipe | Generic | Guna |
+| --- | --- | --- |
+| `Action<Element, Parameter, Attributes>` | `Element` (default `HTMLElement`), `Parameter` (default `undefined`), `Attributes` (default kosong) | Mengetik fungsi action: jenis elemen target, tipe parameter, dan atribut/event tambahan yang diaktifkan. |
+| `ActionReturn<Parameter, Attributes>` | `Parameter`, `Attributes` | Mengetik nilai kembalian action (objek `{ update?, destroy? }`). Jarang ditulis manual — biasanya tersimpulkan otomatis dari `Action`. |
+
+### Tanda tangan lengkap
+
+```ts
+interface Action<
+	Element = HTMLElement,
+	Parameter = undefined,
+	Attributes extends Record<string, any> = Record<never, any>
+> {
+	<Node extends Element>(
+		...args: undefined extends Parameter
+			? [node: Node, parameter?: Parameter] // parameter OPSIONAL jika boleh undefined
+			: [node: Node, parameter: Parameter] // parameter WAJIB jika tidak
+	): void | ActionReturn<Parameter, Attributes>;
+}
+
+interface ActionReturn<
+	Parameter = undefined,
+	Attributes extends Record<string, any> = Record<never, any>
+> {
+	update?: (parameter: Parameter) => void; // dipanggil saat parameter berubah
+	destroy?: () => void; // dipanggil saat elemen dilepas
+}
+```
+
+Tiga generic `Action`, dijelaskan:
+
+| Posisi | Nama | Arti | Contoh |
+| --- | --- | --- | --- |
+| 1 | `Element` | Jenis elemen tempat action boleh dipasang. Membatasi `use:` ke elemen yang cocok. | `HTMLDivElement`, `HTMLInputElement`, `HTMLElement` |
+| 2 | `Parameter` | Tipe nilai yang dioper lewat `use:action={...}`. Jika menyertakan `undefined`, parameternya jadi opsional. | `string`, `{ delay: number }`, `undefined` |
+| 3 | `Attributes` | Atribut/event tambahan yang action aktifkan, agar markup `use:` tetap type-safe. | `{ onlongpress?: (e: CustomEvent<number>) => void }` |
+
+Catatan tentang `ActionReturn`:
+
+| Field | Tanda tangan | Kapan dipanggil |
+| --- | --- | --- |
+| `update` | `(parameter: Parameter) => void` | Setelah markup di-update karena **nilai parameter** yang dioper ke `use:` berubah. Tidak terpicu oleh perubahan state lain. |
+| `destroy` | `() => void` | Setelah elemen dilepas dari DOM. Tempat wajib untuk cleanup. |
+
+### Penerus modern: `svelte/attachments`
+
+Dokumentasi resmi menyatakan attachments **menggantikan** action untuk kode baru. Action tetap didukung penuh (tidak deprecated), tapi attachment lebih fleksibel: reaktif penuh, bisa dipasang di komponen, dan bisa di-spread.
+
+| Export | Jenis | Tanda tangan / bentuk | Guna |
+| --- | --- | --- | --- |
+| `Attachment` | type | `type Attachment<T extends EventTarget = Element> = (element: T) => void \| (() => void)` | Mengetik sebuah attachment: fungsi yang menerima elemen dan opsional mengembalikan fungsi cleanup. |
+| `fromAction` | fungsi | `fromAction(action, getParameter?) => Attachment` | Membungkus action lama menjadi attachment — berguna saat mengadopsi library berbasis action. |
+| `createAttachmentKey` | fungsi | `createAttachmentKey() => symbol` | Membuat key untuk menempelkan attachment ke objek props (mis. agar attachment ikut ter-spread ke elemen). |
+
+Perbedaan inti dalam satu kalimat: **action** punya `update`/`destroy` yang kamu kelola manual dan hanya bereaksi pada parameter; **attachment** otomatis dijalankan ulang saat *nilai reaktif apa pun yang dibacanya* berubah, dengan cleanup lewat fungsi yang dikembalikan.
+
+<LegacyVsModern rows={[
+	{ legacy: "import type { Action } from 'svelte/action'", modern: "import type { Attachment } from 'svelte/attachments'", note: 'Action tetap valid; attachment direkomendasikan untuk kode baru.' },
+	{ legacy: 'use:tooltip={pesan}', modern: '{@attach tooltip(pesan)}', note: 'Directive use: vs directive @attach.' },
+	{ legacy: 'return { update, destroy }', modern: 'return () => cleanup', note: 'Attachment cukup kembalikan satu fungsi cleanup; re-run otomatis.' },
+	{ legacy: 'update() saat parameter berubah', modern: 'jalan ulang saat state apa pun yang dibaca berubah', note: 'Attachment reaktif penuh, action tidak.' }
+]} />
+
+## 5. Latihan
+
+<Exercise title="Action clickOutside untuk menutup dropdown">
+
+Buat satu komponen `.svelte` berisi action bernama `clickOutside`:
+
+1. Saat ada klik **di luar** elemen yang memakai action ini, action memancarkan event kustom `outclick` (lewat `node.dispatchEvent(new CustomEvent('outclick'))`).
+2. Ketik action-nya dengan `Action` dari `svelte/action`. Tanpa parameter, tapi deklarasikan event `onoutclick` lewat generic ketiga `Attributes` agar markup type-safe.
+3. Pakai untuk menutup sebuah menu dropdown: tombol "Buka menu" menampilkan menu; klik di mana pun di luar menu menutupnya kembali.
+
+Petunjuk: pasang listener `click` di `document` (bukan di `node`) agar bisa menangkap klik di seluruh halaman, lalu cek `node.contains(event.target)`. Jangan lupa `destroy()` untuk melepas listener itu.
+
+{#snippet solution()}
+
+```svelte
+<script lang="ts">
+	import type { Action } from 'svelte/action';
+
+	// Generic ketiga: deklarasikan event onoutclick agar markup type-safe.
+	type OutAttrs = { onoutclick?: (e: CustomEvent) => void };
+
+	// Tanpa parameter → Parameter = undefined, jadi use:clickOutside tanpa nilai.
+	const clickOutside: Action<HTMLElement, undefined, OutAttrs> = (node) => {
+		function handle(event: MouseEvent) {
+			// klik di luar node? pancarkan event.
+			if (!node.contains(event.target as Node)) {
+				node.dispatchEvent(new CustomEvent('outclick'));
+			}
+		}
+		// capture = true agar handler jalan SEBELUM handler lain (urutan deterministik)
+		document.addEventListener('click', handle, true);
+
+		return {
+			destroy() {
+				document.removeEventListener('click', handle, true);
+			}
+		};
+	};
+
+	let buka = $state(false);
+</script>
+
+<button onclick={() => (buka = true)}>Buka menu</button>
+
+{#if buka}
+	<div use:clickOutside onoutclick={() => (buka = false)} class="menu">
+		Aku menu. Klik di luar sini untuk menutup.
+	</div>
+{/if}
+
+<style>
+	.menu {
+		margin-top: 8px;
+		padding: 12px;
+		border: 1px solid #ccc;
+		border-radius: 8px;
+		max-width: 240px;
+	}
+</style>
+```
+
+Kuncinya ada di tiga keputusan: (1) listener dipasang di `document`, bukan `node`, supaya klik di sudut mana pun halaman tertangkap; (2) `node.contains(event.target)` membedakan "di dalam" vs "di luar"; (3) `capture = true` membuat handler berjalan di fase capture sehingga klik yang *membuka* menu (terjadi sebelum action ter-mount) tidak langsung menutupnya kembali. Action tanpa parameter cukup diketik `Action<HTMLElement, undefined, OutAttrs>` dan dipasang `use:clickOutside` tanpa nilai. Versi modernnya bisa ditulis sebagai attachment, tapi sebagai latihan tipe `Action`, pola di atas sudah ideal.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Lupa membersihkan di <code>destroy()</code> adalah bug action paling umum. Setiap <code>addEventListener</code>, <code>setInterval</code>, observer, atau instance library yang kamu buat di action <strong>wajib</strong> dilepas/di-destroy di <code>destroy()</code>. Action bisa lahir dan mati berkali-kali (mis. item di dalam <code>&#123;#each&#125;</code> yang berubah), dan listener yang tertinggal menumpuk diam-diam jadi memory leak yang sulit dilacak.
+</Callout>
+
+<Callout type="warning">
+Action <strong>hanya berjalan di browser</strong>, tidak saat SSR — <code>node</code> baru ada setelah elemen ter-mount di klien. Aman menyentuh DOM, <code>window</code>, atau <code>document</code> di dalam action karena pasti dijalankan di sisi klien. Tapi jangan mengandalkan action untuk menghasilkan markup awal: pada render server, body action belum pernah dipanggil.
+</Callout>
+
+<Callout type="tip">
+<code>update</code> hanya terpicu saat <strong>nilai parameter</strong> yang dioper ke <code>use:action=&#123;...&#125;</code> berubah — bukan state reaktif lain yang kebetulan dibaca di dalam action. Kalau action-mu perlu bereaksi terhadap beberapa potong state sekaligus, jangan paksakan lewat <code>update</code>; pakai <strong>attachment</strong> (<code>&#123;@attach&#125;</code>) yang reaktif penuh, atau bungkus semua nilai itu jadi satu objek parameter sehingga perubahan apa pun memicu <code>update</code>.
+</Callout>
+
+<Callout type="tip">
+Untuk memasang listener di dalam action, <code>on(target, type, handler, options)</code> dari <code>svelte/events</code> praktis: ia mengembalikan fungsi pelepas, jadi <code>destroy()</code> tinggal memanggilnya — tak perlu menulis pasangan <code>addEventListener</code>/<code>removeEventListener</code> yang gampang lupa disinkronkan.
+</Callout>
+
+<Callout type="legacy">
+Untuk kode baru, pertimbangkan <strong>attachments</strong> (<code>&#123;@attach&#125;</code> + tipe <code>Attachment</code> dari <code>svelte/attachments</code>) sebagai ganti action. Dokumentasi resmi menyebut attachments menggantikan action. Action <em>tidak</em> deprecated dan masih sempurna untuk kasus sederhana, tapi attachment menang dalam reaktivitas (jalan ulang saat state apa pun berubah), bisa dipasang di komponen, dan bisa di-spread. Punya library lama berbasis action? Bungkus dengan <code>fromAction</code> dari <code>svelte/attachments</code>.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-action" label="svelte/action — tipe Action & ActionReturn" />
+<DocsLink href="https://svelte.dev/docs/svelte/use" label="Directive use: — cara memasang action" />
+<DocsLink href="https://svelte.dev/docs/svelte/@attach" label="@attach — attachments, penerus modern action" />

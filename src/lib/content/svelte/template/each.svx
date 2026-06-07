@@ -1,0 +1,319 @@
+---
+title: "{#each ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 3
+status: stable
+description: Merender list di markup dengan blok each — keyed vs unkeyed, index, destructuring, blok kosong :else, serta iterasi Map dan Set.
+docs: https://svelte.dev/docs/svelte/each
+keywords: [each, list, keyed, destructuring, map-set, index]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Hampir setiap UI nyata adalah daftar: daftar produk, komentar, baris tabel, item keranjang. Pertanyaannya selalu sama — "punya array, mau jadi banyak elemen DOM". Di React jawabannya `items.map(...)`, di Vue `v-for`, dan di Svelte jawabannya blok `{#each}`.
+
+Bentuk lengkapnya begini:
+
+```svelte
+{#each list as item, i (key)}
+	...markup per item...
+{/each}
+```
+
+Empat bagian, dan tiga di antaranya opsional:
+
+- `list` — sumber datanya. Boleh array, boleh "array-like" (apa pun yang punya properti `length`), boleh iterable seperti `Map` dan `Set`. Di balik layar Svelte memanggil `Array.from(list)`, jadi apa pun yang bisa di-`Array.from` bisa kamu iterasi. Kalau nilainya `null` atau `undefined`, Svelte memperlakukannya sebagai array kosong (tidak error).
+- `item` — variabel untuk elemen saat ini di setiap putaran.
+- `i` — **index** (posisi, mulai dari 0). Opsional.
+- `(key)` — **identitas unik** tiap item di dalam tanda kurung. Opsional secara sintaks, tapi hampir selalu wajib dalam praktik. Bagian inilah yang paling penting untuk dipahami.
+
+### Mengapa `key` itu inti dari segalanya
+
+Ini bagian yang sering disalahpahami, padahal menentukan benar/tidaknya UI-mu. Bayangkan blok `{#each}` sebagai sebuah **bioskop**. Setiap item data adalah seorang penonton, dan setiap elemen `<li>` adalah sebuah kursi fisik di ruangan.
+
+Saat list berubah, Svelte harus memutuskan: kursi mana yang dipakai ulang, mana yang dibongkar, mana yang dibuat baru. Ada dua cara melacaknya:
+
+**Tanpa key (unkeyed)** — Svelte melacak berdasarkan **nomor kursi (posisi)**. Item ke-0 selalu memakai kursi pertama, item ke-1 kursi kedua, dan seterusnya. Kalau penonton di tengah pulang, semua orang di belakangnya bergeser maju satu kursi. Dari sudut pandang Svelte, "kursi" tidak pernah kosong — yang berubah hanya *isi* tiap kursi. Jadi Svelte tidak menghapus satu baris; ia menulis ulang teks di banyak baris sekaligus.
+
+**Dengan key (keyed)** — setiap penonton memakai **tanda pengenal (key)**, misalnya `item.id`. Svelte melacak orang lewat tanda itu, bukan lewat kursinya. Kalau orang ber-`id` 7 pulang, Svelte tahu persis: bongkar SATU kursi miliknya, biarkan yang lain utuh di tempatnya.
+
+Kelihatannya sepele, tapi konsekuensinya besar untuk apa pun yang punya **state lokal di dalam baris**: fokus input, teks yang sedang diketik, posisi scroll, animasi transisi, atau state internal komponen anak. Tanpa key, hapus satu item dari tengah bisa membuat teks yang kamu ketik di baris ke-3 "nyangkut" pindah ke baris ke-2, karena Svelte mengira kursinya sama dan hanya menukar teksnya. Dengan key, DOM yang benar ikut terbongkar bersama itemnya.
+
+Aturan praktisnya: **list yang isinya bisa berubah (tambah/hapus/urut ulang) selalu pakai key.** Untuk list yang murni statis (render sekali, tak pernah berubah), key boleh dilewati — tapi memberinya pun tidak salah.
+
+### Key harus stabil dan unik
+
+Key yang bagus itu **melekat pada datanya**, bukan pada posisinya. `item.id` dari database adalah kandidat sempurna. Jangan pakai `i` (index) sebagai key — itu sama saja seperti tidak punya key, karena index ikut bergeser begitu list berubah. Svelte juga membandingkan key secara identitas; gunakan key bertipe string atau number agar tetap cocok meski objek datanya diganti dengan objek baru yang isinya sama. Key yang duplikat akan memicu error runtime — memang disengaja, supaya bug-nya ketahuan sejak awal.
+
+## 2. Contoh kode
+
+Mari kita lihat bentuk-bentuk `{#each}` dari yang paling umum sampai yang jarang dipakai.
+
+```svelte
+<script>
+	let fruits = $state([
+		{ id: 1, name: 'Apel' },
+		{ id: 2, name: 'Mangga' },
+		{ id: 3, name: 'Pisang' }
+	]);
+</script>
+
+<ul>
+	<!--
+		Pola paling lengkap & paling sering dipakai:
+		  list   = fruits
+		  item   = fruit
+		  index  = i (opsional; di sini dipakai untuk penomoran)
+		  (key)  = fruit.id (identitas stabil per item)
+	-->
+	{#each fruits as fruit, i (fruit.id)}
+		<li>{i + 1}. {fruit.name}</li>
+	{/each}
+</ul>
+```
+
+Blok `{#each}` punya cabang `{:else}` yang muncul **hanya saat list kosong** — pengganti rapi untuk pola `{#if list.length === 0}` yang manual:
+
+```svelte
+<script>
+	let todos = $state([]);
+</script>
+
+{#each todos as todo (todo.id)}
+	<p>{todo.text}</p>
+{:else}
+	<!-- Tampil hanya ketika `todos` kosong (length 0) -->
+	<p>Tidak ada tugas hari ini.</p>
+{/each}
+```
+
+**Destructuring** langsung di `as` membuat markup lebih bersih — sama seperti destructuring parameter fungsi. Rest pattern (`...rest`) juga didukung, baik untuk objek maupun array (mis. saat mengiterasi `Object.entries` atau pasangan koordinat):
+
+```svelte
+<script>
+	let users = $state([
+		{ id: 1, name: 'Sari', role: 'admin' },
+		{ id: 2, name: 'Budi', role: 'editor' }
+	]);
+</script>
+
+<ul>
+	<!-- Destructure { name, role } langsung; index tetap bisa ditaruh setelahnya -->
+	{#each users as { id, name, role }, i (id)}
+		<li>{i + 1}. {name} — {role}</li>
+	{/each}
+</ul>
+```
+
+Kadang kamu **tidak butuh variabel item** sama sekali, hanya mau mengulang N kali (mis. membuat skeleton loader atau bintang rating). Boleh hilangkan `as`-nya:
+
+```svelte
+<!-- Ulang 5 kali tanpa peduli isinya; index masih bisa diakses -->
+{#each Array(5) as _, i}
+	<span>bintang ke-{i + 1}</span>
+{/each}
+
+<!-- Bahkan item-nya boleh dilewati total, ambil index saja -->
+{#each Array(3), i}
+	<div class="skeleton-row" data-row={i}></div>
+{/each}
+```
+
+Karena Svelte memakai `Array.from` di balik layar, `{#each}` jalan langsung di atas **`Map` dan `Set`**, bukan cuma array. Iterasi `Map` memberi pasangan `[key, value]` yang enak di-destructure:
+
+```svelte
+<script>
+	// Map: hitung jumlah pesanan per status
+	let perStatus = $state(
+		new Map([
+			['baru', 12],
+			['diproses', 5],
+			['selesai', 27]
+		])
+	);
+
+	// Set: nilai unik, otomatis tanpa duplikat
+	let tags = $state(new Set(['svelte', 'kit', 'runes']));
+</script>
+
+<!-- Tiap entri Map adalah [key, value] -> destructure jadi [status, jumlah] -->
+{#each perStatus as [status, jumlah] (status)}
+	<p>{status}: {jumlah}</p>
+{/each}
+
+<ul>
+	{#each tags as tag (tag)}
+		<li>#{tag}</li>
+	{/each}
+</ul>
+```
+
+## 3. Coba sendiri
+
+Demo di bawah membuktikan kenapa key itu penting. Setiap baris punya `<input>` tak-terkontrol (uncontrolled). **Ketik sesuatu di beberapa input, lalu klik "Acak urutan" atau hapus item dari tengah.** Karena `{#each}` di sini *keyed* (`(item.id)`), teks yang kamu ketik tetap menempel pada baris yang benar — DOM-nya ikut berpindah bersama itemnya, bukan tertinggal di posisinya.
+
+<Playground code={`<script>
+	let items = $state([
+		{ id: 1, name: 'Kopi' },
+		{ id: 2, name: 'Gula' },
+		{ id: 3, name: 'Susu' }
+	]);
+	let nextId = 4;
+	function tambah() {
+		// push() langsung berfungsi berkat deep reactivity $state
+		items.push({ id: nextId, name: 'Item ' + nextId });
+		nextId++;
+	}
+	function hapus(id) {
+		items = items.filter((it) => it.id !== id);
+	}
+	function acak() {
+		items = [...items].sort(() => Math.random() - 0.5);
+	}
+</script>
+<h3>Keranjang (keyed by id)</h3>
+<ul>
+	{#each items as item, i (item.id)}
+		<li>
+			{i + 1}. {item.name}
+			<input placeholder={'catatan untuk ' + item.name} />
+			<button onclick={() => hapus(item.id)}>hapus</button>
+		</li>
+	{:else}
+		<li>Keranjang kosong.</li>
+	{/each}
+</ul>
+<button onclick={tambah}>+ Tambah</button>
+<button onclick={acak}>Acak urutan</button>
+<p style="color:gray">Coba: ketik di beberapa input, lalu Acak / hapus tengah.</p>`} />
+
+<Callout type="tip">
+Mau lihat sisi buruknya? Hapus <code>(item.id)</code> dari blok itu sehingga jadi unkeyed. Ketik di input, lalu acak urutan — teksnya akan "ketinggalan" di posisi lama karena Svelte melacak per kursi, bukan per item. Inilah bug yang dicegah oleh key.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="List rendering"
+	svelte={`<script>
+	let { fruits } = $props();
+</script>
+<ul>
+	{#each fruits as fruit, i (fruit.id)}
+		<li>{i + 1}. {fruit.name}</li>
+	{/each}
+</ul>`}
+	react={`function Fruits({ fruits }) {
+	return (
+		<ul>
+			{fruits.map((fruit, i) => (
+				<li key={fruit.id}>
+					{i + 1}. {fruit.name}
+				</li>
+			))}
+		</ul>
+	);
+}`}
+	vue={`<script setup>
+defineProps(['fruits']);
+</script>
+<template>
+	<ul>
+		<li
+			v-for="(fruit, i) in fruits"
+			:key="fruit.id"
+		>
+			{{ i + 1 }}. {{ fruit.name }}
+		</li>
+	</ul>
+</template>`}
+	diff={{ svelte: [6], react: [5], vue: [9] }}
+	note="React: list = pemanggilan `.map()` biasa, dan `key` ditaruh sebagai prop di elemen teratas hasil map — fleksibel tapi gampang lupa. Vue: direktif `v-for` dengan `:key` sebagai atribut. Svelte: blok `&#123;#each list as item, i (key)&#125;` dengan key eksplisit di dalam tanda kurung, jadi sulit terlewat secara visual. Ketiganya menyarankan key unik & stabil; perbedaannya cuma di mana key ditulis."
+/>
+
+<Callout type="tip">
+Perbedaan filosofisnya: di React, list rendering hanyalah JavaScript (<code>.map()</code>) — kamu bisa <code>.filter().sort().map()</code> sebebas-bebasnya, tapi <code>key</code> mudah terlupa karena cuma sebuah prop. Di Svelte, key adalah bagian sintaks blok yang menonjol di dalam <code>( )</code>. Tidak ada yang lebih benar; ini soal selera struktur eksplisit vs ekspresi JS bebas.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Papan peringkat (leaderboard) + ringkasan per role">
+Buat komponen dengan array `peserta` berisi objek `&#123; id, nama, skor, role &#125;`. Kerjakan:
+
+1. Render papan peringkat dengan `&#123;#each&#125;` yang **keyed by `id`**, **destructure** `&#123; nama, skor &#125;` langsung di `as`, dan tampilkan **peringkat** dari index (`i + 1`).
+2. Tambahkan cabang `&#123;:else&#125;` bertuliskan "Belum ada peserta" untuk kondisi array kosong.
+3. Bonus: bangun sebuah `Map` `role -> jumlah` dari `peserta`, lalu render ringkasannya dengan `&#123;#each&#125;` di atas `Map` tersebut (destructure `[role, jumlah]`).
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let peserta = $state([
+		{ id: 'a1', nama: 'Sari', skor: 92, role: 'admin' },
+		{ id: 'b2', nama: 'Budi', skor: 78, role: 'editor' },
+		{ id: 'c3', nama: 'Cita', skor: 85, role: 'editor' }
+	]);
+
+	// Bangun Map role -> jumlah secara reaktif
+	let perRole = $derived.by(() => {
+		const m = new Map();
+		for (const p of peserta) {
+			m.set(p.role, (m.get(p.role) ?? 0) + 1);
+		}
+		return m;
+	});
+</script>
+
+<h3>Papan peringkat</h3>
+<ol>
+	<!-- keyed by id + destructure { nama, skor } + peringkat dari index -->
+	{#each peserta as { nama, skor }, i (id)}
+		<li>#{i + 1} — {nama} ({skor} poin)</li>
+	{:else}
+		<li>Belum ada peserta</li>
+	{/each}
+</ol>
+
+<h3>Ringkasan per role</h3>
+<!-- Iterasi Map: tiap entri adalah [role, jumlah] -->
+{#each perRole as [role, jumlah] (role)}
+	<p>{role}: {jumlah} orang</p>
+{/each}
+```
+
+Catatan: di blok pertama, key `(id)` mengacu ke `peserta[i].id`. Karena kita men-destructure `&#123; nama, skor &#125;` tapi tidak mengambil `id` sebagai variabel, kita tetap boleh memakainya di posisi key — Svelte mengevaluasi ekspresi key terhadap item asli, bukan terhadap hasil destructure. Kalau ragu, ambil saja `id` ikut di-destructure: `as &#123; id, nama, skor &#125;, i (id)`.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan pakai index sebagai key.</strong> Menulis <code>&#123;#each items as item, i (i)&#125;</code> sama persis dengan tidak memberi key sama sekali, karena <code>i</code> ikut bergeser saat item disisipkan/dihapus/diurut. Akibatnya state per-baris (fokus, input, transisi) bisa nyangkut ke item yang salah. Pakai ID yang melekat pada data, mis. <code>(item.id)</code>.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Key harus unik di dalam satu blok.</strong> Dua item dengan key sama (mis. dua objek ber-<code>id</code> 5) memicu error runtime <em>"keyed each duplicate key"</em>. Ini fitur, bukan bug — ia menangkap data ganda lebih awal. Kalau datamu memang bisa punya nilai sama, gabungkan jadi key komposit yang unik, mis. <code>(item.kategori + '-' + item.id)</code>.
+</Callout>
+
+<Callout type="tip">
+<strong><code>&#123;#each&#125;</code> bukan cuma untuk array.</strong> Apa pun yang "array-like" (punya <code>length</code>) atau iterable — <code>Map</code>, <code>Set</code>, <code>NodeList</code>, hasil <code>Array.from</code> — bisa diiterasi langsung, karena Svelte memanggil <code>Array.from(list)</code> di balik layar. Untuk objek biasa, iterasi <code>Object.entries(obj)</code> dan destructure <code>[key, value]</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Mengubah list: mutasi vs reassign sama-sama bisa.</strong> Karena <code>$state([])</code> punya deep reactivity, <code>items.push(...)</code> dan <code>items.splice(...)</code> langsung memicu update — beda dari Svelte 4 yang mewajibkan reassign. Tapi metode yang mengembalikan array baru (<code>filter</code>, <code>map</code>, <code>sort</code> di atas salinan) tetap perlu kamu tetapkan balik: <code>items = items.filter(...)</code>. Keduanya valid; pilih yang paling jelas dibaca.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/each" label="Blok &#123;#each&#125; — dokumentasi resmi Svelte" />

@@ -1,0 +1,291 @@
+---
+title: Server-only modules
+product: kit
+section: advanced
+sectionTitle: Advanced
+sectionOrder: 4
+order: 6
+status: stable
+description: Mencegah kode dan rahasia server bocor ke browser lewat $lib/server, file *.server.js, dan $env/*/private — dijaga oleh bundler, bukan sekadar konvensi.
+docs: https://svelte.dev/docs/kit/server-only-modules
+keywords: [server-only, $lib/server, env, private, secrets, bundler]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Di SvelteKit, satu file komponen yang sama bisa berjalan di **dua dunia**: di server (saat SSR/render awal) dan di browser (saat hydrate dan navigasi berikutnya). Itu nyaman — tapi juga berbahaya. Kalau kamu menulis `import { DB_PASSWORD } from '$env/static/private'` di tempat yang salah, password databasemu bisa ikut ter-*bundle* ke JavaScript yang dikirim ke pengunjung. Mereka tinggal buka DevTools, dan rahasiamu telanjang.
+
+Server-only modules adalah mekanisme SvelteKit untuk **memasang tembok** antara kode yang "boleh dilihat klien" dan kode yang "haram dilihat klien". Yang membuatnya beda dari framework lain: tembok ini **ditegakkan oleh bundler saat build**, bukan cuma konvensi penamaan folder yang kamu harap-harap tidak dilanggar.
+
+### Analogi: dapur restoran dengan pintu satu arah
+
+Bayangkan restoran. Ada **dapur** (server): di sana ada resep rahasia, brankas uang, dan nomor kartu kredit supplier. Ada **ruang makan** (browser): tempat pelanggan duduk. Di antaranya ada satu pintu ayun satu arah — pelayan boleh membawa **piring jadi** keluar ke pelanggan, tapi pelanggan tidak akan pernah boleh masuk dapur.
+
+Sekarang bagian pentingnya: SvelteKit tidak cuma memasang papan tulisan "DILARANG MASUK". Ia menaruh **satpam di pintu saat konstruksi gedung** (build time). Kalau ada satu saja jalur dari ruang makan yang nyambung ke dapur — bahkan lewat lorong berliku tujuh pintu — satpam itu menolak meresmikan gedung. Build **gagal total**, lengkap dengan peta jalur pelanggarannya. Lebih baik gagal keras sekarang daripada diam-diam membocorkan kunci brankas ke pelanggan nanti.
+
+Buat yang datang dari React/Vue: ini mirip semangat package `server-only` di Next.js (yang melempar error build kalau modul server keseret ke client bundle), atau folder `server/` di Nuxt. Bedanya, di SvelteKit aturannya menyatu ke dalam compiler/bundler resmi dan punya **dua trigger** sekaligus: berdasarkan **lokasi file** dan berdasarkan **nama file**.
+
+### Dua cara menandai "ini cuma boleh di dapur"
+
+1. **Berdasarkan lokasi** — apa pun di dalam `$lib/server`. Contoh: `src/lib/server/secrets.ts`, `src/lib/server/db/client.ts`. Seluruh subfolder ikut terkunci.
+2. **Berdasarkan nama file** — file dengan sisipan `.server` sebelum ekstensi. Contoh: `secrets.server.ts`, `analytics.server.js`. Ini berguna kalau kamu mau menaruh file server di samping file kliennya, di luar `$lib/server`.
+
+Ditambah dua modul bawaan yang otomatis server-only:
+
+- `$env/static/private` dan `$env/dynamic/private` — variabel lingkungan rahasia (lihat bagian Tips soal beda keduanya).
+- `$app/server` — berisi fungsi `read` untuk membaca aset dari filesystem; jelas hanya masuk akal di server.
+
+### Mengapa ini bukan sekadar tree-shaking
+
+Orang sering mengira "ah, kalau aku tidak benar-benar memakai nilainya, bundler kan akan membuangnya (tree-shaking)". **Jangan bergantung pada itu untuk keamanan.** Tree-shaking adalah optimasi *best-effort*: kalau ada efek samping, re-export tak terduga, atau pola dynamic import, rahasiamu bisa lolos. Server-only modules adalah **jaminan keras**, bukan optimasi. Tujuannya keamanan, jadi pelanggaran membuat build **gagal** — bukan diam-diam menghapus dan berharap.
+
+### Cara kerja sang satpam
+
+Bundler menelusuri **pohon import publik** milik kode klien. Mulai dari titik-titik yang pasti dikirim ke browser (komponen `.svelte`, `+page.ts`/`+layout.ts` yang *universal*, dsb.), ia mengikuti setiap `import` — langsung maupun tak langsung, berapa pun dalamnya. Begitu salah satu cabang menyentuh modul server-only, build berhenti dengan pesan seperti:
+
+```
+Cannot import $lib/server/secrets.ts into code that runs in the browser,
+as this could leak sensitive information.
+```
+
+Dan yang sangat membantu: pesannya **menelusuri rantai import**, menunjukkan A mengimpor B mengimpor C ... sampai ke modul server-only, walaupun di sepanjang jalan itu kamu cuma memakai export yang non-rahasia. Jadi kamu tahu persis pintu mana yang harus ditutup.
+
+<Callout type="tip">
+Aturan ini hanya memeriksa pohon import <strong>publik</strong> milik kode klien. File yang memang berjalan di server — <code>+page.server.ts</code>, <code>+layout.server.ts</code>, <code>+server.ts</code>, <code>hooks.server.ts</code> — <strong>bebas</strong> meng-import modul server-only. Yang dilarang adalah ketika sesuatu yang bisa berakhir di bundle browser menarik kode server. Pola yang benar: ambil rahasia di file server, lalu kirim hanya data aman ke klien lewat <code>return</code> dari <code>load</code>.
+</Callout>
+
+## 2. Contoh kode
+
+```ts
+// src/lib/server/secrets.ts
+// SERVER-ONLY karena LOKASI: ada di dalam $lib/server.
+// Aman menaruh kredensial di sini — bundler menolak import-nya dari kode klien.
+import { DB_PASSWORD, STRIPE_SECRET } from '$env/static/private'; // juga server-only
+
+export function getDbConfig() {
+	return { user: 'app', password: DB_PASSWORD };
+}
+
+export const stripeKey = STRIPE_SECRET;
+```
+
+```ts
+// src/routes/dashboard/+page.server.ts
+// SERVER-ONLY karena NAMA FILE (suffix .server).
+// File ini hanya jalan di server, jadi BEBAS import modul server-only.
+import { getDbConfig } from '$lib/server/secrets';
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async () => {
+	const cfg = getDbConfig();
+	// Kirim HANYA yang aman ke klien. JANGAN return cfg.password.
+	return { dbUser: cfg.user };
+};
+```
+
+```ts
+// src/routes/dashboard/+page.ts
+// load UNIVERSAL — kode ini BISA jalan di browser saat navigasi klien.
+// ❌ Baris di bawah akan MENGGAGALKAN build dengan pesan:
+//    "Cannot import $lib/server/secrets.ts into code that runs in the browser"
+// import { getDbConfig } from '$lib/server/secrets';
+
+// ✅ Tidak perlu apa-apa di sini. Data sudah datang dari +page.server.ts.
+//    Kalau butuh transform di sisi universal, lakukan pada `data`, bukan rahasianya.
+```
+
+Membaca aset dari filesystem? Pakai `read` dari `$app/server` (server-only by design):
+
+```ts
+// src/routes/og/+server.ts
+import { read } from '$app/server';
+import logo from '$lib/assets/logo.png';
+import type { RequestHandler } from './$types';
+
+// read() mengubah URL aset hasil bundling jadi Response yang bisa kamu olah.
+// Hanya tersedia di server — coba import dari komponen .svelte → build gagal.
+export const GET: RequestHandler = async () => {
+	const asset = read(logo);
+	const bytes = await asset.arrayBuffer();
+	return new Response(bytes, { headers: { 'content-type': 'image/png' } });
+};
+```
+
+Penjagaannya bahkan menangkap **dynamic import**, termasuk yang pola namanya di-interpolasi:
+
+```ts
+// src/lib/some-universal-util.ts (dipakai komponen .svelte)
+// ❌ Tetap ketahuan walau pakai await import dinamis & interpolasi string:
+async function load(name: string) {
+	const mod = await import(`./${name}.server.js`); // build gagal — terdeteksi
+	return mod.default;
+}
+```
+
+## 3. Coba sendiri
+
+Modul ini butuh proses build SvelteKit (bundler-lah yang menegakkan aturannya), jadi tidak ada live playground. Sebagai gantinya, mari telusuri **kebocoran paling sering terjadi**: lewat *barrel file* (file `index.ts` yang me-re-export banyak hal). Ini contoh statis beranotasi — perhatikan bagaimana rantai import membuat komponen klien diam-diam menyeret kode server.
+
+```ts
+// src/lib/server/mailer.ts  → server-only (lokasi)
+import { SMTP_PASSWORD } from '$env/static/private';
+export function sendEmail() {
+	/* ... pakai SMTP_PASSWORD ... */
+}
+```
+
+```ts
+// src/lib/utils/index.ts  → BUKAN server-only. Ini "barrel" yang dipakai di mana-mana.
+export { formatRupiah } from './format';   // aman, util murni
+export { sendEmail } from '$lib/server/mailer'; // 💣 menyeret kode server ke barrel
+```
+
+```svelte
+<!-- src/lib/components/PriceTag.svelte -->
+<script lang="ts">
+	// Komponen ini cuma butuh formatRupiah. Tapi karena meng-import dari barrel
+	// yang JUGA mengekspor sendEmail (server-only), seluruh rantai ikut tertarik.
+	import { formatRupiah } from '$lib/utils';
+	let { amount }: { amount: number } = $props();
+</script>
+
+<span>{formatRupiah(amount)}</span>
+```
+
+Hasil saat build:
+
+```
+Cannot import $lib/server/mailer.ts into code that runs in the browser,
+as this could leak sensitive information.
+
+  src/lib/components/PriceTag.svelte
+   └─ imports src/lib/utils/index.ts
+       └─ imports src/lib/server/mailer.ts   ← pelanggar
+```
+
+**Cara membaca & memperbaiki.** Pesan menunjukkan jalurnya: komponen → barrel → mailer. Perbaikannya bukan "matikan aturannya", melainkan **putus rantainya**:
+
+```ts
+// ✅ Perbaikan: jangan campur ekspor server & klien dalam satu barrel.
+// src/lib/utils/index.ts
+export { formatRupiah } from './format'; // hanya util murni
+
+// Konsumen server yang butuh sendEmail meng-import LANGSUNG dari sumbernya:
+// import { sendEmail } from '$lib/server/mailer';  ← hanya di file *.server.ts / +server.ts
+```
+
+<Callout type="tip">
+Kalau kamu sedang berburu kebocoran, ingat: yang dilihat bundler adalah <strong>import statis di puncak file</strong>, bukan apakah kamu "benar-benar memakai" nilainya. Memindahkan satu baris <code>export</code> server keluar dari barrel sering kali sudah menutup seluruh kebocoran.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Perbaiki kebocoran rahasia">
+
+Kamu punya halaman profil. Saat `npm run build`, muncul error:
+
+```
+Cannot import $lib/server/auth.ts into code that runs in the browser,
+as this could leak sensitive information.
+
+  src/routes/profile/+page.svelte
+   └─ imports src/routes/profile/+page.ts
+       └─ imports src/lib/server/auth.ts
+```
+
+Kode terkait:
+
+```ts
+// src/lib/server/auth.ts
+import { JWT_SECRET } from '$env/static/private';
+export function verifyToken(token: string) { /* pakai JWT_SECRET */ }
+export function maskEmail(email: string) {
+	const [u, d] = email.split('@');
+	return u[0] + '***@' + d;
+}
+```
+
+```ts
+// src/routes/profile/+page.ts  (UNIVERSAL)
+import { maskEmail } from '$lib/server/auth';
+export const load = ({ data }) => ({ display: maskEmail(data.email) });
+```
+
+`maskEmail` sebenarnya util murni (tidak menyentuh `JWT_SECRET`). Tapi karena ia satu file dengan `verifyToken`, meng-import-nya dari `+page.ts` universal menyeret `$lib/server/auth.ts` ke klien. Perbaiki tanpa menonaktifkan proteksi. Jelaskan kenapa.
+
+{#snippet solution()}
+
+Pisahkan util murni dari kode rahasia. `maskEmail` tidak punya alasan untuk tinggal di `$lib/server`.
+
+```ts
+// src/lib/format.ts  (BIASA — boleh dipakai klien)
+export function maskEmail(email: string) {
+	const [u, d] = email.split('@');
+	return u[0] + '***@' + d;
+}
+```
+
+```ts
+// src/lib/server/auth.ts  (tetap server-only; hanya yang benar-benar rahasia)
+import { JWT_SECRET } from '$env/static/private';
+export function verifyToken(token: string) { /* pakai JWT_SECRET */ }
+```
+
+```ts
+// src/routes/profile/+page.ts  (UNIVERSAL — sekarang aman)
+import { maskEmail } from '$lib/format';
+export const load = ({ data }) => ({ display: maskEmail(data.email) });
+```
+
+**Kenapa begini.** Bundler mengunci **seluruh modul** `$lib/server/auth.ts`, bukan per-fungsi. Selama `maskEmail` berada di file yang sama dengan `verifyToken` (yang menyentuh `JWT_SECRET`), meng-import salah satu fungsinya akan menarik seluruh file. Memindahkan util murni ke modul biasa (`$lib/format.ts`) memutus rantai: `+page.ts` universal kini hanya menyentuh kode aman, sementara `verifyToken` tetap dijaga di `$lib/server`. Aturan keamanannya utuh, error build hilang.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Barrel file adalah penyebab kebocoran nomor satu.</strong> File <code>index.ts</code> yang me-re-export modul server dan modul klien sekaligus akan menyeret kode server ke mana pun barrel itu diimpor. Pisahkan: simpan ekspor server di <code>$lib/server</code> dan import langsung dari sumbernya di file <code>*.server.ts</code>/<code>+server.ts</code>. Jangan mencampurnya dalam satu pintu masuk.
+</Callout>
+
+<Callout type="warning">
+<strong>Unit test TIDAK menangkap kebocoran ini.</strong> Vitest dkk. tidak membedakan kode server vs klien, jadi SvelteKit menonaktifkan deteksi import ilegal ketika <code>process.env.TEST === 'true'</code>. Artinya tes hijau <em>bukan</em> jaminan rahasiamu aman. Andalkan <code>npm run build</code> (atau CI yang menjalankan build) sebagai gerbang keamanan sebenarnya.
+</Callout>
+
+<Callout type="tip">
+<strong>Pahami beda <code>$env/static/private</code> vs <code>$env/dynamic/private</code>.</strong> Yang <code>static</code> di-<em>inline</em> saat build (tercatat di <code>.env</code>/environment ketika build), lebih cepat dan bisa di-tree-shake; cocok untuk nilai yang sudah pasti saat build. Yang <code>dynamic</code> dibaca dari <code>process.env</code> saat runtime; pakai ini bila nilainya baru diketahui ketika container/serverless dijalankan. Keduanya sama-sama server-only. Catatan: <code>$env/dynamic/private</code> bisa kosong di sebagian environment edge yang tak punya <code>process.env</code> per-request — cek adapter-mu.
+</Callout>
+
+<Callout type="warning">
+<strong>Awalan <code>PUBLIC_</code> menentukan apa yang boleh ke klien.</strong> Hanya variabel berawalan <code>PUBLIC_</code> yang bisa diakses lewat <code>$env/static/public</code> / <code>$env/dynamic/public</code> dan boleh masuk bundle browser. Jangan pernah menamai rahasia dengan <code>PUBLIC_</code> hanya supaya "gampang diakses" — kamu sedang membuka brankas. Rahasia = tanpa awalan + diakses lewat <code>$env/*/private</code>.
+</Callout>
+
+<Callout type="legacy">
+Pola lama yang masih sering tercecer: mengakses rahasia langsung di komponen atau <code>+page.ts</code> universal, atau mengandalkan tree-shaking agar "tidak ikut ter-bundle". Pola modern: taruh di <code>$lib/server/*</code> atau <code>*.server.ts</code>, ambil di file server (<code>+page.server.ts</code>), lalu kirim hanya data aman lewat <code>return load</code>. Dan ingat SvelteKit 2: <code>error()</code>/<code>redirect()</code> dipanggil <strong>tanpa</strong> <code>throw</code> di depannya.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Pola tidak aman / lama"
+	modernLabel="Pola server-only yang benar"
+	rows={[
+		{ legacy: "import { SECRET } from '$env/static/private' di +page.ts", modern: "import di $lib/server/*.ts, dipakai dari +page.server.ts", note: "universal load bisa jalan di browser — haram menyentuh rahasia" },
+		{ legacy: "barrel index.ts mencampur ekspor server & klien", modern: "ekspor server hanya di $lib/server, diimpor langsung", note: "barrel campuran menyeret kode server ke klien" },
+		{ legacy: "andalkan tree-shaking agar rahasia 'terbuang'", modern: "andalkan guard server-only (gagal build bila bocor)", note: "tree-shaking = optimasi, bukan jaminan keamanan" },
+		{ legacy: "rahasia di-return apa adanya dari load", modern: "return hanya data aman; rahasia tetap di server", note: "apa pun yang di-return load ikut ke klien" }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/server-only-modules" label="SvelteKit — Server-only modules (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/kit/$env-static-private" label="SvelteKit — $env/static/private" />
+
+<DocsLink href="https://svelte.dev/docs/kit/$env-dynamic-private" label="SvelteKit — $env/dynamic/private" />

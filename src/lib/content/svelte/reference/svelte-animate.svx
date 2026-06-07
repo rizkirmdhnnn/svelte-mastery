@@ -1,0 +1,285 @@
+---
+title: svelte/animate
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 3
+status: reference
+description: Modul svelte/animate dan fungsi flip untuk directive animate: — menganimasikan elemen yang berpindah posisi saat daftar berurutan diubah.
+docs: https://svelte.dev/docs/svelte/svelte-animate
+keywords: [animate, flip, FLIP, reorder, keyed each, animation]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Modul `svelte/animate` isinya kecil sekali — praktis cuma **satu fungsi**: `flip`. Tapi fungsi ini menjawab satu masalah animasi yang notabene paling sering bikin pusing: **bagaimana menganimasikan elemen yang tetap ada di DOM, tapi pindah posisi** karena urutan daftarnya berubah (di-sort, di-shuffle, satu item dihapus sehingga yang lain naik).
+
+Ini perlu dibedakan dari `svelte/transition`. Transition (`fade`, `fly`, dsb.) mengurus elemen yang **masuk atau keluar** DOM. Sedangkan `animate:` mengurus elemen yang **tetap ada tapi geser tempat duduk**. Dua hal berbeda, sering dipakai bareng.
+
+### Kenapa pindah posisi itu susah dianimasikan?
+
+Bayangkan daftar 5 kartu. Kamu klik "Urutkan", dan secara data kartu nomor 5 sekarang harus muncul di posisi 1. Apa yang dilakukan framework secara default? Ia langsung menaruh kartu itu di posisi barunya — **lompat**, tanpa gerak. Mata kita kehilangan jejak: "tadi yang di bawah, kok tiba-tiba di atas?" Animasi geser yang mulus menjaga **kontinuitas visual** — otak bisa mengikuti ke mana tiap item pergi.
+
+Masalahnya, menganimasikan posii layout (`top`/`left`) itu mahal dan bikin patah-patah, karena memicu *reflow* tiap frame. Di sinilah teknik **FLIP** masuk.
+
+### Analogi: bikin "gerak antara" dari dua foto
+
+Anggap kamu punya dua foto: **SEBELUM** (kartu di posisi lama) dan **SESUDAH** (kartu di posisi baru). Animator film akan menggambar frame-frame di antara keduanya supaya gerakannya halus, bukan *jump cut*. Itulah persis yang dilakukan `animate:flip`: setiap kali tata letak item dalam keyed `{#each}` berubah, Svelte otomatis membuat "gerak antara" posisi lama ke posisi baru.
+
+FLIP adalah singkatan dari **First, Last, Invert, Play** — empat langkah yang dikerjakan Svelte untukmu:
+
+1. **First** — catat posisi/ukuran elemen **sebelum** update (lewat `getBoundingClientRect`).
+2. **Last** — setelah DOM di-update, catat posisi **akhir**.
+3. **Invert** — pasang CSS `transform: translate(...)` supaya elemen **terlihat seolah masih di posisi lama**, padahal secara layout sudah pindah ke posisi baru.
+4. **Play** — animasikan transform itu kembali ke nol. Elemen "meluncur" mulus dari posisi lama ke baru.
+
+Kuncinya ada di langkah Invert/Play: animasinya pakai **`transform`**, bukan `top`/`left`. `transform` tidak memicu reflow, dijalankan GPU, jadi mulus 60fps. Inilah alasan FLIP cepat. Kamu tidak perlu menulis empat langkah itu sendiri — `flip` melakukannya; tugasmu cuma menempelkan directive.
+
+> Kalau kamu datang dari Vue, `animate:flip` ini kira-kira padanan kelas `v-move` di `<TransitionGroup>`. Di React, yang paling dekat adalah *layout animations* Framer Motion atau library AutoAnimate. Bedanya, di Svelte ini bawaan dan cukup satu directive tanpa membungkus apa pun.
+
+### Ringkasan API
+
+Modul ini hanya mengekspor satu fungsi runtime, plus dua tipe (untuk TypeScript).
+
+| Export | Tanda tangan | Keterangan |
+| --- | --- | --- |
+| `flip` | `flip(node, { from, to }, params?) => AnimationConfig` | Fungsi animasi bawaan untuk directive `animate:`. Menghitung selisih posisi `from`→`to` lalu menganimasikan translasi `x`/`y`. |
+| `FlipParams` | *tipe* | Bentuk parameter untuk `flip` (lihat tabel di bawah). |
+| `AnimationConfig` | *tipe* | Bentuk objek yang dikembalikan fungsi animasi apa pun (termasuk fungsi animasi buatanmu sendiri). |
+
+Parameter `flip` (`FlipParams`):
+
+| Properti | Tipe | Default | Arti |
+| --- | --- | --- | --- |
+| `delay` | `number` | `0` | Jeda (ms) sebelum animasi mulai. |
+| `duration` | `number \| ((len: number) => number)` | `(d) => Math.sqrt(d) * 120` | Lama animasi (ms). Bisa berupa **fungsi** yang menerima `len` = jarak tempuh dalam pixel, sehingga item yang pindah jauh boleh beranimasi lebih lama. |
+| `easing` | `(t: number) => number` | `cubicOut` | Kurva easing dari `svelte/easing`. |
+
+Objek hasil (`AnimationConfig`) — relevan kalau kamu menulis fungsi animasi sendiri untuk `animate:`:
+
+| Properti | Tipe | Arti |
+| --- | --- | --- |
+| `delay` | `number` | Jeda sebelum mulai (ms). |
+| `duration` | `number` | Lama animasi (ms). |
+| `easing` | `(t: number) => number` | Kurva easing. |
+| `css` | `(t: number, u: number) => string` | Hasilkan string CSS per frame. `t` berjalan 0→1, `u = 1 - t`. Cara **disarankan** (animasi via CSS, tidak memblok main thread). |
+| `tick` | `(t: number, u: number) => void` | Dipanggil tiap frame untuk efek yang tak bisa diekspresikan via CSS. Pakai hemat. |
+
+### Syarat agar `animate:flip` bekerja
+
+- Elemen harus **anak langsung** dari sebuah blok `{#each}`.
+- `{#each}`-nya **wajib keyed** — `{#each items as item (item.id)}`. Tanpa key, Svelte tak tahu node DOM mana adalah item mana, jadi tidak ada yang bisa "diikuti".
+- Animasi terpicu saat **urutan item berubah** atau saat penambahan/penghapusan item menggeser posisi tetangganya. Bukan saat render pertama.
+
+## 2. Contoh kode
+
+```svelte
+<!-- Reorder dasar: klik untuk shuffle, item meluncur ke tempat barunya -->
+<script>
+	import { flip } from 'svelte/animate';
+
+	let kartu = $state([1, 2, 3, 4, 5]);
+
+	function acak() {
+		// buat array BARU (immutable) agar Svelte mendeteksi perubahan
+		kartu = [...kartu].sort(() => Math.random() - 0.5);
+	}
+</script>
+
+<button onclick={acak}>Acak</button>
+
+<ul>
+	<!-- (n) adalah KEY — wajib agar flip bisa melacak tiap node -->
+	{#each kartu as n (n)}
+		<!-- animate:flip terpasang di anak langsung {#each} -->
+		<li animate:flip={{ duration: 300 }}>Kartu {n}</li>
+	{/each}
+</ul>
+```
+
+```svelte
+<!-- Durasi sebagai fungsi jarak: item yang pindah jauh, geser lebih lama -->
+<script>
+	import { flip } from 'svelte/animate';
+	import { quintOut } from 'svelte/easing';
+
+	let antrian = $state(['Andi', 'Budi', 'Cici', 'Dewi']);
+
+	function urutkan() {
+		antrian = [...antrian].sort((a, b) => a.localeCompare(b));
+	}
+</script>
+
+<button onclick={urutkan}>Urutkan A-Z</button>
+
+<ul>
+	{#each antrian as nama (nama)}
+		<!--
+			duration menerima 'd' = jarak tempuh (px).
+			sqrt(d)*40 -> jauh = lebih lama, tapi tidak linear (terasa natural).
+		-->
+		<li animate:flip={{ duration: (d) => Math.sqrt(d) * 40, easing: quintOut }}>
+			{nama}
+		</li>
+	{/each}
+</ul>
+```
+
+```svelte
+<!-- Kombinasi paling berguna: animate:flip + transition in/out -->
+<script>
+	import { flip } from 'svelte/animate';
+	import { fade } from 'svelte/transition';
+
+	let todos = $state([
+		{ id: 1, teks: 'Belajar runes' },
+		{ id: 2, teks: 'Coba animate:flip' }
+	]);
+
+	function hapus(id) {
+		todos = todos.filter((t) => t.id !== id);
+	}
+</script>
+
+<ul>
+	{#each todos as todo (todo.id)}
+		<!--
+			transition:fade -> animasi saat item KELUAR DOM (dihapus)
+			animate:flip    -> animasi item lain yang BERGESER mengisi tempat kosong
+			Keduanya jalan bersamaan: yang dihapus memudar, sisanya naik mulus.
+		-->
+		<li transition:fade animate:flip={{ duration: 250 }}>
+			{todo.teks}
+			<button onclick={() => hapus(todo.id)}>x</button>
+		</li>
+	{/each}
+</ul>
+```
+
+## 3. Coba sendiri
+
+Playground di bawah punya dua tombol: **Acak** (mengocok urutan) dan **Urutkan A-Z**. Perhatikan tiap item tidak "lompat" ke tempat baru — ia **meluncur**. Coba ubah angka `duration` jadi `1000` untuk melihat geraknya melambat, atau ganti jadi fungsi `(d) => Math.sqrt(d) * 30` supaya item yang pindah jauh terasa lebih "berat".
+
+<Playground code={`<script>
+	import { flip } from 'svelte/animate';
+	let items = $state([
+		{ id: 1, label: 'Apel' },
+		{ id: 2, label: 'Mangga' },
+		{ id: 3, label: 'Pisang' },
+		{ id: 4, label: 'Jeruk' },
+		{ id: 5, label: 'Anggur' }
+	]);
+	function acak() {
+		items = [...items].sort(() => Math.random() - 0.5);
+	}
+	function urutkan() {
+		items = [...items].sort((a, b) => a.label.localeCompare(b.label));
+	}
+</script>
+<div style='display: flex; gap: 8px; margin-bottom: 12px;'>
+	<button onclick={acak}>Acak</button>
+	<button onclick={urutkan}>Urutkan A-Z</button>
+</div>
+<ul style='list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; max-width: 220px;'>
+	{#each items as item (item.id)}
+		<li
+			animate:flip={{ duration: 400 }}
+			style='padding: 10px 14px; background: teal; color: white; border-radius: 8px;'
+		>
+			{item.label}
+		</li>
+	{/each}
+</ul>`} />
+
+<Callout type="tip">
+Coba hapus bagian <code>(item.id)</code> dari <code>&#123;#each items as item&#125;</code> di playground, lalu klik Acak. Animasinya <strong>hilang</strong> — item langsung lompat. Itu bukti bahwa <code>animate:flip</code> sepenuhnya bergantung pada keyed each untuk melacak node mana yang pindah ke mana.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Papan peringkat (leaderboard) yang menyusun ulang dengan animasi">
+Buat satu komponen `.svelte` berisi papan peringkat pemain. Tiap pemain punya `id`, `nama`, dan `skor`. Sediakan:
+
+1. Daftar pemain yang **selalu terurut dari skor tertinggi ke terendah**.
+2. Tombol "Beri +10 acak" yang menambah 10 poin ke salah satu pemain secara acak. Setelah skor berubah dan urutan ikut berubah, baris pemain harus **meluncur** ke posisi peringkat barunya, bukan lompat.
+3. Pakai `duration` berupa **fungsi jarak** supaya pemain yang naik/turun banyak peringkat beranimasi proporsional.
+
+Petunjuk: simpan data di `$state`, turunkan daftar terurut dengan `$derived` (jangan mengubah array asli saat sort — bikin salinan dengan `[...]`). Pastikan `{#each}` memakai key `(p.id)`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { flip } from 'svelte/animate';
+	import { quintOut } from 'svelte/easing';
+
+	let pemain = $state([
+		{ id: 1, nama: 'Andi', skor: 30 },
+		{ id: 2, nama: 'Budi', skor: 50 },
+		{ id: 3, nama: 'Cici', skor: 20 },
+		{ id: 4, nama: 'Dewi', skor: 40 }
+	]);
+
+	// Daftar terurut diturunkan dari state. Pakai salinan [...] agar
+	// sort() tidak memutasi array asli (sort memutasi di tempat!).
+	let papan = $derived([...pemain].sort((a, b) => b.skor - a.skor));
+
+	function beriPoin() {
+		const i = Math.floor(Math.random() * pemain.length);
+		// ubah skor lewat reassignment properti -> reaktif, memicu $derived
+		pemain[i].skor += 10;
+	}
+</script>
+
+<button onclick={beriPoin}>Beri +10 acak</button>
+
+<ol>
+	<!-- key (p.id) WAJIB; flip melacak node lewat key ini -->
+	{#each papan as p (p.id)}
+		<!-- duration fungsi jarak: pindah jauh = animasi sedikit lebih lama -->
+		<li animate:flip={{ duration: (d) => Math.sqrt(d) * 30, easing: quintOut }}>
+			{p.nama} — {p.skor}
+		</li>
+	{/each}
+</ol>
+```
+
+Inti jawabannya ada di pemisahan: **data sumber** (`pemain`, urutan stabil, dipakai untuk update skor) vs **tampilan terurut** (`papan` via `$derived`, yang berubah urutannya). Karena `{#each}` me-render `papan` dan tiap baris ber-key `p.id`, ketika skor membuat urutan berubah, Svelte tahu node "Cici" pindah dari peringkat 4 ke 2 dan menganimasikan translasinya. `duration` fungsi membuat lompatan jauh terasa beda dari lompatan satu peringkat. Catatan: `sort()` memutasi array di tempat, jadi kita selalu sort **salinan** (`[...pemain]`) — kalau tidak, kamu diam-diam mengacak `pemain` aslinya.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>animate:flip</code> <strong>tidak akan jalan tanpa keyed each</strong>. <code>&#123;#each items as item&#125;</code> (tanpa key) membuat Svelte mencocokkan item berdasarkan indeks, jadi saat urutan berubah ia menganggap "isi" tiap baris yang berganti, bukan barisnya yang pindah — tidak ada yang dianimasikan. Selalu tulis <code>&#123;#each items as item (item.id)&#125;</code> dengan key yang stabil dan unik.
+</Callout>
+
+<Callout type="warning">
+Directive <code>animate:</code> hanya boleh dipasang pada <strong>anak langsung</strong> dari blok <code>&#123;#each&#125;</code>. Kalau kamu membungkus elemennya (mis. <code>&#123;#each&#125;</code> berisi <code>&lt;div&gt;</code> pembungkus, lalu <code>&lt;li animate:flip&gt;</code> di dalamnya), animasinya tidak terpasang. Naikkan <code>animate:flip</code> ke elemen terluar tepat di bawah <code>&#123;#each&#125;</code>.
+</Callout>
+
+<Callout type="pitfall">
+<code>flip</code> hanya menganimasikan <strong>perpindahan posisi</strong> (translasi x/y), bukan perubahan ukuran, warna, atau isi. Kalau kartu berubah lebar dan kamu ingin lebarnya ikut beranimasi, itu di luar tugas <code>flip</code> — pakai CSS transition pada properti tersebut, atau <code>Tween</code>/<code>Spring</code> dari <code>svelte/motion</code>.
+</Callout>
+
+<Callout type="tip">
+Buat list yang sering ditambah/dihapus, pasangkan <code>animate:flip</code> dengan <code>transition:</code> (mis. <code>transition:fade</code>). <code>transition</code> mengurus item yang masuk/keluar DOM, sedangkan <code>flip</code> menganimasikan tetangga yang bergeser mengisi/menutup celah. Keduanya berjalan serempak dan hasilnya terasa "hidup" — item lama memudar pergi sementara sisanya naik mulus.
+</Callout>
+
+<Callout type="tip">
+Pakai <code>duration</code> berupa fungsi jarak — mis. <code>duration: (d) => Math.sqrt(d) * 120</code> (ini default-nya) — ketimbang angka tetap. Item yang pindah satu baris dan yang melompat sepuluh baris jadi punya kecepatan terasa konsisten, bukan yang jauh "ngebut" dalam durasi sama. Pakai <code>Math.sqrt</code> (bukan linear) supaya jarak jauh tidak terasa lambat berlebihan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-animate" label="svelte/animate — fungsi flip & directive animate:" />
+<DocsLink href="https://svelte.dev/docs/svelte/transition" label="svelte/transition — pasangan flip untuk elemen masuk/keluar" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-easing" label="svelte/easing — kurva easing untuk parameter easing" />

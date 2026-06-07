@@ -1,0 +1,234 @@
+---
+title: Svelte 4 migration guide
+product: svelte
+section: misc
+sectionTitle: Misc
+sectionOrder: 7
+order: 6
+status: stable
+description: Migrasi Svelte 3 ke Svelte 4 — perubahan minor seputar tooling, bundler, dan tipe, dengan fokus kompatibilitas.
+docs: https://svelte.dev/docs/svelte/v4-migration-guide
+keywords: [migrasi, svelte-4, tooling, bundler, typescript, kompatibilitas]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sebelum lanjut: kalau kamu sedang belajar Svelte hari ini, kamu **hampir pasti sudah berada di Svelte 5**. Panduan ini bukan tentang `export let` jadi `$props()` (itu langkah Svelte 4 ke 5 — lihat tautan di bagian akhir). Panduan ini tentang langkah **sebelumnya**: Svelte 3 ke Svelte 4. Lalu kenapa masih relevan? Karena kamu akan sering bertemu changelog, blog, dan repo lama yang berhenti di Svelte 3, dan kamu perlu tahu apa yang berubah di antaranya supaya tidak bingung membaca kode atau menaikkan versi proyek warisan.
+
+### Analogi: ganti oli, bukan ganti mesin
+
+Migrasi Svelte 3 ke 4 itu seperti **servis rutin mobil** — ganti oli, ganti filter, naikkan spesifikasi ban. Mesinnya (cara kamu menulis komponen: `export let`, `$:`, `on:click`, `<slot>`) **tidak diganti sama sekali**. Yang berubah hanya hal-hal di sekitarnya: versi minimum oli (Node, TypeScript), cara bengkel menyetel komputer mobil (bundler, preprocessor), dan beberapa baut yang namanya diganti (opsi custom element, tipe TypeScript). Bandingkan dengan migrasi Svelte 4 ke 5 yang justru **ganti mesin** (reaktivitas implisit jadi runes eksplisit). Itu sebabnya v3 ke v4 disebut rilis "minor secara rasa" walau nomornya naik mayor: sebagian besar proyek cukup naikkan versi, tanpa menyentuh satu pun file `.svelte`.
+
+### Tiga area yang benar-benar berubah
+
+Karena sintaks komponen tidak disentuh, hampir semua perubahan jatuh ke tiga ember:
+
+1. **Versi minimum & format modul.** Svelte 4 menaikkan lantai dukungan: Node 16+, TypeScript 5+, dan **ESM-only** — runtime CommonJS serta hook `svelte/register` dihapus. Kalau proyekmu masih `require('svelte/register')`, itu yang pertama patah.
+
+2. **Tooling & bundler.** Bundler kini wajib menyetel kondisi `browser` saat mem-build untuk browser; preprocessor harus punya `name` dan jalan berurutan markup lalu script lalu style per preprocessor; `svelte-preprocess` digantikan oleh `vitePreprocess` di proyek Vite/SvelteKit; serta `eslint-plugin-svelte3` pensiun, diganti `eslint-plugin-svelte`.
+
+3. **Tipe & perilaku kecil.** `SvelteComponentTyped` deprecated (pakai `SvelteComponent`), namespace `svelte.JSX` diganti tipe dari `svelte/elements`, transition kini **lokal secara default** (dulu global), dan binding dari default slot tak lagi bocor ke named slot.
+
+Tidak ada satu pun dari ini yang menuntut kamu menulis ulang logika komponen. Itulah inti pesan kompatibilitasnya: **ubah konfigurasi, bukan kode.**
+
+## 2. Contoh kode
+
+Semua perubahan penting ada di file konfigurasi dan deklarasi tipe — bukan di markup. Tiga blok berikut menutupi mayoritas kasus nyata.
+
+```js
+// svelte.config.js — preprocessor
+// ❌ Svelte 3: svelte-preprocess sebagai default
+import preprocess from 'svelte-preprocess';
+
+export default {
+	preprocess: preprocess()
+};
+
+// ✅ Svelte 4 (proyek Vite/SvelteKit): pakai vitePreprocess
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	// Aturan baru Svelte 4: tiap preprocessor harus punya 'name', dan urutan
+	// eksekusi jadi markup -> script -> style PER preprocessor (bukan semua
+	// markup dulu, lalu semua script). vitePreprocess sudah mematuhi ini.
+	preprocess: vitePreprocess()
+};
+```
+
+```svelte
+<!-- Komponen: dua baut yang namanya diganti -->
+
+<!-- ❌ Svelte 3: opsi custom element bernama 'tag' -->
+<svelte:options tag="my-counter" />
+<!-- transition di Svelte 3 berperilaku 'global': ikut main saat blok mana pun
+     di atasnya berubah -->
+<div transition:fade>Halo</div>
+
+<!-- ✅ Svelte 4: 'tag' deprecated, pakai 'customElement' -->
+<svelte:options customElement="my-counter" />
+<!-- transition kini LOKAL secara default: hanya main saat parent block-nya
+     sendiri dibuat/dihapus. Tambahkan |global untuk perilaku lama. -->
+<div transition:fade|global>Halo</div>
+```
+
+```ts
+// Perubahan tipe TypeScript (file .ts atau <script lang="ts">)
+
+// ❌ Svelte 3
+import { SvelteComponentTyped } from 'svelte';
+let c: SvelteComponentTyped;
+// atribut custom dideklarasikan lewat namespace global svelte.JSX
+
+// ✅ Svelte 4
+import { SvelteComponent } from 'svelte';
+let c: SvelteComponent;
+// Untuk dipakai sebagai tipe union: gunakan 'typeof SvelteComponent<any>'
+
+// Tipe HTML/atribut kini diambil dari modul resmi, bukan namespace svelte.JSX:
+import type { HTMLButtonAttributes } from 'svelte/elements';
+
+// Action: parameter default kini 'undefined'. Kalau action-mu menerima argumen,
+// WAJIB ketik generic-nya secara eksplisit, kalau tidak TS akan protes.
+import type { Action } from 'svelte/action';
+const tooltip: Action<HTMLElement, string> = (node, teks) => {
+	// node bertipe HTMLElement, teks bertipe string
+};
+```
+
+## 3. Coba sendiri
+
+Modul ini menyentuh konfigurasi build (bundler, preprocessor, tipe), jadi tidak ada live playground — perubahannya hidup di file config, bukan di dalam satu komponen. Sebagai gantinya, ini contoh statis untuk dua bundler non-Vite yang **paling sering patah diam-diam** saat naik ke Svelte 4: keduanya butuh kondisi `browser` diset manual. Tanpa ini, kamu bisa dapat output kosong atau versi server yang masuk ke bundle browser.
+
+```js
+// rollup.config.js — Rollup + @rollup/plugin-node-resolve
+import resolve from '@rollup/plugin-node-resolve';
+
+export default {
+	plugins: [
+		resolve({
+			// ✅ Svelte 4: WAJIB set browser: true untuk bundle frontend.
+			// SvelteKit & Vite mengurus ini otomatis; Rollup tidak.
+			browser: true,
+			dedupe: ['svelte']
+		})
+		// ...plugin lain
+	]
+};
+```
+
+```js
+// webpack.config.js — webpack 5 + svelte-loader
+export default {
+	resolve: {
+		// ✅ Svelte 4: tambahkan 'browser' ke conditionNames.
+		// 'svelte' menjaga resolusi paket Svelte; '...' = pertahankan default.
+		conditionNames: ['svelte', 'browser', '...']
+	}
+	// ...sisa konfigurasi
+};
+```
+
+Pola yang harus kamu ingat: **Svelte 4 membuat kondisi `browser` jadi wajib**. Kalau pakai Vite/SvelteKit, tidak ada yang perlu kamu lakukan. Kalau pakai Rollup/webpack langsung, dua cuplikan di atas adalah perbedaan antara "build jalan" dan "build menghasilkan halaman kosong tanpa error jelas".
+
+## 4. Latihan
+
+<Exercise title="Naikkan satu komponen + config dari Svelte 3 ke Svelte 4">
+
+Diberikan potongan Svelte 3 berikut. Terapkan **tiga** perubahan v3 ke v4 yang berlaku, tanpa menyentuh logika reaktivitas (yang itu memang tidak berubah di v3 ke v4):
+
+```svelte
+<!-- Widget.svelte (Svelte 3) -->
+<svelte:options tag="my-widget" />
+
+<script>
+	import { fade } from 'svelte/transition';
+	export let pesan = 'Halo';
+</script>
+
+<div transition:fade>{pesan}</div>
+```
+
+```js
+// svelte.config.js (Svelte 3)
+import preprocess from 'svelte-preprocess';
+export default { preprocess: preprocess() };
+```
+
+Petunjuk: (1) opsi custom element, (2) perilaku transition default berubah, (3) preprocessor untuk proyek Vite.
+
+{#snippet solution()}
+
+```svelte
+<!-- Widget.svelte (Svelte 4) -->
+<!-- 1) 'tag' -> 'customElement' -->
+<svelte:options customElement="my-widget" />
+
+<script>
+	import { fade } from 'svelte/transition';
+	// 'export let' SENGAJA dibiarkan: sintaks ini tak berubah di v3 -> v4.
+	// (Baru di Svelte 5 ia jadi let { pesan = 'Halo' } = $props().)
+	export let pesan = 'Halo';
+</script>
+
+<!-- 2) transition kini lokal secara default; |global mengembalikan perilaku v3
+     supaya animasi tetap main seperti sebelumnya -->
+<div transition:fade|global>{pesan}</div>
+```
+
+```js
+// svelte.config.js (Svelte 4) — 3) ganti ke vitePreprocess
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+export default { preprocess: vitePreprocess() };
+```
+
+Catatan: kalau kamu memang ingin transition hanya main saat elemennya sendiri muncul/hilang (perilaku baru yang lebih intuitif), justru **jangan** tambahkan `|global` — biarkan default. `|global` hanya untuk mempertahankan persis perilaku lama Svelte 3.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+Panduan ini bersifat <strong>historis/kompatibilitas</strong>. Kalau kamu menulis kode baru hari ini, kamu memakai Svelte 5 (runes), dan langkah migrasi yang relevan adalah <strong>Svelte 4 ke 5</strong>, bukan ini. Semua idiom yang <em>tidak berubah</em> di v3 ke v4 — <code>export let</code>, <code>$:</code>, <code>on:click</code>, <code>&lt;slot&gt;</code>, <code>createEventDispatcher</code> — justru kini sudah <strong>legacy</strong> di Svelte 5. Jadi jangan jadikan kode Svelte 4 sebagai contoh "modern".
+</Callout>
+
+<Callout type="pitfall">
+Pitfall paling umum saat naik ke Svelte 4: <strong>transition yang tiba-tiba "hilang"</strong>. Di Svelte 3 transition bersifat global, jadi animasi intro sering ikut main saat blok di atasnya berubah. Di Svelte 4 transition <strong>lokal secara default</strong> — ia hanya main saat parent block-nya sendiri dibuat/dihapus. Kalau ada animasi yang dulu main tapi kini diam, tambahkan modifier <code>|global</code> (mis. <code>transition:fade|global</code>) untuk mengembalikan perilaku lama.
+</Callout>
+
+<Callout type="warning">
+Kalau proyekmu memakai <strong>Rollup atau webpack secara langsung</strong> (bukan lewat Vite/SvelteKit), Svelte 4 mewajibkan kondisi <code>browser</code>. Lupa menyetelnya bisa menghasilkan bundle kosong atau memasukkan kode versi server ke browser — sering <em>tanpa pesan error yang jelas</em>. Set <code>browser: true</code> di <code>@rollup/plugin-node-resolve</code> atau tambahkan <code>'browser'</code> ke <code>conditionNames</code> webpack.
+</Callout>
+
+<Callout type="tip">
+Jangan loncat langsung dari Svelte 3 ke Svelte 5. Naikkan dulu ke <strong>Svelte 4</strong> (selesaikan tooling, ESM, dan tipe di sini), pastikan aplikasi stabil, <em>baru</em> jalankan <code>npx sv migrate svelte-5</code> untuk langkah berikutnya. Memisahkan dua lompatan ini membuat setiap masalah jauh lebih mudah dilacak ketimbang menghadapi semuanya sekaligus.
+</Callout>
+
+<Callout type="warning">
+Cek juga tipe-tipe yang halus: <code>createEventDispatcher</code> kini lebih ketat soal payload (wajib/opsional/absen harus dideklarasikan benar), <code>onMount</code> di TypeScript strict melarang mengembalikan fungsi cleanup secara <em>async</em>, dan <code>SvelteComponentTyped</code> deprecated. Kompiler v4 akan menandai ini sebagai error tipe, bukan runtime — jadi jalankan <code>svelte-check</code> setelah upgrade untuk menangkapnya sekaligus.
+</Callout>
+
+Ringkasan pemetaan perubahan utama (catatan: ini Svelte 3 ke Svelte 4, jadi label kolom dibaca sebagai "lama Svelte 3" vs "baru Svelte 4"):
+
+<LegacyVsModern legacyLabel="Svelte 3 (lama)" modernLabel="Svelte 4 (baru)" rows={[
+	{ legacy: 'Node 14', modern: 'Node 16+', note: 'Lantai versi runtime dinaikkan; TypeScript 5+ juga disarankan.' },
+	{ legacy: "require('svelte/register')", modern: 'ESM-only', note: 'Runtime CommonJS & hook svelte/register dihapus.' },
+	{ legacy: 'svelte-preprocess (default)', modern: 'vitePreprocess()', note: 'Untuk proyek Vite/SvelteKit; preprocessor wajib punya name.' },
+	{ legacy: '<svelte:options tag="x">', modern: '<svelte:options customElement="x">', note: 'Opsi custom element berganti nama.' },
+	{ legacy: 'transition:fade (global)', modern: 'transition:fade (lokal); |global utk lama', note: 'Transition kini lokal secara default.' },
+	{ legacy: 'SvelteComponentTyped', modern: 'SvelteComponent', note: 'Untuk union: typeof SvelteComponent<any>.' },
+	{ legacy: 'namespace svelte.JSX', modern: "import type { ... } from 'svelte/elements'", note: 'Plus svelteHTML untuk atribut.' },
+	{ legacy: 'Action (param any)', modern: 'Action<HTMLElement, Param>', note: 'Default param kini undefined; ketik eksplisit.' },
+	{ legacy: 'eslint-plugin-svelte3', modern: 'eslint-plugin-svelte', note: 'Plugin lama deprecated.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/v4-migration-guide" label="Svelte 4 Migration Guide — dokumentasi resmi (Svelte 3 ke 4)" />
+<DocsLink href="https://svelte.dev/docs/svelte/v5-migration-guide" label="Svelte 5 Migration Guide — langkah berikutnya (Svelte 4 ke 5, runes)" />

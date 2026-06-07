@@ -1,0 +1,300 @@
+---
+title: Adapters
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 2
+status: stable
+description: Adapter adalah plugin kecil yang membungkus hasil build SvelteKit agar pas dijalankan di platform tujuan — Node, static, Vercel, Netlify, atau Cloudflare.
+docs: https://svelte.dev/docs/kit/adapters
+keywords: [adapters, deployment, svelte.config.js, adapter-node, adapter-static, ssg]
+---
+
+<script>
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Saat kamu menjalankan `npm run build` (yang di balik layar memanggil `vite build`) di proyek SvelteKit, terjadi dua tahap berbeda yang sering tertukar.
+
+Tahap pertama murni urusan Vite dan SvelteKit: meng-compile komponen Svelte, mem-bundle JavaScript/CSS, melakukan code-splitting, lalu menghasilkan representasi aplikasimu yang **netral platform** — sekumpulan modul plus sebuah "handler" yang tahu cara mengubah satu HTTP request menjadi satu HTTP response. Tahap kedua barulah giliran **adapter**. Kata dokumen resminya: *"Adapters are small plugins that take the built app as input and generate output for deployment."* Ia mengambil hasil netral tadi dan membungkusnya ulang menjadi bentuk yang bisa dijalankan platform tujuanmu — entah server Node, fungsi serverless Vercel, Cloudflare Worker, atau sekadar tumpukan file statis.
+
+Kunci pemahamannya: **SvelteKit sendiri tidak tahu kamu mau deploy ke mana.** Aplikasimu ditulis dengan API yang sama persis (`load`, form actions, `+server.js`, hooks) terlepas dari target. Adapter-lah jembatan terakhir yang menerjemahkan output universal itu ke "dialek" platform tertentu. Tanpa adapter, hasil build belum bisa dijalankan di mana pun.
+
+### Analogi: colokan listrik universal
+
+Bayangkan aplikasimu adalah sebuah laptop. Laptop butuh listrik 220V — itu kebutuhan universalnya, sama di negara mana pun. Tapi bentuk **stop kontak** berbeda-beda: Indonesia pakai colokan bulat dua kaki, Inggris tiga kaki kotak, Amerika dua kaki pipih. Laptopmu tidak perlu diubah; yang kamu butuhkan cuma **adaptor travel** yang cocok dengan stop kontak negara tujuan.
+
+`vite build` menghasilkan "laptop"-mu (logika aplikasi yang netral). Adapter adalah adaptor travel itu: `adapter-node` mencolokkan ke "stop kontak Node", `adapter-vercel` ke "stop kontak Vercel", `adapter-cloudflare` ke "stop kontak Cloudflare". Pilih steker yang salah, laptopmu tidak menyala — tapi laptopnya sendiri tidak pernah perlu kamu ganti. Itulah inti model adapter: satu aplikasi, banyak steker.
+
+### Peta adapter resmi
+
+Dokumentasi resmi mencantumkan **lima adapter resmi** (semua di-publish oleh tim Svelte di scope `@sveltejs`):
+
+- **`@sveltejs/adapter-node`** — menghasilkan **server Node.js mandiri** (`build/index.js`) yang dijalankan dengan `node build`. Cocok untuk VPS, Docker, container, atau platform apa pun yang bisa menjalankan proses Node. Memberi SSR penuh plus kontrol penuh atas server.
+- **`@sveltejs/adapter-static`** — meng-**prerender seluruh situs** jadi file HTML/CSS/JS statis (SSG). Tidak ada server saat runtime; cocok untuk landing page, dokumentasi, atau blog yang isinya sama untuk semua orang. Bisa dihosting di CDN/object storage murah (GitHub Pages, S3, dll.). Mode SPA (CSR-only) juga lahir dari adapter ini lewat opsi `fallback`.
+- **`@sveltejs/adapter-vercel`** — membungkus untuk Vercel (Serverless/Edge Functions), dengan opsi seperti `runtime`, `regions`, dan ISR via `config.isr`.
+- **`@sveltejs/adapter-netlify`** — membungkus untuk Netlify (Functions / Edge Functions).
+- **`@sveltejs/adapter-cloudflare`** — membungkus aplikasi sebagai Cloudflare Worker, dan kini menangani **Cloudflare Workers maupun Pages** dalam satu paket. Berjalan di edge runtime, bukan Node penuh.
+
+Selain itu ada satu adapter "ajaib" yang dipasang di proyek baru secara default:
+
+- **`@sveltejs/adapter-auto`** — bukan adapter sungguhan, melainkan **pemilih otomatis**. Ia mendeteksi lingkungan CI/CD tempat kamu build (Vercel, Netlify, Cloudflare Pages, dll.) lalu memilih adapter resmi yang sesuai saat itu juga. Praktis untuk memulai, tapi **tidak bisa dikonfigurasi** dan tidak bisa kamu jalankan sebagai server lokal. Begitu aplikasimu serius, ganti ke adapter spesifik.
+
+### Memilih adapter: pertanyaan kuncinya
+
+Memilih adapter sebenarnya menjawab satu pertanyaan: **"siapa yang menjalankan request-ku saat runtime?"**
+
+- Kalau jawabannya *"sebuah proses Node yang aku kontrol"* (VPS/Docker) -> `adapter-node`.
+- Kalau *"tidak ada — semua sudah jadi file sebelum deploy"* -> `adapter-static` (SSG).
+- Kalau *"platform serverless/edge milik vendor"* -> adapter platform tersebut (`adapter-vercel` / `adapter-netlify` / `adapter-cloudflare`).
+- Kalau *"belum tahu, masih eksperimen lewat Git deploy"* -> `adapter-auto`.
+
+### Community adapters
+
+Lima adapter resmi tidak menutup semua platform. Untuk target lain (Deno, AWS Lambda, Azure, Firebase, dll.) ada **community adapters** — paket pihak ketiga yang mengikuti kontrak API adapter yang sama. Cara memakainya identik: `npm install` paketnya, lalu `import` di `svelte.config.js`. Daftar yang dikurasi ada di halaman dokumentasi adapters resmi, dan kalau platformmu sangat khusus, kamu bahkan bisa menulis adapter sendiri (lihat docs "Writing adapters"). Karena semuanya berbicara "bahasa" yang sama (`import('@sveltejs/kit').Adapter`), berpindah antar adapter tetap cuma soal mengganti satu baris import.
+
+### Mengapa pemisahan ini penting
+
+Karena adapter dipasang di **lapisan paling akhir**, kamu bisa mengganti target deploy tanpa menyentuh kode aplikasi. Pindah dari Vercel ke VPS Node? Cukup ganti adapter di `svelte.config.js`, build ulang, selesai. Inilah keuntungan model adapter dibanding framework yang "menikah" dengan satu platform: **portabilitas**. Trade-off-nya, tiap adapter punya batasan runtime sendiri (mis. edge runtime Cloudflare tidak punya semua Node API), jadi kamu tetap perlu paham target yang dipilih.
+
+## 2. Contoh kode
+
+Adapter selalu dipasang di `svelte.config.js`: kamu meng-`import` paket adapter lalu memanggilnya di `kit.adapter`. Polanya sama untuk semua adapter — hanya paket dan opsinya yang berbeda.
+
+```js
+// svelte.config.js — bentuk paling generik (dari docs resmi)
+import adapter from 'svelte-adapter-foo'; // ganti dengan paket adapter sungguhan
+
+const config = {
+	kit: {
+		// Fungsi adapter() mengembalikan objek bertipe import('@sveltejs/kit').Adapter.
+		// Opsi platform-spesifik masuk sebagai argumen di sini.
+		adapter: adapter({
+			// ...opsi adapter...
+		})
+	}
+};
+
+export default config;
+```
+
+```js
+// svelte.config.js — adapter-node (server Node.js mandiri)
+import adapter from '@sveltejs/adapter-node';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(),
+	kit: {
+		// Hasil build -> folder build/ berisi server Node.
+		// Jalankan dengan: node build   (PORT & HOST diatur via env)
+		adapter: adapter({
+			out: 'build', // folder output (default 'build')
+			precompress: true // siapkan gzip/brotli untuk aset statis
+		})
+	}
+};
+```
+
+```js
+// svelte.config.js — adapter-static (SSG: seluruh situs jadi file statis)
+import adapter from '@sveltejs/adapter-static';
+
+export default {
+	kit: {
+		adapter: adapter({
+			pages: 'build', // folder HTML hasil prerender
+			assets: 'build', // folder aset (biasanya sama dgn pages)
+			fallback: undefined, // undefined = SSG murni; isi -> mode SPA
+			strict: true // gagal-cepat jika ada rute yang tak bisa di-prerender
+		})
+	}
+};
+
+// PENTING: agar SEMUA halaman ter-render saat build, aktifkan prerender
+// untuk seluruh situs. Taruh ini di src/routes/+layout.js:
+//   export const prerender = true;
+```
+
+```js
+// svelte.config.js — adapter-vercel (serverless / edge di Vercel)
+import adapter from '@sveltejs/adapter-vercel';
+
+export default {
+	kit: {
+		// Opsi di sini jadi DEFAULT semua rute; bisa ditimpa per-rute
+		// lewat `export const config` di +page.server.js / +server.js.
+		adapter: adapter({
+			runtime: 'nodejs22.x' // atau 'edge' untuk Edge Functions
+		})
+	}
+};
+```
+
+## 3. Coba sendiri
+
+Adapter bekerja di tahap **build & deploy** — outputnya adalah server atau file yang dijalankan platform, bukan komponen yang bisa dirender di playground browser. Jadi alih-alih live preview, latih intuisimu dengan memetakan kebutuhan deploy ke adapter yang tepat, lalu uji langsung di proyek SvelteKit lokalmu.
+
+```text
+PETA KEPUTUSAN: mau deploy ke mana -> adapter apa
+─────────────────────────────────────────────────
+
+Belum tahu / eksperimen, deploy via Git ke Vercel/Netlify/CF Pages
+   -> adapter-auto       (default; auto-deteksi platform di CI)
+
+Punya VPS / Docker / butuh proses Node yang kamu kontrol penuh
+   -> adapter-node       (jalankan: node build)
+
+Situs konten statis (docs/blog/landing), isi sama untuk semua orang
+   -> adapter-static     (+ export const prerender = true di +layout.js)
+
+Aplikasi privat di balik login, tak butuh SEO, host statis murah
+   -> adapter-static SPA (fallback: '200.html') + ssr=false
+
+Edge runtime, latency rendah global, ekosistem Cloudflare
+   -> adapter-cloudflare (Workers atau Pages)
+
+Sudah di Vercel & mau ISR/edge/regions bawaan
+   -> adapter-vercel     (config.isr / runtime / regions)
+
+Platform lain (Deno/Lambda/Azure/Firebase, dll.)
+   -> community adapter  (pola pakai sama: import di svelte.config.js)
+```
+
+```bash
+# Latihan cepat di proyek lokal — coba adapter-node:
+npm i -D @sveltejs/adapter-node
+# 1) Ganti import adapter di svelte.config.js menjadi adapter-node (lihat Bagian 2).
+# 2) Build:
+npm run build           # menjalankan `vite build` + adapter
+# 3) Jalankan server hasilnya:
+node build              # buka http://localhost:3000
+# 4) Bandingkan: ganti ke adapter-static + prerender=true, build lagi,
+#    lalu intip folder build/ — isinya file *.html siap di-host di CDN.
+```
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Deployment target"
+	svelte={`// SvelteKit: target deploy ditentukan oleh ADAPTER di svelte.config.js.
+// Kode aplikasi tidak berubah; cukup ganti paket adapter & build ulang.
+//
+// svelte.config.js
+import adapter from '@sveltejs/adapter-node';        // VPS / Docker
+// import adapter from '@sveltejs/adapter-static';   // SSG / SPA
+// import adapter from '@sveltejs/adapter-vercel';   // Vercel
+// import adapter from '@sveltejs/adapter-cloudflare'; // Cloudflare
+//
+export default {
+  kit: { adapter: adapter() }
+};
+//
+// adapter-auto (default) mendeteksi platform CI secara otomatis.`}
+	next={`// Next.js: paling "native" ke Vercel (dibuat oleh Vercel).
+// Deploy ke Vercel = zero-config; SSR/ISR/edge tinggal jalan.
+//
+// next.config.js
+module.exports = {
+  output: 'standalone', // server Node mandiri (mirip adapter-node)
+  // output: 'export',  // situs statis murni (mirip adapter-static SSG)
+};
+//
+// Untuk platform NON-Vercel (Cloudflare, dll.) butuh adapter pihak ketiga
+// seperti @opennextjs/cloudflare. Di luar Vercel, dukungan bisa kurang mulus.`}
+	nuxt={`// Nuxt 3/4: deploy ditangani Nitro (server engine bawaan) via PRESET.
+// Nitro auto-deteksi banyak platform; bisa juga dipaksa manual.
+//
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nitro: {
+    preset: 'node-server'   // server Node (mirip adapter-node)
+    // preset: 'static'      // SSG (mirip adapter-static)
+    // preset: 'vercel'      // Vercel
+    // preset: 'cloudflare-pages'
+  }
+});`}
+	note="Ketiganya bisa menargetkan banyak platform, tapi filosofinya beda. Next.js paling mulus di Vercel (vendor yang sama) dan agak rewel di luar itu. Nuxt memakai Nitro: satu engine dengan banyak 'preset' yang auto-deteksi platform — sangat fleksibel, presetnya bawaan framework. SvelteKit memakai model adapter eksplisit: satu paket per target, dipilih di svelte.config.js, dengan adapter-auto sebagai jalan pintas. Tidak ada yang 'paling benar': Next unggul kalau kamu memang di Vercel; Nuxt & SvelteKit lebih netral-platform, dengan SvelteKit menonjolkan portabilitas lewat pertukaran adapter yang sederhana."
+/>
+
+## 5. Latihan
+
+<Exercise title="Pilih & konfigurasikan adapter untuk tiga skenario">
+Untuk tiap skenario, tentukan adapter mana yang paling tepat **dan** tulis potongan `svelte.config.js` (plus page option yang dibutuhkan, jika ada) beserta alasan singkatnya.
+
+1. Situs dokumentasi internal: semua halaman sama untuk semua orang, tanpa login, ingin dihosting murah di GitHub Pages.
+2. Aplikasi admin di balik login: penuh interaksi, tidak butuh SEO, dan tim ingin host-nya hanya berupa file statis di sebuah bucket S3.
+3. Aplikasi SaaS dengan SSR penuh, dijalankan di dalam container Docker di server sendiri.
+
+{#snippet solution()}
+
+  ```js
+  // 1) Docs internal, semua statis -> adapter-static (SSG murni).
+  //    Alasan: tak ada server runtime; file HTML bisa diunggah ke GitHub Pages.
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-static';
+  export default {
+    kit: { adapter: adapter({ pages: 'build', assets: 'build', strict: true }) }
+  };
+  // src/routes/+layout.js
+  export const prerender = true; // wajib agar SEMUA halaman ter-render saat build
+  ```
+
+  ```js
+  // 2) Admin privat, host file statis saja -> adapter-static MODE SPA.
+  //    Alasan: tak butuh SEO/SSR; cukup satu shell + JS yang merakit di browser.
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-static';
+  export default {
+    kit: { adapter: adapter({ fallback: '200.html' }) }
+  };
+  // src/routes/+layout.js
+  export const ssr = false; // matikan SSR seluruh app -> SPA murni (CSR)
+  ```
+
+  ```js
+  // 3) SaaS SSR penuh di Docker -> adapter-node.
+  //    Alasan: butuh proses Node yang dikontrol penuh; SSR per request.
+  // svelte.config.js
+  import adapter from '@sveltejs/adapter-node';
+  export default {
+    kit: { adapter: adapter({ out: 'build', precompress: true }) }
+  };
+  // Deploy: `npm run build` lalu `node build` di dalam container.
+  // (Port via env PORT, host via HOST.)
+  ```
+
+  Intinya: sama-untuk-semua + tanpa login -> static (SSG); privat + interaktif + tanpa SEO + host statis -> static mode SPA; SSR penuh + kontrol server -> adapter-node.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan biarkan <code>adapter-auto</code> di proyek produksi yang serius. Ia tidak bisa dikonfigurasi (tak ada opsi <code>runtime</code>, <code>regions</code>, <code>out</code>, dll.) dan tidak bisa dijalankan sebagai server lokal/Docker. Begitu target deploy jelas, ganti ke adapter spesifik. <code>adapter-auto</code> hanyalah "pemilih otomatis" untuk fase awal, bukan adapter sungguhan.
+</Callout>
+
+<Callout type="warning">
+Adapter edge (Cloudflare, dan Vercel dengan <code>runtime: 'edge'</code>) berjalan di runtime yang <strong>bukan Node penuh</strong>. Sebagian Node API (mis. <code>fs</code>, modul native tertentu) tidak tersedia. Kalau <code>load</code>/<code>+server.js</code>-mu mengandalkan API Node, kode bisa jalan mulus di <code>adapter-node</code> tapi <em>crash</em> di edge. Cek batasan runtime adapter sebelum memilihnya.
+</Callout>
+
+<Callout type="tip">
+Untuk <code>adapter-static</code>, taruh <code>export const prerender = true</code> di <code>src/routes/+layout.js</code> root agar berlaku ke seluruh situs, lalu timpa hanya di rute yang benar-benar dinamis. Dengan <code>strict: true</code>, build akan gagal-cepat jika ada halaman yang lolos tanpa di-prerender — jauh lebih baik ketahuan saat build daripada ketemu 404 di produksi.
+</Callout>
+
+<Callout type="legacy">
+Dulu ada paket terpisah <code>@sveltejs/adapter-cloudflare-workers</code> di samping <code>@sveltejs/adapter-cloudflare</code>. Kini <code>@sveltejs/adapter-cloudflare</code> menangani <strong>Workers maupun Pages</strong>, jadi pakai itu untuk proyek baru. Begitu juga community adapter lama yang sudah usang — selalu rujuk daftar adapter di docs versi terbaru, karena nama paket & opsinya bisa berubah antar versi mayor.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/adapters" label="SvelteKit — Adapters (overview & daftar resmi + community)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapter-node" label="SvelteKit — adapter-node" />
+<DocsLink href="https://svelte.dev/docs/kit/adapter-static" label="SvelteKit — adapter-static (SSG)" />
+<DocsLink href="https://svelte.dev/docs/kit/writing-adapters" label="SvelteKit — Writing custom adapters" />

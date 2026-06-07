@@ -1,0 +1,307 @@
+---
+title: svelte/attachments
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 4
+status: reference
+description: Modul svelte/attachments — tipe Attachment, createAttachmentKey, fromAction, dan directive @attach untuk memasang perilaku DOM yang reaktif ke elemen.
+docs: https://svelte.dev/docs/svelte/svelte-attachments
+keywords: [attachments, attach, createAttachmentKey, fromAction, action]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+**Attachment** adalah fitur Svelte 5 (mulai versi `5.29`) untuk menempelkan perilaku imperatif ke sebuah elemen DOM: fungsi yang dijalankan saat elemen muncul, dan boleh mengembalikan fungsi *cleanup* saat elemen hilang. Kamu memasangnya lewat directive `{@attach ...}`. Modul `svelte/attachments` sendiri isinya kecil — cuma satu **tipe** (`Attachment`) dan dua **fungsi pembantu** (`createAttachmentKey`, `fromAction`). Tapi konsep di belakangnya menggantikan satu fitur lama yang mungkin sudah kamu kenal: **action** (`use:`).
+
+Analoginya begini. Bayangkan elemen DOM sebagai sebuah meja kosong. Sebuah attachment itu seperti **stiker pintar berisi instruksi** yang kamu tempel di meja itu: begitu meja dipasang di ruangan (elemen mount), stiker membaca instruksinya dan menjalankannya — misalnya "pasang tooltip", "gambar di canvas ini", "fokuskan input". Saat meja diangkat keluar (elemen unmount), stiker punya catatan kecil di baliknya: instruksi bongkar (cleanup) supaya tidak meninggalkan sampah (listener, interval, observer).
+
+Kalau kamu datang dari React, attachment paling mirip dengan **callback ref yang sekaligus jadi `useEffect`**: ia menerima node DOM dan boleh mengembalikan cleanup, persis seperti `useEffect` mengembalikan fungsi pembersih. Di Vue, padanannya adalah **custom directive** (`v-my-directive`). Bedanya, attachment menyatu penuh dengan sistem efek Svelte.
+
+### Kenapa attachment, bukan action lama?
+
+Svelte sudah lama punya **action** (`use:tooltip={teks}`). Action juga memberi kamu `node` dan punya lifecycle `update`/`destroy`. Jadi kenapa ada yang baru? Karena action punya beberapa batasan yang bikin sakit kepala:
+
+- **Action tidak reaktif terhadap state luar.** Kalau parameternya berubah, kamu hanya dapat callback `update` terpisah — kamu harus menulis ulang logika "apa yang berubah" secara manual. Attachment sebaliknya: badan fungsinya **adalah sebuah effect**. Kalau kamu membaca `$state` di dalamnya, attachment otomatis jalan ulang (dengan cleanup dulu) saat state itu berubah. Model mentalnya jauh lebih sederhana: "jalankan ulang seluruh fungsi" ketimbang "tambal yang berubah".
+- **Action susah di-*spread* atau dioper sebagai prop.** Kamu tidak bisa menaruh `use:` ke dalam objek props lalu menyebarnya. Attachment bisa — lewat `createAttachmentKey` ia jadi entri objek biasa berkunci `Symbol`.
+- **Action tidak bisa inline & tidak bisa kondisional dengan rapi.** Attachment bisa ditulis langsung di elemen, dan dimatikan dengan ekspresi falsy: `{@attach enabled && fn}`.
+
+Analogi perbedaannya: action seperti **kontraktor yang kamu panggil sekali** — kalau ada perubahan, kamu harus menelepon dia lagi dan menjelaskan apa yang berubah (itulah `update`). Attachment seperti **aturan termostat pintar** yang otomatis dievaluasi ulang setiap kondisinya berubah. Action lama tetap berfungsi dan tidak dihapus, tapi untuk kode baru, attachment adalah default yang lebih fleksibel. Untuk migrasi, ada `fromAction` yang membungkus action lama menjadi attachment tanpa menulis ulang.
+
+## 2. Tabel API
+
+Modul `svelte/attachments` mengekspor satu tipe dan dua fungsi. Directive `{@attach ...}` sendiri bagian dari template Svelte (bukan ekspor modul), tapi dirangkum di sini karena saling melengkapi.
+
+| Nama | Jenis | Fungsi singkat |
+| --- | --- | --- |
+| `Attachment<T>` | tipe (interface) | Tanda tangan fungsi attachment: terima `element`, opsional kembalikan cleanup. |
+| `createAttachmentKey()` | fungsi | Membuat key `Symbol` agar attachment bisa ditaruh di objek props lalu di-*spread*. |
+| `fromAction(action, fn?)` | fungsi | Membungkus action lama (`use:`) menjadi attachment untuk dipakai dengan `{@attach}`. |
+| `{@attach expr}` | directive template | Memasang attachment (hasil `expr`) ke elemen/komponen. |
+
+### Tanda tangan lengkap
+
+```ts
+// Tipe sebuah attachment. T = jenis elemen target (default Element).
+// Fungsi menerima elemen; boleh mengembalikan fungsi cleanup (atau void).
+interface Attachment<T extends EventTarget = Element> {
+	(element: T): void | (() => void);
+}
+
+// Membuat key Symbol unik. Nilai di key itu (sebuah Attachment)
+// akan dijalankan saat objek props di-spread ke sebuah elemen.
+function createAttachmentKey(): symbol;
+
+// Overload 1: action dengan parameter.
+// CATATAN PENTING: argumen ke-2 adalah FUNGSI yang MENGEMBALIKAN parameter,
+// bukan parameternya langsung — supaya tetap reaktif.
+function fromAction<E extends EventTarget, T>(
+	action: Action<E, T> | ((element: E, arg: T) => void | ActionReturn<T>),
+	fn: () => T
+): Attachment<E>;
+
+// Overload 2: action tanpa parameter.
+function fromAction<E extends EventTarget>(
+	action: Action<E, void> | ((element: E) => void | ActionReturn<void>)
+): Attachment<E>;
+```
+
+## 3. Contoh kode
+
+**a. `{@attach}` dasar + cleanup.** Attachment paling sederhana: terima node, lakukan sesuatu, kembalikan fungsi bongkar.
+
+```svelte
+<script>
+	import type { Attachment } from 'svelte/attachments';
+
+	// Attachment: jalan saat <div> mount. Cleanup jalan saat unmount.
+	const sorot: Attachment = (node) => {
+		node.style.outline = '2px solid gold';
+		return () => {
+			node.style.outline = ''; // bersihkan saat elemen dilepas
+		};
+	};
+</script>
+
+<div {@attach sorot}>aku disorot</div>
+```
+
+**b. Attachment factory (reaktif).** Pola paling umum: sebuah fungsi yang **mengembalikan** attachment. Karena ekspresi `{@attach tooltip(isi)}` dievaluasi di dalam effect, attachment otomatis dibuat ulang setiap kali `isi` berubah — tanpa perlu `update` manual seperti action lama.
+
+```svelte
+<script>
+	import tippy from 'tippy.js';
+
+	let isi = $state('Halo!');
+
+	// Factory: terima argumen, kembalikan fungsi attachment.
+	function tooltip(isi) {
+		return (node) => {
+			const tip = tippy(node, { content: isi });
+			return tip.destroy; // cleanup: hancurkan tooltip
+		};
+	}
+</script>
+
+<input bind:value={isi} />
+
+<!-- isi berubah -> cleanup lama jalan -> attachment dibuat ulang -->
+<button {@attach tooltip(isi)}>Hover aku</button>
+```
+
+**c. `createAttachmentKey` — attachment lewat objek props.** Kadang kamu menyusun props sebagai objek lalu menyebarnya dengan `{...props}`. Attachment biasa tidak punya "nama atribut", jadi `createAttachmentKey` memberinya kunci `Symbol` agar ikut tersebar.
+
+```svelte
+<script>
+	import { createAttachmentKey } from 'svelte/attachments';
+
+	const props = {
+		class: 'keren',
+		onclick: () => alert('diklik'),
+		// key Symbol -> nilainya sebuah attachment. Ikut saat di-spread.
+		[createAttachmentKey()]: (node) => {
+			node.textContent = 'terpasang!';
+		}
+	};
+</script>
+
+<button {...props}>klik aku</button>
+```
+
+**d. `fromAction` — daur ulang action lama.** Punya action `use:tooltip={teks}` dari kode lama dan ingin memakainya di gaya attachment? Bungkus dengan `fromAction`. Ingat: argumen kedua adalah **fungsi** yang mengembalikan parameter, bukan parameternya langsung.
+
+```svelte
+<script>
+	import { fromAction } from 'svelte/attachments';
+	import { tooltip } from './tooltip-action.js'; // Action<HTMLElement, string> lama
+</script>
+
+<!-- DULU (action):     <div use:tooltip={teks}>...</div> -->
+<!-- SEKARANG (attach):  bungkus dgn fromAction, arg ke-2 = () => teks -->
+<div {@attach fromAction(tooltip, () => teks)}>Hover aku</div>
+```
+
+## 4. Coba sendiri
+
+Playground ini menunjukkan dua sifat khas attachment dalam satu komponen mandiri (tanpa import apa pun — `{@attach}` adalah sintaks template inti):
+
+1. **Factory reaktif** — `gambar(warna)` mewarnai `<canvas>`. Karena `warna` dibaca saat `{@attach gambar(warna)}` dievaluasi di dalam effect, mengganti warna membuat attachment jalan ulang (cleanup membersihkan canvas dulu, lalu menggambar warna baru).
+2. **Cleanup & attach kondisional** — `{@attach jalan && detak}`. Saat checkbox dimatikan, ekspresinya jadi falsy sehingga attachment dilepas dan cleanup-nya (`clearInterval`) jalan otomatis. Tidak ada interval yang bocor.
+
+<Playground code={`<script>
+	let warna = $state('teal');
+	let jalan = $state(true);
+	let detik = $state(0);
+	// Factory: argumen 'warna' dibaca saat evaluasi {@attach gambar(warna)}
+	// di dalam effect -> attachment jalan ulang tiap kali warna berubah.
+	function gambar(warna) {
+		return (canvas) => {
+			const ctx = canvas.getContext('2d');
+			ctx.fillStyle = warna;
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+			// cleanup: jalan sebelum re-run & saat elemen dilepas
+			return () => ctx.clearRect(0, 0, canvas.width, canvas.height);
+		};
+	}
+	// Attachment dengan resource (interval). Cleanup WAJIB agar tak bocor.
+	function detak(node) {
+		node.textContent = 'Stopwatch jalan...';
+		const id = setInterval(() => { detik += 1; }, 1000);
+		return () => {
+			clearInterval(id);
+			node.textContent = 'Stopwatch berhenti.';
+		};
+	}
+</script>
+<canvas width={140} height={80} style="border:1px solid #ccc; display:block" {@attach gambar(warna)}></canvas>
+<div style="margin:8px 0">
+	<button onclick={() => warna = 'teal'}>Teal</button>
+	<button onclick={() => warna = 'tomato'}>Tomato</button>
+	<button onclick={() => warna = 'rebeccapurple'}>Ungu</button>
+</div>
+<label>
+	<input type="checkbox" bind:checked={jalan} /> Jalankan stopwatch
+</label>
+<!-- attach kondisional: saat 'jalan' false, attachment dilepas -> cleanup -->
+<p {@attach jalan && detak}></p>
+<p>Detik berlalu: {detik}</p>`} />
+
+<Callout type="tip">
+Perhatikan: attachment <code>gambar</code> jalan ulang otomatis saat <code>warna</code> berubah, tanpa kamu menulis logika "param berubah" apa pun. Inilah bedanya dengan action lama yang butuh hook <code>update</code> terpisah. Badan attachment <strong>adalah</strong> sebuah effect — membaca state reaktif di dalamnya = berlangganan ke state itu.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Click-outside sebagai attachment factory">
+Buat satu komponen `.svelte` berisi sebuah panel yang bisa dibuka, lalu **tutup otomatis saat pengguna mengklik di luar panel**. Gunakan **attachment factory** `klikLuar(callback)` yang:
+
+1. Menerima sebuah fungsi `callback`.
+2. Mengembalikan attachment yang memasang listener `click` di `document`, dan memanggil `callback()` bila target klik berada **di luar** node.
+3. Mengembalikan cleanup yang melepas listener tersebut.
+
+Pasang attachment pada elemen panel yang berada di dalam blok `{#if buka}` (sehingga attachment dibuat saat panel muncul dan cleanup jalan saat panel ditutup). Petunjuk: pakai `node.contains(e.target)` untuk mengecek apakah klik di dalam atau di luar.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let buka = $state(false);
+
+	// Factory: terima callback, kembalikan attachment.
+	function klikLuar(panggil) {
+		return (node) => {
+			function handler(e) {
+				// kalau klik BUKAN di dalam node -> klik di luar -> panggil callback
+				if (!node.contains(e.target)) panggil();
+			}
+			// capture: true agar handler jalan sebelum handler lain menelan event
+			document.addEventListener('click', handler, true);
+			// cleanup WAJIB: lepas listener saat panel ditutup / elemen dilepas
+			return () => document.removeEventListener('click', handler, true);
+		};
+	}
+</script>
+
+<button onclick={() => (buka = true)}>Buka menu</button>
+
+{#if buka}
+	<!-- attachment dibuat saat panel muncul; cleanup jalan saat {#if} jadi false -->
+	<div class="menu" {@attach klikLuar(() => (buka = false))}>
+		Aku menu. Klik di luar untuk menutup.
+	</div>
+{/if}
+
+<style>
+	.menu {
+		margin-top: 8px;
+		padding: 12px;
+		border: 1px solid #ccc;
+		border-radius: 8px;
+		width: max-content;
+	}
+</style>
+```
+
+Kunci jawabannya ada pada **lifecycle yang menyatu**: karena `<div class="menu">` ada di dalam `{#if buka}`, attachment hanya dibuat ketika panel benar-benar muncul, dan **cleanup (`removeEventListener`) otomatis jalan** ketika `buka` jadi `false`. Tidak ada listener yang menumpuk. Bandingkan dengan versi action lama (`use:klikLuar`) yang juga bisa, tapi attachment lebih ringkas karena callback bisa langsung ditulis inline sebagai argumen factory tanpa mendefinisikan tipe `Action` terpisah.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Lupa mengembalikan cleanup.</strong> Kalau attachment memasang listener, membuat <code>setInterval</code>, atau membuat instance library (tooltip, chart, map), kamu <strong>harus</strong> mengembalikan fungsi yang membongkarnya. Attachment bisa dibuat & dihancurkan berkali-kali (mis. item dalam <code>&#123;#each&#125;</code> atau saat dependensinya berubah). Tanpa cleanup, resource menumpuk diam-diam dan bocor.
+</Callout>
+
+<Callout type="warning">
+<strong>Argumen kedua <code>fromAction</code> adalah FUNGSI, bukan nilai.</strong> Tulis <code>fromAction(foo, () => bar)</code> — sebuah getter yang mengembalikan parameter — <strong>bukan</strong> <code>fromAction(foo, bar)</code>. Getter inilah yang menjaga reaktivitas: setiap kali <code>bar</code> berubah, attachment tahu harus memperbarui action.
+</Callout>
+
+<Callout type="warning">
+<strong>Attachment jalan ulang untuk SETIAP state reaktif yang dibaca di dalamnya.</strong> Kalau kamu membaca state yang sering berubah di badan attachment yang juga melakukan setup mahal (mis. inisialisasi chart), setup mahal itu ikut jalan ulang terus. Solusinya: oper data sebagai <strong>getter</strong> dan baca di dalam <code>$effect</code> bersarang, supaya setup mahal jalan sekali dan hanya bagian update yang reaktif (lihat contoh di bawah).
+</Callout>
+
+```js
+// Pola "kontrol re-run": setup mahal jalan SEKALI, update saja yang reaktif.
+function chart(getData) {
+	return (node) => {
+		const instance = setupMahal(node); // jalan SEKALI (tak baca state reaktif)
+		$effect(() => {
+			instance.update(getData()); // hanya ini yang jalan ulang saat data berubah
+		});
+		return () => instance.destroy();
+	};
+}
+```
+
+<Callout type="tip">
+<strong>Attach kondisional pakai ekspresi falsy.</strong> <code>&#123;@attach enabled &amp;&amp; fn&#125;</code> — kalau <code>enabled</code> bernilai falsy, tidak ada attachment yang dipasang (dan kalau sebelumnya terpasang, cleanup-nya jalan). Cara rapi untuk menyalakan/mematikan perilaku tanpa <code>&#123;#if&#125;</code> di sekeliling elemen.
+</Callout>
+
+<Callout type="tip">
+<strong>Attachment pada komponen.</strong> Saat kamu menulis <code>&#123;@attach fn&#125;</code> pada sebuah komponen (bukan elemen DOM), Svelte mengubahnya menjadi prop berkunci <code>Symbol</code>. Agar attachment-nya benar-benar menempel ke DOM, komponen tujuan harus menyebar sisa props ke elemennya: <code>&lt;button &#123;...props&#125;&gt;</code>. Pola ini membuat komponen pembungkus (mis. <code>&lt;Button&gt;</code>) bisa "meneruskan" tooltip/perilaku dari pemanggil.
+</Callout>
+
+<Callout type="legacy">
+<strong>Action (<code>use:</code>) belum dihapus</strong>, tapi attachment adalah penerus modernnya: reaktif, bisa di-spread, bisa dioper sebagai prop, bisa inline & kondisional. Untuk kode lama yang sudah berbentuk action, tak perlu menulis ulang — bungkus saja dengan <code>fromAction</code>. Butuh Svelte <code>5.29</code> atau lebih baru.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '<div use:tooltip={teks}>', modern: '<div {@attach fromAction(tooltip, () => teks)}>', note: 'Migrasi langsung tanpa menulis ulang action.' },
+	{ legacy: 'Action: hook update untuk param berubah', modern: 'Attachment: badan = effect, otomatis jalan ulang', note: 'Tak perlu logika diff manual.' },
+	{ legacy: 'Tidak bisa di-spread / dioper sebagai prop', modern: 'createAttachmentKey() -> entri objek props', note: 'Bisa ikut {...props}.' },
+	{ legacy: 'use: tak bisa kondisional dengan rapi', modern: '{@attach enabled && fn}', note: 'Falsy = nonaktif + cleanup.' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-attachments" label="svelte/attachments — Attachment, createAttachmentKey, fromAction" />
+<DocsLink href="https://svelte.dev/docs/svelte/@attach" label="@attach — directive, factory, cleanup, & reaktivitas" />

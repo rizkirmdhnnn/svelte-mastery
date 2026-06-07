@@ -1,0 +1,279 @@
+---
+title: 'on: (legacy events)'
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 6
+status: legacy
+description: Directive on: dan event modifier Svelte 4 (preventDefault, once, capture, dll) plus padanan modern Svelte 5 — onclick dan helper svelte/legacy.
+docs: https://svelte.dev/docs/svelte/legacy-on
+keywords: [legacy, events, modifiers, onclick, forwarding, preventDefault]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+<Callout type="legacy">
+Modul ini membahas <strong>API lama Svelte 4</strong> (mode non-runes): directive <code>on:</code> beserta event modifier-nya. Tujuannya supaya kamu bisa <em>membaca</em> dan <em>memigrasi</em> kode lama. <strong>Jangan</strong> menulis kode baru dengan pola ini — padanan modern Svelte 5 (<code>onclick</code> + helper <code>svelte/legacy</code>) ditunjukkan di tiap bagian. Compiler Svelte 5 masih menerima <code>on:click</code> demi kompatibilitas, tapi memunculkan deprecation warning.
+</Callout>
+
+## 1. Konsep
+
+Di Svelte 4, event ditempel dengan **directive** `on:`, mis. `on:click={handleClick}`. Kata kuncinya: `on:click` itu **bukan atribut HTML biasa**, melainkan instruksi khusus untuk compiler. Itulah kenapa ada titik dua — titik dua adalah penanda "ini directive, perlakukan istimewa", sama seperti `bind:value` atau `use:action`. Compiler melihat `on:`, lalu menyiapkan `addEventListener` di belakang layar.
+
+Kenapa Svelte 4 repot-repot membuat sintaks terpisah, bukan sekadar pakai `onclick` seperti HTML? Karena directive memberi dua fitur yang tidak bisa dilakukan atribut polos: **event modifier** dan **event forwarding**. Keduanya butuh "tempat" di sintaks, dan `on:` menyediakannya.
+
+### Event modifier: pipa `|` yang menumpuk perilaku
+
+Bagian paling khas dari `on:` adalah modifier — tweak deklaratif yang kamu rangkai pakai karakter pipa `|`:
+
+```
+on:submit|preventDefault={handleSubmit}
+on:click|once|capture={handler}
+```
+
+#### Analogi: pipeline shell
+
+Sintaks `|` ini sengaja terasa seperti **pipe di terminal**. Baca `on:click|preventDefault|once={fn}` seperti membaca perintah shell: "ambil event click, *pipe* lewat `preventDefault`, *pipe* lewat `once`, baru jalankan `fn`." Tiap modifier adalah satu stage filter yang membungkus event sebelum handler-mu menyentuhnya. Svelte 4 menyembunyikan pembungkusan itu di dalam DSL template.
+
+Svelte 5 tidak menghapus idenya — ia cuma **memindahkan pipa itu dari template ke JavaScript**. Stage `preventDefault` yang tadinya tersembunyi sekarang jadi fungsi nyata yang kamu lihat: `onclick={preventDefault(fn)}`. Sama-sama "membungkus handler", bedanya sekarang pembungkusnya kelihatan dan bisa kamu komposisikan sendiri.
+
+#### Daftar lengkap modifier dan padanan modernnya
+
+| Modifier | Arti | Padanan modern Svelte 5 |
+|---|---|---|
+| `preventDefault` | panggil `event.preventDefault()` sebelum handler | `onclick={preventDefault(fn)}` atau inline `e.preventDefault()` |
+| `stopPropagation` | panggil `event.stopPropagation()` | `onclick={stopPropagation(fn)}` atau inline |
+| `stopImmediatePropagation` | panggil `event.stopImmediatePropagation()` | `onclick={stopImmediatePropagation(fn)}` |
+| `once` | hapus handler setelah jalan sekali | `onclick={once(fn)}` |
+| `self` | hanya jalan kalau `event.target` adalah elemen itu sendiri | `onclick={self(fn)}` atau cek `e.target === e.currentTarget` |
+| `trusted` | hanya jalan kalau `event.isTrusted === true` | `onclick={trusted(fn)}` atau cek `e.isTrusted` |
+| `capture` | jalan di fase capture, bukan bubbling | `onclickcapture={fn}` (atribut native!) |
+| `passive` | set `passive: true` (perf scroll/touch) | `use:passive={['scroll', () => fn]}` |
+| `nonpassive` | set `passive: false` eksplisit | `use:nonpassive={['scroll', () => fn]}` |
+
+`preventDefault`, `stopPropagation`, `stopImmediatePropagation`, `once`, `self`, dan `trusted` semuanya **membungkus handler**, jadi padanannya adalah fungsi pembungkus dari `svelte/legacy`. `capture` punya jalur khusus: Svelte 5 mengenali sufiks `capture` langsung di nama atribut (`onclickcapture`), jadi tak perlu helper. `passive` / `nonpassive` perlu memengaruhi *cara* listener dipasang (opsi `addEventListener`), bukan cuma membungkus handler — makanya padanannya berupa **action** (`use:`), bukan fungsi pembungkus.
+
+### Event forwarding: melempar event keluar dari komponen
+
+Fitur kedua: `on:click` **tanpa nilai**.
+
+```svelte
+<button on:click>klik</button>
+```
+
+Di Svelte 4 ini berarti "forward" — event click pada `<button>` ini dilempar keluar agar bisa didengar oleh *pemakai* komponennya: `<MyButton on:click={...}>`. Ini diperlukan karena di Svelte 4 event bukan nilai biasa; kamu tak bisa sekadar "mengoper" listener ke dalam, jadi Svelte menyediakan mekanisme forwarding khusus.
+
+Di Svelte 5 masalah ini lenyap dengan sendirinya: karena `onclick` cuma sebuah prop fungsi biasa, forwarding = mengoper prop itu ke elemen di dalam. Tidak ada sintaks khusus — cukup `{onclick}` atau bahkan `{...props}` untuk meneruskan semua handler sekaligus.
+
+### Kenapa Svelte 5 membuang `on:`
+
+Svelte 5 menyatukan event dengan seluruh sistem atribut: `onclick` kini setara dengan `class`, `value`, atau atribut apa pun. Keuntungannya konkret — `onclick` bisa di-`{...spread}`, bisa dibuat dinamis/kondisional (`onclick={enabled ? fn : undefined}`), dan tak butuh penanganan parser khusus. Harga yang dibayar: kamu kehilangan shorthand modifier deklaratif, jadi sekarang membungkus manual atau mengimpor helper dari `svelte/legacy`. Bagi yang datang dari React, `onclick` ini langsung familiar — persis `onClick`, hanya huruf kecil semua mengikuti nama atribut DOM asli.
+
+## 2. Contoh kode
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) -->
+<script>
+	let count = 0;
+	function handleClick() {
+		count += 1;
+	}
+</script>
+
+<!-- directive on:click; handler boleh inline tanpa penalti performa -->
+<button on:click={handleClick}>klik: {count}</button>
+<button on:click={() => (count += 1)}>klik inline</button>
+
+<!-- modifier dirangkai dengan pipa | -->
+<form on:submit|preventDefault={() => alert('disubmit tanpa reload')}>
+	<button on:click|once>tombol sekali pakai</button>
+</form>
+```
+
+```svelte
+<!-- ✅ GAYA BARU (Svelte 5 runes) — padanan langsung -->
+<script>
+	// helper untuk meniru modifier; impor HANYA yang dipakai
+	import { preventDefault, once } from 'svelte/legacy';
+
+	let count = $state(0);
+	function handleClick() {
+		count += 1;
+	}
+</script>
+
+<!-- on:click → onclick (properti biasa, huruf kecil) -->
+<button onclick={handleClick}>klik: {count}</button>
+<button onclick={() => (count += 1)}>klik inline</button>
+
+<!-- |preventDefault → inline e.preventDefault() (cara paling jelas untuk satu kali pakai) -->
+<form onsubmit={(e) => { e.preventDefault(); alert('disubmit tanpa reload'); }}>
+	<!-- |once → bungkus dengan helper once() dari svelte/legacy -->
+	<button onclick={once(() => {})}>tombol sekali pakai</button>
+</form>
+```
+
+```svelte
+<!-- ✅ capture, passive, dan forwarding -->
+<script>
+	import { passive } from 'svelte/legacy';
+
+	// forwarding: terima handler sebagai prop, lalu teruskan ke elemen di dalam
+	let { onclick } = $props();
+</script>
+
+<!-- |capture → sufiks 'capture' di nama atribut (native, tanpa helper) -->
+<div onclickcapture={() => console.log('fase capture')}>
+	<!-- forward: tinggal pasang prop onclick ke <button> -->
+	<button {onclick}>diteruskan ke parent</button>
+</div>
+
+<!-- |passive → action use:passive; argumen [namaEvent, () => handler] -->
+<div use:passive={['scroll', () => () => console.log('scroll passive')]}>
+	area scroll
+</div>
+```
+
+## 3. Coba sendiri
+
+Modul ini menampilkan sintaks Svelte 4 yang sengaja sudah usang, jadi tidak ada live playground — pelajari pemetaannya lewat contoh statis beranotasi berikut. Ini satu komponen `<Modal>` Svelte 4 yang memakai tiga fitur sekaligus (modifier, `self`, forwarding), lalu versi Svelte 5-nya.
+
+```svelte
+<!-- ❌ Modal.svelte (Svelte 4) -->
+<script>
+	import { createEventDispatcher } from 'svelte';
+	const dispatch = createEventDispatcher();
+</script>
+
+<!-- |self: klik backdrop hanya menutup kalau yang diklik backdrop-nya sendiri,
+     bukan anak di dalamnya. |stopPropagation di kotak supaya klik isi tak menembus. -->
+<div class="backdrop" on:click|self={() => dispatch('close')}>
+	<div class="box" on:click|stopPropagation>
+		<slot />
+		<!-- |once: tombol "Jangan tampilkan lagi" hanya bisa diklik sekali -->
+		<button on:click|once={() => dispatch('dismiss')}>Jangan tampilkan lagi</button>
+	</div>
+</div>
+```
+
+```svelte
+<!-- ✅ Modal.svelte (Svelte 5 runes) -->
+<script>
+	// self & once dari helper; stopPropagation pun ada kalau mau, tapi di sini
+	// kita demonstrasikan dua rute: helper (self, once) dan inline (stopPropagation).
+	import { self, once } from 'svelte/legacy';
+
+	// createEventDispatcher → callback prop; <slot/> → children snippet
+	let { onclose, ondismiss, children } = $props();
+</script>
+
+<!-- |self → self(fn): hanya jalan kalau e.target === e.currentTarget -->
+<div class="backdrop" onclick={self(() => onclose?.())}>
+	<!-- |stopPropagation → inline (sama jelasnya untuk satu handler) -->
+	<div class="box" onclick={(e) => e.stopPropagation()}>
+		{@render children?.()}
+		<!-- |once → once(fn) -->
+		<button onclick={once(() => ondismiss?.())}>Jangan tampilkan lagi</button>
+	</div>
+</div>
+```
+
+Tiga hal yang berubah dan kenapa: (1) `on:click|self` → `onclick={self(...)}` karena `self` membungkus handler; (2) `on:click|stopPropagation` cukup ditangani inline `e.stopPropagation()` — untuk satu handler, inline sering lebih lugas daripada mengimpor helper; (3) `on:click|once` → `once(...)` agar tombol benar-benar nonaktif setelah klik pertama. Catatan: `createEventDispatcher` + `dispatch('close')` ikut berganti jadi callback prop `onclose` (lihat modul khusus event dispatcher), karena di Svelte 5 event komponen memang dipindah ke callback prop.
+
+## 4. Latihan
+
+<Exercise title="Migrasikan SearchBox dari on: ke onclick">
+
+Komponen `<SearchBox>` Svelte 4 di bawah memakai tiga pola event lama sekaligus: modifier `preventDefault` pada submit, modifier `once` pada tombol reset, dan **forwarding** `on:click` pada tombol Bantuan. Tulis ulang sepenuhnya ke Svelte 5 (runes). Boleh pakai helper dari `svelte/legacy` atau tangani inline — yang penting perilakunya sama.
+
+```svelte
+<!-- ❌ SearchBox.svelte (Svelte 4) -->
+<script>
+	export let onSearch;
+	let q = '';
+</script>
+
+<form on:submit|preventDefault={() => onSearch(q)}>
+	<input bind:value={q} placeholder="cari..." />
+	<button type="submit">Cari</button>
+	<button type="reset" on:click|once={() => (q = '')}>Reset (sekali)</button>
+	<!-- forward klik tombol Bantuan ke pemakai komponen -->
+	<button type="button" on:click>Bantuan</button>
+</form>
+```
+
+{#snippet solution()}
+
+```svelte
+<!-- ✅ SearchBox.svelte (Svelte 5 runes) -->
+<script>
+	// 'once' dari svelte/legacy untuk meniru |once.
+	import { once } from 'svelte/legacy';
+
+	// export let → $props(); 'onclick' diterima sebagai prop untuk forwarding.
+	let { onSearch, onclick } = $props();
+	let q = $state('');
+</script>
+
+<!-- on:submit|preventDefault → onsubmit + e.preventDefault() inline -->
+<form onsubmit={(e) => { e.preventDefault(); onSearch(q); }}>
+	<input bind:value={q} placeholder="cari..." />
+	<button type="submit">Cari</button>
+	<!-- on:click|once → once(fn) -->
+	<button type="reset" onclick={once(() => (q = ''))}>Reset (sekali)</button>
+	<!-- forwarding: cukup teruskan prop 'onclick' ke elemen -->
+	<button type="button" {onclick}>Bantuan</button>
+</form>
+```
+
+Kunci tiap perubahan: `on:submit|preventDefault` jadi `onsubmit` dengan `e.preventDefault()` ditulis eksplisit di awal handler; `on:click|once` jadi `once(...)`; dan forwarding `on:click` (tanpa nilai) jadi prop `onclick` yang kamu ambil dari `$props()` lalu pasang kembali dengan shorthand `{onclick}`. Pemakai memanggilnya identik: `<SearchBox onSearch={...} onclick={...} />`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>on:eventname</code> dan semua modifier (<code>|preventDefault</code>, <code>|once</code>, <code>|self</code>, dst.) adalah <strong>API Svelte 4</strong>. Di Svelte 5 keduanya masih jalan demi kompatibilitas tetapi memunculkan deprecation warning. Pola modern: <code>onclick</code> sebagai properti biasa, ditambah helper dari <code>svelte/legacy</code> bila kamu butuh perilaku modifier. Ingat juga: dalam satu komponen kamu tidak boleh mencampur mode legacy dan runes — begitu ada satu rune (mis. <code>$state</code>), <code>on:click</code> di file yang sama jadi tidak valid.
+</Callout>
+
+<Callout type="pitfall">
+Di Svelte 4 kamu boleh menumpuk handler ganda untuk event yang sama: <code>on:click=&#123;a&#125; on:click=&#123;b&#125;</code> — keduanya jalan. Di Svelte 5 ini <strong>tidak bisa</strong> karena <code>onclick</code> adalah satu properti; menulis dua <code>onclick</code> hanya menyisakan yang terakhir. Gabungkan jadi satu handler: <code>onclick=&#123;(e) =&gt; &#123; a(e); b(e); &#125;&#125;</code>.
+</Callout>
+
+<Callout type="warning">
+<code>passive</code> dan <code>nonpassive</code> <strong>bukan</strong> fungsi pembungkus handler — mereka mengubah <em>opsi</em> saat listener dipasang (<code>addEventListener(..., &#123; passive &#125;)</code>). Karena itu padanannya adalah <em>action</em>: <code>use:passive=&#123;['scroll', () =&gt; handler]&#125;</code>, bukan <code>onscroll=&#123;passive(handler)&#125;</code>. Salah memperlakukannya sebagai pembungkus akan diam-diam tidak berefek pada perilaku passive.
+</Callout>
+
+<Callout type="tip">
+Untuk <code>|capture</code> kamu tidak perlu helper apa pun: Svelte 5 mengenali sufiks di nama atribut, jadi <code>on:click|capture</code> cukup menjadi <code>onclickcapture</code>. Pola yang sama berlaku untuk event lain — <code>onpointerdowncapture</code>, <code>onkeydowncapture</code>, dan seterusnya.
+</Callout>
+
+<Callout type="tip">
+Untuk modifier sederhana yang dipakai sekali (mis. <code>preventDefault</code> atau <code>stopPropagation</code>), menulis inline <code>onsubmit=&#123;(e) =&gt; &#123; e.preventDefault(); ... &#125;&#125;</code> sering lebih jelas daripada mengimpor helper — pembaca langsung lihat apa yang terjadi. Simpan helper <code>svelte/legacy</code> untuk kasus yang lebih ringkas seperti <code>once</code>, <code>self</code>, atau <code>trusted</code>, atau ketika migration script otomatis yang menaruhnya.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'on:click={fn}', modern: 'onclick={fn}', note: 'Event jadi properti biasa, huruf kecil.' },
+	{ legacy: 'on:click={() => n++}', modern: 'onclick={() => n++}', note: 'Handler inline sama saja.' },
+	{ legacy: 'on:submit|preventDefault={fn}', modern: 'onsubmit={(e) => { e.preventDefault(); fn(e); }}', note: 'Inline, atau preventDefault(fn) dari svelte/legacy.' },
+	{ legacy: 'on:click|stopPropagation={fn}', modern: 'onclick={stopPropagation(fn)}', note: 'Helper svelte/legacy; atau inline e.stopPropagation().' },
+	{ legacy: 'on:click|once={fn}', modern: 'onclick={once(fn)}', note: 'once() dari svelte/legacy.' },
+	{ legacy: 'on:click|self={fn}', modern: 'onclick={self(fn)}', note: 'self() dari svelte/legacy.' },
+	{ legacy: 'on:click|trusted={fn}', modern: 'onclick={trusted(fn)}', note: 'trusted() dari svelte/legacy.' },
+	{ legacy: 'on:click|capture={fn}', modern: 'onclickcapture={fn}', note: 'Sufiks capture native, tanpa helper.' },
+	{ legacy: 'on:scroll|passive={fn}', modern: 'use:passive={["scroll", () => fn]}', note: 'Action passive dari svelte/legacy.' },
+	{ legacy: 'on:scroll|nonpassive={fn}', modern: 'use:nonpassive={["scroll", () => fn]}', note: 'Action nonpassive dari svelte/legacy.' },
+	{ legacy: 'on:click={a} on:click={b}', modern: 'onclick={(e) => { a(e); b(e); }}', note: 'Handler ganda digabung; onclick hanya satu.' },
+	{ legacy: 'on:click (forwarding)', modern: 'let { onclick } = $props() lalu {onclick}', note: 'Forward = teruskan prop fungsi ke elemen.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-on" label="Svelte — legacy on: directive (dokumentasi resmi)" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-legacy" label="Modul svelte/legacy — helper preventDefault, once, self, passive, dll" />

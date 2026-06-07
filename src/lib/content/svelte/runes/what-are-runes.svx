@@ -1,0 +1,199 @@
+---
+title: What are runes?
+product: svelte
+section: runes
+sectionTitle: Runes
+sectionOrder: 2
+order: 1
+status: stable
+description: Runes adalah simbol $ yang berfungsi sebagai instruksi compiler untuk menandai bagian kode mana yang reaktif, menggantikan reaktivitas implisit Svelte 4.
+docs: https://svelte.dev/docs/svelte/what-are-runes
+keywords: [runes, reactivity, compiler, $state, svelte5]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Di Svelte 5, **rune** adalah simbol berawalan tanda `$` yang kamu tulis di dalam kode untuk memberi tahu compiler bagian mana yang "hidup" alias reaktif. Contohnya `$state`, `$derived`, dan `$effect`. Secara harfiah kata *rune* memang berarti "huruf atau tanda yang dipakai sebagai simbol mistis atau magis" — dan istilah itu dipilih dengan sengaja, karena rune memang berperan seperti simbol ajaib yang mengubah perilaku kode.
+
+Bentuk rune memang mirip pemanggilan fungsi (`$state(0)`), tapi sebenarnya **bukan fungsi biasa** — ia adalah bagian dari *bahasa* Svelte itu sendiri, sederajat dengan keyword seperti `if`, `for`, atau `return` di JavaScript. Inilah tiga sifat yang membedakan rune dari fungsi JavaScript biasa, dan ketiganya penting untuk dipahami sejak awal:
+
+- **Tidak perlu di-import.** Kamu tidak menulis `import { state } from 'svelte'`. Rune sudah jadi bagian dari sintaks, persis seperti kamu tidak perlu meng-import keyword `return`.
+- **Bukan sebuah nilai (value).** Kamu tidak bisa menyimpannya ke variabel atau mengopernya sebagai argumen. Menulis `const s = $state` itu tidak sah — sama seperti `const x = return` tidak masuk akal.
+- **Hanya valid di posisi tertentu.** Sama seperti keyword JavaScript, rune cuma boleh muncul di tempat yang benar; kalau salah posisi, compiler akan menegurmu dengan pesan error yang jelas.
+
+### Analogi: rune itu "mantra" yang menghidupkan kode
+
+Bayangkan kode kamu adalah sebuah peta dunia yang diam dan mati. Compiler Svelte adalah penyihir yang membaca peta itu. Secara default, semua yang ada di peta itu benda mati: sebuah `let count = 0` hanyalah angka yang tertulis, tidak akan berubah sendiri di layar walaupun nilainya di memori berubah.
+
+**Rune adalah mantra** yang kamu ucapkan ke si penyihir (compiler). Saat kamu menulis `$state(0)` di depan sebuah variabel, kamu seolah berkata: *"Hidupkan yang ini! Awasi terus, dan kalau berubah, perbarui semua yang bergantung padanya."* Rune `$derived` berkata: *"Nilai ini ikut hidup, tapi hidupnya menumpang dari yang lain."* Dan `$effect` berkata: *"Setiap kali yang kuawasi berubah, jalankan ritual ini."*
+
+Poin penting dari analogi ini: rune **tidak benar-benar "melakukan" apa-apa saat runtime** layaknya fungsi yang dipanggil. Ia adalah penanda di **waktu compile** — sebuah instruksi yang dibaca penyihir untuk menulis ulang kodemu menjadi JavaScript biasa yang tahu kapan harus memperbarui DOM. Saat aplikasimu jalan di browser, tulisan `$state` itu sudah lenyap, berganti jadi kode pelacak perubahan yang dihasilkan compiler. Itulah kenapa Svelte disebut *compiler*, bukan sekadar *library*.
+
+### Mengapa rune ada — menggantikan reaktivitas implisit Svelte 4
+
+Untuk paham kenapa rune diperkenalkan, kita perlu lihat dulu cara lama. Di Svelte 4, reaktivitas bersifat **implisit** dan bergantung pada *lokasi* kode:
+
+- Variabel `let count = 0` di level atas komponen otomatis reaktif — tapi hanya di dalam file `.svelte`.
+- Nilai turunan ditulis dengan label aneh `$: double = count * 2`.
+- Side effect juga pakai `$:` yang sama, dibedakan compiler dari konteksnya.
+
+Pendekatan "ajaib" ini terasa ringkas, tapi punya tiga masalah nyata. **Pertama, susah ditebak.** Sebuah `let` biasa kadang reaktif, kadang tidak — tergantung apakah ia di komponen atau di file `.js`. Pembaca kode harus tahu konteksnya untuk menebak apakah sebuah variabel hidup. **Kedua, tidak bisa dipindah.** Logika reaktif terkurung di dalam komponen; kamu tidak bisa mengangkatnya ke file terpisah tanpa kehilangan reaktivitasnya. **Ketiga, `$:` punya aturan tersembunyi** soal urutan eksekusi dan deteksi dependensi yang sering bikin bingung, apalagi saat satu blok bergantung pada blok lain.
+
+Rune membuat semua itu **eksplisit**. Sekarang `let count = $state(0)` jelas-jelas reaktif karena ada mantranya, dan `let count = 0` jelas-jelas cuma variabel biasa. Tidak ada lagi tebak-tebakan berdasarkan lokasi. Bonus terbesarnya: karena reaktivitas kini melekat pada *nilai* (lewat rune) dan bukan pada *lokasi* (level atas komponen), kamu bisa memindahkan logika reaktif keluar dari komponen ke file modul biasa — sesuatu yang mustahil di Svelte 4.
+
+### Di mana rune boleh dipakai
+
+Rune hanya valid di tiga jenis file:
+
+- `.svelte` — komponen, seperti biasa.
+- `.svelte.js` — modul JavaScript, tapi diizinkan memakai rune.
+- `.svelte.ts` — versi TypeScript-nya.
+
+File `.js` atau `.ts` biasa **tidak** boleh memakai rune. Akhiran `.svelte` di tengah nama file itulah sinyal bagi tooling Svelte untuk ikut mem-proses rune di dalamnya. Inilah lompatan besar dibanding Svelte 4: dulu reaktivitas terkurung di dalam komponen; sekarang kamu bisa menulis "store" reaktif sebagai modul `.svelte.js` dan memakainya di mana saja.
+
+<Callout type="tip">
+Buat pembaca dari React/Vue: anggap rune sebagai gabungan dari API reaktif kedua framework itu, tapi tanpa perlu di-import. `$state` mirip `useState`/`ref`, `$derived` mirip `useMemo`/`computed`, dan `$effect` mirip `useEffect`/`watchEffect`. Bedanya yang fundamental: ini **keyword bahasa**, bukan fungsi pustaka — jadi tidak ada array dependency, tidak ada `.value`, dan tidak ada aturan "Rules of Hooks".
+</Callout>
+
+## 2. Contoh kode
+
+Mari lihat tiga rune paling dasar bekerja bersama di satu komponen:
+
+```svelte
+<script>
+	// $state: "mantra" yang menghidupkan variabel.
+	// count sekarang reaktif — UI ikut berubah saat nilainya berubah.
+	let count = $state(0);
+
+	// $derived: nilai turunan yang menumpang hidup dari count.
+	// Tidak perlu di-update manual; ia menghitung ulang otomatis
+	// setiap kali count berubah.
+	let double = $derived(count * 2);
+
+	// $effect: ritual yang dijalankan ulang tiap dependensinya berubah.
+	// Di sini ia "mengawasi" count dan mencatatnya ke console.
+	$effect(() => {
+		console.log('count berubah jadi', count);
+	});
+</script>
+
+<!-- onclick (bukan on:click) memodifikasi count secara langsung -->
+<button onclick={() => count++}>Tambah</button>
+<p>{count} x 2 = {double}</p>
+```
+
+Perhatikan dua hal kunci: **tidak ada `import`** untuk `$state`, `$derived`, maupun `$effect`, dan kita mengubah nilai cukup dengan `count++` — tidak ada setter seperti `setCount` di React.
+
+Karena reaktivitas kini melekat pada nilai, kita bahkan bisa "mengekspor" logika reaktif ke file modul biasa berkat akhiran `.svelte.js`:
+
+```js
+// counter.svelte.js
+// File .svelte.js boleh memakai rune meski bukan komponen.
+export function createCounter(initial = 0) {
+	let count = $state(initial);
+
+	return {
+		// getter agar nilai terbaca reaktif dari luar
+		get count() {
+			return count;
+		},
+		increment() {
+			count++;
+		}
+	};
+}
+```
+
+```svelte
+<!-- App.svelte -->
+<script>
+	import { createCounter } from './counter.svelte.js';
+
+	// Logika reaktif kini hidup di luar komponen — mustahil di Svelte 4.
+	const counter = createCounter(10);
+</script>
+
+<button onclick={counter.increment}>{counter.count}</button>
+```
+
+<Callout type="warning">
+Kamu tidak bisa meng-export *langsung* sebuah state yang nantinya di-reassign dari file `.svelte.js` (mis. `export let count = $state(0)`). Itu sebabnya pada contoh di atas kita membungkus `count` dengan **getter** di dalam objek. Membungkus dengan getter menjaga nilai tetap terbaca reaktif saat diakses dari komponen lain — kalau cuma mengembalikan angkanya, yang terkirim hanyalah snapshot mati.
+</Callout>
+
+## 3. Coba sendiri
+
+Ubah-ubah kode di bawah. Coba ganti `count++` jadi `count += 5`, atau tambahkan rune `$derived` baru. Perhatikan bahwa tidak ada satu pun `import` untuk rune — ia memang bagian dari bahasa.
+
+<Playground code={`<script>
+	let count = $state(0);
+	let double = $derived(count * 2);
+	let label = $derived(count === 0 ? 'mulai' : 'jalan');
+</script>
+<h3>Hitungan: {count} (status: {label})</h3>
+<p>Dua kali lipat: {double}</p>
+<button onclick={() => count++}>Tambah</button>
+<button onclick={() => (count = 0)}>Reset</button>`} />
+
+## 4. Latihan
+
+<Exercise title="Bedakan reaktif vs tidak">
+Bukti paling jelas bahwa rune adalah "mantra" wajib: tanpa rune, tidak ada reaktivitas.
+
+Buat sebuah komponen dengan dua variabel `a` dan `b`, di mana **hanya `a` yang reaktif** (pakai `$state`). Tampilkan keduanya, lalu buat dua tombol yang masing-masing menaikkan `a` dan `b`. Amati: hanya perubahan `a` yang terlihat di layar, karena `b` tidak punya mantra.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	// a punya mantra → reaktif, UI ikut berubah
+	let a = $state(0);
+	// b variabel biasa → tetap berubah di memori, tapi UI TIDAK ter-update
+	let b = 0;
+</script>
+
+<p>a (reaktif): {a}</p>
+<p>b (biasa): {b}</p>
+
+<button onclick={() => a++}>a++</button>
+<button onclick={() => b++}>b++ (layar tak berubah)</button>
+```
+
+Saat menekan tombol `b++`, nilai `b` di memori sebenarnya naik, tapi Svelte tidak diberi tahu untuk mengawasinya — jadi DOM tidak diperbarui. (Iseng: tekan `a++` setelah beberapa kali `b++`, dan kamu akan lihat `b` "loncat" ke nilai terbarunya, karena render ulang akhirnya membaca nilai `b` yang sekarang.) Inilah inti "eksplisit"-nya rune: tanpa mantra `$state`, sebuah variabel tetap mati di mata compiler.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Rune **bukan nilai**. Jangan coba menulis `const s = $state` atau mengoper `$state` sebagai argumen fungsi — compiler akan menolak. Rune hanya boleh muncul di posisi tertentu, misalnya di sisi kanan `let x = $state(...)`.
+</Callout>
+
+<Callout type="pitfall">
+Rune hanya hidup di file `.svelte`, `.svelte.js`, dan `.svelte.ts`. Kalau kamu menaruh `$state` di file `.js`/`.ts` biasa, kamu akan kena error *"The `$state` rune is only available inside `.svelte` and `.svelte.js/ts` files"*. Solusinya: ganti nama file jadi berakhiran `.svelte.js`.
+</Callout>
+
+<Callout type="tip">
+Tidak perlu meng-import rune. Kalau editor menyarankan `import &#123; state &#125; from 'svelte'`, abaikan — itu salah kaprah. Rune adalah keyword, sama seperti kamu tak meng-import `return`.
+</Callout>
+
+<Callout type="legacy">
+API lama Svelte 4 di bawah ini **tidak dipakai lagi** di kode rune. Kalau menemukannya di tutorial lama, itu sinyal materi tersebut belum diperbarui ke Svelte 5 — terjemahkan ke padanan modernnya:
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'let count = 0 (reaktif otomatis di komponen)', modern: 'let count = $state(0)', note: 'Reaktivitas kini eksplisit lewat rune.' },
+	{ legacy: '$: double = count * 2', modern: 'let double = $derived(count * 2)', note: 'Nilai turunan pakai $derived.' },
+	{ legacy: '$: console.log(count)', modern: '$effect(() => console.log(count))', note: 'Side effect pakai $effect.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/what-are-runes" label="What are runes? — dokumentasi resmi Svelte" />

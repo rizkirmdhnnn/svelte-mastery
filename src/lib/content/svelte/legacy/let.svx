@@ -1,0 +1,296 @@
+---
+title: Reactive let/var declarations
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 2
+status: legacy
+description: Reaktivitas implisit Svelte 4 — setiap let di top-level otomatis reaktif berbasis assignment — dan padanan modern eksplisitnya, $state.
+docs: https://svelte.dev/docs/svelte/legacy-let
+keywords: [legacy, reactivity, let, assignment, state]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+<Callout type="legacy">
+Modul ini membahas <strong>API lama Svelte 4</strong> (mode non-runes). Tujuannya supaya kamu bisa <em>membaca</em> kode lama dan tahu cara memetakannya ke Svelte 5. <strong>Jangan</strong> menulis kode baru dengan pola ini — padanan modernnya ada di akhir setiap bagian.
+</Callout>
+
+## 1. Konsep
+
+Di Svelte 4, ada satu aturan yang terasa "ajaib" buat pendatang dari React: **setiap variabel `let` (atau `var`) yang dideklarasikan di top-level `<script>` sebuah komponen otomatis dianggap reaktif.** Tidak ada `useState`, tidak ada `$state`, tidak ada anotasi apa pun. Kamu cukup menulis `let count = 0`, dan begitu kamu meng-*assign* ulang nilainya, seluruh UI yang membaca `count` ikut diperbarui.
+
+```svelte
+<script>
+	let count = 0; // top-level let → otomatis reaktif (Svelte 4)
+</script>
+```
+
+Buat orang React, ini mengejutkan. Di React, `let count = 0` di dalam fungsi komponen itu cuma variabel lokal biasa — ubah nilainya, React tidak peduli, layar tidak berubah. Reaktivitas di React harus *diminta* lewat `useState`. Svelte 4 membalik default-nya: reaktivitas adalah perilaku bawaan, bukan sesuatu yang kamu opt-in.
+
+### Kunci utama: reaktivitas Svelte 4 berbasis *assignment*
+
+Ini bagian yang paling penting dipahami, karena di sinilah letak semua jebakannya. Compiler Svelte 4 tidak benar-benar "mengawasi" isi variabelmu. Yang ia lakukan saat compile adalah: **mencari setiap tanda `=` (assignment) ke variabel reaktif, lalu menyuntikkan kode "tandai kotor + jadwalkan update" tepat setelahnya.** Jadi reaktivitas dipicu oleh *aksi menulis ulang variabel*, bukan oleh perubahan data itu sendiri.
+
+Karena `count += 1` dan `object.x = y` keduanya mengandung assignment ke variabel reaktif (`count` dan `object`), keduanya memicu update. Tapi `numbers.push(4)`? Itu **tidak ada** tanda `=` ke `numbers` — kamu memanggil method, bukan meng-assign. Compiler tidak melihat apa pun untuk disuntik, jadi UI tidak diperbarui meski isi array jelas berubah.
+
+### Analogi: lampu sensor gerak di pintu
+
+Bayangkan reaktivitas Svelte 4 seperti **lampu sensor gerak yang dipasang persis di ambang pintu sebuah kamar.** Sensor itu hanya menyala kalau ada orang *melewati pintu* (itulah assignment: `count = ...`). Selama ada lalu-lalang masuk-keluar, lampu rajin menyala — UI rajin update.
+
+Masalahnya muncul kalau kamu **sudah di dalam kamar lalu menggeser-geser perabot** tanpa melewati pintu lagi. Dari luar, isi kamar jelas berubah — tapi sensor di ambang pintu tidak mendeteksi apa-apa, karena tidak ada yang lewat pintu. Inilah `numbers.push(4)`: isi array berubah, tapi tidak ada "assignment yang lewat pintu", jadi lampu tetap mati.
+
+Trik klasik Svelte 4: setelah menggeser perabot, **kamu sengaja jalan keluar lalu masuk lagi lewat pintu**, cuma untuk memancing sensor. Itulah baris aneh `numbers = numbers;` — assign array ke dirinya sendiri, tidak mengubah apa pun, semata-mata supaya compiler melihat `=` dan menyalakan update.
+
+Svelte 5 mengganti sensor pintu ini dengan **kamera yang benar-benar mengawasi isi kamar** (sebuah Proxy). Geser satu kursi pun langsung terdeteksi — itulah kenapa di Svelte 5 `numbers.push(4)` "tinggal jalan" tanpa trik apa pun.
+
+### Padanan modern: `$state`
+
+Svelte 5 tidak menghapus reaktivitas — ia membuatnya **eksplisit dan benar**. Kamu menandai variabel reaktif dengan rune `$state(...)`:
+
+```svelte
+<script>
+	let count = $state(0); // eksplisit: "ini state reaktif"
+</script>
+```
+
+Dua hal yang berubah, dan keduanya perbaikan nyata:
+
+1. **Eksplisit.** Kamu (dan pembaca kode, dan compiler) langsung tahu mana variabel yang reaktif dan mana yang cuma nilai biasa. Tidak ada lagi tebak-tebakan "apakah `let` ini reaktif atau bukan" — di Svelte 4, `let x` di top-level reaktif, tapi `let x` di dalam sebuah fungsi tidak, dan perbedaan itu tak terlihat sekilas.
+
+2. **Berbasis nilai, bukan assignment.** `$state` membungkus object/array dengan Proxy yang mengawasi mutasi sungguhan. Jadi `numbers.push(4)`, `obj.x = 1`, `map.set(...)` — semuanya memicu update tanpa trik `numbers = numbers`. Jebakan terbesar Svelte 4 hilang total.
+
+## 2. Contoh kode
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — counter sederhana -->
+<script>
+	// top-level let → otomatis reaktif tanpa anotasi
+	let count = 0;
+</script>
+
+<!-- 'on:click' juga sintaks lama (Svelte 4); Svelte 5 pakai 'onclick' -->
+<button on:click={() => count += 1}>
+	clicks: {count}
+</button>
+```
+
+Counter di atas bekerja karena `count += 1` mengandung assignment ke `count`. Sekarang lihat kasus yang **diam-diam rusak** di Svelte 4 — jebakan array:
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — jebakan mutasi array -->
+<script>
+	let numbers = [1, 2, 3, 4];
+
+	function addNumber() {
+		// ⚠️ panggilan method ini TIDAK memicu update —
+		// tidak ada assignment '=' ke 'numbers' yang bisa dilihat compiler
+		numbers.push(numbers.length + 1);
+
+		// 'tendangan' wajib: assign 'numbers' ke dirinya sendiri
+		// supaya compiler menyalakan update untuk apa pun yang membaca 'numbers'
+		numbers = numbers;
+	}
+</script>
+
+<button on:click={addNumber}>tambah</button>
+<p>{numbers.join(', ')}</p>
+```
+
+Bandingkan dengan versi Svelte 5 — bersih, tanpa trik:
+
+```svelte
+<!-- ✅ GAYA BARU (Svelte 5 runes) — sama, tapi tanpa jebakan -->
+<script>
+	// '$state' menandai reaktivitas secara eksplisit;
+	// array dibungkus Proxy, jadi mutasi sungguhan terdeteksi
+	let numbers = $state([1, 2, 3, 4]);
+
+	function addNumber() {
+		// langsung jalan — TIDAK perlu 'numbers = numbers'
+		numbers.push(numbers.length + 1);
+	}
+</script>
+
+<!-- 'on:click' → 'onclick' (properti biasa, huruf kecil) -->
+<button onclick={addNumber}>tambah</button>
+<p>{numbers.join(', ')}</p>
+```
+
+## 3. Coba sendiri
+
+Modul ini mengajarkan API lama dan menunjukkan jebakannya, jadi tidak ada live playground (kita tidak mau "mengajari" kebiasaan Svelte 4 di editor langsung). Pelajari tiga snipet beranotasi berikut — masing-masing menyoroti satu perilaku assignment-based, lalu padanan modernnya.
+
+**A. Yang berhasil di Svelte 4: assignment & mutasi object.** Keduanya mengandung `=`, jadi sensor "melihat"-nya.
+
+```svelte
+<!-- Svelte 4 — keduanya memicu update karena ada '=' -->
+<script>
+	let count = 0;
+	let user = { name: 'Rizki', age: 20 };
+
+	function birthday() {
+		count += 1;        // assignment → update ✅
+		user.age = user.age + 1; // assignment ke field → update ✅
+	}
+</script>
+
+<button on:click={birthday}>ulang tahun</button>
+<p>{user.name}, umur {user.age} (klik ke-{count})</p>
+```
+
+**B. Yang diam-diam gagal: mutasi array tanpa reassign.** Inti jebakannya — kode "terlihat benar" tapi UI membeku.
+
+```svelte
+<!-- Svelte 4 — BUG halus: tampilan tidak pernah bertambah -->
+<script>
+	let todos = ['belajar runes'];
+
+	function add() {
+		// .push() tidak punya '=' ke 'todos' → tidak ada update ❌
+		todos.push('item baru');
+		// (lupa menulis 'todos = todos;' → UI tetap menampilkan 1 item)
+	}
+</script>
+
+<button on:click={add}>tambah todo</button>
+<ul>
+	{#each todos as t}<li>{t}</li>{/each}
+</ul>
+```
+
+**C. Padanan modern Svelte 5: sama persisnya, tapi benar.** `$state` + Proxy, jadi `.push()` cukup.
+
+```svelte
+<!-- Svelte 5 — tidak ada jebakan, tidak ada trik -->
+<script>
+	let todos = $state(['belajar runes']);
+
+	function add() {
+		todos.push('item baru'); // langsung memicu update ✅
+	}
+</script>
+
+<button onclick={add}>tambah todo</button>
+<ul>
+	{#each todos as t}<li>{t}</li>{/each}
+</ul>
+```
+
+<Callout type="tip">
+Catatan untuk yang datang dari Vue: jebakan ini mirip <em>banget</em> dengan caveat reaktivitas array di <strong>Vue 2</strong> (yang butuh <code>Vue.set</code> atau <code>splice</code> agar terdeteksi). Vue 3 memperbaikinya dengan Proxy — dan Svelte 5 menempuh jalan yang sama lewat <code>$state</code>. Jadi mental model "Vue 3 reactive() vs Vue 2 array gotcha" persis memetakan ke "Svelte 5 $state vs Svelte 4 assignment-based".
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Bedah satu komponen Svelte 4, lalu modernkan">
+
+Komponen `<Cart>` gaya **Svelte 4** di bawah ini punya **satu bug reaktivitas** yang khas mode legacy: salah satu tombol mengubah data tapi UI tidak ikut berubah.
+
+1. Tunjuk baris mana yang bermasalah dan jelaskan *kenapa* (kaitkan ke "reaktivitas berbasis assignment").
+2. Beri perbaikan **minimal gaya Svelte 4** (cara cepat menambal di kode lama).
+3. Tulis ulang seluruh komponen ke **Svelte 5 (runes)** yang bersih.
+
+```svelte
+<!-- ❌ Cart.svelte (Svelte 4) -->
+<script>
+	let items = ['Kaos', 'Topi'];
+	let total = 0;
+
+	function addItem(name) {
+		items.push(name); // (1)
+		total += 1;        // (2)
+	}
+</script>
+
+<button on:click={() => addItem('Sepatu')}>Tambah Sepatu</button>
+<p>Total item: {total}</p>
+<ul>
+	{#each items as item}<li>{item}</li>{/each}
+</ul>
+```
+
+{#snippet solution()}
+
+**1. Baris yang bermasalah:** baris `(1)` — `items.push(name)`. Reaktivitas Svelte 4 berbasis *assignment*: compiler hanya menyuntikkan update di tempat ia melihat `=` ke variabel reaktif. `items.push(...)` adalah pemanggilan method tanpa `=` ke `items`, jadi `<ul>` tidak pernah di-render ulang. Sementara baris `(2)` `total += 1` mengandung assignment, jadi angka "Total item" tetap naik — hasilnya bug yang membingungkan: **angka bertambah, tapi daftarnya tidak.**
+
+**2. Tambalan minimal gaya Svelte 4** — tambahkan reassign "tendangan":
+
+```svelte
+<script>
+	let items = ['Kaos', 'Topi'];
+	let total = 0;
+
+	function addItem(name) {
+		items.push(name);
+		items = items; // ← memancing compiler agar update <ul>
+		total += 1;
+	}
+</script>
+```
+
+**3. Versi modern Svelte 5 (runes):**
+
+```svelte
+<!-- ✅ Cart.svelte (Svelte 5 runes) -->
+<script>
+	// $state: reaktif eksplisit + Proxy, jadi .push() terdeteksi
+	let items = $state(['Kaos', 'Topi']);
+
+	// total tak perlu disimpan terpisah — turunkan dari items
+	let total = $derived(items.length);
+
+	function addItem(name) {
+		items.push(name); // langsung memicu update, tanpa trik
+	}
+</script>
+
+<!-- on:click → onclick -->
+<button onclick={() => addItem('Sepatu')}>Tambah Sepatu</button>
+<p>Total item: {total}</p>
+<ul>
+	{#each items as item}<li>{item}</li>{/each}
+</ul>
+```
+
+Bonus: di versi modern, `total` tidak perlu di-maintain manual sama sekali. Karena `items` sudah reaktif benar, `let total = $derived(items.length)` selalu sinkron otomatis — bug "angka dan daftar tidak cocok" jadi mustahil secara desain.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>let x = 0</code> reaktif tanpa anotasi <strong>hanya</strong> di komponen mode legacy (Svelte 4). Begitu sebuah komponen memakai satu rune saja (mis. <code>$state</code>, <code>$props</code>), seluruh komponen masuk <strong>runes mode</strong> dan <code>let</code> biasa <em>tidak lagi</em> reaktif — ia kembali jadi variabel JavaScript biasa. Kamu tidak bisa mencampur dua mode dalam satu file.
+</Callout>
+
+<Callout type="pitfall">
+Jebakan paling sering di kode Svelte 4: <strong>mutasi tanpa reassign.</strong> <code>arr.push()</code>, <code>arr.splice()</code>, <code>arr.sort()</code>, <code>map.set()</code>, <code>set.add()</code> — semuanya mengubah data <em>tanpa</em> tanda <code>=</code>, jadi UI tidak ikut berubah. Tambalan lamanya adalah <code>arr = arr</code>. Padanan modern: bungkus dengan <code>$state(...)</code> dan jebakan ini lenyap karena Proxy mengawasi mutasi langsung.
+</Callout>
+
+<Callout type="warning">
+Reaktivitas top-level <code>let</code> hanya berlaku untuk variabel di <strong>top-level</strong> <code>&lt;script&gt;</code>. <code>let</code> yang dideklarasikan <em>di dalam sebuah fungsi</em> bukan state reaktif — ia variabel lokal biasa. Banyak pemula Svelte 4 bingung kenapa "kadang <code>let</code> reaktif, kadang tidak"; jawabannya ada di <em>lokasi</em> deklarasi. Svelte 5 menghapus ambiguitas ini: reaktif kalau dan hanya kalau dibungkus <code>$state</code>, di mana pun lokasinya.
+</Callout>
+
+<Callout type="tip">
+Saat memodernkan, ganti <code>let x = nilai</code> menjadi <code>let x = $state(nilai)</code> hanya untuk variabel yang <em>memang berubah</em> seiring waktu. Konstanta yang tak pernah di-assign ulang (mis. <code>let judul = 'Beranda'</code> yang statis) <strong>tidak</strong> perlu <code>$state</code> — biarkan jadi <code>let</code>/<code>const</code> biasa. Membungkus nilai statis dengan <code>$state</code> hanya menambah overhead Proxy tanpa manfaat.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'let count = 0', modern: 'let count = $state(0)', note: 'Reaktif implisit (Svelte 4) → eksplisit lewat $state.' },
+	{ legacy: 'count += 1', modern: 'count += 1', note: 'Assignment tetap memicu update di kedua mode.' },
+	{ legacy: 'obj.x = y', modern: 'obj.x = y', note: 'Mutasi field object: berhasil di kedua mode.' },
+	{ legacy: 'arr.push(x); arr = arr', modern: 'arr.push(x)', note: 'Jebakan reassign hilang — $state pakai Proxy.' },
+	{ legacy: 'arr.splice(i, 1); arr = arr', modern: 'arr.splice(i, 1)', note: 'Sama: mutasi langsung terdeteksi di Svelte 5.' },
+	{ legacy: 'let x (di top-level = reaktif)', modern: 'let x = $state(...) (di mana saja)', note: 'Tak lagi bergantung lokasi deklarasi.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-let" label="Reactive let/var declarations — referensi legacy resmi" />
+<DocsLink href="https://svelte.dev/docs/svelte/$state" label="$state — padanan modern (runes)" />

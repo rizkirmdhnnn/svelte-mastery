@@ -1,0 +1,265 @@
+---
+title: Cloudflare Workers
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 8
+status: stable
+description: Mendeploy SvelteKit ke Cloudflare Workers murni dengan adapter-cloudflare-workers, lengkap dengan konfigurasi wrangler.jsonc dan bedanya dengan adapter-cloudflare.
+docs: https://svelte.dev/docs/kit/adapter-cloudflare-workers
+keywords: [cloudflare, workers, adapter, wrangler, deployment, edge]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`@sveltejs/adapter-cloudflare-workers` adalah adapter yang membungkus aplikasi SvelteKit-mu menjadi **satu Cloudflare Worker murni** — sebuah skrip kecil yang dijalankan di jaringan edge Cloudflare, dekat dengan pengunjungmu di seluruh dunia, bukan di satu data center tunggal. Worker ini menangani SSR (server-side rendering), menjalankan `load`, form actions, dan `+server.js`-mu, persis seperti adapter lain — hanya saja runtime-nya **bukan Node.js penuh**, melainkan runtime V8 milik Cloudflare yang lebih ramping.
+
+Kalau kamu datang dari React/Vue: bayangkan Worker seperti sebuah **serverless function yang super ringan dan global**. Tidak ada "server yang selalu menyala" seperti `node build` pada adapter-node; sebagai gantinya, kode-mu "bangun" hanya saat ada request masuk, dieksekusi di salah satu dari ratusan lokasi edge, lalu "tidur" lagi. Ini mirip filosofi Vercel/Netlify Edge Functions, tapi di ekosistem Cloudflare.
+
+### Kenapa ada DUA adapter Cloudflare?
+
+Ini sumber kebingungan paling umum, jadi mari diluruskan. Ada dua paket berbeda:
+
+- **`@sveltejs/adapter-cloudflare`** — adapter modern yang dianjurkan. Bisa menargetkan **Cloudflare Pages _maupun_ Cloudflare Workers**, dan menyajikan file statis lewat mekanisme baru bernama **Static Assets**.
+- **`@sveltejs/adapter-cloudflare-workers`** — adapter yang sedang kita bahas. **Hanya** menargetkan Cloudflare Workers, dan menyajikan file statis lewat mekanisme lama bernama **Workers Sites**.
+
+Perbedaan paling teknis ada di **cara aset statis disajikan**. Worker itu sendiri cuma kode JavaScript; ia tidak punya "folder publik" bawaan. Jadi gambar, CSS, dan JS klienmu harus disimpan di suatu tempat lalu diambil oleh Worker.
+
+### Analogi: gudang KV vs ruang kirim bawaan
+
+Bayangkan Worker-mu adalah seorang **resepsionis** di lobi gedung. Saat ada tamu (request) minta sebuah berkas statis (mis. `logo.png`), resepsionis harus mengambilkannya.
+
+- **Workers Sites** (cara lama, dipakai adapter ini): semua berkas statis dijejalkan ke dalam sebuah **gudang KV** (key-value store Cloudflare). Resepsionis harus berjalan ke gudang, mencari berkas berdasarkan namanya, lalu membawanya kembali. Berfungsi, tapi tiap aset "numpang" di KV dan ikut menghitung kuota KV-mu — terasa seperti solusi tempelan.
+- **Static Assets** (cara baru, dipakai `adapter-cloudflare`): gedung punya **ruang kirim khusus** yang dikelola platform secara native. Tamu yang minta `logo.png` dilayani langsung oleh ruang kirim itu tanpa membebani resepsionis sama sekali. Lebih cepat, lebih murah, dan tidak makan kuota KV.
+
+Karena Cloudflare kini mendorong semua orang memakai Static Assets dan secara bertahap menghentikan Workers Sites, **`adapter-cloudflare-workers` resmi berstatus _deprecated_**. Tim SvelteKit menyarankan proyek baru memakai `adapter-cloudflare`. Modul ini tetap penting untuk kamu yang memelihara proyek lama, atau yang perlu memahami jalur migrasinya.
+
+### Ringkasan beda keduanya
+
+<LegacyVsModern rows={[
+  { legacy: '@sveltejs/adapter-cloudflare-workers', modern: '@sveltejs/adapter-cloudflare', note: 'Workers-only vs Workers + Pages' },
+  { legacy: 'Workers Sites (aset numpang di KV)', modern: 'Static Assets (native, tak makan kuota KV)' },
+  { legacy: 'site.bucket di wrangler', modern: 'assets.directory + assets.binding' },
+  { legacy: 'main: ./.cloudflare/worker.js', modern: 'main: .svelte-kit/cloudflare/_worker.js' },
+  { legacy: 'Deprecated', modern: 'Direkomendasikan untuk proyek baru' }
+]} />
+
+## 2. Contoh kode
+
+Pemasangannya seperti adapter lain: install paket, lalu tunjuk `kit.adapter` di `svelte.config.js`. Setelah itu, sebagian besar pekerjaan justru ada di file konfigurasi **Wrangler** (CLI resmi Cloudflare), bukan di kode Svelte.
+
+```js
+// svelte.config.js — pasang adapter-cloudflare-workers
+import adapter from '@sveltejs/adapter-cloudflare-workers';
+
+const config = {
+	kit: {
+		adapter: adapter({
+			// config: path ke file Wrangler. Default sudah mendeteksi
+			//   wrangler.jsonc / wrangler.json / wrangler.toml di root.
+			// config: 'wrangler.jsonc',
+
+			// platformProxy: opsi emulasi `platform.env` saat `vite dev`
+			//   (diteruskan ke getPlatformProxy milik Wrangler).
+			platformProxy: {
+				// persist: true  // simpan state KV/DO lokal antar-restart
+			}
+		})
+	}
+};
+
+export default config;
+```
+
+Inti konfigurasi ada di sini. Worker butuh tahu di mana skrip server-nya (`main`) dan di mana folder aset statisnya (`site.bucket`).
+
+```jsonc
+// wrangler.jsonc — konfigurasi Cloudflare Worker
+{
+	"name": "my-sveltekit-app",          // nama service di dashboard Cloudflare
+	"account_id": "<account-id-kamu>",    // dari `wrangler whoami` / URL dashboard
+	"main": "./.cloudflare/worker.js",   // skrip Worker yang dihasilkan adapter
+
+	// Workers Sites: folder aset statis yang akan diunggah ke KV.
+	// Inilah penanda khas adapter LAMA ini (di adapter-cloudflare diganti `assets`).
+	"site": {
+		"bucket": "./.cloudflare/public"
+	},
+
+	"build": {
+		"command": "npm run build"         // jalankan vite build sebelum deploy
+	},
+
+	// WAJIB: tanggal yang mengunci versi runtime Workers. Pakai tanggal hari
+	// ini saat pertama setup; jangan diubah sembarangan setelahnya.
+	"compatibility_date": "2024-09-23",
+
+	// Aktifkan API gaya Node (Buffer, dll.) di runtime Workers bila perlu.
+	"compatibility_flags": ["nodejs_compat"]
+}
+```
+
+Untuk mengakses **bindings** Cloudflare (KV, Durable Objects, R2, D1, secret env), SvelteKit menaruhnya di properti `platform` pada event server. Beri tipe lewat `src/app.d.ts` agar autocomplete & type-check jalan.
+
+```ts
+// src/app.d.ts — tipe untuk platform.env
+import { KVNamespace, DurableObjectNamespace } from '@cloudflare/workers-types';
+
+declare global {
+	namespace App {
+		interface Platform {
+			env?: {
+				YOUR_KV_NAMESPACE: KVNamespace;
+				YOUR_DURABLE_OBJECT_NAMESPACE: DurableObjectNamespace;
+			};
+			// ctx, caches, dan cf juga tersedia di sini bila dibutuhkan
+		}
+	}
+}
+
+export {};
+```
+
+```js
+// src/routes/api/save/+server.js — pakai binding lewat `platform`
+export async function POST({ request, platform }) {
+	// `platform` HANYA ada saat berjalan di Cloudflare (atau via platformProxy lokal).
+	// Selalu pakai optional chaining `?.` supaya aman.
+	const kv = platform?.env?.YOUR_KV_NAMESPACE;
+
+	const body = await request.json();
+	await kv?.put('last-message', body.text);
+
+	return new Response('ok');
+}
+```
+
+## 3. Coba sendiri
+
+Modul ini menyentuh **build, Wrangler CLI, dan runtime server Cloudflare**, jadi tidak ada live preview di browser — alurnya kamu ikuti langsung di terminal proyek SvelteKit-mu. Berikut urutan dari nol sampai live di edge.
+
+```bash
+# 1) Install adapter + Wrangler (CLI resmi Cloudflare)
+npm i -D @sveltejs/adapter-cloudflare-workers wrangler
+
+# 2) Ubah svelte.config.js agar memakai adapter-cloudflare-workers (lihat Bagian 2),
+#    lalu buat wrangler.jsonc dengan `name`, `main`, `site.bucket`, dan
+#    `compatibility_date`.
+
+# 3) Login ke akun Cloudflare-mu (membuka browser sekali)
+wrangler login
+
+# 4) Build aplikasi -> adapter menghasilkan folder ./.cloudflare/
+npm run build
+
+# 5) Jalankan Worker SECARA LOKAL pakai runtime Cloudflare asli (workerd).
+#    Ini lebih akurat daripada `vite dev` karena memakai runtime yang sama
+#    dengan produksi, termasuk binding KV/DO lewat platform.env.
+wrangler dev
+
+# 6) Deploy ke edge global Cloudflare
+wrangler deploy
+```
+
+```gitignore
+# .gitignore — output adapter & cache Wrangler TIDAK perlu di-commit
+.cloudflare
+.wrangler
+```
+
+Catatan penting soal alur kerja: `vite dev` (server dev biasa SvelteKit) **tidak** menjalankan kode di runtime Workers — ia tetap Node. Maka `platform.env` defaultnya `undefined` saat `vite dev`, kecuali kamu aktifkan opsi `platformProxy` (yang mengemulasi binding). Untuk pengujian yang benar-benar menyerupai produksi, build dulu lalu jalankan `wrangler dev`.
+
+## 4. Latihan
+
+<Exercise title="Migrasikan dari adapter-cloudflare-workers ke adapter-cloudflare">
+
+Sebuah proyek lama memakai `@sveltejs/adapter-cloudflare-workers` dengan `wrangler.jsonc` di bawah. Karena Workers Sites akan dihentikan Cloudflare, kamu diminta memigrasikannya ke `@sveltejs/adapter-cloudflare` (Static Assets). Tuliskan (a) perubahan di `svelte.config.js` dan (b) `wrangler.jsonc` yang baru. Sebutkan field mana yang diganti dan kenapa.
+
+```jsonc
+// wrangler.jsonc LAMA
+{
+	"name": "my-app",
+	"main": "./.cloudflare/worker.js",
+	"site": { "bucket": "./.cloudflare/public" },
+	"compatibility_date": "2024-09-23"
+}
+```
+
+{#snippet solution()}
+
+```js
+// (a) svelte.config.js — cukup ganti paket adapter yang di-import.
+//     Kode aplikasi (load, actions, +server) TIDAK perlu diubah.
+import adapter from '@sveltejs/adapter-cloudflare';
+
+const config = {
+	kit: {
+		adapter: adapter()
+	}
+};
+
+export default config;
+```
+
+```jsonc
+// (b) wrangler.jsonc BARU — Workers Sites (site.bucket) diganti Static Assets.
+{
+	"name": "my-app",
+	// main kini menunjuk ke output adapter-cloudflare
+	"main": ".svelte-kit/cloudflare/_worker.js",
+
+	// `site.bucket` DIHAPUS, diganti blok `assets`:
+	//  - directory: folder aset hasil build
+	//  - binding  : nama variabel agar Worker bisa menjangkau aset (mis. ASSETS)
+	"assets": {
+		"directory": ".svelte-kit/cloudflare",
+		"binding": "ASSETS"
+	},
+
+	"compatibility_date": "2024-09-23",
+	"compatibility_flags": ["nodejs_compat"]
+}
+```
+
+Inti perubahan:
+- `main`: dari `./.cloudflare/worker.js` ke `.svelte-kit/cloudflare/_worker.js` (lokasi output adapter baru).
+- `site.bucket` (Workers Sites, aset numpang di KV) -> `assets.directory` + `assets.binding` (Static Assets, native & tak makan kuota KV).
+- Akses binding tetap lewat `platform.env`, jadi kode `+server.js`/`load` tidak berubah. Itulah kekuatan model adapter: target deploy berganti, logika aplikasi tetap.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>@sveltejs/adapter-cloudflare-workers</code> kini berstatus <strong>deprecated</strong>. Cloudflare mendorong semua proyek pindah ke <strong>Static Assets</strong> dan secara bertahap menghentikan <strong>Workers Sites</strong> yang dipakai adapter ini. Untuk proyek <em>baru</em>, pakailah <code>@sveltejs/adapter-cloudflare</code> — ia menargetkan Cloudflare Workers maupun Pages, lebih cepat, dan tak membebani kuota KV. Adapter lama ini relevan terutama bila kamu memelihara proyek lawas atau sedang merencanakan migrasi.
+</Callout>
+
+<Callout type="warning">
+Runtime Workers <strong>bukan Node.js penuh</strong>. API seperti <code>fs</code> (filesystem) tidak ada — kalau sebuah rute membaca file dari disk, kamu harus <strong>prerender</strong> rute itu atau hindari API tersebut. Untuk API gaya Node tertentu (mis. <code>Buffer</code>), aktifkan <code>"compatibility_flags": ["nodejs_compat"]</code> di <code>wrangler.jsonc</code>. Kode yang mulus di <code>adapter-node</code> bisa <em>crash</em> di Workers bila mengandalkan API yang tak tersedia di edge.
+</Callout>
+
+<Callout type="pitfall">
+<code>platform</code> (dan <code>platform.env</code>) <strong>tidak otomatis ada saat <code>vite dev</code></strong> — sebab server dev SvelteKit memakai Node, bukan runtime Workers. Selalu akses dengan optional chaining: <code>platform?.env?.MY_KV</code>, jangan asumsikan selalu terisi. Untuk menguji binding secara lokal, aktifkan opsi <code>platformProxy</code> di adapter, atau build lalu jalankan <code>wrangler dev</code> yang memakai runtime Cloudflare asli.
+</Callout>
+
+<Callout type="tip">
+Ada <strong>batas ukuran Worker</strong> di Cloudflare. Kalau bundel server-mu membengkak (mis. gara-gara library berat seperti parser PDF atau SDK besar), deploy bisa ditolak. Solusinya: impor library berat secara <em>client-side-only</em> (mis. lewat <code>onMount</code> / dynamic <code>import()</code> di komponen) sehingga ia tidak ikut ke bundel Worker, atau pindahkan pekerjaan berat itu ke service terpisah.
+</Callout>
+
+<Callout type="tip">
+Tambahkan <code>.cloudflare</code> dan <code>.wrangler</code> ke <code>.gitignore</code>. Keduanya cuma artefak build & cache lokal Wrangler — tak perlu masuk repository, dan akan dibuat ulang tiap kali kamu <code>npm run build</code>.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/adapter-cloudflare-workers" label="SvelteKit — adapter-cloudflare-workers (Workers-only, Workers Sites)" />
+<DocsLink href="https://svelte.dev/docs/kit/adapter-cloudflare" label="SvelteKit — adapter-cloudflare (rekomendasi: Workers + Pages, Static Assets)" />

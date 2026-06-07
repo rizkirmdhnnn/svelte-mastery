@@ -1,0 +1,289 @@
+---
+title: Static site generation
+product: kit
+section: build-deploy
+sectionTitle: Build and deploy
+sectionOrder: 3
+order: 5
+status: stable
+description: Memakai adapter-static untuk meng-prerender seluruh situs jadi file HTML/CSS/JS statis (SSG), termasuk mode SPA dan deploy ke GitHub Pages.
+docs: https://svelte.dev/docs/kit/adapter-static
+keywords: [adapter-static, ssg, prerender, spa, github-pages, fallback]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+**Static site generation (SSG)** artinya: alih-alih punya server yang merender halaman tiap kali ada request, kamu merender **semua halaman sekaligus saat build**, lalu menyimpannya sebagai file `.html` biasa. Saat ada pengunjung, host-mu tinggal mengirim file yang sudah jadi itu apa adanya — tidak ada kode server yang dijalankan saat runtime. `@sveltejs/adapter-static` adalah adapter SvelteKit yang melakukan ini: ia menjalankan **prerender** untuk seluruh rutemu dan menulis hasilnya jadi tumpukan file statis siap di-host di mana pun.
+
+### Analogi: restoran à la carte vs mesin penjual otomatis
+
+Bayangkan dua cara menyajikan makanan. **SSR (server-side rendering)** itu seperti restoran à la carte: tiap pelanggan datang, dapur memasak pesanannya segar saat itu juga. Fleksibel — bisa menyesuaikan tiap piring per orang (data per-user, konten yang berubah tiap detik) — tapi kamu butuh dapur (server) yang selalu menyala dan koki yang siap.
+
+**SSG** itu seperti **mesin penjual otomatis**: semua makanan sudah dimasak dan dikemas sebelum toko buka, lalu ditata di rak. Saat pelanggan datang, mesin cuma menjatuhkan paket yang sudah jadi. Tidak ada dapur saat jam buka, tidak ada koki — cuma rak dan listrik secukupnya. Konsekuensinya: kalau menunya **sama untuk semua orang** (halaman dokumentasi, blog, landing page), pendekatan ini jauh lebih murah, lebih cepat, dan lebih tahan banting. Tapi kalau tiap pelanggan butuh piring yang berbeda saat itu juga (dashboard per-user, harga yang berubah real-time), mesin penjual otomatis tidak cocok — itu wilayah SSR.
+
+Karena tidak ada server runtime, situs SSG bisa diletakkan di **object storage / CDN paling murah**: GitHub Pages, Cloudflare Pages, Netlify, S3, bahkan folder di hosting statis biasa. Tidak ada proses Node yang harus dibayar per jam.
+
+### Buat kamu yang dari React/Vue
+
+Ini konsep yang sama dengan **`next export` / `output: 'export'`** di Next.js, **Gatsby**, **Astro** mode statis, atau **VitePress / vite-ssg** di ekosistem Vue. Bedanya di SvelteKit: kamu menulis aplikasi dengan API yang sama persis seperti versi SSR (`load`, rute, layout), lalu cukup memasang `adapter-static` dan menyalakan satu flag `prerender`. Tidak ada mode build terpisah — aplikasimu tetap aplikasi SvelteKit normal, hanya saja seluruh outputnya "dibekukan" saat build.
+
+### Syarat utama: semua harus bisa di-prerender
+
+Karena tidak ada server saat runtime, **setiap halaman yang dilayani harus sudah ada sebagai file saat build**. Artinya aplikasimu tidak boleh bergantung pada hal-hal yang baru diketahui saat request datang:
+
+- **Tidak boleh ada server `load` yang dinamis per-request** — mis. membaca `cookies`, sesi login, atau header request untuk menentukan isi halaman. Saat prerender tidak ada "request" sungguhan, jadi data itu tidak ada.
+- **Tidak boleh ada form actions** atau `+server.js` yang dipanggil saat runtime (kecuali endpoint itu sendiri juga di-prerender jadi response statis).
+- Data boleh diambil dari API eksternal **saat build** (di `load`), tapi hasilnya dibekukan — kalau data berubah, kamu harus build & deploy ulang.
+
+Kalau aplikasimu butuh salah satu hal di atas secara dinamis, `adapter-static` bukan pilihannya — kamu butuh `adapter-node` atau adapter serverless/edge. SvelteKit akan **menolak build** (lewat opsi `strict`) kalau menemukan rute yang tidak bisa dibekukan, supaya kamu tidak diam-diam men-deploy situs yang "bolong".
+
+## 2. Contoh kode
+
+Memasang `adapter-static` cuma dua langkah: pasang adapter di `svelte.config.js`, lalu nyalakan `prerender` di layout root.
+
+```bash
+npm i -D @sveltejs/adapter-static
+```
+
+```js
+/// file: svelte.config.js
+import adapter from '@sveltejs/adapter-static';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	kit: {
+		adapter: adapter({
+			// Nilai-nilai DEFAULT ditampilkan di bawah.
+			// Di sebagian platform, opsi ini diisi otomatis.
+			pages: 'build',        // folder tujuan file HTML hasil prerender
+			assets: 'build',       // folder aset (JS/CSS/gambar); biasanya = pages
+			fallback: undefined,   // undefined = SSG murni; isi (mis. '200.html') untuk SPA
+			precompress: false,    // true = sekalian buat versi .br (brotli) & .gz (gzip)
+			strict: true           // true = build GAGAL kalau ada rute yang tak bisa di-prerender
+		})
+	}
+};
+
+export default config;
+```
+
+```js
+/// file: src/routes/+layout.js
+// Ini kuncinya: menyalakan prerender untuk SELURUH situs dari layout root.
+// Setiap rute di bawahnya akan ikut di-prerender saat build.
+export const prerender = true;
+```
+
+Itu saja untuk SSG murni. Jalankan `npm run build`, dan folder `build/` akan berisi `index.html`, `about/index.html`, dan seterusnya — siap diunggah ke host statis mana pun.
+
+Kalau ada **satu-dua rute yang memang dinamis** dan tidak ingin di-prerender, kamu bisa menimpa flag-nya per-rute (tapi ingat: rute itu lalu tidak akan punya file, jadi hanya masuk akal di mode SPA dengan `fallback`):
+
+```js
+/// file: src/routes/admin/+page.js
+// Menimpa setting dari root: rute ini TIDAK di-prerender.
+// Hanya berguna jika kamu memakai mode SPA (lihat di bawah) sebagai jaring pengaman.
+export const prerender = false;
+```
+
+### Mode SPA (single-page app, CSR-only)
+
+Kadang kamu tidak ingin tiap rute dibekukan jadi HTML — misalnya aplikasi di balik login yang isinya dirakit di browser dan tidak butuh SEO. Di sini `adapter-static` berubah peran jadi penghasil **SPA**: kamu memberi sebuah **fallback page**, yaitu satu shell HTML "kosong" yang dikirim untuk **semua URL yang tidak di-prerender**. Browser lalu menjalankan router SvelteKit di klien untuk merakit halaman yang diminta.
+
+```js
+/// file: svelte.config.js  — MODE SPA
+import adapter from '@sveltejs/adapter-static';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	kit: {
+		adapter: adapter({
+			// Nama file shell yang dipakai sebagai entry point untuk URL
+			// yang belum di-prerender. Umumnya '200.html', tapi tergantung host.
+			fallback: '200.html'
+		})
+	}
+};
+
+export default config;
+```
+
+```js
+/// file: src/routes/+layout.js  — MODE SPA
+// Matikan SSR untuk seluruh app -> tiap halaman dirakit di browser (CSR).
+export const ssr = false;
+// (prerender boleh tetap true untuk halaman publik tertentu mis. landing/marketing.)
+```
+
+## 3. Coba sendiri
+
+Modul ini menyentuh tahap **build & deploy** dan butuh konfigurasi proyek nyata, jadi tidak ada live preview di sini. Sebagai gantinya, ikuti alur uji ini di proyek SvelteKit lokalmu dan amati outputnya. Ini contoh nyata yang paling sering dipakai: **deploy situs statis ke GitHub Pages**.
+
+Tantangan utama GitHub Pages: situsmu tidak dilayani dari root domain, melainkan dari sub-path `https://<user>.github.io/<nama-repo>/`. Karena itu kamu harus memberi tahu SvelteKit base path-nya lewat `paths.base`.
+
+```js
+/// file: svelte.config.js  — untuk GitHub Pages
+import adapter from '@sveltejs/adapter-static';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	kit: {
+		adapter: adapter({
+			// GitHub Pages melayani halaman 'tidak ditemukan' lewat 404.html,
+			// jadi pakai itu sebagai fallback (bukan 200.html).
+			fallback: '404.html'
+		}),
+		paths: {
+			// Saat `dev`, base = '' (root lokal).
+			// Saat build untuk produksi, base diisi dari env BASE_PATH (mis. '/nama-repo').
+			base: process.argv.includes('dev') ? '' : process.env.BASE_PATH
+		}
+	}
+};
+
+export default config;
+```
+
+```yaml
+# .github/workflows/deploy.yml — build & publish otomatis tiap push ke main
+name: Deploy to GitHub Pages
+on:
+  push:
+    branches: 'main'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: build
+        env:
+          # Inilah yang mengisi process.env.BASE_PATH di svelte.config.js.
+          # Hasilnya mis. '/learn-svelte' (nama repo-mu).
+          BASE_PATH: '/${{ github.event.repository.name }}'
+        run: npm run build
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'build/'
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+Dua detail kecil yang sering bikin situs GitHub Pages "rusak" walau build sukses:
+
+```bash
+# 1) Tambahkan file kosong .nojekyll di folder static/
+#    Tanpa ini, GitHub menjalankan Jekyll yang MENGABAIKAN folder/file diawali '_'
+#    (mis. _app/) -> JS & CSS-mu tidak akan ter-load.
+touch static/.nojekyll
+
+# 2) Saat menulis link/aset dengan path absolut, jangan hardcode '/about'.
+#    Pakai base path agar tetap benar di bawah sub-path /nama-repo/:
+#       import { base } from '$app/paths';
+#       <a href="{base}/about">About</a>
+#    Link relatif & komponen SvelteKit otomatis sudah aware base path.
+```
+
+## 4. Latihan
+
+<Exercise title="Siapkan adapter-static untuk dua skenario">
+Untuk tiap skenario, tulis potongan `svelte.config.js` **dan** file `+layout.js` yang dibutuhkan, lalu jelaskan singkat alasannya.
+
+1. **Blog publik** berisi artikel yang ditarik dari CMS saat build. Semua pembaca melihat isi yang sama, dan SEO penting. Mau dihosting di GitHub Pages dengan repo bernama `my-blog`.
+2. **Dashboard internal** di balik login, penuh interaksi, tidak butuh SEO, dan tim mau hosting-nya cukup berupa file statis di sebuah bucket S3.
+
+{#snippet solution()}
+
+  ```js
+  // 1) Blog publik, SEO penting, GitHub Pages -> adapter-static SSG murni.
+  //    Tiap artikel di-prerender jadi HTML -> crawler & pembaca dapat konten penuh.
+  /// file: svelte.config.js
+  import adapter from '@sveltejs/adapter-static';
+
+  /** @type {import('@sveltejs/kit').Config} */
+  const config = {
+    kit: {
+      adapter: adapter({ fallback: '404.html', strict: true }),
+      paths: {
+        base: process.argv.includes('dev') ? '' : process.env.BASE_PATH
+        // di CI: BASE_PATH='/my-blog'
+      }
+    }
+  };
+  export default config;
+  ```
+
+  ```js
+  /// file: src/routes/+layout.js
+  export const prerender = true; // bekukan SEMUA halaman saat build
+  ```
+
+  ```js
+  // 2) Dashboard privat, tanpa SEO, host file statis -> adapter-static MODE SPA.
+  //    Satu shell HTML + JS yang merakit halaman di browser; cukup di-upload ke S3.
+  /// file: svelte.config.js
+  import adapter from '@sveltejs/adapter-static';
+
+  /** @type {import('@sveltejs/kit').Config} */
+  const config = {
+    kit: {
+      adapter: adapter({ fallback: '200.html' }) // S3 lazim pakai 200.html
+    }
+  };
+  export default config;
+  ```
+
+  ```js
+  /// file: src/routes/+layout.js
+  export const ssr = false; // CSR penuh -> SPA murni
+  ```
+
+  Inti bedanya: **konten publik sama-untuk-semua + butuh SEO -> SSG murni** (tiap rute jadi file HTML). **Privat + interaktif + tanpa SEO -> mode SPA** (satu fallback shell, halaman dirakit di klien). Keduanya pakai paket adapter yang sama, hanya beda ada/tidaknya `fallback` dan `ssr`.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan set <code>export const ssr = false</code> kalau kamu sebenarnya mau <strong>SSG</strong> (HTML penuh untuk SEO). Mematikan SSR membuat prerender hanya menyimpan <strong>shell kosong</strong> — halaman dirakit di browser, sehingga crawler & pengunjung tanpa JS melihat halaman blank. <code>ssr = false</code> hanya untuk mode <em>SPA</em>. Untuk SSG murni, biarkan SSR menyala (default) dan cukup pakai <code>prerender = true</code>.
+</Callout>
+
+<Callout type="warning">
+Perhatikan <code>trailingSlash</code> sesuai host-mu. Kalau host tidak otomatis melayani <code>/a.html</code> saat menerima request <code>/a</code>, link tanpa slash bisa jadi 404. Solusinya set <code>trailingSlash: 'always'</code> di layout root agar SvelteKit menulis <code>/a/index.html</code> (folder + index) alih-alih <code>/a.html</code> — bentuk yang dimengerti hampir semua host statis.
+</Callout>
+
+<Callout type="pitfall">
+Untuk GitHub Pages, lupa membuat file <code>static/.nojekyll</code> adalah jebakan klasik. GitHub menjalankan Jekyll secara default, dan Jekyll <strong>mengabaikan folder yang diawali garis bawah</strong> seperti <code>_app/</code> — padahal di situlah seluruh JS & CSS SvelteKit berada. Build kelihatan sukses, tapi situs tampil tanpa style dan tanpa interaktivitas. Satu file kosong <code>.nojekyll</code> mematikan Jekyll dan memperbaiki ini.
+</Callout>
+
+<Callout type="tip">
+Biarkan <code>strict: true</code> (default). Ia membuat build <strong>gagal-cepat</strong> kalau ada rute yang lolos tanpa di-prerender — jauh lebih baik ketahuan di terminal saat build daripada menemukan halaman 404 misterius di produksi. Kalau memang ada rute yang sengaja tidak di-prerender, tangani secara eksplisit (mode SPA dengan <code>fallback</code>), jangan dengan mematikan <code>strict</code>.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/adapter-static" label="SvelteKit — adapter-static (SSG, opsi, GitHub Pages)" />
+<DocsLink href="https://svelte.dev/docs/kit/single-page-apps" label="SvelteKit — Single-page apps (mode SPA dengan fallback)" />
+<DocsLink href="https://svelte.dev/docs/kit/page-options" label="SvelteKit — Page options (prerender, ssr, trailingSlash)" />

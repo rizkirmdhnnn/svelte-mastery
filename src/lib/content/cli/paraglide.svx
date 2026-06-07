@@ -1,0 +1,285 @@
+---
+title: paraglide
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 6
+status: stable
+description: Add-on paraglide untuk i18n type-safe — pesan terjemahan yang dikompilasi jadi fungsi, plus routing berbasis locale di SvelteKit.
+docs: https://svelte.dev/docs/cli/paraglide
+keywords: [paraglide, i18n, inlang, locale, routing, type-safe]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`npx sv add paraglide` memasang **Paraglide** dari Inlang — sebuah library i18n (internationalization, "terjemahan multi-bahasa") yang punya satu ide besar yang berbeda dari semua yang kamu kenal di React/Vue: **i18n adalah urusan compiler, bukan runtime.**
+
+### Analogi: kamus tebal vs. phrasebook cetak
+
+Library i18n yang biasa kamu pakai — `react-i18next`, `vue-i18n`, `next-intl` — bekerja seperti ini: kamu mengirim **seluruh kamus** (file JSON besar berisi semua terjemahan) ke browser, lalu di runtime kamu memanggil `t('hello')` yang artinya "buka kamus, cari kata berkunci `hello`, ambil string-nya". Tiga konsekuensi: (1) seluruh kamus ikut ke bundle walau halaman cuma pakai 3 kalimat, (2) `t('helo')` salah ketik tidak ketahuan sampai runtime — tidak ada yang mengecek kunci itu ada atau tidak, (3) kadang kamus dimuat async sehingga ada kedipan teks kosong.
+
+Paraglide membalik ini. Saat **build**, ia membaca file terjemahanmu lalu **mengompilasi setiap pesan jadi satu fungsi JavaScript kecil**. `hello` jadi fungsi `m.hello()`. Bayangkan bukan kamus tebal, melainkan **phrasebook cetak** di mana tiap frasa sudah jadi tombol berlabel sendiri. Hasilnya:
+
+- **Tree-shakable**: pesan yang tidak dipanggil tidak ikut ke bundle. Bundler membuang fungsi yang tak terpakai seperti membuang kode mati lainnya.
+- **Type-safe**: `m.hello()` adalah fungsi sungguhan. Salah ketik `m.helo()` = error saat compile + autocomplete di editor. Pesan berparameter seperti `m.greeting({ name })` mengecek tipe argumennya.
+- **Sinkron, tanpa waterfall**: pesan adalah fungsi biasa yang langsung mengembalikan string — tidak ada `await`, tidak ada kedipan.
+
+Ini analog dengan perbedaan antara mengakses object dinamis `dict[key]` (runtime, bisa `undefined`) versus memanggil method yang sudah ada di tipe (compile-time, dicek TypeScript). Paraglide memindahkan i18n dari kolom kiri ke kolom kanan.
+
+### Dua bagian: pesan + routing
+
+Add-on ini mengurus dua hal sekaligus. **Pertama, pesan**: file JSON per bahasa (`messages/en.json`, `messages/id.json`) dikompilasi jadi `m.*()`. **Kedua, routing locale**: SvelteKit perlu tahu bahasa mana yang aktif untuk sebuah request. Paraglide memakai sebuah *strategy* — daftar berurutan tempat ia mencari locale: dari **URL** (`/id/tentang`), lalu **cookie**, lalu fallback ke `baseLocale`. URL prefix inilah yang membuat tiap bahasa punya alamat sendiri yang bisa di-bookmark & di-index Google.
+
+Bagian routing inilah alasan modul ini butuh server (hooks SvelteKit) — jadi tidak ada playground live; semua contoh statis & beranotasi.
+
+### Apa yang dibuat add-on
+
+Menjalankan `npx sv add paraglide` menambahkan:
+
+| Berkas | Fungsi |
+| --- | --- |
+| `project.inlang/settings.json` | Konfigurasi proyek inlang: `baseLocale` + daftar `locales` |
+| `messages/{locale}.json` | Sumber terjemahanmu, satu file per bahasa |
+| `src/lib/paraglide/` | Output kompilasi (`messages.js`, `runtime.js`, `server.js`) — **di-gitignore**, jangan diedit manual |
+| `vite.config` | Menambah `paraglideVitePlugin` (mengompilasi pesan tiap build/dev) |
+| `src/hooks.server.ts` | `paraglideMiddleware` — deteksi locale per request |
+| `src/hooks.ts` | hook `reroute` — memetakan URL ber-prefix ke rute asli |
+| `app.html` | placeholder `%lang%` / `%dir%` untuk atribut `lang` & arah teks |
+
+## 2. Contoh kode
+
+Pertama, cara memasang. Kamu bisa langsung menyebut bahasa dan minta halaman demo:
+
+```bash
+# Pasang dengan bahasa Inggris + Indonesia, plus halaman demo contoh
+npx sv add paraglide="languageTags:en,id&demo:yes"
+
+# Atau interaktif (CLI bertanya bahasa & demo):
+npx sv add paraglide
+```
+
+Sumber terjemahan adalah JSON sederhana. Kunci = nama fungsi nanti, nilai = string (boleh berparameter dengan kurung kurawal):
+
+```json
+// messages/en.json — bahasa dasar (baseLocale)
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"hello_world": "Hello, world!",
+	"greeting": "Hello, {name}!"
+}
+```
+
+```json
+// messages/id.json — terjemahan Indonesia, KUNCI harus sama persis
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"hello_world": "Halo, dunia!",
+	"greeting": "Halo, {name}!"
+}
+```
+
+Saat dev/build, Vite plugin mengompilasi keduanya jadi fungsi di `src/lib/paraglide/messages.js`. Kamu memakainya begini:
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script>
+	// Import SEMUA pesan sebagai namespace `m`. Tree-shaking tetap jalan:
+	// hanya m.* yang benar-benar dipanggil yang masuk bundle.
+	import * as m from '$lib/paraglide/messages.js';
+	// runtime = utilitas locale (ganti bahasa, baca bahasa aktif, dll).
+	import { getLocale, setLocale, locales } from '$lib/paraglide/runtime';
+</script>
+
+<!-- m.hello_world() = fungsi sungguhan. Salah ketik nama = error compile. -->
+<h1>{m.hello_world()}</h1>
+
+<!-- Pesan berparameter: argumen dicek tipe-nya oleh TypeScript. -->
+<p>{m.greeting({ name: 'Rizki' })}</p>
+
+<p>Bahasa aktif: {getLocale()}</p>
+
+<!-- Pemindah bahasa sederhana. setLocale() me-reload ke locale baru. -->
+{#each locales as locale}
+	<button onclick={() => setLocale(locale)}>{locale}</button>
+{/each}
+```
+
+Lalu konfigurasi server. Dua hook bekerja sama: `handle` mendeteksi locale dari request, `reroute` menormalkan URL agar router SvelteKit tetap melihat path tanpa prefix bahasa.
+
+```ts
+// src/hooks.server.ts — deteksi locale untuk SETIAP request (server)
+import type { Handle } from '@sveltejs/kit';
+import { paraglideMiddleware } from '$lib/paraglide/server';
+import { getTextDirection } from '$lib/paraglide/runtime';
+
+export const handle: Handle = ({ event, resolve }) =>
+	// Middleware membaca URL/cookie -> menetapkan locale untuk request ini,
+	// lalu menjalankan resolve() di dalam konteks locale tsb.
+	paraglideMiddleware(event.request, ({ request, locale }) => {
+		event.request = request;
+		return resolve(event, {
+			// Isi placeholder di app.html: <html lang="%lang%" dir="%dir%">
+			transformPageChunk: ({ html }) =>
+				html.replace('%lang%', locale).replace('%dir%', getTextDirection(locale))
+		});
+	});
+```
+
+```ts
+// src/hooks.ts — reroute: URL ber-prefix locale -> path rute asli
+import type { Reroute } from '@sveltejs/kit';
+import { deLocalizeUrl } from '$lib/paraglide/runtime';
+
+// Pengunjung membuka /id/tentang. Router SvelteKit tak punya folder "id";
+// reroute MELEPAS prefix locale sehingga router mencari rute /tentang.
+// (Locale-nya tetap terdeteksi terpisah oleh handle di atas.)
+export const reroute: Reroute = (request) => deLocalizeUrl(request.url).pathname;
+```
+
+## 3. Coba sendiri
+
+Karena routing locale butuh server, tidak ada playground live di sini. Contoh statis berikut menunjukkan dua pola paling sering dipakai: **membuat tautan yang sadar-locale** dan **memilih strategy** di Vite plugin.
+
+Untuk navigasi antar-halaman, jangan tulis prefix bahasa manual (`/id/tentang`). Pakai `localizeHref` — ia menambahkan prefix locale yang benar secara otomatis:
+
+```svelte
+<!-- src/lib/components/Nav.svelte — tautan yang otomatis ber-prefix locale -->
+<script>
+	import { localizeHref } from '$lib/paraglide/runtime';
+	import * as m from '$lib/paraglide/messages.js';
+</script>
+
+<nav>
+	<!-- Jika locale aktif "id", localizeHref('/') -> "/id" atau "/" sesuai
+	     aturan URL. localizeHref('/about') -> "/id/about". Tak perlu hardcode. -->
+	<a href={localizeHref('/')}>{m.nav_home()}</a>
+	<a href={localizeHref('/about')}>{m.nav_about()}</a>
+
+	<!-- Paksa locale tertentu untuk link "ganti bahasa" (tetap di halaman yg sama
+	     tapi versi bahasa lain). Berguna untuk language switcher berbasis tautan. -->
+	<a href={localizeHref('/about', { locale: 'en' })}>English</a>
+	<a href={localizeHref('/about', { locale: 'id' })}>Indonesia</a>
+</nav>
+```
+
+Cara locale ditentukan diatur oleh `strategy` di Vite plugin — sebuah **daftar berurutan**. Paraglide mencoba dari kiri ke kanan dan memakai yang pertama berhasil:
+
+```js
+// vite.config.js — strategy menentukan SUMBER & URUTAN deteksi locale
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
+
+export default defineConfig({
+	plugins: [
+		sveltekit(),
+		paraglideVitePlugin({
+			project: './project.inlang', // sumber: settings + messages
+			outdir: './src/lib/paraglide', // tujuan kompilasi (gitignored)
+			// Urutan deteksi: cek URL dulu (/id/...), lalu cookie pilihan user,
+			// kalau dua-duanya kosong pakai baseLocale (dari settings.json).
+			strategy: ['url', 'cookie', 'baseLocale']
+		})
+	]
+});
+```
+
+```json
+// project.inlang/settings.json — daftar bahasa & bahasa dasar
+{
+	"$schema": "https://inlang.com/schema/project-settings",
+	"baseLocale": "en",
+	"locales": ["en", "id"]
+}
+```
+
+<Callout type="tip">
+Urutan <code>strategy</code> itu penting. <code>['url', 'cookie', 'baseLocale']</code> berarti URL menang atas cookie: pengunjung yang membuka <code>/en/about</code> melihat bahasa Inggris walau cookie-nya tersimpan "id". Ini bagus untuk SEO & tautan yang bisa dibagikan — alamatnya menentukan bahasanya, bukan state tersembunyi. Taruh <code>'url'</code> paling depan kalau kamu mau tiap bahasa punya URL unik yang di-index mesin pencari.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Tambahkan bahasa Jepang + pemindah bahasa berbasis tautan">
+Proyekmu sudah punya `en` dan `id`. Tambahkan bahasa Jepang (`ja`) dan buat language switcher yang berupa **tautan** (bukan tombol `setLocale`), supaya tiap pilihan bahasa punya URL sendiri.
+
+1. Daftarkan `ja` di settings inlang.
+2. Buat file pesan Jepang dengan kunci `hello_world` dan `greeting`.
+3. Buat komponen switcher yang menautkan ke halaman saat ini dalam tiga bahasa, memakai `localizeHref` dengan opsi `locale`, dan menandai bahasa aktif via `getLocale()`.
+
+{#snippet solution()}
+
+  ```json
+  // 1) project.inlang/settings.json — tambahkan "ja" ke locales
+  {
+  	"$schema": "https://inlang.com/schema/project-settings",
+  	"baseLocale": "en",
+  	"locales": ["en", "id", "ja"]
+  }
+  ```
+
+  ```json
+  // 2) messages/ja.json — kunci HARUS sama dengan baseLocale (en)
+  {
+  	"$schema": "https://inlang.com/schema/inlang-message-format",
+  	"hello_world": "こんにちは、世界！",
+  	"greeting": "こんにちは、{name}さん！"
+  }
+  ```
+
+  ```svelte
+  <!-- 3) src/lib/components/LangSwitch.svelte -->
+  <script>
+  	import { page } from '$app/state';
+  	import { getLocale, locales, localizeHref } from '$lib/paraglide/runtime';
+
+  	// Path tanpa prefix locale, biar pindah bahasa tetap di halaman yang sama.
+  	let current = $derived(getLocale());
+  </script>
+
+  <nav aria-label="Pilih bahasa">
+  	{#each locales as locale}
+  		<!-- Tautan, bukan tombol: tiap bahasa punya URL sendiri (SEO-friendly,
+  		     bisa di-bookmark). localizeHref menambah prefix locale yang benar. -->
+  		<a
+  			href={localizeHref(page.url.pathname, { locale })}
+  			aria-current={locale === current ? 'page' : undefined}
+  		>
+  			{locale}
+  		</a>
+  	{/each}
+  </nav>
+  ```
+
+  Inti: menambah bahasa = daftarkan di `settings.json` + buat satu file `messages/<locale>.json` dengan kunci yang sama. Switcher berbasis `localizeHref` membuat tiap bahasa punya URL unik — lebih baik daripada `setLocale()` murni untuk halaman publik yang ingin di-index.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan pernah mengedit isi <code>src/lib/paraglide/</code> langsung — folder itu adalah <strong>output kompilasi</strong> dan ditimpa tiap kali Vite jalan (karena itu di-gitignore). Untuk mengubah teks, edit <code>messages/&lt;locale&gt;.json</code>; untuk menambah bahasa, edit <code>project.inlang/settings.json</code>. Anggap <code>src/lib/paraglide/</code> seperti folder <code>dist/</code>: hasil, bukan sumber.
+</Callout>
+
+<Callout type="warning">
+Semua locale harus punya <strong>kunci yang sama</strong>. Kalau <code>messages/en.json</code> punya <code>checkout_button</code> tapi <code>messages/id.json</code> tidak, pesan itu akan jatuh ke bahasa dasar (atau memunculkan peringatan inlang). Pasang ekstensi <strong>Sherlock (inlang) VS Code</strong> agar kunci yang hilang/typo ketahuan langsung di editor, mirip linter untuk terjemahan.
+</Callout>
+
+<Callout type="tip">
+Karena <code>m.*()</code> adalah fungsi, bukan string lookup, kamu dapat <strong>autocomplete</strong> semua nama pesan dan <strong>error saat compile</strong> jika salah ketik atau lupa parameter. Manfaatkan ini: alih-alih <code>t('greeting', &#123; name &#125;)</code> ala react-i18next yang baru gagal di runtime, <code>m.greeting(&#123; name &#125;)</code> gagal di build kalau <code>name</code> hilang. i18n jadi bagian dari type-check, bukan harapan.
+</Callout>
+
+<Callout type="warning">
+Jangan menyusun string secara manual lewat penggabungan, mis. <code>m.hello() + ' ' + nama + '!'</code>. Urutan kata berbeda antar-bahasa (Jepang menaruh sufiks, dll.). Selalu pakai <strong>parameter pesan</strong> (<code>&#123;name&#125;</code> di JSON) supaya penerjemah bisa menaruh variabel di posisi yang benar untuk tiap bahasa.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/paraglide" label="Svelte CLI — Add-on paraglide" />
+<DocsLink href="https://inlang.com/m/gerre34r/library-inlang-paraglideJs" label="Paraglide JS (Inlang) — dokumentasi lengkap & runtime API" />

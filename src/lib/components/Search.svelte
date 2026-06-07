@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { search } from '$lib/search';
-	import type { ModuleMeta } from '$lib/content';
+	import { PRODUCT_TITLES, type ModuleMeta } from '$lib/content';
 
 	let query = $state('');
 	let open = $state(false);
@@ -81,7 +81,7 @@
 						onmouseenter={() => (activeIndex = i)}
 					>
 						<span class="r-title">{m.title}</span>
-						<span class="r-level">L{m.level} · {m.levelTitle}</span>
+						<span class="r-level">{PRODUCT_TITLES[m.product]} › {m.sectionTitle}</span>
 					</button>
 				</li>
 			{/each}

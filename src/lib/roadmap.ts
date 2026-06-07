@@ -1,13 +1,7 @@
-// Per-level metadata for the learning roadmap (/roadmap).
-//
-// EASY TO UPDATE: the roadmap's topic lists & progress come from the content
-// manifest ($lib/content) + the progress store — add a `.svx` module and it
-// appears on the roadmap automatically. The only thing to edit here is the
-// per-level icon / blurb / official-docs link. If you add a whole new level,
-// add one entry below (a missing entry falls back to a safe default).
-//
-// `docsUrl` targets are the official docs sections for each stage (verified 200).
-
+// Per-section metadata for the learning roadmap (/roadmap). Keyed by
+// "<product>/<section>" — add a section, add an entry (fallback is safe).
+// Topic lists & progress come from $lib/content + the progress store; only the
+// per-section icon / blurb / docs link lives here.
 export type RoadmapMeta = {
 	icon: string;
 	blurb: string;
@@ -15,62 +9,126 @@ export type RoadmapMeta = {
 	docsLabel: string;
 };
 
-export const roadmapMeta: Record<number, RoadmapMeta> = {
-	1: {
+export const roadmapMeta: Record<string, RoadmapMeta> = {
+	'svelte/introduction': {
 		icon: '🌱',
-		blurb:
-			'Pahami filosofi compiler Svelte, siapkan proyek (`npx sv create`), dan kuasai anatomi komponen `.svelte` plus styling scoped.',
+		blurb: 'Filosofi compiler Svelte, setup `npx sv create`, anatomi `.svelte` & file `.svelte.js`/`.ts`.',
 		docsUrl: 'https://svelte.dev/docs/svelte/overview',
-		docsLabel: 'Svelte · Overview'
+		docsLabel: 'Svelte · Introduction'
 	},
-	2: {
+	'svelte/runes': {
 		icon: '⚡',
-		blurb:
-			'Inti Svelte 5: bikin state reaktif dan nilai turunannya dengan runes — `$state`, `$derived`, `$effect`, `$props`/`$bindable`.',
+		blurb: 'Inti Svelte 5: `$state`, `$derived`, `$effect`, `$props`/`$bindable`, `$inspect`, `$host`.',
 		docsUrl: 'https://svelte.dev/docs/svelte/what-are-runes',
 		docsLabel: 'Svelte · Runes'
 	},
-	3: {
+	'svelte/template': {
 		icon: '🧩',
-		blurb:
-			'Kendalikan markup: kondisi & loop (`{#if}`/`{#each}`), snippets, tags, directives, transitions, dan ekspresi async.',
+		blurb: 'Markup: `{#if}`/`{#each}`, snippets & `{@render}`, tags, directives, transitions, async.',
 		docsUrl: 'https://svelte.dev/docs/svelte/basic-markup',
 		docsLabel: 'Svelte · Template syntax'
 	},
-	4: {
+	'svelte/styling': {
+		icon: '🎨',
+		blurb: 'Scoped & global styles, CSS custom properties, dan `<style>` bertingkat.',
+		docsUrl: 'https://svelte.dev/docs/svelte/scoped-styles',
+		docsLabel: 'Svelte · Styling'
+	},
+	'svelte/special-elements': {
+		icon: '🪄',
+		blurb: 'Elemen `<svelte:*>`: window, document, head, element, boundary, options.',
+		docsUrl: 'https://svelte.dev/docs/svelte/svelte-window',
+		docsLabel: 'Svelte · Special elements'
+	},
+	'svelte/runtime': {
 		icon: '🛠️',
-		blurb:
-			'Elemen `<svelte:*>`, stores vs runes, Context API, dan lifecycle untuk berbagi state & efek lintas komponen.',
+		blurb: 'Stores, Context, lifecycle hooks, imperative API, dan hydratable data.',
 		docsUrl: 'https://svelte.dev/docs/svelte/stores',
 		docsLabel: 'Svelte · Runtime'
 	},
-	5: {
+	'svelte/misc': {
 		icon: '🎓',
-		blurb:
-			'Naik kelas: TypeScript di Svelte, testing (Vitest/Playwright), web components, modul reference, dan migrasi Svelte 4→5.',
+		blurb: 'TypeScript, testing, custom elements, browser support, migrasi, dan FAQ.',
 		docsUrl: 'https://svelte.dev/docs/svelte/typescript',
 		docsLabel: 'Svelte · Misc'
 	},
-	6: {
-		icon: '🚦',
-		blurb:
-			'Bangun aplikasi nyata: routing berbasis file, `load` data, form actions + `use:enhance`, dan opsi rendering (SSR/SSG/CSR).',
-		docsUrl: 'https://svelte.dev/docs/kit/introduction',
-		docsLabel: 'SvelteKit · Pengantar'
+	'svelte/reference': {
+		icon: '📖',
+		blurb: 'Reference API tiap modul `svelte/*` + daftar error/warning compiler & runtime.',
+		docsUrl: 'https://svelte.dev/docs/svelte/svelte',
+		docsLabel: 'Svelte · Reference'
 	},
-	7: {
+	'svelte/legacy': {
+		icon: '🕰️',
+		blurb: 'Sintaks Svelte 4 (legacy) untuk membaca kode lama: `export let`, `$:`, `<slot>`, dll.',
+		docsUrl: 'https://svelte.dev/docs/svelte/legacy-overview',
+		docsLabel: 'Svelte · Legacy APIs'
+	},
+	'kit/getting-started': {
+		icon: '🚦',
+		blurb: 'Apa itu SvelteKit, buat proyek, project types & structure, web standards.',
+		docsUrl: 'https://svelte.dev/docs/kit/introduction',
+		docsLabel: 'SvelteKit · Getting started'
+	},
+	'kit/core': {
+		icon: '🧱',
+		blurb: 'Routing, `load`, form actions, page options, state, remote functions, env vars.',
+		docsUrl: 'https://svelte.dev/docs/kit/routing',
+		docsLabel: 'SvelteKit · Core concepts'
+	},
+	'kit/build-deploy': {
+		icon: '🚀',
+		blurb: 'Build & adapters (auto/node/static/Cloudflare/Netlify/Vercel/SPA), writing adapters.',
+		docsUrl: 'https://svelte.dev/docs/kit/adapters',
+		docsLabel: 'SvelteKit · Build & deploy'
+	},
+	'kit/advanced': {
 		icon: '🧭',
-		blurb:
-			'Routing lanjutan (rest/optional/groups), hooks, error handling, link options, service worker, dan modul server-only.',
+		blurb: 'Advanced routing, hooks, errors, link options, service workers, packaging.',
 		docsUrl: 'https://svelte.dev/docs/kit/advanced-routing',
 		docsLabel: 'SvelteKit · Advanced'
 	},
-	8: {
-		icon: '🚀',
-		blurb:
-			'Build & deploy (adapters), env vars, modul `$app/*`, API routes `+server.js`, auth/performance/SEO, dan studi kasus akhir.',
-		docsUrl: 'https://svelte.dev/docs/kit/building-your-app',
-		docsLabel: 'SvelteKit · Build & deploy'
+	'kit/best-practices': {
+		icon: '🏅',
+		blurb: 'Auth, performance, images, accessibility, SEO, dan icons.',
+		docsUrl: 'https://svelte.dev/docs/kit/auth',
+		docsLabel: 'SvelteKit · Best practices'
+	},
+	'kit/appendix': {
+		icon: '📎',
+		blurb: 'FAQ, integrations, debugging, migrasi v2/Sapper, resources, glossary.',
+		docsUrl: 'https://svelte.dev/docs/kit/faq',
+		docsLabel: 'SvelteKit · Appendix'
+	},
+	'kit/reference': {
+		icon: '📚',
+		blurb: 'Reference API `@sveltejs/kit`, `$app/*`, `$env/*`, configuration, CLI, types.',
+		docsUrl: 'https://svelte.dev/docs/kit/@sveltejs-kit',
+		docsLabel: 'SvelteKit · Reference'
+	},
+	'cli/intro': {
+		icon: '⌨️',
+		blurb: 'Pengantar CLI `sv` dan FAQ-nya.',
+		docsUrl: 'https://svelte.dev/docs/cli/overview',
+		docsLabel: 'CLI · Overview'
+	},
+	'cli/commands': {
+		icon: '🧰',
+		blurb: 'Perintah inti: `sv create`, `sv add`, `sv check`, `sv migrate`.',
+		docsUrl: 'https://svelte.dev/docs/cli/sv-create',
+		docsLabel: 'CLI · Perintah'
+	},
+	'cli/addons': {
+		icon: '🧩',
+		blurb: 'Add-ons resmi (tailwind, drizzle, eslint, playwright, …) + bikin add-on sendiri.',
+		docsUrl: 'https://svelte.dev/docs/cli/sv-add',
+		docsLabel: 'CLI · Add-ons'
+	},
+	'cli/api': {
+		icon: '🔌',
+		blurb: 'API terprogram: `sv` dan `sv-utils` untuk membangun add-on & transform kode.',
+		docsUrl: 'https://svelte.dev/docs/cli/sv',
+		docsLabel: 'CLI · API'
 	}
 };
 
@@ -84,5 +142,8 @@ export const FALLBACK_META: RoadmapMeta = {
 /** Official interactive tutorial — referenced in the roadmap header. */
 export const TUTORIAL_URL = 'https://svelte.dev/tutorial';
 
-/** First level that belongs to the SvelteKit half (drives the "Lanjut ke SvelteKit" divider). */
-export const SVELTEKIT_FROM_LEVEL = 6;
+/** First section of these products starts a new roadmap band (drives dividers). */
+export const PRODUCT_DIVIDERS: Record<string, string> = {
+	kit: '↓ Lanjut ke SvelteKit',
+	cli: '↓ Lanjut ke CLI (sv)'
+};

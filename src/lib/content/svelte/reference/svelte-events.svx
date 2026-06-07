@@ -1,0 +1,266 @@
+---
+title: svelte/events
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 7
+status: reference
+description: Memasang event listener secara terprogram dengan on() yang sadar delegasi event Svelte 5 dan mengembalikan fungsi pelepas.
+docs: https://svelte.dev/docs/svelte/svelte-events
+keywords: [on, svelte/events, event listener, delegation, cleanup]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Modul `svelte/events` adalah salah satu modul paling kecil di seluruh Svelte: ia hanya mengekspor **satu** fungsi, `on`. Tapi jangan tertipu ukurannya — fungsi ini menjawab satu pertanyaan yang sering bikin pengguna React/Vue tersandung saat pindah ke Svelte 5: *"kalau di markup aku pakai `onclick`, bagaimana cara memasang listener dari dalam JavaScript (di luar template)?"*
+
+Jawaban naifnya tentu `node.addEventListener('click', ...)`. Itu masih bekerja. Tapi Svelte 5 menyediakan `on(target, type, handler, options)` sebagai pengganti yang lebih pintar. Untuk mengerti **mengapa** ia ada, kita harus paham satu detail penting di balik layar Svelte 5: **event delegation**.
+
+### Kenapa bukan sekadar `addEventListener`? — soal event delegation
+
+Di Svelte 4 (dan React lama, dan Vue), atribut event seperti `on:click` kira-kira diterjemahkan jadi `addEventListener('click')` pada elemen itu sendiri. Kalau kamu punya daftar 1.000 baris dengan tombol di tiap baris, kamu memasang 1.000 listener. Boros memori dan lambat saat mount.
+
+Svelte 5 mengubah strategi untuk sejumlah event umum (`click`, `input`, `change`, `keydown`, dan kawan-kawan): alih-alih menempel di tiap elemen, Svelte memasang **satu** listener di akar aplikasi. Saat sebuah event meletus dan menggelembung (bubble) naik ke akar, Svelte menelusuri jalurnya dan memanggil handler `onclick` yang sesuai. Inilah yang disebut **event delegation**.
+
+> **Analogi:** bayangkan gedung apartemen 1.000 unit. Cara lama (`addEventListener` per elemen) seperti memasang bel pintu di **tiap** unit — mahal dan ribet. Event delegation seperti menempatkan **satu** resepsionis di lobi: setiap tamu lewat lobi, resepsionis tahu mereka mau ke unit mana lalu mengarahkan. Jauh lebih hemat untuk gedung besar.
+
+Konsekuensinya halus tapi nyata: handler `onclick` deklaratif Svelte sebenarnya **tidak** berjalan di elemen itu, melainkan saat event sampai di akar. Kalau kamu memasang listener native dengan `addEventListener` langsung di elemen, **urutan pemanggilan** antara listener native-mu dan handler `onclick` Svelte bisa berbeda dari yang kamu duga — karena yang satu jalan di elemen, yang satu lagi jalan di akar.
+
+`on()` dari `svelte/events` menyelesaikan ini: ia mendaftarkan listener dengan cara yang **mempertahankan urutan yang benar** relatif terhadap handler deklaratif yang didelegasikan. Jadi mencampur `on()` dengan `onclick` aman dan dapat diprediksi, sementara mencampur `addEventListener` mentah dengan `onclick` bisa memberi kejutan urutan.
+
+### Nilai kembalian: tiket pelepas
+
+Detail kedua yang membuat `on()` enak dipakai: ia **mengembalikan sebuah fungsi cleanup**. Panggil fungsi itu, listener-nya lepas. Tidak perlu menyimpan referensi handler yang persis sama lalu memanggil `removeEventListener` dengan argumen identik (sumber bug klasik di DOM).
+
+> **Analogi:** `addEventListener`/`removeEventListener` itu seperti menitip jas tanpa nomor — untuk mengambil kembali kamu harus mendeskripsikan jasmu persis sama. `on()` memberimu **tiket bernomor**: untuk melepas listener, kamu cukup serahkan tiket (panggil fungsi yang dikembalikan), tak perlu mengingat detail handler-nya.
+
+Pola kembalian ini sengaja dirancang agar pas dengan dua tempat di mana kamu paling sering butuh listener imperatif:
+
+- **Di dalam `$effect`** — kembalikan fungsi pelepas itu sebagai cleanup efek. Saat efek dijalankan ulang atau komponen dihancurkan, Svelte memanggilnya otomatis.
+- **Di dalam sebuah action (`use:`)** — pasang `destroy: lepas`, sehingga listener dibersihkan saat elemen lepas dari DOM.
+
+### Kapan pakai `on()`, kapan pakai atribut?
+
+Aturan praktisnya sederhana:
+
+- **Di template, untuk elemen yang ada di markup:** tetap pakai atribut deklaratif — `onclick`, `oninput`, dan untuk `window`/`document`/`body` pakai `<svelte:window onkeydown={...}>`, `<svelte:document>`, `<svelte:body>`. Ini cara paling ringkas dan idiomatis.
+- **Untuk konteks imperatif:** gunakan `on()`. Yaitu di dalam **action**, di dalam **`$effect`**, di file logika `.svelte.ts` (composable), atau saat kamu memegang sebuah node DOM yang dibuat/diintegrasi secara manual (mis. library pihak ketiga). Di situ tidak ada "template" untuk menaruh atribut, jadi `on()` adalah jalannya.
+
+Singkatnya: `on()` bukan pengganti `onclick` di markup — ia pelengkap untuk situasi di mana kamu memang harus memasang listener dari kode, dengan bonus aman-delegasi dan cleanup yang rapi.
+
+## 2. Contoh kode
+
+```svelte
+<!-- on di dalam $effect — listener window dengan cleanup otomatis -->
+<script>
+	import { on } from 'svelte/events';
+
+	let lebar = $state(0);
+
+	$effect(() => {
+		// pasang listener; on() mengembalikan FUNGSI PELEPAS
+		const lepas = on(window, 'resize', () => {
+			lebar = window.innerWidth;
+		});
+
+		lebar = window.innerWidth; // inisialisasi nilai awal
+
+		// kembalikan fungsi pelepas → Svelte memanggilnya saat
+		// efek dijalankan ulang atau komponen dihancurkan
+		return lepas;
+	});
+</script>
+
+<p>Lebar window saat ini: {lebar}px</p>
+```
+
+```ts
+// klik-luar.ts — sebuah action "click outside" memakai on()
+import { on } from 'svelte/events';
+import type { Action } from 'svelte/action';
+
+// Action<elemen, parameter>. Parameternya: callback saat klik di LUAR node.
+export const klikLuar: Action<HTMLElement, () => void> = (node, onLuar) => {
+	// on(document, ...) — perhatikan event diketik kuat sesuai target
+	const lepas = on(document, 'click', (event) => {
+		// event.target diketik; cek apakah klik terjadi di luar node
+		if (event.target instanceof Node && !node.contains(event.target)) {
+			onLuar();
+		}
+	});
+
+	// fungsi pelepas dari on() pas banget untuk destroy
+	return { destroy: lepas };
+};
+
+// Pemakaian: <div use:klikLuar={() => (menuTerbuka = false)}>...</div>
+```
+
+```js
+// on() bukan hanya untuk elemen — MediaQueryList & options juga didukung
+import { on } from 'svelte/events';
+
+const mql = window.matchMedia('(min-width: 768px)');
+
+// target MediaQueryList → event 'change' diketik (punya .matches)
+const lepasMq = on(mql, 'change', (event) => {
+	console.log('Layar desktop?', event.matches);
+});
+
+// options standar AddEventListenerOptions: once, passive, capture, signal
+const tombol = document.querySelector('button');
+on(tombol, 'click', () => console.log('sekali saja'), { once: true });
+on(window, 'scroll', () => {}, { passive: true }); // tak memblok scroll
+```
+
+## 3. Coba sendiri
+
+Playground berikut memasang listener `keydown` ke `window` lewat `on()` di dalam sebuah `$effect`. Tombol "Aktifkan/Nonaktifkan" mengubah state `aktif`; karena efek membaca `aktif`, ia dijalankan ulang setiap kali nilainya berubah — dan **fungsi pelepas** yang dikembalikan `on()` dipanggil otomatis untuk melepas listener lama sebelum memasang yang baru (atau, saat nonaktif, tidak memasang sama sekali). Klik area playground agar fokus masuk, lalu tekan tombol keyboard apa saja dan amati: ketika listener dinonaktifkan, penghitung berhenti — bukti cleanup-nya bekerja.
+
+<Playground code={`<script>
+	import { on } from 'svelte/events';
+	let aktif = $state(true);
+	let terakhir = $state('(belum ada)');
+	let jumlah = $state(0);
+	$effect(() => {
+		// efek membaca 'aktif' → dijalankan ulang saat 'aktif' berubah
+		if (!aktif) return; // saat nonaktif: tidak pasang listener
+		// on() mengembalikan fungsi pelepas
+		const lepas = on(window, 'keydown', (event) => {
+			terakhir = event.key;
+			jumlah += 1;
+		});
+		// dikembalikan sebagai cleanup: dipanggil sebelum efek jalan ulang
+		// (mis. saat 'aktif' jadi false) atau saat komponen hancur
+		return lepas;
+	});
+</script>
+<p>Klik di sini dulu, lalu tekan tombol keyboard mana saja.</p>
+<button onclick={() => (aktif = !aktif)}>
+	{aktif ? 'Nonaktifkan' : 'Aktifkan'} listener
+</button>
+<p>Status: <strong>{aktif ? 'mendengarkan' : 'berhenti'}</strong></p>
+<p>Tombol terakhir: <code>{terakhir}</code></p>
+<p>Total ketukan tercatat: {jumlah}</p>`} />
+
+<Callout type="tip">
+Coba nonaktifkan listener lalu tekan beberapa tombol — penghitung tidak naik. Aktifkan lagi, penghitung lanjut. Inilah daya tarik pola kembalian <code>on()</code>: cleanup-nya menyatu dengan siklus hidup <code>$effect</code> tanpa kamu perlu menyimpan referensi handler atau memanggil <code>removeEventListener</code> manual.
+</Callout>
+
+## 4. Ringkasan API
+
+`svelte/events` hanya mengekspor satu hal: fungsi `on`.
+
+### Tanda tangan
+
+```ts
+// Bentuk umum (di-overload agar terketik kuat per jenis target)
+function on(
+	target: Window | Document | HTMLElement | MediaQueryList | EventTarget,
+	type: string,
+	handler: (event) => any,
+	options?: AddEventListenerOptions
+): () => void; // ← KEMBALIAN: fungsi untuk MELEPAS listener
+```
+
+### Parameter
+
+| Parameter | Tipe | Wajib? | Keterangan |
+|---|---|---|---|
+| `target` | EventTarget (Window, Document, HTMLElement, MediaQueryList, atau EventTarget umum) | ya | Objek tujuan tempat listener dipasang. |
+| `type` | `string` (diketik per target) | ya | Nama event, mis. `'click'`, `'keydown'`, `'resize'`, `'change'`. |
+| `handler` | `(event) => any` | ya | Dipanggil saat event terjadi. `event`, `event.currentTarget`, dan `this` diketik sesuai `target`. |
+| `options` | `AddEventListenerOptions` | tidak | Opsi standar DOM: `capture`, `once`, `passive`, `signal`. |
+
+### Nilai kembalian
+
+Sebuah fungsi `() => void`. Panggil untuk **melepas** listener. Cocok dikembalikan langsung dari `$effect` (sebagai cleanup) atau ditaruh di `destroy` sebuah action.
+
+### Overload per target (sumber tipe event)
+
+`on` punya beberapa overload sehingga `type` dan `event` terketik kuat tergantung targetnya:
+
+| Target | Event map (sumber tipe) | `event.currentTarget` |
+|---|---|---|
+| `Window` | `WindowEventMap` | `Window` |
+| `Document` | `DocumentEventMap` | `Document` |
+| `HTMLElement` | `HTMLElementEventMap` | elemen itu sendiri |
+| `MediaQueryList` | `MediaQueryListEventMap` | `MediaQueryList` |
+| `EventTarget` (fallback umum) | `type: string`, `handler: EventListener` | — |
+
+Artinya: `on(window, 'keydown', e => ...)` membuat `e` otomatis bertipe `KeyboardEvent`, sedangkan `on(mql, 'change', e => ...)` membuat `e.matches` tersedia — tanpa anotasi manual.
+
+## 5. Latihan
+
+<Exercise title="Action 'tekan Escape untuk menutup' dengan on()">
+
+Buat sebuah action bernama `tutupDenganEscape` yang memanggil sebuah callback ketika pengguna menekan tombol `Escape`. Pakai `on()` dari `svelte/events` untuk memasang listener ke `window`, dan pastikan listener dibersihkan saat elemen lepas dari DOM (manfaatkan fungsi pelepas yang dikembalikan `on()`).
+
+Lalu pakai action itu pada sebuah panel `{#if terbuka}`; menekan `Escape` harus menutup panel, dan tombol terpisah membukanya kembali.
+
+Petunjuk: action menerima `(node, parameter)`. Parameter di sini adalah callback `onEscape`. Kembalikan objek `{ destroy }` dan isi `destroy` dengan fungsi pelepas dari `on()`.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { on } from 'svelte/events';
+
+	let terbuka = $state(true);
+
+	// action: (node, parameter). parameter = callback yang dipanggil saat Escape
+	function tutupDenganEscape(node, onEscape) {
+		// on() ke window — kita tidak butuh node-nya untuk listener keyboard,
+		// tapi action tetap cara idiomatis menempelkan perilaku ke elemen
+		const lepas = on(window, 'keydown', (event) => {
+			if (event.key === 'Escape') onEscape();
+		});
+
+		// fungsi pelepas dari on() langsung dipakai sebagai destroy →
+		// listener hilang begitu panel lepas dari DOM
+		return { destroy: lepas };
+	}
+</script>
+
+{#if terbuka}
+	<div use:tutupDenganEscape={() => (terbuka = false)} class="panel">
+		Tekan <kbd>Escape</kbd> untuk menutup panel ini.
+	</div>
+{/if}
+
+<button onclick={() => (terbuka = true)}>Buka lagi</button>
+```
+
+Kunci jawabannya ada di baris `return { destroy: lepas }`. Karena `on()` sudah memberi fungsi pelepas, kita tidak perlu menulis ulang `removeEventListener` dengan handler yang persis sama — cukup teruskan fungsi itu sebagai `destroy`. Saat blok `{#if terbuka}` jadi `false`, Svelte melepas elemen dan memanggil `destroy`, sehingga listener `keydown` di `window` ikut bersih. Tanpa cleanup ini, setiap kali panel dibuka-tutup kamu akan menumpuk listener window yang menggantung — kebocoran yang sulit dilacak.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Lupa mengembalikan/memanggil fungsi pelepas dari <code>on()</code>. Listener pada <code>window</code> atau <code>document</code> tidak ikut hancur otomatis bersama komponen — kalau kamu tidak membersihkannya, ia akan terus hidup dan menumpuk setiap kali komponen/efek dibuat ulang. Selalu <code>return</code> fungsi pelepas dari <code>$effect</code>, atau taruh di <code>destroy</code> action.
+</Callout>
+
+<Callout type="warning">
+Jangan pakai <code>on()</code> untuk menggantikan atribut deklaratif pada elemen yang sudah ada di template. Untuk tombol di markup, <code>onclick=&#123;...&#125;</code> lebih ringkas; untuk event global, pakai <code>&lt;svelte:window&gt;</code>/<code>&lt;svelte:document&gt;</code>/<code>&lt;svelte:body&gt;</code>. <code>on()</code> adalah alat untuk konteks <strong>imperatif</strong> (action, <code>$effect</code>, composable <code>.svelte.ts</code>, atau node yang kamu pegang manual) — bukan pengganti markup.
+</Callout>
+
+<Callout type="tip">
+Karena Svelte 5 mendelegasikan banyak event umum (<code>click</code>, <code>input</code>, dll.) lewat satu listener di akar, mencampur <code>addEventListener</code> mentah dengan handler <code>onclick</code> bisa memberi urutan pemanggilan yang mengejutkan. <code>on()</code> mendaftar dengan cara yang menjaga urutan tetap benar relatif terhadap handler deklaratif — jadi bila kamu butuh listener imperatif yang berdampingan dengan <code>onclick</code>, pilih <code>on()</code>, bukan <code>addEventListener</code>.
+</Callout>
+
+<Callout type="tip">
+<code>on()</code> meneruskan <code>options</code> apa adanya ke DOM, jadi kamu tetap bisa pakai <code>&#123; once: true &#125;</code>, <code>&#123; passive: true &#125;</code> (penting untuk listener <code>scroll</code>/<code>touchmove</code> demi performa), <code>&#123; capture: true &#125;</code>, atau <code>&#123; signal &#125;</code> untuk membatalkan lewat <code>AbortController</code>.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-events" label="svelte/events — fungsi on()" />

@@ -1,0 +1,256 @@
+---
+title: "{@const} / declaration tags"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 12
+status: stable
+description: Cara membuat variabel lokal di dalam markup Svelte dengan declaration tags (const & let), aturannya, plus padanan lawasnya @const.
+docs: https://svelte.dev/docs/svelte/declaration-tags
+keywords: [declaration tags, const, let, template, derived]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Markup Svelte itu **bukan** JavaScript penuh. Di dalam `<script>` kamu bebas menulis `const`, `let`, fungsi, apa pun. Tapi begitu kamu turun ke area markup — di antara `<div>` dan `</div>`, di dalam `{#each}` — kamu tidak bisa lagi seenaknya menulis `const subtotal = ...` di sela-sela tag. Markup hanya menerima *ekspresi* di dalam kurawal (`{harga * qty}`), bukan *pernyataan* (statement) seperti deklarasi variabel.
+
+Padahal kebutuhannya nyata: di dalam sebuah loop kamu sering butuh satu nilai turunan yang dipakai berkali-kali (`item.harga * item.qty` muncul di tiga tempat di baris yang sama). Menulis ulang ekspresi yang sama itu boros, rawan typo, dan kalau ekspresinya mahal (misalnya memformat tanggal) berarti kerja yang sama dilakukan beberapa kali. Kamu butuh cara untuk **memberi nama satu nilai, lokal di potongan markup itu**.
+
+### Analoginya: sticky note yang ditempel di tengah halaman
+
+Bayangkan markup-mu adalah selembar dokumen yang sedang kamu baca. **Declaration tag** itu seperti sticky note kecil yang kamu tempel di tengah halaman: "mulai dari sini, kata `subtotal` artinya `harga × qty`". Semua paragraf di bawah note itu (dan paragraf yang bersarang di dalamnya) bisa membaca catatan tadi. Tapi note itu cuma berlaku di area itu — paragraf di halaman lain tidak tahu apa-apa soal `subtotal`.
+
+Ada dua "generasi" sticky note ini, dan modul ini soal membedakannya:
+
+- **`{@const}` — generasi lama (legacy).** Note yang hanya boleh ditempel **persis di awal sebuah blok** (`{#each}`, `{#if}`, `{#snippet}`, dst). Tidak boleh di sembarang tempat.
+- **`{const}` / `{let}` — declaration tags modern (sejak Svelte 5.56).** Tanpa tanda `@`. Note yang boleh ditempel **di mana saja** di markup, bisa pakai `let` (yang nilainya boleh diubah), dan bisa memakai rune `$state` / `$derived` di dalamnya.
+
+### Mengapa ada dua, dan mengapa yang lama dibatasi?
+
+Dulu pemikirannya begini: kalau kamu butuh nilai turunan di **top-level** markup (di luar blok apa pun), kamu kan tinggal mendeklarasikannya di `<script>` dengan `$derived`. Jadi `{@const}` sengaja dibatasi hanya untuk **di dalam blok** — tempat di mana `<script>` tidak bisa menjangkau, misalnya nilai yang bergantung pada variabel loop `item` yang baru ada di dalam `{#each}`.
+
+Masalahnya, batasan itu sering terasa kaku. Kamu kadang ingin menamai satu nilai di tengah markup tanpa harus membungkusnya dalam blok, atau ingin sepetak **state lokal yang bisa diubah** untuk satu bagian UI saja (misalnya teks di sebuah `<input>` edit). Declaration tags modern (`{const}` / `{let}`) melonggarkan aturan ini: boleh di mana saja, plus tambahan `let` dan dukungan rune. `{@const}` masih jalan demi kompatibilitas, tapi untuk kode baru, declaration tags adalah pilihan utama.
+
+> **Bagi yang dari React:** di JSX kamu tinggal menulis `const area = ...` di dalam callback `.map()` sebelum `return`, karena JSX *adalah* JavaScript. Markup Svelte bukan JavaScript penuh, jadi butuh sintaks khusus untuk menitipkan satu nilai bernama di tengah markup — itulah declaration tags. **Bagi yang dari Vue:** template Vue tidak punya padanan langsung; orang biasanya memakai `computed` di `<script setup>`, atau trik `v-for` satu elemen untuk "membuat scope". Declaration tags Svelte mengisi celah ini dengan lebih rapi.
+
+## 2. Contoh kode
+
+Kasus klasik: nilai turunan di dalam `{#each}`.
+
+```svelte
+<script>
+	let boxes = $state([
+		{ width: 4, height: 3 },
+		{ width: 5, height: 2 }
+	]);
+</script>
+
+<ul>
+	{#each boxes as box}
+		<!-- 'area' & 'label' hidup HANYA di iterasi ini.
+		     Dihitung sekali, lalu dipakai berkali-kali di bawah. -->
+		{const area = box.width * box.height}
+		{const label = box.width + ' x ' + box.height + ' = ' + area}
+		<li>{label}{#if area > 15} (besar){/if}</li>
+	{/each}
+</ul>
+```
+
+Kelebihan utama declaration tags modern dibanding `{@const}`: bisa ditaruh **di mana saja**, termasuk di top-level markup (di luar blok), dan bisa di-**shadow** seperti `const` JavaScript biasa.
+
+```svelte
+<script>
+	let user = $state({ name: 'Sinta', role: 'admin' });
+</script>
+
+<!-- BOLEH di top-level markup, tak perlu dibungkus blok apa pun.
+     (Ini yang DULU dilarang oleh {@const}.) -->
+{const greeting = 'Halo, ' + user.name}
+<h1>{greeting}</h1>
+
+{#if user.role === 'admin'}
+	<!-- 'greeting' baru di sini meng-SHADOW yang di atas,
+	     persis seperti const dalam blok JavaScript. -->
+	{const greeting = 'Selamat datang kembali, admin ' + user.name}
+	<p>{greeting}</p>
+{/if}
+```
+
+Yang benar-benar baru: `{let}` untuk binding yang **bisa diubah**, plus rune `$state` / `$derived` langsung di markup. Pola ini berguna untuk state lokal sementara, misalnya salinan teks yang sedang diedit.
+
+```svelte
+<script>
+	let editing = $state(true);
+	let user = $state({ name: 'Sinta' });
+</script>
+
+{#if editing}
+	<!-- {let ...} = binding yang bisa diubah; $state membuatnya reaktif.
+	     Ini "draft" lokal yang hanya hidup selama blok {#if} ini ada. -->
+	{let name = $state(user.name)}
+
+	<!-- {const ...} + $derived = nilai turunan yang ikut berubah
+	     setiap 'name' di atas berubah. -->
+	{const greeting = $derived('Halo ' + name)}
+
+	<input bind:value={name} />
+	<p>{greeting}</p>
+{/if}
+```
+
+## 3. Coba sendiri
+
+> Modul ini lebih cocok dibaca lewat contoh statis (declaration tags paling jelas saat dilihat bersama strukturnya). Telusuri kode beranotasi berikut baris demi baris; perhatikan **di mana** tiap tag ditaruh dan **siapa** yang bisa membacanya.
+
+```svelte
+<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh',  harga: 12000, qty: 3 }
+	]);
+
+	let diskonPersen = $state(10);
+</script>
+
+<!-- (A) Declaration tag di TOP-LEVEL markup.
+     Boleh karena ini sintaks modern. 'faktor' terlihat oleh
+     semua sibling di bawahnya + anak-anak mereka. -->
+{const faktor = (100 - diskonPersen) / 100}
+
+<p>Diskon aktif: {diskonPersen}% (faktor {faktor})</p>
+
+<ul>
+	{#each items as item}
+		<!-- (B) Nilai turunan lokal per-iterasi. 'item' hanya ada
+		     di dalam {#each}, jadi tag ini WAJIB di sini, bukan di atas. -->
+		{const subtotal = item.harga * item.qty}
+		{const setelahDiskon = subtotal * faktor}
+		<li>
+			{item.nama} x{item.qty}
+			= Rp {setelahDiskon.toLocaleString('id-ID')}
+			{#if setelahDiskon > 30000}
+				<!-- (C) Tag baru lagi, bersarang lebih dalam.
+				     Ia bisa membaca 'setelahDiskon' dari sibling/induknya. -->
+				{const hemat = subtotal - setelahDiskon}
+				<small>(hemat Rp {hemat.toLocaleString('id-ID')})</small>
+			{/if}
+		</li>
+	{/each}
+</ul>
+```
+
+Hal penting yang ditunjukkan kode ini:
+
+1. Tag **(A)** ada di top-level — sesuatu yang `{@const}` lama **tidak** boleh lakukan.
+2. Tag **(B)** harus di dalam `{#each}` karena bergantung pada `item`, yang tidak terlihat di `<script>` maupun di top-level.
+3. Tag **(C)** membuktikan aturan scope: ia bisa membaca `subtotal` dan `setelahDiskon` (dideklarasikan di induknya), tetapi `hemat` **tidak** bocor keluar dari `{#if}` ini.
+
+## 4. Latihan
+
+<Exercise title="Migrasi dari &#123;@const&#125; ke declaration tags modern">
+
+Di bawah ada komponen versi lama yang memakai `{@const}`. Tugasmu:
+
+1. Ubah semua `{@const}` menjadi declaration tag modern (`{const}`).
+2. `{@const}` lama **memaksa** kamu membungkus perhitungan total dalam blok. Manfaatkan keleluasaan sintaks baru: pindahkan perhitungan `total` ke **top-level markup** (di luar `{#each}`), tepat sebelum kamu menampilkannya.
+3. Tambahkan satu `{let}` + `$state` lokal: sebuah `<input type="number">` untuk mengubah `qty` baris pertama secara cepat tanpa menyentuh array — cukup sebagai "draft" tampilan.
+
+Komponen awal (versi lama):
+
+```svelte
+<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh',  harga: 12000, qty: 1 }
+	]);
+</script>
+
+<ul>
+	{#each items as item}
+		{@const subtotal = item.harga * item.qty}
+		<li>{item.nama}: Rp {subtotal.toLocaleString('id-ID')}</li>
+	{/each}
+</ul>
+```
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let items = $state([
+		{ nama: 'Kopi', harga: 18000, qty: 2 },
+		{ nama: 'Teh',  harga: 12000, qty: 1 }
+	]);
+</script>
+
+<ul>
+	{#each items as item}
+		<!-- 1. {@const} -> {const}: di dalam blok, perilakunya sama persis. -->
+		{const subtotal = item.harga * item.qty}
+		<li>{item.nama}: Rp {subtotal.toLocaleString('id-ID')}</li>
+	{/each}
+</ul>
+
+<!-- 2. Sekarang BOLEH di top-level: dengan {@const} ini akan error,
+     karena ia hanya boleh jadi anak langsung sebuah blok. -->
+{const total = items.reduce((s, it) => s + it.harga * it.qty, 0)}
+<p><strong>Total: Rp {total.toLocaleString('id-ID')}</strong></p>
+
+<!-- 3. {let} + $state: draft lokal yang bisa diubah. -->
+{let draftQty = $state(items[0].qty)}
+{const previewKopi = $derived(items[0].harga * draftQty)}
+
+<label>
+	Ubah qty Kopi (preview):
+	<input type="number" min="0" bind:value={draftQty} />
+</label>
+<p>Preview subtotal Kopi: Rp {previewKopi.toLocaleString('id-ID')}</p>
+```
+
+Kuncinya: `{@const}` lama menolak ditempatkan di top-level, jadi `total` dulu harus dibungkus blok atau dipindah ke `<script>`. Declaration tag modern membebaskan posisi itu. Dan `{let draftQty = $state(...)}` memberimu sepetak state lokal yang reaktif langsung di markup — `previewKopi` yang dibungkus `$derived` ikut ter-update tiap `draftQty` berubah, tanpa menyentuh array `items`.
+
+{/snippet}
+
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>&#123;@const&#125;</code> (dengan tanda <code>@</code>) masih berfungsi, tapi kini berstatus <strong>legacy</strong>. Batasannya: ia hanya boleh menjadi anak <strong>langsung</strong> dari <code>&#123;#if&#125;</code>, <code>&#123;#each&#125;</code>, <code>&#123;#await&#125;</code>, <code>&#123;#key&#125;</code>, <code>&#123;#snippet&#125;</code>, <code>&lt;svelte:boundary&gt;</code>, atau sebuah komponen. Untuk kode baru, pakai declaration tag modern <code>&#123;const&#125;</code> / <code>&#123;let&#125;</code> yang boleh di mana saja.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '{@const x = a * b}', modern: '{const x = a * b}', note: 'di dalam blok, perilaku identik' },
+	{ legacy: 'hanya boleh jadi anak langsung sebuah blok', modern: 'boleh di top-level markup & di mana pun', note: 'pembatasan posisi dihapus' },
+	{ legacy: '(tidak ada padanan let)', modern: '{let x = $state(0)}', note: 'binding lokal yang bisa diubah' }
+]} />
+
+<Callout type="warning">
+Ingat aturan <strong>scope</strong>-nya. Sebuah declaration tag hanya "terlihat" oleh sibling di scope yang sama (umumnya yang berada <em>setelahnya</em>, seperti TDZ pada <code>const</code>/<code>let</code> JavaScript) dan oleh anak-anak dari sibling itu. Ia <strong>tidak</strong> bocor ke induknya, tidak ke sibling sebelumnya, dan tidak keluar dari blok tempat ia dideklarasikan. Kalau sebuah nilai dibutuhkan oleh seluruh komponen, deklarasikan di <code>&lt;script&gt;</code> (mis. dengan <code>$derived</code>), bukan lewat declaration tag.
+</Callout>
+
+<Callout type="pitfall">
+<code>&#123;let x = 0&#125;</code> memberimu binding yang <em>bisa diubah</em>, tapi nilai biasa itu <strong>tidak otomatis reaktif</strong> — sama seperti <code>let</code> polos di <code>&lt;script&gt;</code> mode runes. Kalau kamu butuh state lokal yang memicu update UI saat berubah, bungkus dengan rune: <code>&#123;let x = $state(0)&#125;</code>. Untuk nilai turunannya, pakai <code>&#123;const y = $derived(x * 2)&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+Untuk nilai turunan <em>sederhana</em> seperti <code>&#123;const area = box.width * box.height&#125;</code>, kamu <strong>tidak perlu</strong> membungkusnya dengan <code>$derived</code> — ekspresi di markup sudah ikut dihitung ulang saat dependensinya berubah. Gunakan <code>$derived</code> hanya saat kamu mau perilaku derived yang eksplisit/termemoisasi, terutama ketika nilainya bergantung pada <code>$state</code> lokal yang kamu buat lewat <code>&#123;let&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+Declaration tags tersedia <strong>sejak Svelte 5.56</strong>. Kalau proyekmu memakai versi Svelte yang lebih lama, sintaks <code>&#123;const&#125;</code> / <code>&#123;let&#125;</code> belum ada — kamu masih harus pakai <code>&#123;@const&#125;</code> di dalam blok. Cek versi di <code>package.json</code> bila kompilernya menolak sintaks ini.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/declaration-tags" label="Declaration tags — dokumentasi resmi Svelte" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/@const" label="&#123;@const&#125; (legacy) — dokumentasi resmi Svelte" />

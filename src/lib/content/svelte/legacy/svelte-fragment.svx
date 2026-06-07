@@ -1,0 +1,287 @@
+---
+title: '<svelte:fragment>'
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 9
+status: legacy
+description: Cara Svelte 4 mengisi named slot tanpa elemen pembungkus DOM lewat `<svelte:fragment>` — dan kenapa snippet Svelte 5 membuatnya tak perlu lagi.
+docs: https://svelte.dev/docs/svelte/legacy-svelte-fragment
+keywords: [svelte-fragment, named-slot, legacy, svelte-4, snippet, wrapper]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+<Callout type="legacy">
+<strong>Ini API lama (Svelte 4).</strong> <code>&lt;svelte:fragment&gt;</code> hanya berguna bersama sistem <strong>slot</strong> Svelte 4. Di Svelte 5 (runes), slot sudah digantikan <strong>snippet</strong>, dan snippet <em>tidak pernah</em> membuat elemen pembungkus — jadi <code>&lt;svelte:fragment&gt;</code> menjadi usang sepenuhnya. Halaman ini ada supaya kamu bisa <em>membaca</em> kode lama dan tahu padanan modernnya — <strong>jangan</strong> menulis komponen baru dengan pola ini.
+</Callout>
+
+## 1. Konsep
+
+Untuk paham `<svelte:fragment>`, kamu harus ingat dulu cara kerja **named slot** di Svelte 4. Di sana, kalau parent mau menaruh konten ke slot tertentu di anak (mis. slot `footer`), ia menandai konten itu dengan atribut `slot="footer"`. Tapi atribut HTML hanya bisa menempel pada sebuah **elemen**. Jadi kalau yang mau kamu masukkan cuma satu elemen, gampang: `<p slot="footer">...</p>`. Masalah muncul saat kamu mau memasukkan **beberapa elemen** ke satu slot.
+
+Karena `slot="footer"` butuh sebuah elemen sebagai tempat menempel, kamu terpaksa membungkus konten itu dalam sebuah wadah, biasanya `<div slot="footer">...</div>`. Repotnya, `<div>` itu **ikut muncul di DOM akhir**. Untuk teks biasa mungkin tak masalah, tapi begitu layout-mu pakai CSS grid, flexbox, atau struktur tabel, satu elemen pembungkus liar bisa merusak tata letak — karena grid/flex menghitung anak-anak langsungnya, dan tiba-tiba ada satu `<div>` perantara yang tak kamu inginkan.
+
+`<svelte:fragment slot="footer">` adalah jawaban Svelte 4 untuk itu: ia berperan sebagai **tempat menempel atribut `slot`**, tapi ia sendiri **menghilang dari output DOM**. Isinya — berapa pun banyaknya elemen — masuk ke slot tujuan tanpa membawa wadah perantara. Singkatnya: "kasih aku tempat menaruh label `slot=...`, tapi jangan tinggalkan jejak elemen apa pun."
+
+### Analogi: label alamat tanpa kardus
+
+Bayangkan kamu mengirim barang ke sebuah gudang yang punya banyak rak bernama: rak "header", rak "footer", dan seterusnya. Aturan kurirnya: **setiap kiriman harus punya label alamat**, dan label hanya bisa ditempel pada sebuah **kardus**.
+
+Kalau kamu cuma mengirim satu barang, gampang — tempel label langsung di barang itu (`<p slot="footer">`). Tapi kalau kamu mau mengirim tiga barang ke rak "footer" sekaligus, kurir memaksamu memasukkan ketiganya ke dalam **satu kardus** lalu menempel label di kardus (`<div slot="footer">`). Akibatnya, di rak tujuan barangmu tetap terbungkus kardus — bukan tergeletak bebas seperti yang kamu mau.
+
+`<svelte:fragment>` itu seperti **label alamat yang bisa berdiri sendiri tanpa kardus**: ia membawa tulisan "kirim ke rak footer", tapi setibanya di sana label itu lenyap dan ketiga barang tergeletak langsung di rak, tanpa kardus pembungkus. Itulah inti `<svelte:fragment>`: pembawa atribut `slot` yang transparan.
+
+### Sudah kenal? Ini saudara dari Fragment React & `<template>` Vue
+
+Kalau kamu datang dari React, kamu pasti pernah pakai `<React.Fragment>` atau bentuk pendeknya `<>...</>` untuk mengembalikan beberapa elemen tanpa membungkusnya dalam `<div>` tambahan. Di Vue, `<template>` melakukan hal serupa — wadah logis yang tak meninggalkan elemen di DOM. `<svelte:fragment>` adalah ide yang sama persis, hanya dengan tujuan spesifik Svelte 4: membawa atribut `slot` ke named slot tanpa elemen pembungkus.
+
+### Kenapa Svelte 5 membuatnya tak perlu lagi
+
+Inilah bagian terpentingnya. Svelte 5 mengganti seluruh sistem slot dengan **snippet**. Saat parent mengirim konten lewat snippet bernama — `{#snippet footer()}...{/snippet}` — snippet itu **memang tidak pernah** menghasilkan elemen pembungkus apa pun. Isinya boleh satu elemen, boleh sepuluh elemen, boleh teks polos; semuanya masuk ke tempat anak memanggil `{@render footer()}` tanpa wadah perantara.
+
+Artinya, masalah yang dulu dipecahkan `<svelte:fragment>` **lenyap dengan sendirinya** di Svelte 5. Tidak ada lagi atribut `slot` yang butuh elemen untuk menempel, jadi tidak ada lagi `<div>` hantu yang harus dihindari, jadi tidak ada lagi yang perlu di-fragment-kan. `<svelte:fragment>` adalah solusi untuk masalah yang sudah tidak ada di runes mode.
+
+## 2. Contoh kode
+
+Mari lihat masalah dan solusinya berdampingan. Pertama, komponen anak `Widget.svelte` versi Svelte 4 dengan tiga slot:
+
+```svelte
+<!-- ❌ Widget.svelte (Svelte 4) — pakai <slot> -->
+<div class="widget">
+	<header><slot name="header" /></header>
+	<main><slot /></main>
+	<!-- footer ini sebuah flex container; tiap anak langsungnya jadi item flex -->
+	<footer style="display: flex; gap: 8px">
+		<slot name="footer" />
+	</footer>
+</div>
+```
+
+Sekarang lihat dua cara parent mengisi slot `footer` yang butuh **dua paragraf**. Tanpa fragment, kamu wajib membungkus dengan `<div>` — dan `<div>` itu jadi satu-satunya anak flex, merusak `gap` yang kamu mau:
+
+```svelte
+<!-- ❌ Parent (Svelte 4) — TANPA fragment: ada <div> hantu -->
+<script>
+	import Widget from './Widget.svelte';
+</script>
+
+<Widget>
+	<h1 slot="header">Halo</h1>
+
+	<!-- Dua paragraf harus dibungkus elemen agar bisa membawa slot="footer".
+	     Akibatnya <div> ini IKUT ke DOM dan jadi satu-satunya item flex,
+	     sehingga 'gap: 8px' di footer tak berfungsi seperti harapan. -->
+	<div slot="footer">
+		<p>Hak cipta dilindungi.</p>
+		<p>2024 Svelte Industries</p>
+	</div>
+</Widget>
+```
+
+```svelte
+<!-- ❌ Parent (Svelte 4) — DENGAN <svelte:fragment>: tanpa <div> hantu -->
+<script>
+	import Widget from './Widget.svelte';
+</script>
+
+<Widget>
+	<h1 slot="header">Halo</h1>
+
+	<!-- <svelte:fragment> membawa slot="footer" tapi MENGHILANG dari DOM.
+	     Dua <p> jadi anak langsung <footer>, jadi keduanya item flex
+	     dan 'gap: 8px' bekerja benar. -->
+	<svelte:fragment slot="footer">
+		<p>Hak cipta dilindungi.</p>
+		<p>2024 Svelte Industries</p>
+	</svelte:fragment>
+</Widget>
+```
+
+Dan inilah padanan **modern Svelte 5** — tidak ada `<slot>`, tidak ada `<svelte:fragment>`, masalah wadah-hantu tak pernah muncul:
+
+```svelte
+<!-- ✅ Widget.svelte (Svelte 5 runes) — pakai snippet -->
+<script>
+	// named slot Svelte 4 jadi snippet prop biasa; default slot jadi 'children'.
+	let { header, children, footer } = $props();
+</script>
+
+<div class="widget">
+	<header>{@render header()}</header>
+	<main>{@render children()}</main>
+	<footer style="display: flex; gap: 8px">
+		<!-- snippet tak pernah menambah elemen pembungkus,
+		     jadi isi footer langsung jadi anak <footer> ini -->
+		{@render footer()}
+	</footer>
+</div>
+```
+
+```svelte
+<!-- ✅ Parent (Svelte 5 runes) -->
+<script>
+	import Widget from './Widget.svelte';
+</script>
+
+<Widget>
+	{#snippet header()}
+		<h1>Halo</h1>
+	{/snippet}
+
+	<!-- Dua <p> di dalam satu snippet — TANPA wadah, TANPA fragment.
+	     Snippet memang tidak membuat elemen pembungkus sama sekali. -->
+	{#snippet footer()}
+		<p>Hak cipta dilindungi.</p>
+		<p>2024 Svelte Industries</p>
+	{/snippet}
+</Widget>
+```
+
+## 3. Coba sendiri
+
+> Modul ini bagian dari materi *legacy* dan butuh konteks komponen parent-anak (dua file), jadi tidak ada playground live. Pelajari contoh statis beranotasi di bawah, dan kalau mau, buktikan sendiri perbedaannya di devtools.
+
+Cara paling meyakinkan untuk "merasakan" gunanya `<svelte:fragment>` adalah dengan **melihat DOM yang dihasilkan**. Di sebuah proyek Svelte 4, render dua versi parent di atas, lalu buka tab Elements di devtools dan bandingkan struktur di dalam `<footer>`:
+
+```html
+<!-- Hasil DOM versi <div slot="footer"> — ada wadah hantu -->
+<footer style="display: flex; gap: 8px">
+	<div>
+		<p>Hak cipta dilindungi.</p>
+		<p>2024 Svelte Industries</p>
+	</div>
+</footer>
+<!-- footer hanya punya 1 anak flex (<div>), jadi gap antar-<p> hilang -->
+```
+
+```html
+<!-- Hasil DOM versi <svelte:fragment slot="footer"> — bersih -->
+<footer style="display: flex; gap: 8px">
+	<p>Hak cipta dilindungi.</p>
+	<p>2024 Svelte Industries</p>
+</footer>
+<!-- footer punya 2 anak flex langsung, gap: 8px bekerja di antara keduanya -->
+```
+
+Perhatikan: dari sisi parent, kedua versi terlihat hampir sama; bedanya cuma `<div slot=...>` versus `<svelte:fragment slot=...>`. Tapi di DOM akhir, versi fragment **tidak menyisakan elemen perantara**. Itu sebabnya `<svelte:fragment>` dulu penting untuk layout yang sensitif terhadap struktur (flex, grid, tabel, list).
+
+Di Svelte 5, kamu tidak perlu lagi melakukan eksperimen ini: snippet selalu menghasilkan DOM "bersih" tanpa wadah, jadi outputnya otomatis seperti versi fragment di atas — tanpa kamu harus memikirkannya.
+
+<Callout type="tip">
+Aturan praktis saat <em>membaca</em> kode lama: setiap kali kamu lihat <code>&lt;svelte:fragment slot="..."&gt;</code>, terjemahkan di kepala menjadi <code>&#123;#snippet ...&#125;</code> dengan nama yang sama. Keduanya berarti hal yang persis sama: "kirim sekumpulan markup ke slot/snippet bernama X, tanpa elemen pembungkus."
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Migrasikan named slot + <svelte:fragment> ke snippet Svelte 5">
+
+Di bawah ini sepasang komponen **Svelte 4**: `Card.svelte` punya named slot `actions`, dan parent mengisinya dengan dua tombol lewat `<svelte:fragment slot="actions">`. Tulis ulang **keduanya** ke **Svelte 5 (runes)**. Yang harus berubah:
+
+- `<slot name="actions" />` → `{@render actions()}` (dan `actions` datang dari `$props()`)
+- `<slot />` (default) → `{@render children()}`
+- `<svelte:fragment slot="actions">...</svelte:fragment>` → `{#snippet actions()}...{/snippet}` (tak perlu fragment lagi)
+- `on:click` → `onclick`
+
+```svelte
+<!-- ❌ Card.svelte (Svelte 4) -->
+<div class="card">
+	<div class="body"><slot /></div>
+	<div class="actions" style="display: flex; gap: 8px">
+		<slot name="actions" />
+	</div>
+</div>
+```
+
+```svelte
+<!-- ❌ Parent.svelte (Svelte 4) -->
+<script>
+	import Card from './Card.svelte';
+</script>
+
+<Card>
+	<p>Yakin mau menghapus item ini?</p>
+
+	<svelte:fragment slot="actions">
+		<button on:click={() => console.log('batal')}>Batal</button>
+		<button on:click={() => console.log('hapus')}>Hapus</button>
+	</svelte:fragment>
+</Card>
+```
+
+{#snippet solution()}
+
+```svelte
+<!-- ✅ Card.svelte (Svelte 5 runes) -->
+<script>
+	// named slot 'actions' jadi snippet prop; default slot jadi 'children'.
+	let { children, actions } = $props();
+</script>
+
+<div class="card">
+	<div class="body">{@render children()}</div>
+	<div class="actions" style="display: flex; gap: 8px">
+		<!-- snippet tak membuat wadah, jadi kedua tombol langsung jadi item flex -->
+		{@render actions()}
+	</div>
+</div>
+```
+
+```svelte
+<!-- ✅ Parent.svelte (Svelte 5 runes) -->
+<script>
+	import Card from './Card.svelte';
+</script>
+
+<Card>
+	<p>Yakin mau menghapus item ini?</p>
+
+	<!-- Dua tombol dalam satu snippet 'actions'.
+	     Tak perlu <svelte:fragment> — snippet memang tanpa pembungkus.
+	     on:click → onclick. -->
+	{#snippet actions()}
+		<button onclick={() => console.log('batal')}>Batal</button>
+		<button onclick={() => console.log('hapus')}>Hapus</button>
+	{/snippet}
+</Card>
+```
+
+Intinya: `<svelte:fragment slot="actions">` yang dulu kamu butuhkan agar dua tombol tidak terbungkus `<div>` kini menguap sepenuhnya. `{#snippet actions()}` sudah bebas-wadah sejak lahir, jadi tidak ada lagi konsep "fragment" yang perlu kamu tulis.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>&lt;svelte:fragment&gt;</code> hanya bermakna di <strong>mode legacy</strong> bersama API <code>&lt;slot&gt;</code>. Di <strong>runes mode</strong> (begitu komponen memakai satu rune saja), sistem slot tidak aktif dan <code>&lt;svelte:fragment&gt;</code> tak punya tugas — gantilah seluruh pola named-slot-plus-fragment dengan <strong>snippet prop</strong>.
+</Callout>
+
+<Callout type="pitfall">
+Jangan tertukar: <code>&lt;svelte:fragment&gt;</code> <strong>khusus untuk membawa atribut <code>slot</code></strong> di sisi <em>parent</em>. Ia bukan pembungkus serbaguna untuk markup biasa — di luar konteks named slot ia tidak melakukan apa-apa berguna. Untuk sekadar "beberapa elemen tanpa wadah" di markup umum Svelte, kamu memang tak butuh elemen pembungkus sama sekali (tidak seperti React/Vue yang dulu butuh root tunggal).
+</Callout>
+
+<Callout type="warning">
+Saat memigrasikan, ingat <code>&lt;svelte:fragment slot="x"&gt;</code> selalu berpasangan dengan <code>&lt;slot name="x" /&gt;</code> di komponen anak. Memigrasikan sisi parent ke <code>&#123;#snippet x&#125;</code> <strong>tanpa</strong> mengubah anak dari <code>&lt;slot name="x" /&gt;</code> menjadi <code>&#123;@render x()&#125;</code> akan membuat konten tidak muncul. Migrasi harus dua sisi sekaligus.
+</Callout>
+
+<Callout type="tip">
+Sebagai penanda saat scan codebase lama: kemunculan <code>&lt;svelte:fragment&gt;</code> hampir selalu menandakan ada <strong>named slot</strong> di dekatnya. Mencari string ini adalah cara cepat menemukan komponen Svelte 4 yang belum dimigrasikan ke snippet.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '<svelte:fragment slot="footer">...</svelte:fragment>', modern: '{#snippet footer()}...{/snippet}', note: 'Pembawa atribut slot tanpa wadah → snippet, yang memang tanpa wadah.' },
+	{ legacy: '<div slot="footer">...</div>', modern: '{#snippet footer()}...{/snippet}', note: 'Wadah <div> yang dulu terpaksa dipakai juga lenyap di runes.' },
+	{ legacy: '<slot name="footer" /> (di anak)', modern: '{@render footer()}', note: 'Outlet named slot → pemanggilan snippet prop.' },
+	{ legacy: '<slot /> (default, di anak)', modern: '{@render children()}', note: 'Default slot → snippet implisit children.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-svelte-fragment" label="Legacy: <svelte:fragment> — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/snippet" label="&#123;#snippet&#125; — padanan modern Svelte 5" />

@@ -1,0 +1,226 @@
+---
+title: '<svelte:element>'
+product: svelte
+section: special-elements
+sectionTitle: Special elements
+sectionOrder: 5
+order: 6
+status: stable
+description: Merender satu elemen DOM yang nama tag-nya baru ditentukan saat runtime lewat <svelte:element> dengan atribut this, lengkap dengan atribut & event dinamis serta perilaku saat tag null.
+docs: https://svelte.dev/docs/svelte/svelte-element
+keywords: [svelte-element, dynamic-tag, this, void-element, xmlns]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Di Svelte, nama tag yang kamu tulis di markup itu **statis**. Saat compiler membaca `<h1>`, ia langsung tahu "buat elemen `h1`" dan menanam instruksi itu ke dalam kode hasil kompilasi. Itu cepat, tapi punya satu batasan: kamu **tidak bisa** menulis tag yang berasal dari variabel. Sintaks seperti `<{tag}>` tidak ada di Svelte — compiler tidak punya cara mengganti nama tag di tengah jalan.
+
+Lalu bagaimana kalau nama tag-nya baru kamu ketahui saat runtime? Misalnya level heading datang dari sebuah prop (`h1` sampai `h6`), atau konten dari CMS yang mengirim potongan `{ tag: 'blockquote', text: '...' }`, atau komponen tombol yang kadang harus jadi `<button>` kadang jadi `<a>` tergantung ada `href` atau tidak. Untuk semua kasus itu Svelte menyediakan `<svelte:element>`: satu elemen yang nama tag-nya kamu tentukan lewat atribut `this`.
+
+```svelte
+<svelte:element this={tag} />
+```
+
+### Analogi: aktor dengan kartu petunjuk
+
+Bayangkan `<svelte:element>` sebagai seorang aktor yang berdiri di satu titik panggung. Aktor ini tidak punya karakter tetap — ia membaca **kartu petunjuk** (`this`) untuk tahu malam ini ia jadi siapa: "kamu `h1`", "kamu `blockquote`", "kamu `button`". Begitu kartunya berganti, aktornya langsung berubah kostum menjadi tag yang baru. Dan kalau kartunya kosong (`null`) — aktornya tahu diri, ia turun panggung dan tidak muncul sama sekali, termasuk semua properti yang dibawanya.
+
+Yang penting dipahami: aktor ini cuma mengganti **nama tag**-nya. Atribut, `class`, `style`, dan event listener yang kamu pasang tetap menempel apa pun karakter yang sedang dimainkan. Jadi kamu menulis sekali, dan Svelte menerapkannya ke tag apa pun yang aktif.
+
+### Kaitannya dengan React & Vue
+
+Kalau kamu dari React, ini pola yang kamu kenal lewat dua jalan: JSX `const Tag = 'h1'; return <Tag>…</Tag>` (variabel huruf besar diperlakukan sebagai komponen/tag), atau `React.createElement(tag, props, children)` dengan `tag` berupa string. Di Vue ada `<component :is="tag">`. `<svelte:element this={tag}>` adalah padanan langsungnya di Svelte — khusus untuk **tag DOM**, bukan komponen.
+
+Bedanya yang halus: `<component :is>` di Vue dan variabel kapital di React bisa menerima **string tag DOM** ATAU **komponen**. Svelte memisahkan keduanya dengan tegas. `<svelte:element>` hanya untuk string nama tag DOM. Untuk komponen dinamis, Svelte 5 tidak butuh elemen khusus apa pun — komponen kini nilai biasa, jadi cukup `<Comp />` di mana `Comp` adalah variabel (lihat catatan di bagian Tips). Pemisahan ini membuat niatmu jelas: tag HTML, atau komponen?
+
+### Kenapa `this`, bukan nama tag langsung?
+
+Karena `<svelte:element>` adalah instruksi ke compiler ("siapkan satu slot elemen yang tag-nya dinamis"), bukan elemen konkret. `this` adalah saluran tempat kamu menyuntikkan nama tag yang sesungguhnya — sebuah ekspresi yang dievaluasi tiap kali nilainya berubah. Saat `this` berubah dari `h1` ke `h2`, Svelte mengganti elemennya secara efisien tanpa kamu menulis satu pun rantai `{#if}`.
+
+## 2. Contoh kode
+
+Contoh paling klasik: komponen heading yang level-nya datang dari prop. Tanpa `<svelte:element>`, kamu butuh enam cabang `{#if}`; dengan-nya, satu baris.
+
+```svelte
+<script>
+	// level 1..6 -> tag 'h1'..'h6', baru diketahui saat runtime
+	let { level = 2, children } = $props();
+	let tag = $derived('h' + level); // 'h2', 'h3', dst.
+</script>
+
+<!-- this={tag} memilih tag konkret saat render;
+     {@render children()} mengisi konten di dalamnya -->
+<svelte:element this={tag}>
+	{@render children()}
+</svelte:element>
+```
+
+Atribut dan event bersifat **dinamis**: apa pun yang kamu pasang di `<svelte:element>` diterapkan ke tag yang sedang aktif. Di sini satu elemen bisa jadi `<a>` (kalau ada `href`) atau `<button>` (kalau tidak), tapi `class`, `onclick`, dan isinya tetap sama:
+
+```svelte
+<script>
+	let { href = null, onclick, children } = $props();
+	// jadi <a> bila punya href, jadi <button> bila tidak
+	let tag = $derived(href ? 'a' : 'button');
+</script>
+
+<!-- href hanya bermakna untuk <a>; onclick & class menempel ke tag apa pun.
+     Atribut yang null/undefined otomatis tidak dipasang. -->
+<svelte:element this={tag} {href} {onclick} class="cta">
+	{@render children()}
+</svelte:element>
+```
+
+Saat `this` bernilai **nullish** (`null`/`undefined`), elemen **beserta seluruh anaknya tidak dirender**. Ini cara ampuh merender bersyarat tanpa membungkus dengan `{#if}`:
+
+```svelte
+<script>
+	let { tag = null, text } = $props();
+	// kalau tag null -> tidak ada apa pun yang muncul, termasuk {text}
+</script>
+
+<svelte:element this={tag}>{text}</svelte:element>
+```
+
+Untuk konten di luar HTML biasa (mis. SVG), Svelte berusaha menebak namespace dari sekitarnya, tapi tidak selalu bisa. Kamu bisa memaksanya lewat `xmlns`. Dan satu-satunya binding yang didukung adalah `bind:this` (untuk meraih node DOM-nya); binding bawaan seperti `bind:value` **tidak** bekerja pada elemen generik:
+
+```svelte
+<script>
+	let el = $state(); // referensi node DOM via bind:this
+	let tag = $state('circle');
+</script>
+
+<svg width="100" height="100">
+	<!-- paksa namespace SVG agar elemen tergambar benar;
+	     bind:this satu-satunya binding yang sah di sini -->
+	<svelte:element
+		this={tag}
+		xmlns="http://www.w3.org/2000/svg"
+		cx="50"
+		cy="50"
+		r="40"
+		fill="tomato"
+		bind:this={el}
+	/>
+</svg>
+```
+
+## 3. Coba sendiri
+
+Klik tombol untuk mengganti tag yang dirender. Perhatikan: `class`, `style`, dan `onclick` yang sama tetap menempel apa pun tag-nya — kamu menulisnya sekali. Pilih `(null)` dan elemennya hilang total beserta isinya, jadi `onclick`-nya pun tidak akan terpicu lagi.
+
+```svelte
+<script>
+	let tag = $state('h1');
+	let clicks = $state(0);
+	// catatan: sengaja tanpa void element (br/hr/img) karena tag ini diberi anak
+	const tags = ['h1', 'h2', 'h3', 'p', 'button', 'mark', null];
+	function label(t) {
+		return t === null ? '(null)' : t;
+	}
+</script>
+
+<p>Pilih tag yang dirender:</p>
+<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;">
+	{#each tags as t}
+		<button onclick={() => tag = t} style="padding: 4px 10px;">{label(t)}</button>
+	{/each}
+</div>
+
+<svelte:element
+	this={tag}
+	onclick={() => clicks++}
+	style="display: inline-block; padding: 8px 14px; border: 2px dashed tomato; border-radius: 8px; cursor: pointer;"
+>
+	Aku dirender sebagai tag {tag === null ? 'kosong' : tag}. Klik aku!
+</svelte:element>
+
+<p style="margin-top: 14px;">
+	Tag aktif: <strong>{tag === null ? 'null (tidak dirender)' : tag}</strong> — diklik {clicks} kali.
+</p>
+```
+
+## 4. Latihan
+
+<Exercise title="Renderer blok dari CMS dengan svelte:element">
+
+Buat komponen `Blocks.svelte` yang menerima prop `blocks`, sebuah array berisi objek `{ tag, text }` (contoh: `{ tag: 'h2', text: 'Judul' }`). Tugasnya:
+
+1. Render tiap block memakai `<svelte:element>` dengan tag dari `block.tag` dan isi dari `block.text`.
+2. Jika sebuah block punya `tag` bernilai `null`, block itu **otomatis tidak dirender** — manfaatkan perilaku nullish, jangan pakai `{#if}`.
+3. Tambahkan `onclick` yang menampilkan `alert(block.text)` saat block diklik, untuk membuktikan event menempel ke tag apa pun.
+
+Petunjuk: bungkus dengan `{#each blocks as block}` di top-level, lalu satu `<svelte:element this={block.tag} ...>` di dalamnya.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let { blocks = [] } = $props();
+</script>
+
+{#each blocks as block}
+	<!-- this={block.tag} memilih tag per item.
+	     Kalau block.tag === null, elemen + isinya tidak dirender
+	     (perilaku nullish), jadi tak perlu {#if} pembungkus.
+	     onclick yang sama menempel ke tag apa pun yang aktif. -->
+	<svelte:element
+		this={block.tag}
+		onclick={() => alert(block.text)}
+		style="cursor: pointer;"
+	>
+		{block.text}
+	</svelte:element>
+{/each}
+```
+
+Inti jawabannya: satu `<svelte:element>` menggantikan rantai `{#if tag === 'h1'}…{:else if tag === 'h2'}…` yang panjang. Nullish handling (`block.tag === null` -> tidak dirender) memberi "skip" gratis tanpa cabang tambahan, dan event listener bersifat dinamis sehingga `onclick` berlaku untuk `h2`, `p`, `blockquote`, atau apa pun yang dikirim CMS.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+
+**Void element + anak = runtime error (mode dev).** Void element seperti `br`, `hr`, `img`, `input`, `meta` secara spesifikasi HTML tidak boleh punya anak. Menulis `<svelte:element this="hr">teks</svelte:element>` akan melempar runtime error saat development. Kalau `this` bisa berubah menjadi void element, pastikan kamu tidak memberinya konten anak — atau jaga daftar tag yang dipakai hanya berisi elemen non-void.
+</Callout>
+
+<Callout type="pitfall">
+
+**Hanya `bind:this` yang bekerja.** Karena Svelte tidak tahu tag apa yang akan muncul saat compile, ia tidak bisa menyiapkan binding bawaan yang spesifik-elemen. Jadi `bind:value`, `bind:checked`, `bind:group`, dan kawan-kawan <em>tidak</em> berfungsi di `<svelte:element>`. Satu-satunya binding yang sah adalah `bind:this` untuk meraih node DOM-nya. Butuh two-way binding ke input? Pakai elemen `<input>` konkret, bukan elemen dinamis.
+</Callout>
+
+<Callout type="warning">
+
+**`this` harus nama tag DOM yang valid (string).** Nilai seperti `#text`, `svelte:head`, atau nama komponen tidak akan bekerja — `<svelte:element>` khusus untuk elemen DOM nyata. Untuk SVG, Svelte mencoba menebak namespace dari sekitarnya; bila gambar tak muncul atau salah, paksa dengan `xmlns="http://www.w3.org/2000/svg"`.
+</Callout>
+
+<Callout type="tip">
+
+**Manfaatkan nullish sebagai `{#if}` gratis.** Saat `this` bernilai `null`/`undefined`, elemen beserta seluruh anaknya tidak dirender. Untuk konten opsional yang kadang punya wrapper kadang tidak, kamu bisa men-set `this` ke `null` alih-alih membungkus dengan blok kondisional — lebih ringkas dan niatnya jelas.
+</Callout>
+
+<Callout type="legacy">
+
+**Jangan keliru dengan `<svelte:component>`.** Di Svelte lama, merender <em>komponen</em> dinamis butuh `<svelte:component this={Comp} />`. Di Svelte 5 itu sudah tidak diperlukan — komponen adalah nilai biasa, jadi cukup `<Comp />` di mana `Comp` sebuah variabel (mis. hasil `$derived`). `<svelte:element>` tetap relevan tapi untuk hal berbeda: <em>tag DOM</em> dinamis, bukan komponen.
+</Callout>
+
+<LegacyVsModern
+	rows={[
+		{ legacy: '{#if level === 1}<h1>…</h1>{:else if …}', modern: '<svelte:element this={"h" + level}>…</svelte:element>', note: 'Satu elemen dinamis menggantikan rantai if untuk tiap tag.' },
+		{ legacy: '<svelte:component this={Comp} />', modern: '<Comp />', note: 'Komponen dinamis = nilai biasa di Svelte 5; svelte:element hanya untuk tag DOM.' },
+		{ legacy: 'React.createElement(tag, props, kids)', modern: '<svelte:element this={tag} {...props}>…', note: 'Padanan Svelte untuk tag DOM yang ditentukan runtime.' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-element" label="<svelte:element> — dokumentasi resmi Svelte" />

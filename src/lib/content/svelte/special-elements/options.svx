@@ -1,0 +1,284 @@
+---
+title: '<svelte:options>'
+product: svelte
+section: special-elements
+sectionTitle: Special elements
+sectionOrder: 5
+order: 7
+status: stable
+description: 'Mengatur opsi compiler per-komponen (runes, namespace, customElement, css) lewat elemen svelte:options.'
+docs: https://svelte.dev/docs/svelte/svelte-options
+keywords: [svelte-options, custom-element, runes-mode, namespace, compiler-options]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Semua elemen `&lt;svelte:...&gt;` yang lain (`window`, `document`, `body`, `head`, `element`, `boundary`) berbicara ke **DOM** — mereka menempel listener atau merender sesuatu. `&lt;svelte:options&gt;` beda sendiri: ia tidak menyentuh DOM sama sekali. Ia berbicara ke **compiler**. Isinya bukan "render apa", tapi "kompilasi file ini dengan aturan apa".
+
+### Analogi: lembar pengaturan cetak di pojok dokumen
+
+Bayangkan kamu menyerahkan satu naskah ke percetakan. Isi naskah (teks, gambar) itu konten — sama seperti markup komponenmu. Tapi di pojok atas kamu menempel **memo kecil ke operator mesin cetak**: "cetak A4, mode warna, tanpa bleed". Memo itu tidak ikut tercetak di halaman; ia hanya mengubah *cara* halaman dihasilkan. `&lt;svelte:options&gt;` persis memo itu — sebuah instruksi yang dibaca compiler Svelte saat mengubah `.svelte` jadi JavaScript, lalu menghilang dari output.
+
+Kalau kamu datang dari React, padanan terdekatnya bukan komponen, melainkan **pragma/direktif build**: mirip komentar `/** @jsxImportSource ... */` di atas file, atau direktif `'use client'` di Next.js — sebaris penanda yang mengubah perlakuan bundler/compiler terhadap seluruh file, bukan UI. Di Vue, padanannya `defineOptions()` di dalam `&lt;script setup&gt;` plus atribut SFC seperti `&lt;style scoped&gt;` dan `defineCustomElement()`. Svelte menyatukan semuanya jadi satu tag deklaratif.
+
+### Aturan main yang wajib diingat
+
+`&lt;svelte:options&gt;` bukan tag biasa, jadi ia punya batasan ketat:
+
+- **Hanya boleh muncul sekali** per komponen.
+- **Harus di top-level** file — tidak boleh dibungkus di dalam `&#123;#if&#125;`, `&#123;#each&#125;`, atau elemen lain.
+- **Nilainya harus statis** (konstanta yang diketahui saat compile). Kamu tidak bisa menulis `runes=&#123;suatuVariabel&#125;` — compiler membacanya jauh sebelum kode jalan, jadi tidak ada "runtime" untuk dievaluasi.
+
+### Peta semua opsi
+
+| Opsi | Nilai | Default | Fungsi |
+| --- | --- | --- | --- |
+| `runes` | `true` \| `false` | auto-deteksi | Paksa komponen ini ke runes mode (Svelte 5) atau legacy mode (Svelte 4). |
+| `namespace` | `"html"` \| `"svg"` \| `"mathml"` | `"html"` | Konteks namespace saat merender elemen komponen. |
+| `customElement` | string \| objek config | — | Kompilasi komponen jadi Web Component (custom element). |
+| `css` | `"injected"` | external | Suntik CSS komponen inline (ke `&lt;style&gt;` saat SSR / via JS di klien) alih-alih file `.css` terpisah. |
+| `preserveWhitespace` | `true` \| `false` | `false` | Pertahankan whitespace di markup persis seperti ditulis (jangan dipangkas). |
+| `immutable` *(legacy)* | `true` \| `false` | `false` | **Svelte 4.** Asumsikan prop immutable untuk optimasi diff. No-op di runes mode. |
+| `accessors` *(legacy)* | `true` \| `false` | `false` | **Svelte 4.** Tambahkan getter/setter prop ke instance kelas. Tidak aktif di runes mode. |
+
+Sisanya kita bedah satu-satu. Dua yang paling sering kamu pakai di proyek nyata adalah `runes` (saat migrasi) dan `customElement` (saat bikin Web Component).
+
+## 2. Contoh kode
+
+**`runes`, `namespace`, dan `css`** — tiga opsi "satu baris" yang mengubah perlakuan seluruh file:
+
+```svelte
+<!-- Paksa runes mode walau file ini belum memakai satu rune pun.
+     Berguna saat migrasi bertahap dari Svelte 4: kamu ingin
+     semantik runes (mis. tak ada $: reaktif) sebelum menulis $state. -->
+<svelte:options runes={true} />
+
+<!-- Komponen ini merender potongan SVG, bukan HTML.
+     Tanpa ini, <circle>/<path> bisa salah namespace saat disisipkan. -->
+<svelte:options namespace="svg" />
+
+<!-- CSS komponen disuntik inline (ke <style> saat SSR, via JS di klien)
+     alih-alih diekstrak ke file .css terpisah. Praktis untuk komponen
+     yang didistribusikan sebagai satu file / dipakai sebagai custom element. -->
+<svelte:options css="injected" />
+```
+
+**`customElement`** — mengubah komponen Svelte jadi Web Component standar yang bisa dipakai di mana saja (bahkan di luar Svelte: vanilla HTML, React, Vue):
+
+```svelte
+<!-- Bentuk pendek: cukup beri nama tag.
+     Saat file ini di-import, ia otomatis terdaftar sebagai <my-counter>. -->
+<svelte:options customElement="my-counter" />
+
+<script>
+	// Prop HARUS dideklarasikan eksplisit agar terekspos sebagai
+	// atribut/properti DOM pada elemen <my-counter>.
+	let { count = 0 } = $props();
+</script>
+
+<button onclick={() => count++}>
+	count: {count}
+</button>
+```
+
+```html
+<!-- Dipakai di HTML mana pun setelah skrip komponen dimuat -->
+<my-counter count="5"></my-counter>
+```
+
+Untuk kontrol penuh, `customElement` menerima **objek config** dengan `tag`, `shadow`, `props`, dan `extend`:
+
+```svelte
+<svelte:options
+	customElement={{
+		tag: 'my-stepper',
+		// 'open' (default) -> pakai shadow DOM, CSS terenkapsulasi, slot aktif.
+		// 'none' -> tanpa shadow root: CSS bocor ke halaman, slot tak tersedia.
+		shadow: 'open',
+		props: {
+			// Konfigurasi per-prop:
+			count: {
+				reflect: true,        // sinkronkan perubahan prop -> kembali ke atribut DOM
+				type: 'Number',       // koersi tipe: 'String'|'Boolean'|'Number'|'Array'|'Object'
+				attribute: 'value'    // nama atribut HTML (default: nama prop huruf kecil)
+			}
+		},
+		// extend menerima kelas custom element bawaan, kembalikan kelas turunan.
+		// Tempat menambah lifecycle / integrasi form via ElementInternals.
+		extend: (Klass) => {
+			return class extends Klass {
+				static formAssociated = true;
+				constructor() {
+					super();
+					this.internals = this.attachInternals();
+				}
+			};
+		}
+	}}
+/>
+
+<script>
+	let { count = 0 } = $props();
+</script>
+
+<button onclick={() => count++}>count: {count}</button>
+```
+
+Di dalam custom element, akses elemen host (untuk men-*dispatch* event kustom ke dunia luar) lewat rune **`$host()`**:
+
+```svelte
+<svelte:options customElement="my-stepper" />
+
+<script>
+	let { count = 0 } = $props();
+
+	function ubah(delta) {
+		count += delta;
+		// $host() = elemen <my-stepper> itu sendiri.
+		// Lempar CustomEvent agar parent (DOM/React/Vue) bisa dengar 'change'.
+		$host().dispatchEvent(new CustomEvent('change', { detail: count }));
+	}
+</script>
+
+<button onclick={() => ubah(-1)}>-</button>
+<span>{count}</span>
+<button onclick={() => ubah(1)}>+</button>
+```
+
+## 3. Coba sendiri
+
+Karena `&lt;svelte:options&gt;` bekerja di **waktu compile** (dan `customElement` butuh proses build + registrasi `customElements`), ia tidak bisa dijalankan di live playground satu-file. Jadi bagian ini berupa contoh statis beranotasi yang menunjukkan setiap opsi dalam konteks nyata.
+
+**Migrasi bertahap dengan `runes`.** Secara default Svelte 5 mendeteksi mode otomatis: begitu sebuah komponen memakai rune apa pun (`$state`, `$props`, dst.), ia masuk **runes mode**; kalau tidak, ia tetap **legacy mode** demi kompatibilitas Svelte 4. `runes` memaksa keputusan itu:
+
+```svelte
+<!-- File lama Svelte 4 ini belum punya rune, jadi default-nya legacy mode.
+     Dengan runes={false} kamu mengunci legacy secara eksplisit selama
+     transisi — supaya `export let` dan `$:` di bawah tetap sah. -->
+<svelte:options runes={false} />
+
+<script>
+	export let nama;          // sintaks prop legacy (Svelte 4)
+	$: sapaan = 'Halo ' + nama; // reactive statement legacy
+</script>
+
+<p>{sapaan}</p>
+```
+
+```svelte
+<!-- Kebalikannya: file belum menulis $state, tapi kamu ingin
+     semantik runes lebih dulu (mis. agar `$:` jadi error, bukan diam-diam jalan).
+     runes={true} mengaktifkan runes mode walau belum ada rune yang dipakai. -->
+<svelte:options runes={true} />
+
+<script>
+	let pesan = 'siap pindah ke runes';
+</script>
+
+<p>{pesan}</p>
+```
+
+**Komponen SVG dengan `namespace`.** Saat komponen hanya berisi potongan SVG yang akan disisipkan ke dalam `&lt;svg&gt;` induk, beri tahu compiler namespace-nya agar elemen seperti `&lt;circle&gt;` dibuat dengan namespace SVG yang benar:
+
+```svelte
+<svelte:options namespace="svg" />
+
+<script>
+	let { r = 20, warna = 'tomato' } = $props();
+</script>
+
+<!-- Dipakai begini di induk: <svg><Lingkaran r={30} /></svg> -->
+<circle cx="50" cy="50" r={r} fill={warna} />
+```
+
+**Pakai custom element dari luar Svelte.** Inilah nilai jual utama `customElement`: hasil compile-nya adalah Web Component standar, jadi bisa dipakai di proyek non-Svelte. Misal di React:
+
+```jsx
+// 'my-counter' sudah terdaftar saat modul komponennya di-import.
+// React memperlakukannya seperti tag HTML biasa.
+import './my-counter.js'; // file hasil build komponen Svelte
+
+function App() {
+	// catatan: atribut diteruskan sebagai string; untuk data non-string
+	// (objek/array) set lewat properti via ref, bukan atribut.
+	return <my-counter count="3"></my-counter>;
+}
+```
+
+## 4. Latihan
+
+<Exercise title="Bungkus tombol like jadi Web Component">
+Kamu punya komponen `LikeButton.svelte` sederhana yang menampilkan jumlah like dan tombol untuk menambah. Tugasmu: ubah ia jadi custom element bernama `like-button` sehingga tim lain bisa memakainya langsung di HTML/React, dengan ketentuan:
+
+1. Prop `count` (angka) bisa di-set lewat atribut, dan **terpantul** (`reflect`) kembali ke atribut DOM saat berubah — supaya `document.querySelector('like-button').getAttribute('count')` selalu update.
+2. Saat tombol diklik, selain menaikkan `count`, komponen men-*dispatch* event DOM bernama `like` yang membawa jumlah terbaru di `event.detail`, agar pihak non-Svelte bisa mendengarkannya.
+
+Petunjuk: pakai bentuk objek `customElement={{ ... }}` untuk `props.count`, dan rune `$host()` untuk men-dispatch event.
+
+{#snippet solution()}
+
+```svelte
+<svelte:options
+	customElement={{
+		tag: 'like-button',
+		props: {
+			count: { reflect: true, type: 'Number' }
+		}
+	}}
+/>
+
+<script>
+	// Prop harus eksplisit agar terekspos ke DOM.
+	let { count = 0 } = $props();
+
+	function like() {
+		count += 1;
+		// $host() = elemen <like-button>. Dispatch event standar
+		// supaya konsumen apa pun (vanilla/React/Vue) bisa addEventListener('like', ...).
+		$host().dispatchEvent(new CustomEvent('like', { detail: count }));
+	}
+</script>
+
+<button onclick={like}>❤ {count}</button>
+```
+
+Inti jawabannya: `reflect: true` membuat perubahan `count` tertulis balik ke atribut DOM; `type: 'Number'` mengoreksi nilai atribut (yang selalu string) jadi angka; dan `$host()` memberi akses ke elemen host untuk men-dispatch `CustomEvent` — pola pengganti `createEventDispatcher` lama yang kini bekerja lintas-framework lewat event DOM asli.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Nilai `&lt;svelte:options&gt;` harus <strong>konstanta statis</strong>. Menulis sesuatu seperti `runes=&#123;config.useRunes&#125;` atau `customElement=&#123;namaDinamis&#125;` akan gagal compile — opsi ini dibaca saat build, jauh sebelum ada variabel runtime. Tag-nya juga wajib tunggal dan di top-level; jangan pernah membungkusnya dalam `&#123;#if&#125;`.
+</Callout>
+
+<Callout type="warning">
+Pada custom element, prop <strong>tidak otomatis</strong> terekspos hanya karena kamu menulis `let props = $props()`. Kamu harus mendeklarasikan tiap prop secara eksplisit (mis. `let &#123; count &#125; = $props()`) agar muncul sebagai atribut/properti DOM. Selain itu hindari nama prop yang diawali `on` (mis. `onclick`) — di custom element nama seperti itu ditafsirkan sebagai event listener, bukan prop biasa.
+</Callout>
+
+<Callout type="tip">
+Custom element Svelte baru benar-benar terinisialisasi <strong>satu tick setelah</strong> `connectedCallback`, dan pembaruan shadow DOM dibatch ke tick berikutnya. Jadi menyetel properti sebelum elemen masuk DOM aman (di-antre), tapi <em>memanggil method</em> komponen sebelum ia ter-connect bisa gagal. Catatan penting lain: <strong>Context Svelte tidak menyeberangi batas custom element</strong> — komponen Svelte di dalam custom element tidak bisa membaca context dari luar elemen tersebut.
+</Callout>
+
+<Callout type="legacy">
+`immutable` dan `accessors` adalah peninggalan Svelte 4 dan <strong>tidak berlaku di runes mode</strong>. `immutable` dulu memberi tahu compiler untuk membandingkan prop secara referensial demi optimasi — di Svelte 5 ini tak perlu karena reaktivitas runes sudah granular dan melacak perubahan secara presisi. `accessors` dulu menambah getter/setter prop ke instance; di Svelte 5 ekspos nilai dilakukan lewat `bind:` atau, untuk Web Component, lewat konfigurasi `customElement.props`.
+</Callout>
+
+<LegacyVsModern
+	rows={[
+		{ legacy: '<svelte:options immutable={true} />', modern: '$state + hindari mutasi objek', note: 'Reaktivitas runes granular; immutable jadi no-op di runes mode.' },
+		{ legacy: '<svelte:options accessors={true} />', modern: 'bind:prop / customElement.props', note: 'accessors nonaktif di runes mode; ekspos nilai lewat bind atau config custom element.' },
+		{ legacy: 'createEventDispatcher()', modern: "$host().dispatchEvent(new CustomEvent(...))", note: 'Di custom element, pakai event DOM asli lewat $host() agar lintas-framework.' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-options" label="<svelte:options> — opsi compiler per-komponen (dokumentasi resmi Svelte)" />

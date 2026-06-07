@@ -1,0 +1,370 @@
+---
+title: Packaging
+product: kit
+section: advanced
+sectionTitle: Advanced
+sectionOrder: 4
+order: 10
+status: stable
+description: Mengemas komponen & util Svelte jadi library npm yang benar dengan @sveltejs/package (svelte-package) — exports map, condition svelte, dan publish.
+docs: https://svelte.dev/docs/kit/packaging
+keywords: [packaging, svelte-package, library, exports, npm]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sejauh ini kamu memakai SvelteKit untuk membangun **aplikasi**: sesuatu yang kamu `build` lalu deploy ke server/CDN, dan pengguna akhir membukanya lewat browser. Tapi SvelteKit juga bisa dipakai untuk hal yang berbeda secara fundamental: membangun **library** — paket berisi komponen/util Svelte yang kamu rilis ke npm supaya **developer lain** memasangnya (`npm i nama-paketmu`) ke app *mereka*. Itulah pekerjaan `@sveltejs/package`, yang dijalankan lewat perintah `svelte-package`.
+
+### Kenapa app dan library tidak bisa dikemas dengan cara yang sama
+
+Analogi paling pas: ada bedanya antara **memasak untuk diri sendiri di rumah** dan **menjual makanan beku di supermarket**.
+
+Waktu memasak untuk diri sendiri (app), yang penting matang dan enak. Bahan mentah boleh berserakan, kamu pakai kompor merek apa pun, takaran "secukupnya" — toh cuma kamu yang makan, di dapurmu sendiri. App di-bundle jadi HTML/JS/CSS jadi, lalu disajikan; tak ada yang peduli bentuk internalnya.
+
+Menjual makanan beku di supermarket (library) beda total. Kamu tidak tahu **dapur siapa** yang akan menghangatkannya: ada yang pakai microwave, ada yang pakai oven, kompor gas, induksi. Maka kemasannya harus:
+
+- **diberi label gizi yang akurat** — supaya pembeli tahu isinya (ini analogi field `exports` + file tipe `.d.ts`),
+- **punya instruksi "cara menghangatkan" yang universal** — jalan di bundler apa pun (Vite, webpack, Rollup, esbuild),
+- **tidak menyelipkan dapurmu ke dalam kemasan** — jangan bawa-bawa kode khusus-app seperti `$app/*`, karena dapur pembeli tidak punya itu,
+- **tidak menyertakan dua microwave** — Svelte harus jadi `peerDependency`, bukan disalin ke dalam paket (nanti kita bahas kenapa fatal).
+
+`svelte-package` adalah **lini pengemasan** itu. Ia tidak menjalankan app-mu; ia mengubah isi `src/lib` menjadi folder `dist/` yang siap dirilis.
+
+### Apa persisnya yang dilakukan `svelte-package`
+
+Saat kamu menjalankan `svelte-package`, ia mengambil **seluruh isi `src/lib`** (bukan `src/routes` — routes adalah bagian app demo/dokumentasimu, bukan library) lalu:
+
+1. **Mem-preprocess komponen `.svelte`** (mis. menjalankan TypeScript di `<script lang="ts">`), tapi **tidak meng-compile-nya jadi JS**. File `.svelte` tetap dikirim sebagai `.svelte`. Ini penting: app konsumen-lah yang akan meng-compile komponen itu dengan versi Svelte miliknya. Ibarat menjual adonan yang sudah ditakar, bukan kue jadi — pembeli yang memanggang dengan ovennya sendiri.
+2. **Men-transpile TypeScript → JavaScript** untuk file `.ts`. Library yang dipublish sebaiknya berisi `.js`, bukan `.ts`, supaya bisa dikonsumsi tanpa pembeli wajib pakai TypeScript.
+3. **Meng-generate file tipe `.d.ts`** otomatis dari `.js`, `.ts`, **dan** `.svelte` — jadi pengguna TypeScript tetap dapat autocomplete & type-check untuk komponenmu.
+4. Menaruh semua hasilnya di `dist/` (default; bisa diubah dengan `-o`).
+
+Yang `svelte-package` **tidak** lakukan: men-generate field `exports` di `package.json`-mu secara ajaib dari nol. Sejak versi modern, kamu **menulis `exports` sendiri** di `package.json` (itulah kontrak publik library-mu), dan `svelte-package` memvalidasi/melengkapi tipe. Maka memahami `exports` adalah inti modul ini.
+
+### `exports` map: peta yang menentukan "apa yang boleh di-import dan dari mana"
+
+`exports` di `package.json` adalah **daftar pintu resmi** library-mu. Hanya path yang tercantum di sana yang boleh di-`import` konsumen. Apa pun yang tidak terdaftar jadi privat — bagus, karena artinya kamu bebas merombak file internal tanpa "breaking change".
+
+Bentuk dasarnya: kunci adalah **subpath publik** (`"."` = entry utama), nilainya objek **condition** yang memetakan "kalau tool butuh X, beri file ini":
+
+```json
+"exports": {
+	".": {
+		"types": "./dist/index.d.ts",
+		"svelte": "./dist/index.js",
+		"default": "./dist/index.js"
+	}
+}
+```
+
+- `"types"` → ditunjuk ke `.d.ts` untuk TypeScript. **Letakkan paling atas**, karena resolver membaca condition secara berurutan dan mengambil yang **cocok pertama**.
+- `"svelte"` → condition khusus yang dibaca oleh perkakas Svelte (Vite plugin `@sveltejs/vite-plugin-svelte`). Ini yang memberi tahu "paket ini berisi komponen Svelte, jangan diperlakukan sebagai JS biasa".
+- `"default"` → fallback untuk environment lain. Untuk library Svelte murni, `svelte` dan `default` sering menunjuk file yang sama.
+
+Kamu boleh mendeklarasikan **banyak subpath**, mis. memisahkan komponen dari util:
+
+```json
+"exports": {
+	".": { "types": "./dist/index.d.ts", "svelte": "./dist/index.js" },
+	"./Button.svelte": {
+		"types": "./dist/Button.svelte.d.ts",
+		"svelte": "./dist/Button.svelte"
+	}
+}
+```
+
+Dengan begitu konsumen bisa `import { x } from 'paketmu'` **dan** `import Button from 'paketmu/Button.svelte'`.
+
+### Field `svelte` (top-level) — kompatibilitas mundur
+
+Kamu mungkin melihat library lama menulis `"svelte": "./dist/index.js"` di **level atas** `package.json`. Itu mekanisme **lama** sebelum `exports` ada — perkakas jadul mencari field `svelte` untuk menemukan entry komponen Svelte. Hari ini, **condition `svelte` di dalam `exports`** adalah cara yang benar. Field `svelte` top-level boleh kamu sertakan hanya demi kompatibilitas dengan tool sangat lama, tapi `exports` yang menentukan.
+
+### Kenapa `svelte` harus di `peerDependencies`
+
+Bayangkan paketmu memasukkan Svelte ke `dependencies`-nya. App konsumen juga punya Svelte sendiri. Akibatnya ada **dua salinan Svelte** di node_modules. Karena Svelte 5 menyimpan state reaktif (runes) lewat modul internalnya, dua salinan = dua "dunia reaktivitas" yang tidak saling kenal → bug aneh, context hilang, `bind` putus. Solusinya: taruh Svelte di `peerDependencies` (mis. `"svelte": "^5.0.0"`) — artinya "library ini butuh Svelte, tapi pakai punya app-mu, jangan bawa sendiri".
+
+<Callout type="tip">
+Aturan ringkas batas (boundary): <code>src/lib</code> = isi paket yang dirilis; <code>src/routes</code> = app demo/docs yang TIDAK ikut dipublish. Jadikan halaman di <code>src/routes</code> sebagai "etalase" tempat kamu mencoba komponenmu sendiri sebelum merilis.
+</Callout>
+
+## 2. Contoh kode
+
+Struktur folder library yang khas (dibuat lewat `npx sv create` lalu pilih template **library**):
+
+```
+my-svelte-lib/
+├─ src/
+│  ├─ lib/              ← INI yang dipaketkan jadi dist/
+│  │  ├─ index.js       ← entry point (apa yang di-export ke publik)
+│  │  ├─ Button.svelte
+│  │  └─ format.js
+│  └─ routes/           ← app demo/docs, TIDAK ikut dirilis
+│     └─ +page.svelte
+├─ package.json
+└─ svelte.config.js
+```
+
+Entry point library — ini "etalase publik", hanya yang di-export di sini yang bisa di-`import` konsumen lewat `'my-svelte-lib'`:
+
+```js
+// src/lib/index.js
+// Re-export komponen & util yang ingin kamu jadikan API publik.
+// File lain di src/lib yang TIDAK di-export di sini = internal (bebas dirombak).
+export { default as Button } from './Button.svelte';
+export { formatRupiah } from './format.js';
+```
+
+`package.json` library — bagian-bagian yang menentukan paket valid:
+
+```json
+{
+	"name": "my-svelte-lib",
+	"version": "0.1.0",
+	"license": "MIT",
+	"type": "module",
+	"scripts": {
+		"package": "svelte-package && publint",
+		"prepublishOnly": "npm run package"
+	},
+	"files": ["dist"],
+	"sideEffects": ["**/*.css"],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"svelte": "./dist/index.js"
+		},
+		"./Button.svelte": {
+			"types": "./dist/Button.svelte.d.ts",
+			"svelte": "./dist/Button.svelte"
+		}
+	},
+	"peerDependencies": {
+		"svelte": "^5.0.0"
+	}
+}
+```
+
+Penjelasan tiap field penting:
+
+```jsonc
+// "type": "module"      → paket pakai ESM (import/export), standar untuk Svelte.
+// "files": ["dist"]     → hanya folder dist yang dikirim ke npm; src/ tidak ikut.
+// "sideEffects": [...]  → beri tahu bundler file mana yang punya efek samping.
+//                         Default aman: hanya CSS. Ini bikin tree-shaking app
+//                         konsumen lebih agresif (kode tak terpakai dibuang).
+// "exports"             → kontrak publik: pintu resmi + condition (types/svelte).
+// "prepublishOnly"      → npm menjalankan ini OTOMATIS sebelum `npm publish`,
+//                         jadi kamu tak mungkin lupa mem-package dulu.
+```
+
+Menjalankan pipeline-nya:
+
+```bash
+# Build library: src/lib  →  dist/  (.svelte tetap .svelte, .ts → .js, + .d.ts)
+npm run package
+
+# Atau mode tonton untuk dev library (rebuild tiap file berubah):
+npx svelte-package --watch
+```
+
+Flag `svelte-package` yang sering dipakai:
+
+```bash
+svelte-package \
+  -i src/lib \      # --input  : folder sumber (default: src/lib)
+  -o dist \         # --output : folder hasil (default: dist)
+  -t \              # --types  : generate .d.ts (default: true)
+  -w \              # --watch  : rebuild saat berubah
+  -p                # --preserve-output : jangan hapus folder output dulu
+# --tsconfig <path> : tunjuk tsconfig/jsconfig khusus jika perlu
+```
+
+## 3. Coba sendiri
+
+Packaging adalah operasi **CLI + sistem build**, jadi tidak bisa dijalankan di live playground browser. Sebagai gantinya, telusuri alur lengkap "dari nol sampai terpublish" beranotasi berikut, lalu perhatikan **apa yang berubah di `dist/`**.
+
+```bash
+# 1) Buat proyek library (pilih template "library" saat ditanya).
+npx sv create my-svelte-lib
+cd my-svelte-lib
+npm install
+```
+
+```js
+// 2) Tulis komponenmu di src/lib.
+//    src/lib/Greeting.svelte  — Svelte 5 runes saja.
+```
+
+```svelte
+<!-- src/lib/Greeting.svelte -->
+<script>
+	// $props() = cara Svelte 5 menerima properti (pengganti `export let`).
+	let { name = 'Dunia' } = $props();
+</script>
+
+<p>Halo, {name}!</p>
+```
+
+```js
+// 3) Ekspor dari entry point. src/lib/index.js
+export { default as Greeting } from './Greeting.svelte';
+```
+
+```bash
+# 4) Package-nya. Lihat folder dist/ muncul.
+npm run package
+```
+
+```
+# 5) Isi dist/ sekarang kira-kira begini:
+dist/
+├─ index.js              ← hasil dari src/lib/index.js
+├─ index.d.ts            ← tipe untuk index (auto-generated)
+├─ Greeting.svelte       ← .svelte DIKIRIM APA ADANYA (bukan di-compile)
+└─ Greeting.svelte.d.ts  ← tipe komponen: prop `name?: string` ikut ke sini
+```
+
+```bash
+# 6) Cek kesehatan paket SEBELUM publish (sangat disarankan):
+npx publint          # validasi exports/types/format paket
+npx @arethetypeswrong/cli --pack   # cek tipe ".d.ts" resolusi-nya benar
+
+# 7) Publish ke npm. `prepublishOnly` otomatis menjalankan `npm run package`.
+npm publish          # tambahkan `--access public` untuk paket scoped @user/...
+```
+
+```svelte
+<!-- 8) Di APP KONSUMEN, setelah `npm i my-svelte-lib`: -->
+<script>
+	import { Greeting } from 'my-svelte-lib';
+</script>
+
+<Greeting name="Rizki" />
+```
+
+<Callout type="tip">
+Mau coba paket sebelum benar-benar publish? Pakai <code>npm pack</code> untuk membuat file <code>.tgz</code> lalu <code>npm i ../my-svelte-lib/my-svelte-lib-0.1.0.tgz</code> di app uji. Ini mensimulasikan persis apa yang akan diterima konsumen — lebih jujur daripada <code>npm link</code>, yang kadang menyembunyikan masalah <code>exports</code>.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Rilis library 'rupiah-kit': satu komponen + satu util, dengan exports rapi">
+
+Kamu punya library kecil bernama `rupiah-kit` berisi:
+
+1. Komponen `Price.svelte` yang menerima prop `amount: number` dan menampilkannya sebagai Rupiah.
+2. Util `formatRupiah(n: number): string` di `format.ts`.
+
+Tulis: (a) `src/lib/Price.svelte` (Svelte 5 runes), (b) `src/lib/format.ts`, (c) `src/lib/index.ts` sebagai entry point, dan (d) bagian penting `package.json` — `exports` yang mengekspos **entry utama** (`'rupiah-kit'`) **dan** subpath `'rupiah-kit/Price.svelte'`, plus `peerDependencies`, `files`, dan `script` `package`. Jelaskan singkat kenapa Svelte ada di `peerDependencies` dan kenapa file `.svelte` tidak di-compile saat packaging.
+
+{#snippet solution()}
+
+```ts
+// src/lib/format.ts
+export function formatRupiah(n: number): string {
+	return new Intl.NumberFormat('id-ID', {
+		style: 'currency',
+		currency: 'IDR',
+		maximumFractionDigits: 0
+	}).format(n);
+}
+```
+
+```svelte
+<!-- src/lib/Price.svelte -->
+<script lang="ts">
+	import { formatRupiah } from './format.js'; // import internal antar-file lib
+	let { amount }: { amount: number } = $props();
+</script>
+
+<span class="price">{formatRupiah(amount)}</span>
+```
+
+```ts
+// src/lib/index.ts  — entry point (API publik)
+export { default as Price } from './Price.svelte';
+export { formatRupiah } from './format.js';
+```
+
+```json
+// package.json (bagian penting)
+{
+	"name": "rupiah-kit",
+	"version": "0.1.0",
+	"license": "MIT",
+	"type": "module",
+	"files": ["dist"],
+	"sideEffects": ["**/*.css"],
+	"scripts": {
+		"package": "svelte-package && publint",
+		"prepublishOnly": "npm run package"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"svelte": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./Price.svelte": {
+			"types": "./dist/Price.svelte.d.ts",
+			"svelte": "./dist/Price.svelte"
+		}
+	},
+	"peerDependencies": {
+		"svelte": "^5.0.0"
+	}
+}
+```
+
+**Kenapa Svelte di `peerDependencies`:** supaya app konsumen memakai SATU salinan Svelte miliknya. Kalau library membawa Svelte sendiri di `dependencies`, ada dua runtime Svelte → state reaktif (runes) dan context tidak saling kenal, muncul bug yang sulit dilacak.
+
+**Kenapa `.svelte` tidak di-compile saat packaging:** karena kompilasi komponen bergantung pada versi compiler Svelte. Dengan mengirim `.svelte` mentah (cuma di-preprocess, mis. TS di-strip), app konsumen meng-compile-nya dengan versi Svelte-nya sendiri — satu hasil, konsisten, dan ikut tree-shaking app. Perhatikan juga di `index.ts` aku meng-import `./format.js` (berakhiran `.js`, bukan `.ts`) karena setelah di-transpile file tujuannya memang `format.js`.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan import <code>$app/*</code> atau <code>$env/*</code> di dalam <code>src/lib</code> yang dipaketkan.</strong> Alias itu hanya ada di dalam app SvelteKit; di app konsumen yang bukan SvelteKit (mis. Vite + Svelte biasa) mereka tidak ada → paketmu rusak. Butuh deteksi browser vs server? Pakai paket netral seperti <code>esm-env</code> (<code>import &#123; BROWSER &#125; from 'esm-env'</code>) sebagai ganti <code>$app/environment</code>. Untuk alias internal library, definisikan di <code>svelte.config.js</code>, bukan di <code>vite.config.js</code>/<code>tsconfig.json</code>.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Path di <code>exports</code> dan import di kode harus menunjuk hasil build (<code>.js</code>), bukan sumber (<code>.ts</code>).</strong> Setelah <code>svelte-package</code>, <code>format.ts</code> menjadi <code>dist/format.js</code>. Maka di <code>index.ts</code> tulis <code>import ... from './format.js'</code> (ekstensi <code>.js</code>) — bukan <code>./format.ts</code> atau tanpa ekstensi. ESM "NodeNext" mewajibkan ekstensi eksplisit, dan yang dirilis adalah <code>.js</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Menghapus subpath atau condition di <code>exports</code> = breaking change.</strong> Begitu konsumen meng-<code>import 'paket/Button.svelte'</code>, path itu jadi bagian API publikmu. Menghapus/merenamenya harus lewat <strong>major version bump</strong> (semver). Tambah subpath baru aman (minor); hapus = major.
+</Callout>
+
+<Callout type="tip">
+<strong>Selalu jalankan <code>publint</code> dan cek tipe sebelum publish.</strong> <code>publint</code> menangkap kesalahan <code>exports</code>/format paket yang umum (path salah, urutan condition keliru), dan <code>@arethetypeswrong/cli</code> memastikan <code>.d.ts</code>-mu benar-benar ter-resolve di berbagai <code>moduleResolution</code>. Untuk subpath non-root, pastikan konsumen pakai <code>moduleResolution: "bundler"</code>/<code>"node16"</code>/<code>"nodenext"</code> atau sediakan <code>typesVersions</code> di <code>package.json</code>.
+</Callout>
+
+<Callout type="legacy">
+<strong>Pola lama yang perlu kamu ganti.</strong> Field <code>svelte: "./index.js"</code> di <strong>level atas</strong> <code>package.json</code> adalah peninggalan sebelum era <code>exports</code> — sekarang pakai <strong>condition <code>svelte</code> di dalam <code>exports</code></strong>. Selain itu, komponen di dalam library WAJIB Svelte 5 (runes): hindari <code>export let</code>, <code>$:</code>, <code>on:click</code>, dan <code>&lt;slot&gt;</code>; pakai <code>$props()</code>, <code>$derived</code>/<code>$effect</code>, <code>onclick</code>, dan <code>&#123;@render ...&#125;</code> + snippet.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Pola lama"
+	modernLabel="Pola modern (svelte-package)"
+	rows={[
+		{ legacy: "field 'svelte' top-level di package.json", modern: "condition 'svelte' di dalam exports map", note: "exports jadi kontrak publik library" },
+		{ legacy: "import $app/environment di src/lib", modern: "import { BROWSER } from 'esm-env'", note: "$app/* tak ada di app non-SvelteKit" },
+		{ legacy: "svelte di dependencies", modern: "svelte di peerDependencies", note: "hindari dua salinan runtime Svelte" },
+		{ legacy: "publish tanpa cek", modern: "svelte-package && publint (+ attw)", note: "tangkap exports/types rusak sebelum rilis" }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/packaging" label="SvelteKit — Packaging (svelte-package)" />
+
+<DocsLink href="https://svelte.dev/docs/kit/server-only-modules" label="SvelteKit — Server-only modules (terkait: batas server/klien)" />

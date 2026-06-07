@@ -1,0 +1,183 @@
+---
+title: Frequently asked questions
+product: cli
+section: intro
+sectionTitle: Pengantar
+sectionOrder: 1
+order: 2
+status: stable
+description: Jawaban atas pertanyaan tersering soal CLI sv — cara menjalankannya di tiap package manager, bedanya dengan create-svelte lama, add-ons, dan troubleshooting.
+docs: https://svelte.dev/docs/cli/faq
+keywords: [sv cli, faq, package manager, create-svelte, add-ons, troubleshooting]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sv` adalah **CLI resmi Svelte** — satu pintu untuk membuat proyek (`sv create`), menambah integrasi (`sv add`), dan mengotomasi upgrade (`sv migrate`). Karena ia berdiri di persimpangan banyak hal (package manager, OS, shell, tooling), pertanyaan yang muncul biasanya bukan soal "fitur Svelte" melainkan soal **lingkungan**: kenapa perintahnya nggak jalan, mana cara yang benar di pnpm/bun, apa bedanya dengan tutorial lama, dan kapan harus pakai `sv add`. Modul ini mengumpulkan jawaban-jawaban itu.
+
+### Analogi: `sv` itu seperti adaptor colokan universal
+
+Bayangkan kamu bepergian dengan satu laptop, tapi tiap negara punya bentuk stopkontak berbeda (npm, pnpm, yarn, bun, Deno). `sv` adalah charger-nya — sama untuk semua. Yang berubah hanyalah **adaptor colokan** di depannya: `npx`, `pnpm dlx`, `bunx`, `yarn dlx`, atau `deno run npm:`. Begitu listrik (paket `sv`) tersambung, perintah di belakangnya (`create`, `add`, `migrate`) persis sama di mana pun. Memahami ini menghemat banyak kebingungan: kamu tidak menghafal lima CLI berbeda, hanya lima cara "mencolokkan" CLI yang sama.
+
+### Kenapa ada `npx`, `dlx`, `bunx`? (mengapa, bukan cuma bagaimana)
+
+Pertanyaan yang sering tidak dijawab: kenapa kita tidak `npm install sv` dulu lalu menjalankannya? Karena `sv create` adalah **alat sekali-pakai** (one-shot). Kamu hanya butuh dia sekali untuk membuat folder proyek; menginstalnya secara global justru bikin versi cepat basi. Maka tiap package manager menyediakan mekanisme **"ambil paket dari registry, jalankan sekali, lalu buang"**:
+
+- `npx` (npm), `pnpm dlx`, `bunx`, `yarn dlx`, `deno run npm:` — semuanya melakukan hal yang sama: unduh `sv` versi terbaru ke cache sementara, jalankan, selesai.
+
+Buat kamu yang datang dari React/Vue: ini identik dengan kenapa kamu menjalankan `npx create-next-app` atau `npm create vue@latest` alih-alih meng-install create tool secara permanen.
+
+### `sv` vs `create-svelte` lama — apa yang berubah?
+
+Kalau kamu menemukan tutorial yang menulis `npm create svelte@latest`, `npm init svelte`, atau `npx degit sveltejs/template`, itu **API lama (sebelum akhir 2024)**. Dulu scaffolding ditangani paket bernama `create-svelte`, dan hanya itu — sekadar membuat folder. Integrasi seperti Tailwind atau Drizzle harus kamu pasang manual.
+
+Sekarang semuanya disatukan ke dalam satu CLI bernama `sv` (paket `sv` di npm). Bukan cuma ganti nama: `sv` adalah **toolkit**, bukan sekadar scaffolder. Ia punya subcommand:
+
+- `sv create` — menggantikan `create-svelte` (membuat proyek baru).
+- `sv add` — menambahkan add-on/integrasi ke proyek yang **sudah ada** (ini hal baru yang dulu tidak ada).
+- `sv check` — menjalankan `svelte-check` (diagnostik tipe & error).
+- `sv migrate` — mengotomasi migrasi versi (mis. Svelte 4 ke 5).
+
+Anggap `create-svelte` itu seperti "tukang yang cuma bisa membangun fondasi rumah", sedangkan `sv` adalah "kontraktor" yang bisa membangun, merenovasi (add), dan meng-upgrade (migrate). `create-svelte` belum mati total — `sv create` di belakang layar memakai engine yang sama — tapi yang kamu ketik dan ingat sekarang cukup satu kata: `sv`.
+
+### Apa itu add-ons?
+
+**Add-on** adalah integrasi siap-pakai yang `sv add` tempelkan ke proyekmu: ia mengubah config, menambah dependency, dan menulis file boilerplate secara otomatis. Contoh yang resmi tersedia antara lain `tailwindcss`, `drizzle`, `lucia` (auth), `paraglide` (i18n), `prettier`, `eslint`, `vitest`, `playwright`, `mdsvex`, `storybook`, dan `sveltekit-adapter`. Daripada mengikuti 10 langkah manual di dokumentasi Tailwind, kamu cukup `npx sv add tailwindcss` dan CLI mengurus semuanya.
+
+## 2. Contoh kode
+
+Perintah `sv` yang sama, dijalankan lewat lima package manager berbeda. **Perhatikan: hanya awalannya yang berbeda.**
+
+```bash
+# Membuat proyek baru (sv create) — pilih SATU sesuai package manager-mu:
+npx sv create my-app             # npm
+pnpm dlx sv create my-app        # pnpm
+bunx sv create my-app            # Bun
+yarn dlx sv create my-app        # Yarn (berbasis Berry/dlx)
+deno run npm:sv create my-app    # Deno
+
+# Setelah proyek ada, subcommand lain juga mengikuti pola yang sama.
+# Menambahkan integrasi ke proyek yang SUDAH ada:
+npx sv add tailwindcss           # npm
+pnpm dlx sv add tailwindcss      # pnpm
+bunx sv add tailwindcss          # Bun
+```
+
+`sv add` bisa menerima beberapa add-on sekaligus, dan bisa dijalankan tanpa argumen untuk mode interaktif:
+
+```bash
+# Pasang beberapa add-on dalam satu perintah (dipisah koma, tanpa spasi):
+npx sv add prettier,eslint,vitest,tailwindcss
+
+# Atau jalankan tanpa argumen -> CLI menampilkan menu pilihan interaktif:
+npx sv add
+#   ? Which add-ons? (spasi = pilih, enter = konfirmasi)
+#     ◯ prettier   ◯ eslint   ◯ vitest   ◯ tailwindcss   ◯ drizzle ...
+```
+
+Saat `npx sv` terasa "diam" atau error, sebagian penyebabnya adalah package manager lebih memilih tool lokal ketimbang mengunduh dari registry. Solusi paling andal: pakai sintaks **eksplisit** milik package manager-mu (lihat tabel di bagian Tips), atau pin versi:
+
+```bash
+# Memaksa npx mengambil paket terbaru dari registry, bukan binari lokal:
+npx sv@latest create my-app
+
+# Cek versi sv yang sedang dipakai (memastikan kamu bukan kena versi basi di cache):
+npx sv --version
+```
+
+## 3. Coba sendiri
+
+Karena `sv` berjalan di **terminal** (bukan di browser), tidak ada live preview untuk modul ini — yang bisa kamu "baca dan tiru" adalah pola perintahnya. Berikut sesi terminal beranotasi yang mensimulasikan alur lengkap dari nol sampai jalan, lalu menambah satu add-on:
+
+```bash
+# 1) Scaffolding. "blog" = nama folder. Pakai titik (.) untuk folder saat ini.
+npx sv create blog
+#    CLI bertanya interaktif:
+#      ? Which template?     SvelteKit minimal | SvelteKit demo | Svelte library
+#      ? Type checking?      TypeScript | JSDoc | None
+#      ? Add ons?            (boleh dilewati di sini, bisa ditambah nanti via sv add)
+#      ? Package manager?    npm | pnpm | yarn | bun  -> install otomatis
+
+# 2) Masuk ke proyek & nyalakan dev server (Vite).
+cd blog
+npm run dev          # buka URL yang muncul, default http://localhost:5173
+
+# 3) Butuh Tailwind belakangan? Tidak perlu setup manual — pakai sv add.
+#    Jalankan dari DALAM folder proyek (sv mendeteksi config SvelteKit di sini).
+npx sv add tailwindcss
+#    -> mengubah svelte.config / vite.config, menambah dependency,
+#       dan membuat file CSS dasar. Restart dev server bila diminta.
+
+# 4) Cek tipe & diagnostik kapan saja:
+npx sv check         # setara menjalankan svelte-check
+```
+
+Poin penting yang sering bikin pemula tersandung: **`sv create` dijalankan di folder kosong/baru, sedangkan `sv add` dijalankan di dalam proyek yang sudah ada.** Kalau `sv add` dipanggil di tempat yang bukan proyek Svelte, ia tidak menemukan config dan akan mengeluh.
+
+## 4. Latihan
+
+<Exercise title="Cocokkan perintah dengan situasinya">
+Untuk tiap situasi, tuliskan perintah `sv` yang tepat. Anggap package manager-mu disebut di tiap nomor.
+
+1. Kamu pakai **pnpm** dan ingin **membuat** proyek baru bernama `toko`.
+2. Kamu pakai **Bun**, proyek sudah ada, dan ingin **menambahkan** Drizzle + Tailwind sekaligus.
+3. Kamu pakai **npm**, dan curiga `sv` yang jalan adalah versi basi dari cache — kamu ingin **memaksa** ambil versi terbaru saat membuat proyek `app`.
+
+{#snippet solution()}
+
+```bash
+# 1) Membuat proyek baru dengan pnpm -> awalan "pnpm dlx".
+pnpm dlx sv create toko
+
+# 2) Menambah beberapa add-on dengan Bun -> awalan "bunx", add-on dipisah koma.
+bunx sv add drizzle,tailwindcss
+
+# 3) Memaksa versi terbaru dari registry -> pin dengan "@latest".
+npx sv@latest create app
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+Tutorial lama menyuruh <code>npm create svelte@latest</code>, <code>npm init svelte</code>, atau <code>npx degit sveltejs/template</code>. Itu API <strong>create-svelte</strong> yang sudah usang. CLI resmi sekarang adalah <code>sv</code>: pakai <code>sv create</code> untuk scaffold, <code>sv add</code> untuk integrasi, dan <code>sv migrate</code> untuk upgrade versi.
+</Callout>
+
+<Callout type="pitfall">
+<strong><code>npx sv</code> "diam" tanpa output, atau gagal diam-diam.</strong> Sebagian package manager (terutama npm dan Yarn) lebih memilih menjalankan tool yang ter-install lokal ketimbang mengunduh dari registry. Jika <code>npx sv create</code> tidak mengeluarkan apa-apa, jalankan dengan sintaks eksplisit package manager-mu (lihat tabel di bawah) atau pin versi: <code>npx sv@latest create</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Bentrok nama <code>sv</code>.</strong> Di sebagian sistem, <code>sv</code> sudah dipakai program lain — yaitu utilitas <code>runit</code> (service manager di beberapa Linux). Di <strong>Windows PowerShell</strong>, <code>sv</code> adalah alias bawaan untuk cmdlet <code>Set-Variable</code>, sehingga mengetik <code>sv</code> langsung bisa salah sasaran. Solusinya: selalu jalankan lewat runner (<code>npx sv ...</code>, <code>pnpm dlx sv ...</code>) alih-alih mengetik <code>sv</code> telanjang, supaya yang dieksekusi benar-benar CLI Svelte.
+</Callout>
+
+<Callout type="tip">
+Jalankan <code>sv add</code> dari <strong>dalam</strong> folder proyek, bukan dari luar. CLI mendeteksi <code>svelte.config.js</code> / <code>package.json</code> di sana untuk tahu cara menempelkan integrasi. Memanggilnya di folder yang salah membuatnya tidak menemukan proyek.
+</Callout>
+
+Ringkasan "adaptor colokan" — perintah inti sama, awalannya menyesuaikan package manager:
+
+<LegacyVsModern legacyLabel="Package manager" modernLabel="Cara menjalankan sv" rows={[
+	{ legacy: 'npm', modern: 'npx sv create', note: 'pakai sv@latest bila kena versi cache basi' },
+	{ legacy: 'pnpm', modern: 'pnpm dlx sv create', note: 'dlx = download & execute sekali pakai' },
+	{ legacy: 'Bun', modern: 'bunx sv create', note: 'padanan npx milik Bun' },
+	{ legacy: 'Yarn', modern: 'yarn dlx sv create', note: 'Yarn modern (Berry)' },
+	{ legacy: 'Deno', modern: 'deno run npm:sv create', note: 'jalankan paket npm langsung' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/faq" label="sv CLI — Frequently asked questions (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-create" label="sv create — referensi lengkap" />
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-add" label="sv add — daftar add-on resmi" />

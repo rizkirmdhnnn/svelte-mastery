@@ -1,0 +1,394 @@
+---
+title: Runtime errors
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 17
+status: reference
+description: Daftar lengkap error runtime Svelte 5 (klien, server, shared) — kode, arti, penyebab umum, dan cara memperbaikinya.
+docs: https://svelte.dev/docs/svelte/runtime-errors
+keywords: [runtime error, state_unsafe_mutation, effect_orphan, hydration, lifecycle, bind]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Ada dua momen Svelte bisa berteriak kepadamu, dan keduanya **sangat berbeda**:
+
+- **Compiler error / warning** — terjadi saat `vite build` / `svelte-check`, sebelum kode pernah dijalankan. Compiler membaca file `.svelte`-mu seperti editor naskah membaca draf: ia menolak yang jelas-jelas salah ketik atau ilegal. Ini topik halaman *Compiler errors* / *Compiler warnings*.
+- **Runtime error** — terjadi saat aplikasi **sudah berjalan**: di browser pengguna (klien) atau saat server merender halaman (SSR). Kodenya lolos compile, tapi meledak ketika kondisi tertentu tercapai — sebuah state dimutasi di tempat terlarang, sebuah effect dibuat di luar konteks, sebuah `bind:` menabrak prop yang tidak `$bindable`.
+
+Halaman ini khusus membahas kelompok kedua.
+
+### Analogi: inspeksi gedung vs alarm kebakaran
+
+Bayangkan compiler error itu **inspeksi gedung sebelum dibuka**. Inspektur menolak izin kalau ada tangga tanpa pegangan atau pintu darurat yang tak ada — gedung tidak akan pernah dibuka untuk umum. Aman, karena kesalahan ketahuan sebelum ada orang masuk.
+
+Runtime error itu **alarm kebakaran yang berbunyi saat gedung sudah ramai**. Bangunannya lolos inspeksi, izinnya keluar, orang sudah berlalu-lalang — lalu seseorang menyalakan kompor di tempat yang salah dan alarm meraung. Lebih merepotkan karena sudah ada "pengguna" di dalam (bisa di mesin pengguna, bukan di laptopmu). Karena itu, memahami kode-kode alarm ini penting: begitu kamu hafal apa arti `state_unsafe_mutation` atau `effect_orphan`, kamu bisa langsung tahu "kompor mana yang salah nyala" tanpa menebak-nebak.
+
+### Mengapa Svelte memilih melempar error, bukan diam saja
+
+Sebagian besar runtime error Svelte 5 muncul karena model reaktivitas **runes** menuntut aturan yang lebih tegas daripada Svelte 4. Dulu reaktivitas implisit (`$:`) memaafkan banyak hal secara diam-diam — kadang itu malah menyembunyikan bug. Svelte 5 memilih jujur: kalau kamu menulis state di tempat yang akan memicu loop tak hingga, atau membuat `$effect` di luar pohon komponen, Svelte **melempar error eksplisit** daripada diam dan berperilaku aneh. Ini filosofi yang sama dengan React melempar *"Too many re-renders"* atau *"Rendered fewer hooks than expected"*: lebih baik gagal keras dan jelas daripada gagal halus dan misterius.
+
+### Tiga "wilayah" error
+
+Svelte mengelompokkan runtime error berdasarkan **di mana** ia bisa terjadi:
+
+1. **Client errors** — hanya muncul di browser: soal reaktivitas (`$state`, `$derived`, `$effect`), `bind:`, hydration, dan API komponen. Ini kelompok terbesar dan paling sering kamu temui sehari-hari.
+2. **Server errors** — hanya muncul saat **server-side rendering** (SSR): soal `render()`, hydratable, CSP, dan API yang memang tidak tersedia di server.
+3. **Shared errors** — bisa muncul di **kedua** lingkungan: lifecycle, snippet, context, dan store.
+
+Buat yang datang dari React/Vue: anggap *client errors* itu seperti error React di browser, *server errors* seperti error yang hanya kena saat `renderToString`/Next.js SSR, dan *shared errors* seperti aturan dasar (hooks rules, provide/inject) yang berlaku di mana saja.
+
+Untuk membaca error: format pesan Svelte memakai placeholder seperti `%rune%`, `%name%`, `%key%`. Saat error sungguh terjadi, placeholder itu sudah diganti nilai nyata — mis. `%rune%` menjadi `$state`. Di tabel Ringkasan API (bagian 4) placeholder dibiarkan apa adanya agar kamu kenali polanya.
+
+## 2. Contoh kode
+
+Tiga error klien yang **paling sering** dialami pemula runes, lengkap dengan versi salah dan versi benarnya.
+
+```svelte
+<!-- ❌ state_unsafe_mutation -->
+<!-- "Updating state inside `$derived(...)` or a template expression is forbidden" -->
+<script>
+	let count = $state(0);
+
+	// SALAH: $derived harus MURNI menghitung & mengembalikan nilai.
+	// Menulis ke state lain di dalamnya dilarang — bisa memicu loop & nilai tak terduga.
+	let double = $derived.by(() => {
+		count = count + 1; // ⛔ mutasi state di dalam derived
+		return count * 2;
+	});
+</script>
+```
+
+```svelte
+<!-- ✅ Perbaikan state_unsafe_mutation -->
+<script>
+	let count = $state(0);
+
+	// $derived hanya MEMBACA & menurunkan nilai, tanpa efek samping
+	let double = $derived(count * 2);
+
+	// Kalau memang butuh "melakukan sesuatu" saat count berubah, pakai $effect
+	$effect(() => {
+		console.log('count berubah jadi', count);
+	});
+</script>
+```
+
+```svelte
+<!-- ❌ bind_not_bindable -->
+<!-- "A component is attempting to bind to a non-bindable property `value`" -->
+
+<!-- Input.svelte (child) -->
+<script>
+	// prop biasa — TIDAK ditandai $bindable
+	let { value } = $props();
+</script>
+<input {value} />
+
+<!-- Parent.svelte -->
+<script>
+	import Input from './Input.svelte';
+	let nama = $state('');
+</script>
+<!-- ⛔ parent mencoba bind: ke prop yang tak bindable -->
+<Input bind:value={nama} />
+```
+
+```svelte
+<!-- ✅ Perbaikan bind_not_bindable: tandai prop dengan $bindable() -->
+
+<!-- Input.svelte (child) -->
+<script>
+	// $bindable() menyatakan "prop ini boleh di-bind dua arah oleh parent"
+	let { value = $bindable('') } = $props();
+</script>
+<!-- sekarang menulis ke value akan mengalir balik ke parent -->
+<input bind:value />
+```
+
+```svelte
+<!-- ❌ effect_orphan -->
+<!-- "`$effect` can only be used inside an effect" -->
+<script>
+	// SALAH: $effect dipanggil di dalam fungsi event handler,
+	// yang berjalan SETELAH komponen selesai inisialisasi → tak ada konteks effect.
+	function mulai() {
+		$effect(() => {
+			console.log('tick');
+		}); // ⛔ effect_orphan
+	}
+</script>
+<button onclick={mulai}>Mulai</button>
+```
+
+```svelte
+<!-- ✅ Perbaikan effect_orphan: deklarasikan $effect di top-level <script> -->
+<script>
+	let jalan = $state(false);
+
+	// $effect dibuat saat komponen inisialisasi (top-level), bukan di dalam handler.
+	// Logikanya yang dikondisikan, bukan pembuatannya.
+	$effect(() => {
+		if (!jalan) return;
+		const id = setInterval(() => console.log('tick'), 1000);
+		return () => clearInterval(id); // cleanup otomatis
+	});
+</script>
+<button onclick={() => (jalan = !jalan)}>{jalan ? 'Stop' : 'Mulai'}</button>
+```
+
+## 3. Coba sendiri
+
+Modul ini bersifat referensi dan banyak error-nya butuh kondisi spesifik (loop effect, SSR, hydration) yang tidak cocok untuk live preview — jadi tidak ada playground. Sebagai gantinya, baca dua kasus "membaca pesan → menemukan penyebab → memperbaiki" berikut. Latih matamu mengenali pola, karena itu skill sebenarnya dalam menghadapi runtime error.
+
+```svelte
+<!-- KASUS A: effect_update_depth_exceeded -->
+<!-- "Maximum update depth exceeded. This typically indicates that an
+     effect reads and writes the same piece of state" -->
+<script>
+	let n = $state(0);
+
+	// ❌ effect ini MEMBACA n (jadi dependency) lalu MENULIS n (memicu dirinya lagi)
+	//    → loop tak hingga → Svelte memutus dengan error ini.
+	$effect(() => {
+		n = n + 1; // membaca n + menulis n = umpan balik tak hingga
+	});
+</script>
+
+<!-- ✅ Perbaikan: jangan menulis state yang sama yang kamu baca di effect.
+     Kalau hanya butuh nilai turunan, pakai $derived (bukan $effect).
+     Kalau benar-benar perlu menulis berdasar state lain tanpa
+     menjadikannya dependency, baca dengan untrack(): -->
+<script>
+	import { untrack } from 'svelte';
+	let a = $state(0);
+	let log = $state(0);
+	$effect(() => {
+		a; // dependency yang DISENGAJA
+		// untrack mencegah pembacaan 'log' ikut jadi dependency → tak ada loop
+		log = untrack(() => log) + 1;
+	});
+</script>
+```
+
+```svelte
+<!-- KASUS B: missing_context (shared — bisa di klien atau server) -->
+<!-- "Context was not set in a parent component" -->
+
+<!-- ❌ Anak memanggil getContext untuk kunci yang tak pernah di-set parent mana pun -->
+<!-- Child.svelte -->
+<script>
+	import { getContext } from 'svelte';
+	const tema = getContext('tema'); // undefined kalau tak ada parent yang setContext('tema', ...)
+</script>
+
+<!-- ✅ Perbaikan: pastikan SEBUAH parent memanggil setContext dengan kunci yang sama,
+     dan komponen anak benar-benar dirender DI DALAM subtree parent itu. -->
+<!-- Parent.svelte -->
+<script>
+	import { setContext } from 'svelte';
+	import Child from './Child.svelte';
+	// setContext WAJIB dipanggil saat parent inisialisasi (top-level), bukan di effect/handler
+	setContext('tema', { warna: 'hangat' });
+</script>
+<Child />
+```
+
+## 4. Ringkasan API
+
+Daftar lengkap kode runtime error Svelte 5. Kolom **Kode** adalah identitas yang muncul di pesan error (mis. `[svelte] state_unsafe_mutation`); **Penyebab umum** adalah skenario yang biasanya memicunya; **Cara perbaiki** adalah langkah konkret. Placeholder seperti `%rune%`, `%name%`, `%key%` akan terisi nilai nyata saat error muncul.
+
+### 4.1 Client errors (browser)
+
+Kelompok terbesar — soal reaktivitas, `bind:`, hydration, dan API komponen.
+
+| Kode | Arti / pesan | Penyebab umum | Cara perbaiki |
+|------|--------------|----------------|----------------|
+| `state_unsafe_mutation` | Menulis state di dalam `$derived(...)` atau ekspresi template dilarang | Mengubah `$state` di dalam `$derived`/`$derived.by`, atau di tengah ekspresi `{...}` saat render | Jadikan nilai turunan sebagai `$derived` murni; pindahkan efek samping ke `$effect` |
+| `effect_orphan` | `%rune%` hanya boleh dipakai di dalam effect | `$effect`/`$effect.pre` dipanggil di dalam event handler atau fungsi biasa, bukan saat init | Deklarasikan effect di top-level `<script>`; kondisikan isinya, bukan pembuatannya |
+| `effect_update_depth_exceeded` | Kedalaman update maksimum terlampaui | Sebuah effect membaca dan menulis state yang sama → loop umpan balik | Hindari menulis state yang dibaca effect itu; pakai `$derived`, atau bungkus pembacaan dengan `untrack()` |
+| `effect_in_teardown` | `%rune%` tak boleh dipakai di dalam fungsi cleanup effect | Membuat `$effect`/`$derived` baru di dalam fungsi `return () => {...}` (teardown) | Jangan bikin konstruksi reaktif baru saat cleanup; hanya bersihkan resource di sana |
+| `effect_in_unowned_derived` | Effect dibuat di dalam `$derived` yang bukan turunan effect | `$effect` dibuat di dalam derived yang berdiri sendiri | Buat effect di dalam komponen, effect lain, atau `$effect.root()` |
+| `effect_pending_outside_reaction` | `$effect.pending()` hanya boleh dipanggil di dalam effect atau derived | Memanggil `$effect.pending()` di kode non-reaktif | Panggil hanya di dalam `$effect`/`$derived` |
+| `derived_references_self` | Sebuah `$derived` mereferensikan dirinya sendiri | Rumus derived membaca variabel yang sedang ia hitung | Hapus referensi-diri; pisah jadi state + derived terpisah |
+| `async_derived_orphan` | `$derived(...)` dengan `await` tak boleh di luar pohon effect | Membuat async derived di luar konteks effect/komponen | Letakkan async derived di dalam komponen/effect (butuh `experimental.async`) |
+| `state_descriptors_fixed` | Property descriptor pada objek `$state` wajib berisi `value` | `Object.defineProperty` dengan getter/setter pada objek `$state` | Pakai definisi properti `value` biasa, atau kelola di luar `$state` |
+| `state_prototype_fixed` | Tak bisa mengubah prototype objek `$state` | `Object.setPrototypeOf(...)` pada objek `$state` | Jangan ubah prototype objek reaktif; bentuk objek baru bila perlu |
+| `bind_not_bindable` | Mencoba `bind:` ke prop `%key%` yang tak bindable | Parent menulis `bind:value` ke child yang propnya tak `$bindable` | Tandai prop child: `let { value = $bindable() } = $props()` |
+| `bind_invalid_checkbox_value` | `bind:value` tak boleh dengan input checkbox | Memakai `bind:value` pada `<input type="checkbox">` | Pakai `bind:checked` untuk checkbox |
+| `bind_invalid_export` | Komponen `%component%` punya export `%key%` yang ditabrak `bind:%key%` | Mencoba `bind:` ke nama yang merupakan `export`, bukan prop bindable | Pakai `bind:this` untuk dapat instance, lalu akses propertinya |
+| `props_invalid_value` | Tak bisa `bind:%key%={undefined}` saat `%key%` punya fallback | Mem-bind nilai `undefined` ke prop yang punya default | Jangan bind `undefined`; beri nilai nyata atau hapus default |
+| `props_rest_readonly` | Properti rest dari `$props()` seperti `%property%` bersifat readonly | Mencoba menulis ke hasil `let { ...rest } = $props()` | Jangan mutasi `rest`; salin ke `$state` lokal bila perlu diubah |
+| `each_key_duplicate` | Blok each berkunci punya kunci ganda di indeks `%a%` dan `%b%` | `{#each items as item (item.id)}` dengan `id` yang sama dua kali | Pastikan kunci unik per item (mis. id database, bukan index yang bertabrakan) |
+| `each_key_volatile` | Kunci each tidak idempoten | Ekspresi kunci membuat objek/array baru tiap render (mis. spread `...item` jadi objek baru) | Pakai nilai stabil & primitif sebagai kunci (id), bukan objek baru |
+| `invalid_snippet` | Tak bisa `{@render}` snippet karena ekspresinya `null`/`undefined` | Merender snippet opsional yang belum dioper | Pakai optional chaining: `{@render snippet?.()}` |
+| `set_context_after_init` | `setContext` harus dipanggil saat komponen pertama inisialisasi | `setContext` dipanggil di `$effect`/handler, bukan top-level | Panggil `setContext` di top-level `<script>` saat init |
+| `rune_outside_svelte` | Rune `%rune%` hanya tersedia di file `.svelte` dan `.svelte.js/ts` | Memakai `$state`/`$derived` di file `.js`/`.ts` biasa | Ganti ekstensi file ke `.svelte.js`/`.svelte.ts`, atau pindahkan ke komponen |
+| `lifecycle_legacy_only` | `%name%(...)` tak bisa dipakai di mode runes | Memanggil `beforeUpdate`/`afterUpdate` di komponen runes | Pakai `$effect.pre(...)` / `$effect(...)` sebagai gantinya |
+| `component_api_changed` | Memanggil `%method%` pada instance komponen tak lagi valid di Svelte 5 | Memakai `$set`/`$on`/`$destroy` pada instance (pola Svelte 4) | Pakai `mount`/`unmount` dan props reaktif; lihat halaman *Imperative component API* |
+| `component_api_invalid_new` | Instansiasi `%component%` dengan `new %name%` tak lagi valid | `new App({ target })` gaya Svelte 4 | Pakai `mount(App, { target, props })`, atau set `compatibility.componentApi: 4` |
+| `flush_sync_in_effect` | Tak bisa pakai `flushSync` di dalam effect | Memanggil `flushSync()` di dalam `$effect` | Panggil `flushSync()` setelah perubahan state, di luar effect |
+| `get_abort_signal_outside_reaction` | `getAbortSignal()` hanya boleh di dalam effect atau derived | Memanggil `getAbortSignal()` di kode non-reaktif | Panggil hanya di dalam `$effect`/`$derived` |
+| `fork_timing` | Tak bisa membuat fork di dalam effect atau saat ada perubahan state tertunda | Pemakaian API fork eksperimental di waktu yang salah | Buat fork di luar konteks reaktif, saat tak ada update tertunda |
+| `fork_discarded` | Tak bisa commit fork yang sudah dibuang | Memanggil `commit` pada fork yang sudah `discard` | Lacak status fork; jangan commit yang sudah dibuang |
+| `svelte_boundary_reset_onerror` | `reset` boundary tak boleh dipanggil saat error masih ditangani | Memanggil `reset()` langsung di dalam `onerror` boundary | `await tick()` dulu sebelum memanggil `reset()` |
+| `hydration_failed` | Gagal melakukan hydrate aplikasi | Markup server dan klien tidak cocok | Samakan output server & klien; hindari nilai non-deterministik (mis. `Date.now()`, `Math.random()`) saat render |
+| `hydratable_missing_but_required` | Hydratable dengan kunci `%key%` tak ditemukan saat hydration | `hydratable` dirender di klien tapi tak ada di server (atau sebaliknya) | Pastikan hydratable yang sama dirender di server dan klien |
+
+### 4.2 Server errors (SSR)
+
+Hanya muncul saat server merender komponen ke HTML.
+
+| Kode | Arti / pesan | Penyebab umum | Cara perbaiki |
+|------|--------------|----------------|----------------|
+| `await_invalid` | Menemukan pekerjaan async saat merender secara sinkron | Ada `await` (mis. async derived) di pohon yang dirender sinkron | `await render(...)`, atau bungkus kode async dalam `<svelte:boundary>` |
+| `async_local_storage_unavailable` | API node `AsyncLocalStorage` tak tersedia | Runtime/platform belum mengaktifkan flag yang diperlukan | Aktifkan konfigurasi platform yang dibutuhkan (mis. flag Node/Workers) |
+| `server_context_required` | Tak bisa me-resolve konteks `render` | Memanggil fungsi seperti `hydratable` di luar `render()` | Panggil hanya di dalam pemanggilan `render()` |
+| `lifecycle_function_unavailable` | `%name%(...)` tak tersedia di server | Memanggil API khusus klien (mis. yang menyentuh DOM) saat SSR | Bungkus kode klien-saja di `$effect` (hanya jalan di browser) atau cek lingkungan |
+| `dynamic_element_invalid_tag` | `<svelte:element this="%tag%">` bukan nama elemen valid | Nilai `this` bukan nama tag HTML/SVG/MathML yang sah | Oper hanya nama elemen valid sebagai string |
+| `html_deprecated` | Properti `html` pada hasil render server sudah usang | Membaca `.html` dari hasil `render()` | Pakai `.body` sebagai gantinya |
+| `hydratable_clobbering` | `hydratable` kunci `%key%` di-set dua kali dengan nilai berbeda | Dua tempat memakai kunci hydratable yang sama dengan data beda | Pakai kunci unik, atau pastikan nilainya sama untuk satu kunci |
+| `hydratable_serialization_failed` | Gagal serialisasi data `hydratable` untuk kunci `%key%` | Data tak bisa diserialisasi oleh devalue (mis. function, class custom) | Pastikan data serializable (objek/array/primitif sederhana) |
+| `invalid_csp` | `csp.nonce` di-set saat `csp.hash` bernilai `true` | Memakai dua strategi CSP sekaligus | Pilih salah satu strategi CSP: nonce atau hash |
+| `invalid_id_prefix` | Opsi `idPrefix` tak boleh mengandung `--` | Konfigurasi `idPrefix` memuat `--` | Hapus `--` dari nilai `idPrefix` |
+
+### 4.3 Shared errors (klien & server)
+
+Bisa muncul di kedua lingkungan — biasanya soal lifecycle, snippet, context, dan store.
+
+| Kode | Arti / pesan | Penyebab umum | Cara perbaiki |
+|------|--------------|----------------|----------------|
+| `lifecycle_outside_component` | `%name%(...)` hanya boleh saat inisialisasi komponen | `onMount`/`getContext`/`setContext` dipanggil di handler atau async callback | Panggil di top-level `<script>` saat komponen init |
+| `missing_context` | Context tak di-set di komponen parent | `getContext(key)` tanpa ada parent yang `setContext(key, ...)` | Pastikan parent memanggil `setContext` dengan kunci sama, dan anak ada di subtree-nya |
+| `snippet_without_render_tag` | Mencoba merender snippet tanpa blok `{@render}` | Menulis `{snippet}` alih-alih `{@render snippet()}` | Ubah jadi `{@render snippet()}` |
+| `invalid_snippet_arguments` | Sebuah fungsi snippet diberi argumen tak valid | Memanggil snippet langsung sebagai fungsi biasa | Render snippet hanya lewat `{@render snippet(...)}` |
+| `invalid_default_snippet` | Tak bisa `{@render children(...)}` jika parent pakai direktif `let:` | Campur snippet default modern dengan `let:` gaya slot lama | Pakai named snippet, bukan slot default dengan `let:` |
+| `store_invalid_shape` | `%name%` bukan store dengan method `subscribe` | Memakai `$nilai` pada sesuatu yang bukan store | Pastikan objek mengimplementasi kontrak store (`subscribe`); atau pakai `$state` |
+| `svelte_element_invalid_this_value` | Prop `this` pada `<svelte:element>` harus string (bila ada) | `this={...}` bernilai non-string | Oper nama elemen sebagai string, atau biarkan `undefined` |
+| `experimental_async_required` | Tak bisa pakai `%name%(...)` kecuali opsi `experimental.async` `true` | Memakai fitur async (mis. `await` di derived) tanpa flag | Aktifkan `experimental.async` di konfigurasi compiler |
+| `invariant_violation` | Terjadi pelanggaran invariant internal | Bug internal Svelte (seharusnya tak pernah terjadi) | Laporkan bug ke GitHub Svelte beserta pesan lengkapnya |
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>state_unsafe_mutation</code> hampir selalu berarti kamu menaruh <strong>efek samping di tempat yang seharusnya murni</strong>. Aturan praktisnya: <code>$derived</code> dan ekspresi <code>&#123;...&#125;</code> di template hanya boleh <em>membaca dan menghitung</em>, tak pernah menulis. Begitu kamu ingin "melakukan sesuatu" (menulis state lain, fetch, log, set timer), itu sinyal untuk pindah ke <code>$effect</code>. Bedakan dengan tegas: <code>$derived</code> = "nilai ini berasal dari itu", <code>$effect</code> = "saat itu berubah, lakukan ini".
+</Callout>
+
+<Callout type="warning">
+<code>effect_update_depth_exceeded</code> adalah versi Svelte dari <em>"Maximum update depth exceeded"</em> di React. Penyebab klasik: sebuah <code>$effect</code> membaca state <code>x</code> lalu juga menulis <code>x</code>, sehingga ia memicu dirinya sendiri tanpa henti. Sebelum menambal dengan <code>untrack()</code>, tanya dulu: "apakah ini sebenarnya nilai turunan?" Kalau ya, ganti <code>$effect</code> dengan <code>$derived</code> dan masalahnya lenyap di akarnya. <code>untrack()</code> hanya untuk kasus di mana kamu memang perlu <em>membaca</em> sesuatu tanpa menjadikannya dependency.
+</Callout>
+
+<Callout type="tip">
+Banyak error <em>shared</em> (<code>lifecycle_outside_component</code>, <code>missing_context</code>, <code>set_context_after_init</code>) berasal dari satu akar yang sama: <strong>memanggil API lifecycle/context di waktu yang salah</strong>. Svelte hanya "membuka jendela" untuk <code>onMount</code>, <code>setContext</code>, <code>getContext</code> selama <em>inisialisasi sinkron</em> komponen — yaitu saat <code>&lt;script&gt;</code> berjalan pertama kali. Memanggilnya di dalam event handler, <code>setTimeout</code>, atau setelah <code>await</code> akan membuat jendela itu sudah tertutup. Solusinya: panggil di top-level, lalu simpan hasilnya ke variabel bila perlu dipakai belakangan.
+</Callout>
+
+<Callout type="warning">
+<code>hydration_failed</code> sering menipu karena pesannya tak menunjuk baris pasti. Penyebab tersering: render server menghasilkan HTML yang berbeda dari render klien — biasanya karena nilai non-deterministik (<code>Date.now()</code>, <code>Math.random()</code>, <code>window</code>/<code>localStorage</code> yang dibaca saat render) atau HTML tak valid yang "dibetulkan" browser (mis. <code>&lt;p&gt;</code> di dalam <code>&lt;p&gt;</code>). Pindahkan nilai khusus-klien ke dalam <code>$effect</code> (yang hanya jalan di browser, setelah hydration) dan pastikan struktur markup-mu valid.
+</Callout>
+
+<Callout type="legacy">
+Beberapa error sengaja muncul untuk mencegahmu memakai <strong>pola Svelte 4 di komponen runes</strong>: <code>lifecycle_legacy_only</code> (memakai <code>beforeUpdate</code>/<code>afterUpdate</code> → ganti <code>$effect.pre</code>/<code>$effect</code>), serta <code>component_api_changed</code> dan <code>component_api_invalid_new</code> (memakai <code>new App()</code>/<code>$set</code>/<code>$destroy</code> → ganti <code>mount</code>/<code>unmount</code>). Kalau kamu sedang memigrasikan kode lama, error-error ini sebenarnya peta jalan: ia menunjuk persis API mana yang perlu dimodernkan.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'beforeUpdate(fn) / afterUpdate(fn)', modern: '$effect.pre(fn) / $effect(fn)', note: 'lifecycle_legacy_only di komponen runes' },
+	{ legacy: 'new App({ target, props })', modern: 'mount(App, { target, props })', note: 'component_api_invalid_new' },
+	{ legacy: 'instance.$set(...) / $destroy()', modern: 'props reaktif + unmount(instance)', note: 'component_api_changed' },
+	{ legacy: 'hasil.html dari render()', modern: 'hasil.body', note: 'html_deprecated (server)' }
+]} />
+
+## 6. Latihan
+
+<Exercise title="Diagnosa & perbaiki tiga runtime error">
+
+Untuk tiap potongan di bawah, sebutkan <strong>kode error</strong> yang akan dilempar Svelte dan tulis ulang versi yang benar.
+
+```svelte
+<!-- (1) -->
+<script>
+	let harga = $state(100);
+	let pajak = $derived.by(() => {
+		harga = harga; // sentuh harga
+		return harga * 0.1;
+	});
+</script>
+
+<!-- (2) -->
+<!-- Modal.svelte -->
+<script>
+	let { open } = $props();
+</script>
+<!-- App.svelte -->
+<Modal bind:open={tampil} />
+
+<!-- (3) -->
+<script>
+	import { getContext } from 'svelte';
+	function buka() {
+		const user = getContext('user');
+	}
+</script>
+<button onclick={buka}>Buka</button>
+```
+
+{#snippet solution()}
+
+**(1) `state_unsafe_mutation`** — `$derived.by` menulis ke `harga` (state yang juga dibacanya). Derived harus murni:
+
+```svelte
+<script>
+	let harga = $state(100);
+	// hanya membaca & menghitung — tidak menyentuh/menulis state apa pun
+	let pajak = $derived(harga * 0.1);
+</script>
+```
+
+**(2) `bind_not_bindable`** — prop `open` di `Modal` tidak ditandai `$bindable`, jadi parent tak boleh `bind:` ke sana:
+
+```svelte
+<!-- Modal.svelte -->
+<script>
+	// izinkan binding dua arah dengan $bindable()
+	let { open = $bindable(false) } = $props();
+</script>
+
+<!-- App.svelte -->
+<script>
+	import Modal from './Modal.svelte';
+	let tampil = $state(false);
+</script>
+<Modal bind:open={tampil} />
+```
+
+**(3) `lifecycle_outside_component`** — `getContext` dipanggil di dalam event handler, bukan saat inisialisasi. Panggil di top-level, simpan ke variabel:
+
+```svelte
+<script>
+	import { getContext } from 'svelte';
+	// dibaca sekali saat init; nilainya disimpan untuk dipakai handler nanti
+	const user = getContext('user');
+
+	function buka() {
+		console.log('user:', user);
+	}
+</script>
+<button onclick={buka}>Buka</button>
+```
+
+Catatan: kalau `getContext('user')` mengembalikan `undefined` walau sudah dipanggil di top-level, berarti tak ada parent yang memanggil `setContext('user', ...)` — itu error `missing_context` yang berbeda penyebabnya.
+
+{/snippet}</Exercise>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/runtime-errors" label="Svelte runtime errors — daftar resmi & terbaru" />
+<DocsLink href="https://svelte.dev/docs/svelte/runtime-warnings" label="Runtime warnings — peringatan (tidak menghentikan) saat aplikasi berjalan" />

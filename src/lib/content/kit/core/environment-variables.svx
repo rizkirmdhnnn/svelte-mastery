@@ -1,0 +1,362 @@
+---
+title: Environment variables
+product: kit
+section: core
+sectionTitle: Core concepts
+sectionOrder: 2
+order: 7
+status: stable
+description: Memahami modul env SvelteKit (static vs dynamic, public vs private), prefix PUBLIC_, dan sistem explicit environment variables baru (2.62+) supaya secret tak bocor ke browser.
+docs: https://svelte.dev/docs/kit/environment-variables
+keywords: [environment variables, static, dynamic, public, private, PUBLIC_]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Setiap aplikasi butuh **nilai yang berbeda di tiap lingkungan**: URL database di production beda dengan di lokal, API key Stripe live beda dengan key test. Nilai-nilai ini **tidak boleh** ditulis hardcode — sebagian karena praktis (ganti environment tanpa ubah kode), sebagian karena rahasia (API key bocor = bencana). Solusi standarnya adalah **environment variables**: nilai yang disuntikkan dari luar (file `.env`, dashboard hosting, atau shell) lalu dibaca aplikasi.
+
+Kamu sudah kenal pola ini. Di Vite biasa: `import.meta.env.VITE_FOO`. Di Next.js: `process.env.FOO` di server, dan `process.env.NEXT_PUBLIC_FOO` untuk yang boleh ikut ke browser. SvelteKit mengambil ide yang sama tapi membuatnya **eksplisit dan aman secara default**. Yang harus kamu pahami adalah persilangan **dua sumbu**:
+
+- **Sumbu visibilitas — public vs private.** *Private* hanya boleh dibaca di **server** (database password, secret key). *Public* boleh ikut ter-bundle ke **browser** (publishable key, URL API publik). SvelteKit memaksa pemisahan ini lewat **prefix nama**: variabel yang namanya diawali `PUBLIC_` dianggap aman untuk klien; sisanya dianggap private dan **dilarang** masuk bundle browser.
+- **Sumbu waktu baca — static vs dynamic.** *Static* dibaca **saat build** lalu nilainya "dibakar" (inlined) ke dalam kode — cepat, bisa di-tree-shake, tapi nilainya beku per build. *Dynamic* dibaca **saat runtime** dari environment proses yang sedang jalan — fleksibel (ganti nilai tanpa rebuild) tapi sedikit lebih mahal dan punya batasan tertentu.
+
+Empat modul "klasik" (implicit) SvelteKit adalah hasil perkalian dua sumbu itu:
+
+| Modul | Visibilitas | Waktu baca | Gaya impor |
+| --- | --- | --- | --- |
+| `$env/static/private` | Server saja | Build-time (inlined) | named: `import { X } from ...` |
+| `$env/static/public` | Server + Browser | Build-time (inlined) | named: `import { X } from ...` |
+| `$env/dynamic/private` | Server saja | Runtime | objek: `env.X` |
+| `$env/dynamic/public` | Server + Browser | Runtime | objek: `env.X` |
+
+### Analogi: gudang dengan dua jenis kunci
+
+Bayangkan environment variables sebagai barang di sebuah **gudang perusahaan**. Ada dua pertanyaan untuk tiap barang.
+
+Pertama, **siapa boleh memegangnya?** Sebagian barang adalah dokumen rahasia (private) — hanya boleh berada di kantor pusat yang terkunci (server). Sebagian lagi adalah brosur (public) — boleh dibagikan ke siapa pun yang datang, termasuk dibawa pulang tamu (browser). SvelteKit menempelkan stiker `PUBLIC_` pada brosur; barang tanpa stiker itu otomatis dianggap dokumen rahasia, dan ada **satpam di pintu** yang akan menjegal kalau ada yang nekat membawa dokumen rahasia keluar (build gagal/error).
+
+Kedua, **kapan barangnya diambil?** Mode *static* itu seperti **mencetak brosur sekali saat pabrik produksi**: isinya dibakar permanen ke kertas. Cepat dibagikan, tapi kalau mau ganti isi harus cetak ulang (rebuild). Mode *dynamic* itu seperti **papan tulis di lobi** yang diisi tiap pagi saat kantor buka (runtime): kamu bisa menghapus dan menulis ulang kapan saja tanpa mencetak apa-apa, tapi pembaca harus benar-benar datang ke lobi untuk membacanya.
+
+Kombinasi keduanya menjelaskan kenapa, misalnya, `$env/static/private` ideal untuk secret yang jarang berubah dan ingin di-tree-shake habis, sementara `$env/dynamic/private` cocok saat satu artefak build yang sama dijalankan di banyak environment (staging, prod) dengan nilai berbeda — pola umum di container/Docker.
+
+### Mengapa ada "static" yang inlined?
+
+Karena static dibaca saat build dan nilainya dibakar ke kode, compiler bisa melakukan **tree-shaking** dan **dead-code elimination**. Contoh: kalau `PUBLIC_FEATURE_X` bernilai `"off"` saat build, blok kode di balik `if (env.PUBLIC_FEATURE_X === 'on')` bisa dihapus total dari bundle. Ini tidak mungkin dengan dynamic, karena nilainya baru diketahui saat aplikasi sudah jalan. Trade-off-nya: nilai static **beku per build**; mengubahnya butuh build ulang.
+
+### Bagaimana SvelteKit tahu mana yang private?
+
+Lewat **prefix**, dan ini bisa dikonfigurasi di `config.kit.env`:
+
+- `publicPrefix` — default `'PUBLIC_'`. Hanya variabel yang diawali prefix ini yang dianggap public dan boleh diimpor dari modul `public`.
+- `privatePrefix` — default `''` (string kosong). Karena kosong, **semua** variabel yang *tidak* diawali `PUBLIC_` otomatis dianggap private.
+
+Jadi aturan default-nya gampang diingat: **`PUBLIC_` = boleh ke browser; sisanya = server-only**. Pemisahan ini ditegakkan oleh bundler, bukan sekadar konvensi — kalau kamu mengimpor modul private ke kode yang bisa berakhir di klien, build-nya **gagal**.
+
+### Sistem baru: explicit environment variables (2.62+)
+
+Mulai SvelteKit **2.62**, ada cara baru yang akan **jadi default di SvelteKit 3**: kamu mendeklarasikan semua env var di satu tempat (`src/env.ts`), lengkap dengan apakah dia public, static, dan bagaimana cara validasinya. Filosofinya: ganti "konvensi nama" (prefix `PUBLIC_`) dengan **deklarasi eksplisit** — lebih jelas, type-safe, dan bisa divalidasi saat boot.
+
+Aktifkan dulu flag eksperimennya di `svelte.config.js`:
+
+```js
+// svelte.config.js
+export default {
+	kit: {
+		experimental: {
+			explicitEnvironmentVariables: true
+		}
+	}
+};
+```
+
+Lalu buat `src/env.ts` yang men-deklarasikan variabelmu lewat `defineEnvVars`:
+
+```ts
+// src/env.ts
+import { defineEnvVars } from '@sveltejs/kit/hooks';
+
+export const variables = defineEnvVars({
+	API_KEY: {},                          // private (default) — server-only
+	GOOGLE_ANALYTICS_ID: { public: true } // public — boleh ke browser
+});
+```
+
+Sekarang kamu mengimpor dari **dua modul saja** (bukan empat), dan tidak butuh prefix `PUBLIC_` lagi karena visibilitas ditentukan oleh konfigurasi `public: true`:
+
+```ts
+import { API_KEY } from '$app/env/private';            // gantikan $env/static|dynamic/private
+import { GOOGLE_ANALYTICS_ID } from '$app/env/public'; // gantikan $env/static|dynamic/public
+```
+
+Pemetaannya: `$app/env/private` menggantikan **kedua** modul private lama (static & dynamic), `$app/env/public` menggantikan kedua modul public lama, dan `$app/env` menggantikan `$app/environment`. Apakah sebuah var dibaca build-time atau runtime sekarang ditentukan oleh flag `static: true` di deklarasinya, bukan oleh modul mana yang kamu impor.
+
+<Callout type="tip">
+<code>defineEnvVars</code> itu sebenarnya cuma utilitas <strong>type-safety</strong> — ia mengembalikan argumennya apa adanya, tapi memberi tahu TypeScript bentuk setiap variabel sehingga impor dari <code>$app/env/*</code> jadi <em>typed</em> dan ber-autocomplete.
+</Callout>
+
+## 2. Contoh kode
+
+### A. Sistem klasik (implicit) — masih default & stabil
+
+Mulai dari yang paling sering dipakai: **static private** untuk secret server. Kamu mengimpor nama variabel **langsung** sebagai named import (bukan mengakses properti objek), karena nama-namanya diketahui saat build.
+
+```js
+// src/lib/server/db.js  (HANYA jalan di server)
+// Impor by-name. Nilai DATABASE_URL & API_SECRET dibaca dari .env saat BUILD,
+// lalu di-"bakar" (inlined) ke dalam bundle server.
+import { DATABASE_URL, API_SECRET } from '$env/static/private';
+
+export function connect() {
+	// Aman: file ini di src/lib/server, tidak akan pernah masuk bundle browser.
+	return createPool(DATABASE_URL, { secret: API_SECRET });
+}
+```
+
+Untuk nilai yang **boleh dilihat browser**, pakai modul *public* dan beri prefix `PUBLIC_` pada nama variabelnya di `.env`. Tanpa prefix itu, SvelteKit menolak mengeksposnya.
+
+```svelte
+<!-- src/routes/+page.svelte  (jalan saat SSR, lalu di browser) -->
+<script>
+	// static/public: di-inline saat build, boleh dipakai di komponen klien.
+	// WAJIB: nama variabelnya diawali PUBLIC_ di file .env.
+	import { PUBLIC_STRIPE_KEY } from '$env/static/public';
+</script>
+
+<!-- Aman ditampilkan/dipakai di klien karena memang "publishable". -->
+<p>Stripe publishable key: {PUBLIC_STRIPE_KEY}</p>
+```
+
+```bash
+# .env  (di root project; jangan di-commit kalau berisi secret!)
+DATABASE_URL="postgres://localhost:5432/app"   # private (tanpa prefix)
+API_SECRET="sk_live_xxx"                        # private
+PUBLIC_STRIPE_KEY="pk_live_xxx"                 # public (prefix PUBLIC_)
+PUBLIC_API_BASE="https://api.example.com"       # public
+```
+
+Versi **dynamic**: kamu mengimpor satu objek bernama `env`, lalu mengakses propertinya saat runtime. Cocok ketika nilai baru tersedia saat proses jalan (mis. env yang di-set oleh platform hosting), bukan saat build.
+
+```js
+// src/hooks.server.js atau +page.server.js  (server saja)
+// dynamic/private: dibaca dari process environment SAAT RUNTIME.
+import { env } from '$env/dynamic/private';
+
+export async function load({ fetch }) {
+	// env.X dievaluasi tiap kali kode jalan, bukan dibekukan saat build.
+	// Berguna: satu artefak build dijalankan di banyak environment.
+	const region = env.AWS_REGION ?? 'ap-southeast-1';
+	const res = await fetch('https://' + region + '.queue.example.com/jobs', {
+		headers: { authorization: 'Bearer ' + env.QUEUE_TOKEN }
+	});
+	return { jobs: await res.json() };
+}
+```
+
+### B. Sistem explicit (2.62+) — masa depan
+
+Dengan sistem baru, semua deklarasi terpusat di `src/env.ts`. Perhatikan flag `static` dan `validate` (memakai Standard Schema seperti Zod/Valibot) — validasi gagal = aplikasi **gagal start/build**, jadi bug konfigurasi ketahuan lebih awal, bukan diam-diam jadi `undefined`.
+
+```ts
+// src/env.ts
+import { defineEnvVars } from '@sveltejs/kit/hooks';
+import * as v from 'valibot';
+
+export const variables = defineEnvVars({
+	// Private (default). Deskripsi muncul sebagai tooltip di IDE.
+	API_KEY: {
+		description: 'Secret untuk memanggil API internal'
+	},
+	CACHE_TTL_SECONDS: {
+		description: 'Berapa lama cache response, dalam detik'
+	},
+	// Public + static: di-inline saat build -> dead-code elimination jalan.
+	SHOW_DEBUG_OVERLAY: {
+		public: true,
+		static: true,
+		// '' -> false, selain itu -> true
+		validate: v.pipe(
+			v.optional(v.string(), ''),
+			v.transform((str) => str !== '')
+		)
+	},
+	// Public + validasi format.
+	GOOGLE_ANALYTICS_ID: {
+		public: true,
+		validate: v.pipe(v.string(), v.regex(/G-[A-Z0-9]+/))
+	}
+});
+```
+
+```ts
+// src/lib/server/client.ts  (server saja)
+// Private: tidak bisa diimpor ke kode browser (dijaga bundler).
+import { API_KEY, CACHE_TTL_SECONDS } from '$app/env/private';
+
+export const headers = { authorization: 'Bearer ' + API_KEY };
+export const ttl = Number(CACHE_TTL_SECONDS);
+```
+
+```svelte
+<!-- src/routes/+layout.svelte  (klien) -->
+<script>
+	// Public: aman ke browser. SHOW_DEBUG_OVERLAY 'static' -> blok di
+	// bawah ikut ter-tree-shake habis kalau nilainya false saat build.
+	import { GOOGLE_ANALYTICS_ID, SHOW_DEBUG_OVERLAY } from '$app/env/public';
+</script>
+
+{#if SHOW_DEBUG_OVERLAY}
+	<div class="debug">analytics: {GOOGLE_ANALYTICS_ID}</div>
+{/if}
+```
+
+<Callout type="tip">
+Di sistem explicit, variabel <code>public</code> juga bisa dipakai langsung di <code>app.html</code> lewat placeholder <code>%sveltekit.env.GOOGLE_ANALYTICS_ID%</code> — berguna untuk menyisipkan ID analytics ke tag <code>&lt;script&gt;</code> tanpa impor di komponen.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul env SvelteKit butuh server/build, jadi **tidak bisa** dijalankan di live playground (yang hanya mengeksekusi satu komponen Svelte murni di browser). Yang lebih berguna untuk dilatih adalah **pohon keputusan** memilih modul. Telusuri contoh beranotasi berikut dari atas ke bawah.
+
+```js
+// ====== POHON KEPUTUSAN: modul env mana yang dipakai? (sistem klasik) ======
+
+// Pertanyaan 1: Apakah nilai ini boleh dilihat browser?
+//   -> TIDAK (secret)      => modul *private*  (server-only, dijaga bundler)
+//   -> YA   (publishable)  => modul *public*   (WAJIB prefix PUBLIC_)
+
+// Pertanyaan 2: Apakah nilainya perlu berubah tanpa rebuild?
+//   -> TIDAK (beku per build) => *static*   (named import, bisa tree-shake)
+//   -> YA   (ganti saat run)  => *dynamic*  (objek env, dibaca runtime)
+
+// Contoh hasilnya:
+import { STRIPE_SECRET_KEY } from '$env/static/private';  // secret, jarang berubah
+import { PUBLIC_STRIPE_KEY } from '$env/static/public';   // publishable, tetap
+import { env as priv } from '$env/dynamic/private';       // secret, di-set runtime
+import { env as pub } from '$env/dynamic/public';         // public, di-set runtime
+
+const runtimeSecret = priv.RATE_LIMIT_TOKEN; // dibaca saat kode jalan
+const runtimeBase = pub.PUBLIC_API_BASE;     // tidak tersedia saat prerender!
+```
+
+```ts
+// ====== Versi explicit (2.62+): keputusan jadi DATA, bukan pemilihan modul ======
+// "public vs private" -> field `public`
+// "static vs dynamic" -> field `static`
+import { defineEnvVars } from '@sveltejs/kit/hooks';
+
+export const variables = defineEnvVars({
+	STRIPE_SECRET_KEY: {},                          // private + dynamic (default)
+	PUBLIC_STRIPE_KEY: { public: true, static: true }, // public + di-inline
+	RATE_LIMIT_TOKEN: {},                           // private + dynamic
+	PUBLIC_API_BASE: { public: true }               // public + dynamic
+});
+// Impor: dua modul saja -> $app/env/private & $app/env/public.
+```
+
+## 4. Latihan
+
+<Exercise title="Pilih modul env yang tepat & susun konfigurasinya">
+Kamu sedang menyiapkan halaman checkout. Ada empat nilai yang dibutuhkan:
+
+1. `STRIPE_SECRET_KEY` — secret untuk memanggil Stripe dari server. Jarang berubah, ingin di-tree-shake. **Tidak boleh** sampai ke browser.
+2. `PUBLIC_STRIPE_KEY` — publishable key yang dipakai komponen klien untuk membuat form pembayaran. Tetap antar build.
+3. `RATE_LIMIT_TOKEN` — secret yang nilainya di-set platform hosting saat runtime (satu artefak build dipakai di staging & prod). Server saja.
+4. `PUBLIC_API_BASE` — base URL API publik yang bisa berubah per-environment saat runtime, dibaca di komponen klien (halaman ini **tidak** di-prerender).
+
+Tugas: (a) tulis baris `.env`-nya, lalu (b) tulis `import` yang benar untuk **sistem klasik**, dan (c) tulis ulang sebagai deklarasi `src/env.ts` untuk **sistem explicit**.
+
+{#snippet solution()}
+
+  ```bash
+  # (a) .env
+  # (1) private + jarang berubah -> static/private. Tanpa prefix PUBLIC_.
+  STRIPE_SECRET_KEY="sk_live_xxx"
+  # (2) public + tetap antar build -> static/public. WAJIB prefix PUBLIC_.
+  PUBLIC_STRIPE_KEY="pk_live_xxx"
+  # (3) private + di-set runtime oleh platform -> dynamic/private.
+  RATE_LIMIT_TOKEN="rl_xxx"
+  # (4) public + runtime + bukan prerender -> dynamic/public. Prefix PUBLIC_.
+  PUBLIC_API_BASE="https://api.example.com"
+  ```
+
+  ```js
+  // (b) sistem klasik
+  // src/lib/server/payments.js  (server saja)
+  import { STRIPE_SECRET_KEY } from '$env/static/private'; // (1) named, inlined
+  import { env } from '$env/dynamic/private';              // (3) objek, runtime
+  const rateToken = env.RATE_LIMIT_TOKEN;
+  ```
+
+  ```svelte
+  <!-- src/routes/checkout/+page.svelte  (klien) -->
+  <script>
+    import { PUBLIC_STRIPE_KEY } from '$env/static/public'; // (2) named, ke browser
+    import { env } from '$env/dynamic/public';              // (4) objek, runtime
+    const apiBase = env.PUBLIC_API_BASE;
+  </script>
+  ```
+
+  ```ts
+  // (c) sistem explicit (2.62+) — src/env.ts
+  import { defineEnvVars } from '@sveltejs/kit/hooks';
+
+  export const variables = defineEnvVars({
+    STRIPE_SECRET_KEY: {},                              // private + dynamic
+    PUBLIC_STRIPE_KEY: { public: true, static: true },  // public + inlined
+    RATE_LIMIT_TOKEN: {},                               // private + dynamic
+    PUBLIC_API_BASE: { public: true }                   // public + dynamic
+  });
+  // Impor dari $app/env/private (1,3) dan $app/env/public (2,4).
+  ```
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan pernah mengimpor <code>$env/static/private</code> atau <code>$env/dynamic/private</code> (atau <code>$app/env/private</code>) ke kode yang bisa berakhir di browser</strong> — mis. <code>+page.svelte</code>, <code>+page.js</code> universal, atau modul yang diimpor keduanya. SvelteKit akan menggagalkan build dengan error eksplisit; itu fitur, bukan gangguan. Taruh akses secret di file <code>*.server.js</code> / <code>+page.server.js</code> / <code>src/lib/server/**</code> supaya pemisahannya terjamin.
+</Callout>
+
+<Callout type="pitfall">
+Lupa prefix <code>PUBLIC_</code> adalah jebakan paling umum di sistem klasik. Variabel yang ingin dipakai di klien <strong>harus</strong> diawali <code>PUBLIC_</code> di <code>.env</code>. Tanpa prefix itu ia diperlakukan private dan impornya ditolak. (Prefix bisa diubah lewat <code>config.kit.env.publicPrefix</code>, default <code>PUBLIC_</code>.) Di sistem explicit masalah ini hilang — visibilitas ditentukan field <code>public: true</code>, bukan nama.
+</Callout>
+
+<Callout type="warning">
+<code>$env/dynamic/public</code> (dan var public non-static di sistem explicit) <strong>tidak tersedia saat prerendering</strong>: nilainya dikirim ke klien lewat request runtime, sedangkan halaman prerender tidak punya request. Kalau butuh nilai public di halaman prerender, pakai <code>$env/static/public</code> (di-inline saat build) atau set <code>static: true</code>.
+</Callout>
+
+<Callout type="warning">
+Mode <strong>dynamic tidak bisa di-tree-shake</strong> (compiler tak tahu nilainya saat build) dan sedikit lebih lambat. Jadikan <strong>static</strong> sebagai default; pakai <strong>dynamic</strong> hanya saat kamu benar-benar butuh mengganti nilai tanpa rebuild (mis. satu image Docker untuk banyak environment).
+</Callout>
+
+<Callout type="tip">
+Apa pun yang kamu tandai <code>PUBLIC_</code> / <code>public: true</code> <strong>akan benar-benar terlihat</strong> di bundle/HTML klien. Jangan asal menandai public hanya supaya "impornya tidak error" — pastikan nilainya memang aman dipublikasikan (publishable key, URL publik), bukan secret.
+</Callout>
+
+<Callout type="legacy">
+Pendekatan lama yang sebaiknya ditinggalkan di SvelteKit: mengakses <code>process.env.FOO</code> langsung (tidak portabel ke semua adapter, tanpa perlindungan public/private) atau memakai <code>import.meta.env.VITE_FOO</code> ala Vite mentah. Gunakan modul <code>$env/*</code> (atau <code>$app/env/*</code> di sistem baru) yang sadar konteks server/klien. <code>import.meta.env</code> tetap ada untuk keperluan build Vite, tapi untuk konfigurasi aplikasi pakailah modul env SvelteKit.
+</Callout>
+
+<LegacyVsModern
+	legacyLabel="Cara lama / lintas-framework"
+	modernLabel="SvelteKit ($env/* & $app/env/*)"
+	rows={[
+		{ legacy: "process.env.DATABASE_URL", modern: "import { DATABASE_URL } from '$env/static/private'", note: 'private, di-inline saat build, server-only terjamin' },
+		{ legacy: "import.meta.env.VITE_API_BASE", modern: "import { PUBLIC_API_BASE } from '$env/static/public'", note: 'public; prefix PUBLIC_ menggantikan VITE_' },
+		{ legacy: "process.env.RUNTIME_TOKEN (runtime)", modern: "import { env } from '$env/dynamic/private'", note: 'objek env, dibaca runtime tanpa rebuild' },
+		{ legacy: "4 modul + prefix PUBLIC_", modern: "src/env.ts + defineEnvVars (2.62+)", note: 'deklarasi eksplisit, typed, bisa divalidasi; default di SvelteKit 3' }
+	]}
+/>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/environment-variables" label="SvelteKit — Environment variables" />
+<DocsLink href="https://svelte.dev/docs/kit/$env-static-private" label="SvelteKit — $env/static/private" />
+<DocsLink href="https://svelte.dev/docs/kit/$env-dynamic-private" label="SvelteKit — $env/dynamic/private" />

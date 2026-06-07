@@ -1,0 +1,285 @@
+---
+title: Web standards
+product: kit
+section: getting-started
+sectionTitle: Getting started
+sectionOrder: 1
+order: 5
+status: stable
+description: SvelteKit dibangun di atas API web standar (Request, Response, Headers, URL, FormData, fetch, Streams) sehingga kode-mu portable lintas runtime dan minim API framework-spesifik.
+docs: https://svelte.dev/docs/kit/web-standards
+keywords: [web-standards, Request, Response, fetch, FormData, URL]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Salah satu keputusan desain paling penting di SvelteKit adalah ini: **sebisa mungkin, jangan ciptakan API baru kalau platform web sudah punya**. Jadi alih-alih bikin objek `req`/`res` ala Express atau `NextRequest`/`NextResponse` ala Next.js, SvelteKit memakai objek yang memang sudah jadi standar web: `Request`, `Response`, `Headers`, `URL`, `URLSearchParams`, `FormData`, fungsi `fetch`, dan Stream APIs (`ReadableStream` dkk). Objek-objek ini didefinisikan oleh WHATWG/Fetch Standard — spesifikasi yang sama yang dipakai browser.
+
+Di intinya, **satu tugas SvelteKit di server adalah: menerima sebuah `Request` dan mengembalikan sebuah `Response`.** Itu saja. Semua fitur lain (routing, load, form actions, hooks) adalah lapisan ergonomis di atas kontrak sederhana itu.
+
+### Analogi: colokan listrik standar vs adaptor proprietary
+
+Bayangkan kamu pindah-pindah negara membawa laptop. Kalau setiap merek laptop punya bentuk colokan sendiri-sendiri, kamu harus beli adaptor baru tiap ganti merek, dan keahlian "cara mencolok" jadi tidak berguna saat pindah merek. Itu gambaran framework yang menciptakan objek request/response-nya sendiri: ilmu yang kamu pelajari mengikat ke framework itu.
+
+Web standards itu seperti **colokan listrik standar regional**. Begitu kamu hafal bentuknya, semua perangkat yang patuh standar bisa kamu colok di mana saja — di SvelteKit, di Cloudflare Workers, di Deno, di service worker, bahkan di kode browser biasa. Ilmu `Request`/`Response` yang kamu kuasai di SvelteKit langsung kepakai di mana-mana, karena yang kamu pelajari adalah **platform**-nya, bukan framework-nya.
+
+### Kenapa ini bikin portable
+
+Karena kontraknya web-standar, **adapter** (Node, Cloudflare, Vercel, Netlify, Deno) tinggal "menerjemahkan" request runtime spesifik menjadi `Request` standar, lalu mengubah `Response` standar menjadi output yang runtime itu mengerti. Logika app-mu tidak pernah tahu sedang berjalan di mana — Node `IncomingMessage` dan Cloudflare `Request` sama-sama dibungkus jadi `Request` yang identik di mata kode-mu. Inilah alasan satu codebase SvelteKit bisa di-deploy ke banyak platform nyaris tanpa ubah kode.
+
+### Pemetaan mental dari React/Vue
+
+- `event.request` ≈ `req` di Express atau `request` di route handler Next.js App Router — tapi ini `Request` standar, bukan tipe khusus framework.
+- Mengembalikan `Response`/`json()` ≈ `res.json(...)` Express atau `NextResponse.json(...)` — tapi `Response` di sini adalah kelas global web standar yang sama dengan yang kamu pegang di browser saat `await fetch(...)`.
+- `event.url` adalah objek `URL` asli, jadi `event.url.searchParams.get('q')` itu API yang sama persis dengan `new URL(location.href).searchParams` di browser.
+- `FormData` adalah objek yang sama yang dipakai `<form>` di browser. Di React/Vue kamu mungkin terbiasa `new FormData(formEl)` di klien — di SvelteKit objek itu juga muncul di server lewat `await request.formData()`.
+
+### Lima objek yang wajib akrab
+
+1. **`Request`** — representasi permintaan masuk. Punya `request.method`, `request.headers`, `request.url`, dan body yang dibaca lewat `request.json()`, `request.text()`, `request.formData()`, `request.arrayBuffer()`, atau `request.body` (sebuah `ReadableStream`).
+2. **`Response`** — representasi balasan. Dibuat dengan `new Response(body, { status, headers })`, atau helper `json(...)` dari `@sveltejs/kit` untuk JSON. Body-nya boleh string, `Blob`, `ArrayBuffer`, **atau `ReadableStream`** (inilah pintu streaming).
+3. **`Headers`** — map khusus header yang case-insensitive: `headers.get('content-type')` sama dengan `headers.get('Content-Type')`. Punya `set`, `append`, `has`, `getSetCookie()`.
+4. **`URL`** — URL terurai: `url.pathname`, `url.searchParams`, `url.origin`, `url.hash`. Jauh lebih aman daripada memotong-motong string URL manual.
+5. **Stream APIs** (`ReadableStream`, `WritableStream`, `TransformStream`) — untuk body yang terlalu besar untuk muat di memori, atau yang ingin dikirim **bertahap** (mis. progress, log live, AI token streaming).
+
+<Callout type="warning">
+Body sebuah <code>Request</code> (dan <code>Response</code>) itu seperti pita kaset sekali putar: hanya bisa dibaca <strong>satu kali</strong>. Kalau kamu sudah memanggil <code>await request.json()</code>, memanggil <code>await request.text()</code> setelahnya akan error. Pilih satu cara baca sesuai bentuk data — atau panggil <code>request.clone()</code> sebelum baca pertama kalau benar-benar butuh dua kali.
+</Callout>
+
+## 2. Contoh kode
+
+Pertama, sebuah API endpoint (`+server.ts`) yang membaca `Request` standar dan mengembalikan `Response` standar.
+
+```ts
+// src/routes/api/echo/+server.ts
+import { json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+
+// event yang masuk membungkus Request web-standar
+export const POST: RequestHandler = async ({ request }) => {
+	// Headers bersifat case-insensitive — 'content-type' == 'Content-Type'
+	const contentType = request.headers.get('content-type') ?? '';
+
+	// Body cuma bisa dibaca SEKALI; pilih parser sesuai tipe konten
+	let payload: unknown;
+	if (contentType.includes('application/json')) {
+		payload = await request.json(); // -> objek hasil JSON.parse
+	} else {
+		payload = await request.text(); // -> string mentah
+	}
+
+	// json() helper @sveltejs/kit -> Response dengan
+	// header Content-Type: application/json otomatis terpasang.
+	return json({ youSent: payload, method: request.method }, { status: 200 });
+};
+```
+
+Kedua, membaca `URL`/`searchParams` di `GET`, lalu membuat `Response` **mentah** (tanpa helper) supaya terlihat bahwa `Response` itu kelas global biasa yang menerima `status` dan `Headers`.
+
+```ts
+// src/routes/api/search/+server.ts
+import type { RequestHandler } from './$types';
+
+export const GET: RequestHandler = async ({ url }) => {
+	// url adalah objek URL web-standar — sama seperti new URL(...) di browser
+	const q = url.searchParams.get('q') ?? '';
+	const page = Number(url.searchParams.get('page') ?? '1');
+
+	const body = JSON.stringify({ q, page, path: url.pathname });
+
+	// Response = kelas global; status & header di-set manual
+	return new Response(body, {
+		status: 200,
+		headers: {
+			'content-type': 'application/json',
+			'cache-control': 'max-age=60'
+		}
+	});
+};
+```
+
+Ketiga, `FormData` di sisi server. Sebuah form action membaca data form lewat `await request.formData()` — objek yang sama persis dengan FormData browser — lalu memakai `event.fetch` untuk memanggil endpoint internal.
+
+```ts
+// src/routes/contact/+page.server.ts
+import { fail } from '@sveltejs/kit';
+import type { Actions } from './$types';
+
+export const actions: Actions = {
+	default: async ({ request, fetch }) => {
+		// request.formData() menghasilkan FormData web-standar
+		const data = await request.formData();
+		const email = data.get('email'); // bisa string | File | null
+		const message = data.get('message');
+
+		if (typeof email !== 'string' || !email.includes('@')) {
+			// fail() me-RETURN objek (bukan throw) — cukup di-return
+			return fail(400, { email, error: 'Email tidak valid' });
+		}
+
+		// event.fetch (bukan global fetch): meneruskan cookie, menerima
+		// path relatif ke route app-mu, dan tercatat oleh SSR.
+		await fetch('/api/notify', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ email, message })
+		});
+
+		return { success: true };
+	}
+};
+```
+
+Keempat, **streaming**. Karena body `Response` boleh berupa `ReadableStream`, kamu bisa mengirim data bertahap tanpa menahan semuanya di memori. Contoh ini mengalirkan beberapa potong teks dengan jeda — pola yang sama dipakai untuk progress, log live, atau token AI.
+
+```ts
+// src/routes/api/stream/+server.ts
+import type { RequestHandler } from './$types';
+
+export const GET: RequestHandler = async () => {
+	const encoder = new TextEncoder();
+	const chunks = ['memuat...\n', 'separuh...\n', 'selesai!\n'];
+
+	// ReadableStream: kita "push" potongan satu per satu lewat controller
+	const stream = new ReadableStream({
+		async start(controller) {
+			for (const chunk of chunks) {
+				controller.enqueue(encoder.encode(chunk)); // kirim 1 potong
+				await new Promise((r) => setTimeout(r, 500)); // jeda 0.5s
+			}
+			controller.close(); // wajib: menutup stream menandai akhir body
+		}
+	});
+
+	// Response menerima ReadableStream sebagai body apa adanya.
+	return new Response(stream, {
+		headers: { 'content-type': 'text/plain; charset=utf-8' }
+	});
+};
+```
+
+<Callout type="tip">
+Perhatikan <code>{'{ request, fetch }'}</code> di parameter action. SvelteKit menyuntik <code>event.fetch</code> yang sudah dibungkus: ia meneruskan cookie & header untuk request same-origin, bisa memanggil endpoint internal dengan path relatif (<code>/api/...</code>), dan saat SSR hasilnya bisa di-inline ke HTML sehingga browser tidak mengulang request yang sama. Pakai <code>event.fetch</code>, bukan <code>fetch</code> global, di dalam <code>load</code>, <code>actions</code>, dan hooks.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini bersifat sisi-server (endpoint, form actions, streaming) sehingga tidak bisa dijalankan di live playground. Tapi inti web standards-nya **identik** di browser — `FormData`, `URLSearchParams`, dan `URL` adalah objek yang sama persis dengan yang dipakai SvelteKit di server. Baca contoh beranotasi berikut; ini "merakit" `FormData` menjadi query string lewat `URLSearchParams`, lalu membaca-baliknya lewat `URL` — alur yang sama yang terjadi di `+server` dan form actions.
+
+```js
+// Jalan di browser DAN di server SvelteKit — objeknya sama.
+
+// 1) FormData: persis yang kamu dapat dari `await request.formData()`
+const fd = new FormData();
+fd.append('q', 'svelte kit');
+fd.append('page', '2');
+fd.append('tag', 'web');
+fd.append('tag', 'standards'); // boleh banyak nilai dengan key sama
+
+// 2) URLSearchParams bisa dibangun LANGSUNG dari FormData (field string)
+const params = new URLSearchParams(fd);
+params.toString();
+// -> "q=svelte+kit&page=2&tag=web&tag=standards"  (encoding otomatis)
+
+// 3) URL: objek terurai — sama seperti `event.url` di server
+const url = new URL('https://example.com/api/search?' + params.toString());
+url.pathname;                  // "/api/search"
+url.searchParams.get('q');     // "svelte kit"  (sudah ter-decode)
+url.searchParams.get('page');  // "2"  (string — ingat: query selalu string)
+url.searchParams.getAll('tag'); // ["web", "standards"]  -> ambil SEMUA nilai
+```
+
+Tiga pelajaran penting dari potongan di atas: (a) `URLSearchParams` melakukan URL-encoding otomatis (spasi jadi `+`/`%20`), jadi kamu tak perlu encode manual; (b) nilai query **selalu string** — `page` perlu di-`Number(...)`; (c) `getAll` menyelamatkanmu saat satu key punya banyak nilai, kasus yang gampang hilang kalau kamu parse string manual.
+
+## 4. Latihan
+
+<Exercise title="Endpoint POST yang menerima JSON dan FormData">
+
+Buat sebuah API endpoint `src/routes/api/profile/+server.ts` dengan handler `POST` yang:
+
+1. Membaca header `content-type` dari `request` (ingat: case-insensitive).
+2. Kalau kontennya `application/json`, baca body dengan `request.json()`. Kalau bukan, anggap form dan baca dengan `request.formData()`, lalu ambil field `name`.
+3. Kalau `name` kosong/bukan string, hentikan dengan `error(400, ...)`.
+4. Kembalikan `Response` JSON berisi `{ name }` dengan status `201` lewat helper `json()`.
+
+Ingat batasan: body hanya boleh dibaca sekali, dan `json()`/`error()`/`fail()` di-*return* atau (untuk `error`) dipanggil **tanpa** `throw`.
+
+{#snippet solution()}
+
+```ts
+// src/routes/api/profile/+server.ts
+import { json, error } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+
+export const POST: RequestHandler = async ({ request }) => {
+	const contentType = request.headers.get('content-type') ?? '';
+
+	let name: unknown;
+
+	if (contentType.includes('application/json')) {
+		const body = await request.json();
+		name = body?.name;
+	} else {
+		// menangani application/x-www-form-urlencoded & multipart/form-data
+		const data = await request.formData();
+		name = data.get('name');
+	}
+
+	if (typeof name !== 'string' || name.trim() === '') {
+		// error() melempar sendiri — panggil TANPA throw di depannya
+		error(400, 'Field "name" wajib diisi');
+	}
+
+	return json({ name }, { status: 201 });
+};
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Body sekali baca.</strong> <code>await request.json()</code> lalu <code>await request.text()</code> pada request yang sama melempar <code>TypeError: Body is already consumed</code>. Tentukan satu cara baca berdasarkan <code>content-type</code>. Kalau benar-benar butuh dua kali, panggil <code>request.clone()</code> <em>sebelum</em> baca pertama.
+</Callout>
+
+<Callout type="warning">
+<strong>Jangan parse URL manual.</strong> Hindari <code>str.split('?')</code> atau regex untuk mengambil query. Pakai <code>event.url.searchParams.get(...)</code>. Objek <code>URL</code> sudah meng-handle encoding, banyak parameter dengan nama sama (<code>getAll</code>), dan kasus edge yang gampang salah kalau dipotong manual.
+</Callout>
+
+<Callout type="tip">
+<strong>Pakai <code>event.fetch</code>, bukan <code>fetch</code> global.</strong> Di dalam <code>load</code>/<code>actions</code>/hooks, <code>event.fetch</code> meneruskan cookie same-origin, menerima path relatif (<code>/api/...</code>) tanpa origin, dan saat SSR hasilnya di-inline supaya browser tak mengulang request. <code>fetch</code> global tidak punya konteks request, jadi cookie & sesi bisa hilang dan path relatif akan gagal.
+</Callout>
+
+<Callout type="warning">
+<strong>Streaming butuh dukungan platform.</strong> Mengirim <code>ReadableStream</code> sebagai body memang web-standar, tapi sebagian platform/proxy/CDN melakukan buffering sehingga respons tetap terkirim sekaligus, bukan bertahap. Selalu panggil <code>controller.close()</code> agar stream berakhir, dan uji di platform deploy target-mu, bukan cuma di <code>dev</code>.
+</Callout>
+
+<Callout type="tip">
+<strong>Web Crypto sudah tersedia.</strong> Global <code>crypto</code> (Web Crypto API) ada di server SvelteKit. Untuk ID acak cukup <code>crypto.randomUUID()</code> — tak perlu library tambahan, dan portable lintas runtime.
+</Callout>
+
+### SvelteKit 1 vs SvelteKit 2: error & redirect
+
+Salah satu perubahan yang paling sering bikin kaget saat upgrade: cara memanggil `error()` dan `redirect()`.
+
+<LegacyVsModern rows={[
+  { legacy: "throw error(404, 'Not found')", modern: "error(404, 'Not found')", note: 'SvelteKit 2: error() melempar sendiri' },
+  { legacy: "throw redirect(303, '/login')", modern: "redirect(303, '/login')", note: 'SvelteKit 2: redirect() melempar sendiri' },
+  { legacy: "throw fail(400, { ... })", modern: "return fail(400, { ... })", note: 'fail() me-return objek — selalu di-return' }
+]} />
+
+<Callout type="legacy">
+Di SvelteKit 1, <code>error()</code> dan <code>redirect()</code> dipakai dengan <code>throw</code>. Sejak SvelteKit 2 keduanya <strong>melempar sendiri</strong>, jadi cukup <code>error(404, 'Not found')</code> tanpa <code>throw</code>. Sementara <code>fail()</code> justru harus di-<em>return</em> (bukan throw) karena ia mengembalikan objek hasil, bukan melempar.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/web-standards" label="SvelteKit — Web Standards (docs resmi)" />

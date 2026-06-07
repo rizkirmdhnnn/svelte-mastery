@@ -1,0 +1,329 @@
+---
+title: Accessibility
+product: kit
+section: best-practices
+sectionTitle: Best practices
+sectionOrder: 5
+order: 5
+status: stable
+description: Bagaimana SvelteKit menjaga aksesibilitas otomatis (pengumuman rute, manajemen fokus, atribut lang) plus praktik a11y manual — HTML semantik, ARIA, peringatan compiler, dan testing.
+docs: https://svelte.dev/docs/kit/accessibility
+keywords: [accessibility, a11y, aria, focus, lang, screen reader]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Aksesibilitas (sering disingkat **a11y** — "a", 11 huruf, "y") berarti aplikasimu bisa dipakai semua orang, termasuk yang memakai screen reader, navigasi keyboard saja, atau pembesaran layar. Ini bukan fitur tambahan: ini default yang harus **dijaga**, karena gampang sekali rusak tanpa sadar.
+
+Yang menarik, ada satu kelas masalah a11y yang muncul **justru karena** SvelteKit (dan SPA mana pun) terasa cepat: *client-side routing*. Dan di sinilah SvelteKit diam-diam menambal banyak hal untukmu. Mari bedah.
+
+### Kenapa SPA "diam" buat screen reader
+
+Di situs lama (MPA — full page reload), setiap pindah halaman browser memuat dokumen baru. Efek sampingnya gratis dan penting: fokus keyboard **reset ke atas**, dan screen reader **membacakan judul halaman baru**. User yang menutup mata tahu, "Oke, aku sudah di halaman lain."
+
+SPA tidak begitu. Saat kamu klik link di SvelteKit, browser **tidak** reload — ia cuma menukar potongan DOM. Cepat dan mulus secara visual. Tapi bagi screen reader, **tidak ada yang terjadi**: fokus tetap nempel di link yang barusan diklik (yang mungkin sudah hilang dari halaman), dan tak ada apa pun yang dibacakan. Navigasi jadi "senyap".
+
+> **Analogi.** Navigasi MPA itu seperti pindah ruangan lewat pintu — jelas terasa berpindah. Navigasi SPA itu seperti dinding ruangan diganti diam-diam sementara kamu tetap berdiri di titik yang sama. Orang yang melihat langsung paham. Tapi orang yang menutup mata (pemakai screen reader) tidak sadar apa pun berubah. Tugas SvelteKit: memasang **pengeras suara pengumuman** dan **menggeser ulang posisi berdirimu ke pintu**.
+
+SvelteKit memasang dua tambalan ini otomatis.
+
+### Tambalan #1 — Live region (pengumuman rute)
+
+SvelteKit menyuntik sebuah elemen tersembunyi (kira-kira `<div id="svelte-announcer" aria-live="assertive" aria-atomic="true">`) yang ditaruh di luar layar. Setiap kali terjadi navigasi client-side, SvelteKit **membaca elemen `<title>` halaman baru** dan menuliskannya ke region itu. Screen reader otomatis membacakan apa pun yang berubah di dalam region `aria-live` — jadi user mendengar judul halaman baru.
+
+> **Analogi `aria-live`.** Bayangkan kanal "pengumuman bandara". Region `aria-live` adalah pengeras suara yang isinya, begitu berubah, langsung dibacakan ke semua orang **tanpa** mereka harus berjalan ke papan pengumuman. Nilai `assertive` artinya "interupsi sekarang"; `polite` artinya "tunggu user selesai dulu".
+
+Konsekuensinya jelas: **setiap halaman wajib punya `<title>` yang unik dan deskriptif**. Kalau semua halaman berjudul sama (atau kosong), pengumuman jadi tak berguna. Inilah kenapa di SvelteKit kamu menaruh `<title>` lewat `<svelte:head>` di tiap rute.
+
+### Tambalan #2 — Manajemen fokus
+
+Setelah setiap navigasi (dan setelah submit form yang di-enhance), SvelteKit **memindahkan fokus ke elemen `<body>`**. Ini meniru reset fokus yang dulu gratis dari full reload: tekanan **Tab** berikutnya mulai dari atas, dan kursor virtual screen reader ikut reset.
+
+Ada pengecualian cerdas: kalau halaman tujuan punya elemen dengan atribut `autofocus`, SvelteKit memprioritaskan **elemen itu** (mis. kolom pencarian di halaman search). Kalau kamu butuh logika fokus sendiri (mis. memindahkan fokus ke `<main>` atau ke heading `<h1>`), pakai hook `afterNavigate` dari `$app/navigation`. Dan fungsi `goto()` menerima opsi `keepFocus` untuk mempertahankan elemen yang sedang fokus — tapi hati-hati, ini bisa membingungkan kalau elemen itu hilang setelah navigasi.
+
+### Atribut `lang` — supaya suaranya benar
+
+Screen reader memilih pelafalan dan "logat" berdasarkan atribut `lang` di `<html>`. Kalau dokumen berbahasa Indonesia tapi `lang`-nya `"en"`, screen reader membacakan teks Indonesia dengan mesin suara Inggris — hasilnya seperti orang asing membaca menu warteg: kacau dan melelahkan. Setel `<html lang="id">` di `src/app.html`. Untuk situs multi-bahasa, pakai placeholder lalu ganti dinamis lewat `handle` hook (lihat contoh kode).
+
+### Peringatan a11y dari compiler — reviewer pertamamu
+
+Ini superpower khas Svelte. Compiler-nya **memperingatkan masalah a11y saat development/build**: `<img>` tanpa `alt`, `<div>` dengan `onclick` tapi tanpa padanan keyboard, `<label>` yang tak terhubung ke input, dan banyak lagi. Framework lain umumnya menyerahkan ini ke linter terpisah; Svelte memanggangnya ke compiler. Anggap setiap warning ini sebagai code review a11y gratis — perbaiki, **jangan** matikan beramai-ramai.
+
+### ARIA: aturan pertama adalah jangan pakai ARIA
+
+ARIA (atribut `role`, `aria-*`) itu kuat tapi tajam. Pedoman resmi WAI-ARIA punya "aturan pertama": **kalau ada elemen HTML native yang sudah punya semantik dan perilaku yang kamu mau, pakai itu** — jangan tiru pakai ARIA. `<button>` sudah bisa di-Tab, di-Enter/Space, dan diumumkan sebagai tombol; meniru itu dengan `<div role="button" tabindex="0">` plus handler keyboard manual cuma menambah bug. ARIA dipakai untuk **menambal celah** yang HTML native tak punya: `aria-expanded` (buka/tutup), `aria-current` (link aktif), `aria-pressed` (toggle), `aria-label` (nama untuk ikon tanpa teks), `aria-hidden` (sembunyikan dekorasi dari screen reader).
+
+### Testing: otomatis menangkap sebagian, manual menangkap sisanya
+
+Tes a11y otomatis (axe, Lighthouse, peringatan compiler) hanya menangkap sekitar sepertiga sampai separuh masalah — yang bisa dideteksi mesin (kontras warna, `alt` hilang, label putus). Sisanya butuh **manual**: coba pakai keyboard saja (Tab, Enter, Esc), nyalakan screen reader (VoiceOver di macOS, NVDA di Windows), zoom 200%. Keduanya saling melengkapi, bukan saling menggantikan.
+
+## 2. Contoh kode
+
+Tiga fondasi otomatis: judul unik (memberi makan route announcer), atribut `lang`, dan manajemen fokus kustom.
+
+```svelte
+<!-- src/routes/todos/+page.svelte -->
+<script>
+	let { data } = $props();
+</script>
+
+<!-- WAJIB unik & deskriptif: inilah yang dibacakan route announcer SvelteKit
+     ke region aria-live setiap kali user mendarat di halaman ini. -->
+<svelte:head>
+	<title>Daftar Tugas ({data.todos.length}) — Aplikasi Saya</title>
+</svelte:head>
+
+<h1>Daftar Tugas</h1>
+```
+
+```html
+<!-- src/app.html — bahasa dokumen untuk screen reader & SEO -->
+<!-- Situs satu bahasa: cukup hardcode. -->
+<html lang="id">
+	<head>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div>%sveltekit.body%</div>
+	</body>
+</html>
+```
+
+```js
+// src/hooks.server.js — situs MULTI-bahasa: ganti placeholder lang dinamis.
+// Di app.html tulis <html lang="%lang%"> lebih dulu.
+export async function handle({ event, resolve }) {
+	const lang = event.cookies.get('lang') ?? 'id';
+
+	return resolve(event, {
+		// transformPageChunk menulis ulang HTML respons sebelum dikirim:
+		// ganti placeholder %lang% dengan bahasa user.
+		transformPageChunk: ({ html }) => html.replace('%lang%', lang)
+	});
+}
+```
+
+Manajemen fokus kustom + skip link — pola standar di layout root:
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script>
+	import { afterNavigate } from '$app/navigation';
+
+	let { children } = $props();
+	let main = $state();
+
+	// SvelteKit defaultnya memindah fokus ke <body>. Sering kita ingin lebih
+	// presisi: pindahkan ke <main> agar Tab berikutnya mulai dari konten utama
+	// dan screen reader langsung berada di area konten setelah navigasi.
+	afterNavigate(() => {
+		main?.focus();
+	});
+</script>
+
+<!-- Skip link: tautan pertama yang (biasanya) tersembunyi sampai di-fokus,
+     membiarkan pemakai keyboard melompati nav panjang langsung ke konten. -->
+<a href="#main" class="skip-link">Lewati ke konten utama</a>
+
+<nav aria-label="Navigasi utama">
+	<a href="/">Beranda</a>
+	<a href="/todos">Tugas</a>
+</nav>
+
+<!-- tabindex="-1": membuat <main> bisa difokuskan lewat kode (main.focus())
+     TANPA memasukkannya ke urutan Tab normal. -->
+<main id="main" bind:this={main} tabindex="-1">
+	{@render children()}
+</main>
+
+<style>
+	.skip-link {
+		position: absolute;
+		left: -9999px;
+	}
+	/* Muncul begitu di-fokus dengan keyboard. */
+	.skip-link:focus {
+		left: 1rem;
+		top: 1rem;
+	}
+</style>
+```
+
+## 3. Coba sendiri
+
+Modul ini menyentuh hook server (`handle`/`transformPageChunk`) dan `afterNavigate`, jadi tak cocok untuk live playground. Sebagai gantinya, dua contoh statis beranotasi: **navigasi dengan link aktif** (`aria-current`) dan **tombol disclosure** (`aria-expanded`) — dua pola ARIA paling sering kamu butuhkan. Baca komentarnya; perhatikan keduanya berangkat dari HTML semantik dulu, ARIA cuma menambal.
+
+```svelte
+<!-- Pola 1: nav dengan penanda halaman aktif yang ACCESSIBLE -->
+<script>
+	// SvelteKit 2 / Svelte 5: pakai `page` dari $app/state (objek reaktif,
+	// tanpa prefix $), bukan store lama $page dari $app/stores.
+	import { page } from '$app/state';
+
+	let { items } = $props(); // [{ href, label }]
+</script>
+
+<!-- aria-label memberi nama landmark <nav> ini bila ada lebih dari satu nav. -->
+<nav aria-label="Utama">
+	<ul>
+		{#each items as item}
+			<li>
+				<a
+					href={item.href}
+					aria-current={page.url.pathname === item.href ? 'page' : undefined}
+				>
+					{item.label}
+				</a>
+			</li>
+		{/each}
+	</ul>
+</nav>
+
+<!-- aria-current="page" mengumumkan "halaman ini" ke screen reader DAN bisa
+     dipakai untuk styling: a[aria-current="page"] { font-weight: bold }.
+     Jangan andalkan WARNA saja sebagai penanda aktif (gagal untuk buta warna). -->
+```
+
+```svelte
+<!-- Pola 2: tombol disclosure (buka/tutup panel) -->
+<script>
+	let open = $state(false);
+</script>
+
+<!-- HTML semantik dulu: <button> sudah bisa di-Tab, di-Enter & di-Space,
+     dan diumumkan sebagai "tombol". Kita HANYA menambah ARIA yang kurang. -->
+<button
+	type="button"
+	onclick={() => (open = !open)}
+	aria-expanded={open}
+	aria-controls="panel-detail"
+>
+	Detail pengiriman
+</button>
+
+<!-- aria-expanded memberi tahu screen reader status buka/tutup.
+     aria-controls menautkan tombol ke panel yang dikontrolnya (id cocok). -->
+{#if open}
+	<div id="panel-detail">
+		<p>Dikirim besok pagi lewat kurir reguler.</p>
+	</div>
+{/if}
+```
+
+## 4. Latihan
+
+<Exercise title="Buat halaman & navigasi yang accessible">
+Kamu punya layout dan satu halaman SvelteKit yang masih bermasalah a11y. Perbaiki empat hal:
+
+1. **Judul unik** — halaman `/keranjang` belum punya `<title>`, jadi route announcer SvelteKit tak punya apa pun untuk dibacakan. Tambahkan via `<svelte:head>`.
+2. **Bahasa** — `src/app.html` masih `<html lang="en">` padahal kontennya Indonesia. Perbaiki.
+3. **Fokus** — di layout root, pindahkan fokus ke `<main>` setiap selesai navigasi memakai `afterNavigate`, dan beri `<main>` agar bisa difokuskan kode.
+4. **Tombol palsu** — ada `<div onclick={...}>Hapus</div>` (memicu peringatan a11y compiler). Ganti jadi elemen semantik yang bisa keyboard & screen reader.
+
+{#snippet solution()}
+
+  ```svelte
+  <!-- 1) src/routes/keranjang/+page.svelte -->
+  <script>
+    let { data } = $props();
+  </script>
+
+  <svelte:head>
+    <title>Keranjang ({data.items.length} item) — Toko Saya</title>
+  </svelte:head>
+
+  <h1>Keranjang belanja</h1>
+
+  <!-- 4) Tombol semantik, BUKAN <div onclick>. Bisa di-Tab, di-Enter/Space,
+       diumumkan sebagai tombol. aria-label memberi konteks (item mana). -->
+  {#each data.items as item}
+    <article>
+      <span>{item.nama}</span>
+      <button
+        type="button"
+        onclick={() => hapus(item.id)}
+        aria-label={'Hapus ' + item.nama + ' dari keranjang'}
+      >
+        Hapus
+      </button>
+    </article>
+  {/each}
+  ```
+
+  ```html
+  <!-- 2) src/app.html -->
+  <html lang="id">
+    <head>%sveltekit.head%</head>
+    <body><div>%sveltekit.body%</div></body>
+  </html>
+  ```
+
+  ```svelte
+  <!-- 3) src/routes/+layout.svelte -->
+  <script>
+    import { afterNavigate } from '$app/navigation';
+
+    let { children } = $props();
+    let main = $state();
+
+    afterNavigate(() => {
+      main?.focus();
+    });
+  </script>
+
+  <main bind:this={main} tabindex="-1">
+    {@render children()}
+  </main>
+  ```
+
+  Inti: judul unik memberi makan route announcer, `lang` benar memperbaiki pelafalan screen reader, `afterNavigate` + `tabindex="-1"` menjadikan fokus presisi setelah navigasi, dan elemen semantik membuat interaksi accessible by default — sekaligus menyenangkan compiler.
+
+  {/snippet}</Exercise>
+
+### Peringatan a11y compiler yang sering muncul
+
+Kalau compiler menyalak, ini terjemahannya:
+
+| Kode warning | Arti | Cara perbaiki |
+| --- | --- | --- |
+| `a11y_missing_attribute` | `<img>` tanpa `alt` | Tambah `alt="deskripsi bermakna"`; gambar dekoratif murni pakai `alt=""` |
+| `a11y_no_static_element_interactions` | `<div>`/`<span>` diberi `onclick` | Ganti ke elemen interaktif: `<button>` (aksi) atau `<a href>` (navigasi) |
+| `a11y_click_events_have_key_events` | Ada `onclick` tanpa padanan keyboard | Pakai `<button>`, atau (jika terpaksa) tambah `onkeydown` + `role` + `tabindex` |
+| `a11y_label_has_associated_control` | `<label>` tak terhubung ke input | Bungkus input di dalam `<label>`, atau pakai `for`/`id` yang cocok |
+| `a11y_media_has_caption` | `<video>` tanpa caption | Tambah `<track kind="captions" />` |
+| `a11y_autofocus` | Memakai `autofocus` | Hindari kecuali benar-benar perlu — bisa mengejutkan pemakai screen reader |
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Judul kosong atau seragam = pengumuman rute mati.</strong> Route announcer SvelteKit membaca elemen <code>&lt;title&gt;</code>. Kalau semua halaman berjudul "Aplikasi Saya" (atau kosong), pemakai screen reader mendengar hal yang sama setiap navigasi dan tak tahu sudah pindah ke mana. Beri tiap rute <code>&lt;title&gt;</code> unik & deskriptif lewat <code>&lt;svelte:head&gt;</code> — taruh info paling spesifik di depan, mis. <code>"Keranjang (3 item) — Toko Saya"</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Jangan hapus indikator fokus tanpa pengganti.</strong> Menulis <code>outline: none</code> di CSS global membuat pemakai keyboard "buta" — mereka tak tahu sedang di elemen mana. Kalau outline default jelek, ganti, jangan hapus: pakai <code>:focus-visible</code> untuk memberi ring fokus yang rapi hanya saat navigasi keyboard (bukan saat klik mouse). Begitu juga peringatan a11y compiler: jangan matikan beramai-ramai dengan komentar <code>svelte-ignore</code>; perbaiki akarnya.
+</Callout>
+
+<Callout type="tip">
+<strong>ARIA itu obat keras — pakai sedikit.</strong> Sebelum meraih <code>role</code> atau <code>aria-*</code>, tanya: adakah elemen HTML native yang sudah melakukannya? <code>&lt;button&gt;</code>, <code>&lt;a href&gt;</code>, <code>&lt;nav&gt;</code>, <code>&lt;dialog&gt;</code>, <code>&lt;details&gt;</code> membawa perilaku keyboard & semantik gratis. ARIA yang salah (mis. <code>role</code> keliru atau <code>aria-hidden</code> di elemen interaktif) sering lebih buruk daripada tanpa ARIA sama sekali.
+</Callout>
+
+<Callout type="tip">
+<strong>Uji berlapis.</strong> Tes otomatis (peringatan compiler, <code>axe</code> lewat <code>@axe-core/playwright</code>, Lighthouse) hanya menangkap sebagian masalah. Wajib lengkapi dengan manual: cabut mouse-mu dan jelajahi seluruh alur hanya dengan keyboard (Tab/Shift+Tab/Enter/Esc), lalu nyalakan screen reader (VoiceOver: Cmd+F5 di macOS; NVDA gratis di Windows) dan dengarkan apakah alurnya masuk akal.
+</Callout>
+
+<Callout type="warning">
+<strong>Hati-hati <code>keepFocus</code> dan <code>autofocus</code>.</strong> <code>goto(url, &#123; keepFocus: true &#125;)</code> mempertahankan elemen yang sedang fokus — berguna untuk filter live, tapi membingungkan kalau elemen itu hilang dari halaman tujuan (fokus "jatuh" ke <code>&lt;body&gt;</code> tanpa konteks). Begitu pula <code>autofocus</code>: memindahkan fokus secara tiba-tiba bisa mengejutkan pemakai screen reader. Pakai keduanya hemat dan hanya saat efeknya benar-benar diinginkan user.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/accessibility" label="SvelteKit — Accessibility (route announcements, focus, lang)" />
+<DocsLink href="https://svelte.dev/docs/kit/hooks" label="SvelteKit — Hooks (handle, transformPageChunk untuk %lang%)" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-head" label="Svelte — &lt;svelte:head&gt; (judul unik per halaman)" />
+<DocsLink href="https://svelte.dev/docs/svelte/compiler-warnings" label="Svelte — Daftar lengkap a11y compiler warnings" />

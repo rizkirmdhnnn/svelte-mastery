@@ -1,0 +1,274 @@
+---
+title: sv-utils
+product: cli
+section: api
+sectionTitle: API
+sectionOrder: 4
+order: 2
+status: reference
+description: Toolkit eksperimental @sveltejs/sv-utils untuk menyunting kode lewat AST (JS/Svelte/CSS/JSON/YAML/TOML) plus parser tingkat-rendah dan helper package manager — mesin di balik add-on sv.
+docs: https://svelte.dev/docs/cli/sv-utils
+keywords: [sv-utils, transforms, AST, parser, package manager, codemod]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di modul `sv add` kamu sudah melihat keajaibannya: ketik `npx sv add tailwindcss`, dan tiba-tiba `vite.config.ts`-mu punya plugin baru di tempat yang pas, `package.json` punya script tambahan, dan tidak ada satu pun baris kode lamamu yang rusak. Pertanyaan yang wajar muncul: **siapa yang sebenarnya menyunting file-file itu dengan begitu rapi?** Jawabannya adalah **`@sveltejs/sv-utils`** — pustaka yang menjadi *mesin penyunting* di balik layar, dan sejak versi terbaru `sv`, mesin itu dibuka jadi paket publik supaya kamu bisa memakainya untuk menulis add-on sendiri.
+
+<Callout type="warning">
+`@sveltejs/sv-utils` masih berstatus **eksperimental**. API-nya (nama fungsi, parameter, bentuk objek) bisa berubah antar rilis tanpa janji kompatibilitas. Pakai untuk membangun add-on/codemod internal — jangan jadikan fondasi yang sulit diubah tanpa siap mengikuti perubahannya.
+</Callout>
+
+### Masalah yang ia selesaikan: jangan menyunting kode sebagai teks
+
+Bayangkan kamu ingin menambah satu `import` ke `vite.config.ts` lewat skrip. Cara naif: buka file sebagai string, lalu `content.replace(...)` atau tempel baris di awal. Ini rapuh karena tiga alasan:
+
+1. **Tidak paham struktur.** Kalau file sudah punya `import` lain, atau ditulis dengan format berbeda (tanda kutip tunggal vs ganda, ada/ tidak ada titik koma), pencarian-teks gampang meleset atau menempel di tempat salah.
+2. **Tidak idempoten.** Jalankan skrip dua kali, kamu dapat dua baris `import` kembar.
+3. **Merusak format.** Append buta sering menghasilkan indentasi berantakan atau bahkan file yang tak bisa di-parse.
+
+`sv-utils` memecahkan ini dengan satu prinsip: **jangan perlakukan kode sebagai teks, perlakukan sebagai pohon.** Ia mem-parse file jadi **AST** (Abstract Syntax Tree — representasi kode sebagai struktur pohon, bukan deretan karakter), membiarkan kamu menyunting pohon itu, lalu mencetaknya kembali jadi teks dengan format yang dipertahankan.
+
+### Analogi: tukang sunting yang paham tata bahasa, bukan tukang tempel
+
+Kalau kamu pernah memakai **`jscodeshift`** atau **codemod** di dunia React (mis. saat migrasi besar antar versi), idenya sama persis: alih-alih `find & replace` buta, kamu bekerja di level AST sehingga suntinganmu memahami arti kode. Bedanya, `jscodeshift` hanya untuk JavaScript. `sv-utils` adalah **codemod multi-format**: satu pustaka yang tahu cara mem-parse dan mengubah JS/TS, komponen Svelte, CSS, JSON, YAML, TOML, sampai teks polos seperti `.env` dan `.gitignore` — semuanya sambil mempertahankan format aslimu.
+
+Analogi gampangnya: pencarian-teks itu seperti **mencoret kata di koran pakai spidol** — kamu bisa salah coret kata yang mirip. AST seperti **editor naskah yang mengerti tata bahasa** — kamu bilang "ganti subjek kalimat ini", dan ia tahu persis mana subjeknya tanpa menyentuh sisanya.
+
+### Tiga lapisan yang ia tawarkan
+
+`sv-utils` punya tiga pintu masuk, dari yang paling siap-pakai sampai paling mentah:
+
+- **`transforms.*`** — lapisan paling nyaman. Kamu beri *callback*, ia urus parse + cetak-ulang. Cocok dipasang langsung ke `sv.file()` di dalam add-on.
+- **`parse.*`** — lapisan tingkat-rendah. Kamu dapat `ast`/`data` mentah plus fungsi `generateCode()` untuk mencetaknya kembali; pakai saat butuh kontrol penuh atau di luar konteks add-on.
+- **Helper namespace** (`js.*`, `css.*`, `svelte.*`, `json.*`, `html.*`, `text.*`) dan **helper package manager** (`pnpm.*`) — fungsi-fungsi pembantu untuk operasi umum (tambah import, upsert script, izinkan build) agar kamu tidak menulis manipulasi AST dari nol.
+
+<Callout type="tip">
+Mau pasang: <code>npm install -D @sveltejs/sv-utils</code>. Ini dependency build/tooling (bukan runtime aplikasi), jadi masuk ke <code>devDependencies</code> (<code>-D</code>).
+</Callout>
+
+## 2. Contoh kode
+
+Karena modul ini bergaya **referensi**, mari mulai dari katalog lengkap, lalu contoh praktis tiap bagian penting.
+
+### A. `transforms.*` — penyunting berbasis callback
+
+Setiap transform adalah fungsi *curried*: kamu panggil `transforms.x(callback)`, hasilnya sebuah fungsi `(content) => hasil` yang siap diberikan ke `sv.file()`. Di dalam callback kamu menerima objek berisi `ast`/`data`, `content` (teks asli), dan namespace helper yang relevan. **Kembalikan `false`** dari callback untuk membatalkan dan menjaga file tetap apa adanya.
+
+| Transform | Tipe file | Parameter callback | Untuk apa |
+|---|---|---|---|
+| `transforms.script(cb)` | JS / TypeScript | `{ ast, comments, content, js }` | Menyunting file JS/TS |
+| `transforms.svelte(cb)` | Komponen `.svelte` | `{ ast, content, svelte, js }` | Mengubah komponen Svelte (markup + script) |
+| `transforms.svelteScript(opts)(cb)` | `.svelte` + blok script | `{ ast, content, svelte, js }` | Sama, tapi blok `<script>` dijamin ada; `opts = { language }` |
+| `transforms.css(cb)` | CSS | `{ ast, content, css }` | Memanipulasi stylesheet |
+| `transforms.json(cb)` | JSON | `{ data, content, json }` | Memutasi objek JSON langsung |
+| `transforms.yaml(cb)` | YAML | `{ data, content }` | Mengubah konfigurasi YAML |
+| `transforms.toml(cb)` | TOML | `{ data, content }` | Mengubah konfigurasi TOML |
+| `transforms.text(cb)` | Teks polos | `{ content, text }` | Menyunting file datar (`.env`, `.gitignore`) |
+
+Perhatikan polanya: format **terstruktur kode** (`script`, `svelte`, `css`) memberi kamu `ast`; format **data** (`json`, `yaml`, `toml`) memberi kamu `data` — objek JavaScript biasa yang bisa kamu mutasi langsung; teks polos memberi kamu `content` + helper `text`.
+
+Contoh paling sering dipakai — menambah/menimpa sebuah script di `package.json` secara idempoten:
+
+```js
+import { transforms } from '@sveltejs/sv-utils';
+
+// `data` adalah hasil JSON.parse dari package.json — objek JS biasa.
+// Mutasi langsung; assignment bersifat idempoten (jalan 2x hasilnya sama).
+const run = transforms.json(({ data }) => {
+	data.scripts ??= {};
+	data.scripts.format = 'prettier --write .';
+	data.scripts.lint = 'prettier --check .';
+	// Tidak perlu `return` apa pun; kembalikan `false` HANYA bila ingin batal.
+});
+
+// `transforms.json(cb)` mengembalikan fungsi (content) => string-baru.
+const updatedJson = run(originalPackageJsonString);
+```
+
+Untuk komponen Svelte, `transforms.svelteScript` praktis karena menjamin blok `<script>` ada lebih dulu (jadi kamu tidak perlu menangani kasus "file tanpa script"):
+
+```js
+import { transforms } from '@sveltejs/sv-utils';
+
+const ensureImport = transforms.svelteScript({ language: 'ts' })(({ ast, js }) => {
+	// `js` adalah namespace helper yang sudah terikat ke AST script ini.
+	// Helper ini menyisipkan import HANYA jika belum ada (idempoten).
+	js.imports.addDefault(ast, '$lib/Logo.svelte', 'Logo');
+});
+
+const updated = ensureImport(componentSource);
+```
+
+<Callout type="warning">
+Nama metode persis di dalam namespace (mis. <code>js.imports.addDefault</code>) bisa berbeda antar versi karena API eksperimental. Anggap contoh di atas sebagai <em>bentuk</em> pemakaian; selalu cek tanda tangan terbaru di docs resmi sebelum mengandalkannya.
+</Callout>
+
+### B. `parse.*` — parser tingkat-rendah
+
+Kalau kamu butuh kontrol penuh (mis. membaca AST untuk analisis, atau merangkai beberapa langkah manual), pakai `parse.*`. Tiap fungsi menerima `content` dan mengembalikan objek berisi `ast` **atau** `data`, plus `generateCode()` untuk mencetak hasil suntingan kembali jadi string.
+
+| Fungsi | Mengembalikan |
+|---|---|
+| `parse.script(content)` | `{ ast, generateCode }` |
+| `parse.svelte(content)` | `{ ast, generateCode }` |
+| `parse.css(content)` | `{ ast, generateCode }` |
+| `parse.html(content)` | `{ ast, generateCode }` |
+| `parse.json(content)` | `{ data, generateCode }` |
+| `parse.yaml(content)` | `{ data, generateCode }` |
+| `parse.toml(content)` | `{ data, generateCode }` |
+
+```js
+import { parse } from '@sveltejs/sv-utils';
+
+// Baca, ubah, lalu cetak ulang — format & komentar dipertahankan.
+const { data, generateCode } = parse.json(packageJsonString);
+
+data.type = 'module';
+data.engines ??= {};
+data.engines.node = '>=18';
+
+const result = generateCode(); // string package.json baru
+```
+
+Hubungannya dengan `transforms.*`: sebuah `transforms.json(cb)` pada dasarnya = `parse.json` + memanggil `cb({ data })` + `generateCode()`, plus jalan pintas "kembalikan `false` untuk batal". Jadi `transforms` itu gula sintaksis di atas `parse`.
+
+### C. Helper namespace
+
+Selain tersedia di dalam callback, namespace ini juga bisa di-import langsung dan dipakai bersama `parse.*` (kamu suplai sendiri `ast`-nya).
+
+| Namespace | Cakupan | Anggota yang terdokumentasi |
+|---|---|---|
+| `js.*` | import, export, object, array, variable, function, plus helper khusus Vite/SvelteKit | manipulasi import & konfigurasi |
+| `css.*` | rule, declaration, at-rule, import | menyisipkan aturan & `@import` |
+| `svelte.*` | struktur komponen | `ensureScript`, `addSlot`, `addFragment` |
+| `json.*` | operasi JSON umum | `arrayUpsert`, `packageScriptsUpsert` |
+| `html.*` | atribut elemen | manipulasi atribut |
+| `text.*` | file datar | operasi per-baris |
+
+Dua helper `json` paling berguna untuk add-on:
+
+```js
+import { transforms, json } from '@sveltejs/sv-utils';
+
+const setup = transforms.json(({ data, json }) => {
+	// 1) Upsert script: tambah kalau belum ada, biarkan kalau sudah.
+	json.packageScriptsUpsert(data, 'test', 'vitest');
+
+	// 2) Upsert ke dalam sebuah array tanpa menduplikat nilai.
+	json.arrayUpsert(data, 'keywords', 'svelte');
+});
+```
+
+Untuk komponen, helper `svelte.ensureScript` menjamin ada blok `<script>` sebelum kamu menyentuh isinya — pola yang sama dipakai `transforms.svelteScript` di balik layar.
+
+### D. Helper package manager — `pnpm.allowBuilds`
+
+Satu kebutuhan khas saat menulis add-on: mengizinkan sebuah paket menjalankan build script-nya di bawah pnpm (pnpm memblokir `postinstall` paket secara default demi keamanan). `pnpm.allowBuilds(packageName)` adalah transform untuk `pnpm-workspace.yaml` yang **mendeteksi versi pnpm otomatis**:
+
+- **pnpm ≥ 11** — menulis ke map `allowBuilds`, sekaligus memigrasi config lama.
+- **pnpm `< 11`** — memakai daftar `onlyBuiltDependencies`.
+
+```js
+import { pnpm } from '@sveltejs/sv-utils';
+
+// `file.findUp(...)` mencari file ke atas dari cwd; `sv.file(path, transform)`
+// menerapkan transform & menyimpannya — keduanya disediakan runner add-on `sv`.
+sv.file(file.findUp('pnpm-workspace.yaml'), pnpm.allowBuilds('esbuild'));
+```
+
+## 3. Coba sendiri
+
+Karena `sv-utils` berjalan di Node (saat scaffolding/menjalankan add-on di terminal), ia tidak bisa dijalankan di playground browser. Sebagai gantinya, telusuri contoh nyata berikut: sebuah **add-on mini** yang memasang dukungan "format script" ke proyek mana pun. Bayangkan ini isi setup function add-on-mu — perhatikan bagaimana `transforms.*` dipasang ke `sv.file()`.
+
+```js
+// add-on mini: tambah Prettier sebagai script + abaikan output build di .gitignore.
+import { transforms } from '@sveltejs/sv-utils';
+
+export function run({ sv }) {
+	// (1) Sunting package.json — `data` objek biasa, mutasi langsung & idempoten.
+	sv.file('package.json', transforms.json(({ data }) => {
+		data.scripts ??= {};
+		data.scripts.format = 'prettier --write .';
+		data.devDependencies ??= {};
+		data.devDependencies.prettier ??= '^3.0.0'; // ??= -> jangan timpa versi yang sudah ada
+	}));
+
+	// (2) Sunting file teks polos — `text` helper untuk operasi per-baris.
+	//     Kembalikan `false` kalau tidak ada yang perlu diubah (tetap apa adanya).
+	sv.file('.gitignore', transforms.text(({ content, text }) => {
+		if (content.includes('.svelte-kit')) return false; // sudah ada -> batal
+		return text.appendLine(content, '.svelte-kit'); // tambah baris baru
+	}));
+}
+```
+
+Yang membuat pola ini kuat:
+
+- **`sv.file(path, transform)`** memetakan satu file ke satu transform. Runner `sv` yang membaca file, menjalankan transform-mu, lalu menulis hasilnya — kamu tidak menyentuh `fs` sama sekali.
+- **Idempotensi gratis.** Operator `??=` dan pengecekan `content.includes(...)` + `return false` membuat add-on aman dijalankan ulang. Jalankan dua kali, hasilnya identik — tepat seperti `sv add` yang asli.
+- **Format dipertahankan.** Karena di balik layar ini AST + `generateCode()`, indentasi dan gaya kutip file aslimu tidak diacak.
+
+Bandingkan dengan versi naif `fs.readFileSync` + `content + '\n.svelte-kit'`: yang naif akan menumpuk baris kembar tiap kali dijalankan, dan untuk `package.json` berisiko menghasilkan JSON tak valid. Itulah nilai jual `sv-utils`.
+
+## 4. Latihan
+
+<Exercise title="Tulis transform package.json yang idempoten">
+Buat sebuah pemanggilan `transforms.json` yang: (a) memastikan ada object `scripts`, (b) menambah script `check` bernilai `svelte-check --tsconfig ./tsconfig.json` **tanpa menimpa** kalau `check` sudah ada, dan (c) menambahkan `"svelte"` ke array `keywords` tanpa menduplikat. Petunjuk: ingat `??=`, dan ada helper `json.arrayUpsert` untuk bagian array.
+
+{#snippet solution()}
+
+```js
+import { transforms } from '@sveltejs/sv-utils';
+
+const ensureCheck = transforms.json(({ data, json }) => {
+	// (a) pastikan object scripts ada
+	data.scripts ??= {};
+
+	// (b) tambah HANYA jika belum ada -> ??= tidak menimpa nilai lama
+	data.scripts.check ??= 'svelte-check --tsconfig ./tsconfig.json';
+
+	// (c) upsert ke array tanpa duplikat (helper json.arrayUpsert)
+	json.arrayUpsert(data, 'keywords', 'svelte');
+
+	// tidak perlu return; kembalikan false hanya jika ingin membatalkan
+});
+
+// pakai: const updated = ensureCheck(packageJsonString);
+```
+
+Catatan: kalau kamu lebih suka tanpa helper, bagian (c) bisa ditulis manual:
+`data.keywords ??= []; if (!data.keywords.includes('svelte')) data.keywords.push('svelte');`
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+Status **eksperimental** itu nyata: nama metode di dalam namespace (mis. <code>js.imports.addDefault</code>, <code>json.packageScriptsUpsert</code>) dan bentuk objek callback bisa berubah. Kunci versi paket di <code>package.json</code> dan baca changelog saat upgrade — jangan asumsikan API stabil seperti API runtime Svelte.
+</Callout>
+
+<Callout type="pitfall">
+Jangan mencampur penyuntingan-teks mentah dengan transform AST pada file yang sama dalam satu langkah. Kalau kamu sudah memutasi <code>ast</code>/<code>data</code> lewat transform, biarkan <code>generateCode()</code> yang mencetak hasil akhirnya. Menempel string secara manual setelah itu (mis. <code>result + '...'</code>) mengembalikan semua kerapuhan yang justru ingin dihindari <code>sv-utils</code>.
+</Callout>
+
+<Callout type="tip">
+Pakai <code>return false</code> sebagai "tombol batal". Untuk operasi bersyarat (mis. "tambah baris kalau belum ada"), cek dulu lewat <code>content</code>, dan <code>return false</code> bila tidak ada yang perlu diubah. Ini membuat add-on benar-benar idempoten dan tidak menyentuh file yang sudah benar.
+</Callout>
+
+<Callout type="tip">
+Pilih lapisan yang tepat: pakai <code>transforms.*</code> di dalam add-on (terhubung mulus ke <code>sv.file()</code>), dan turun ke <code>parse.*</code> hanya saat kamu butuh membaca AST atau merangkai beberapa langkah manual di luar konteks runner <code>sv</code>.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-utils" label="@sveltejs/sv-utils — referensi CLI (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-add" label="sv add — konsumen utama sv-utils (cara add-on memakainya)" />

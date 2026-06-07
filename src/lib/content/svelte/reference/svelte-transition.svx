@@ -1,0 +1,414 @@
+---
+title: svelte/transition
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 14
+status: reference
+description: Referensi lengkap modul svelte/transition — fade, blur, fly, slide, scale, draw, dan crossfade beserta semua parameter, default, dan tipe.
+docs: https://svelte.dev/docs/svelte/svelte-transition
+keywords: [transition, fade, fly, slide, crossfade]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Modul `svelte/transition` adalah **kotak peralatan animasi masuk/keluar siap pakai**. Isinya tujuh fungsi: `fade`, `blur`, `fly`, `slide`, `scale`, `draw`, dan `crossfade`. Kamu pakai bersama directive `transition:`, `in:`, atau `out:` di markup, dan Svelte mengurus sisanya.
+
+Yang perlu kamu pahami lebih dulu: **kenapa Svelte bisa menganimasikan elemen yang keluar?** Di React, begitu sebuah `{#if}` (kondisi) jadi `false`, elemennya langsung dilepas dari DOM — tidak ada jeda untuk fade-out, makanya kamu butuh library seperti Framer Motion / `AnimatePresence`. Vue punya komponen `<Transition>` bawaan, tapi kamu harus menulis sendiri kelas-kelas CSS `enter`/`leave`-nya. Svelte menyelesaikan ini di level compiler: ia **menahan** elemen yang sedang keluar di DOM sampai animasinya tuntas, baru benar-benar melepasnya. Tujuh fungsi di modul ini hanyalah "resep" yang memberi tahu Svelte gerakan apa yang harus dijalankan selama jeda itu.
+
+### Analogi: efek transisi seperti "preset" di aplikasi edit video
+
+Bayangkan kamu mengedit video dan ingin satu klip muncul. Kamu tidak menggambar animasinya frame demi frame — kamu cukup memilih dari daftar **preset transisi**: "Fade In", "Slide From Left", "Zoom". `svelte/transition` adalah daftar preset itu. `fade` = preset memudar, `fly` = preset meluncur, `scale` = preset zoom, dan seterusnya. Setiap preset punya **knob pengaturan** (durasi, delay, easing, jarak) yang kamu putar lewat objek parameter. Kalau tujuh preset bawaan ini tidak cukup, kamu bisa bikin preset sendiri (custom transition) — tapi 90% kebutuhan biasanya tertutup oleh yang sudah ada.
+
+### Anatomi sebuah fungsi transition
+
+Semua fungsi di modul ini punya bentuk yang sama:
+
+```js
+fungsiTransition(node, params)  // -> mengembalikan sebuah TransitionConfig
+```
+
+`node` diisi otomatis oleh Svelte (elemen DOM-nya); kamu hanya menulis `params` lewat directive. Hasilnya sebuah objek `TransitionConfig` berisi `delay`, `duration`, `easing`, plus `css` atau `tick` — yang sebenarnya menggerakkan animasi. Kabar baiknya: untuk tujuh fungsi bawaan ini kamu **tidak pernah memanggilnya langsung**. Kamu cukup menyebut namanya di directive, dan Svelte yang memanggil dengan `node` yang benar.
+
+```svelte
+<!-- kamu menulis ini -->
+<p transition:fade={{ duration: 300 }}>...</p>
+
+<!-- Svelte yang menjalankan ini di balik layar:
+     fade(elemenP, { duration: 300 }) -->
+```
+
+### Parameter umum: delay, duration, easing
+
+Tiga parameter ini muncul di **hampir semua** fungsi, jadi hafalkan sekali:
+
+- **`delay`** (ms) — tunda sebelum animasi mulai. Default `0`.
+- **`duration`** (ms) — lama animasi. Default `400` untuk kebanyakan fungsi.
+- **`easing`** — kurva kecepatan, sebuah fungsi `(t: number) => number`. Ambil dari modul `svelte/easing` (mis. `cubicOut`, `quintInOut`). Default berbeda-beda per fungsi (lihat tabel di bawah).
+
+Parameter sisanya bersifat **khas per fungsi** (mis. `x`/`y` untuk `fly`, `axis` untuk `slide`). Semua itu kita rinci di bagian Referensi API.
+
+## 2. Contoh kode
+
+Tiga pola yang menutup mayoritas kebutuhan sehari-hari.
+
+```svelte
+<script>
+	// impor hanya fungsi yang dipakai dari modul bawaan
+	import { fade, fly, slide, scale, blur } from 'svelte/transition';
+	let visible = $state(true);
+</script>
+
+<button onclick={() => (visible = !visible)}>Toggle</button>
+
+{#if visible}
+	<!-- transition: satu directive untuk masuk DAN keluar.
+	     Animasi keluar = kebalikan animasi masuk. Reversible:
+	     kalau di-toggle di tengah jalan, ia berbalik mulus. -->
+	<p transition:fade={{ duration: 300 }}>fade</p>
+{/if}
+```
+
+Kalau masuk dan keluar harus **beda**, pisahkan jadi `in:` dan `out:`. Keduanya tidak reversible — masing-masing selalu berjalan sampai tuntas:
+
+```svelte
+{#if visible}
+	<!-- masuk: meluncur dari bawah (y positif).
+	     keluar: zoom mengecil. -->
+	<div in:fly={{ y: 40, duration: 400 }} out:scale={{ start: 0.8 }}>
+		Masuk fly, keluar scale.
+	</div>
+{/if}
+```
+
+Untuk membuat **preset sendiri**, sebuah fungsi transition cukup mengembalikan objek berisi `css`. Parameter `t` bergerak `0` → `1` saat masuk (dan `1` → `0` saat keluar, Svelte yang membalik), sedangkan `u` selalu `1 - t`:
+
+```svelte
+<script>
+	let visible = $state(true);
+
+	// custom transition: putar + zoom sambil memudar
+	function spin(node, { duration = 500 } = {}) {
+		return {
+			duration,
+			// t: 0 (tersembunyi) -> 1 (tampil penuh). u = 1 - t.
+			css: (t, u) =>
+				'transform: scale(' + t + ') rotate(' + u * 360 + 'deg); opacity: ' + t
+		};
+	}
+</script>
+
+{#if visible}
+	<div transition:spin>spin</div>
+{/if}
+```
+
+<Callout type="tip">
+Untuk custom transition, utamakan <code>css</code> daripada <code>tick</code>. Fungsi <code>css</code> dikompilasi jadi CSS keyframes yang jalan di compositor browser (GPU), sehingga tetap halus walau main thread sibuk. Pakai <code>tick</code> (dipanggil tiap frame di main thread) hanya kalau efeknya memang tak bisa dideskripsikan dengan CSS, mis. mengetik teks huruf demi huruf.
+</Callout>
+
+## 3. Coba sendiri
+
+Pilih jenis transisi di dropdown, lalu klik **Toggle**. Parameter `x`, `y`, `amount`, dan `start` sengaja diisi sekaligus — tiap fungsi hanya memakai yang relevan dan mengabaikan sisanya. Perhatikan elemen tidak langsung hilang saat keluar: Svelte menahannya sampai animasi selesai.
+
+<Playground code={`<script>
+	import { fade, blur, fly, slide, scale } from 'svelte/transition';
+	let visible = $state(true);
+	let kind = $state('fly');
+	// pilih fungsi transition secara dinamis berdasar dropdown.
+	// transition:fn menerima variabel yang berisi sebuah fungsi transition.
+	let fn = $derived(({ fade, blur, fly, slide, scale })[kind]);
+</script>
+<div style='display:flex; gap:8px; align-items:center; margin-bottom:16px'>
+	<button onclick={() => (visible = !visible)}>Toggle</button>
+	<select bind:value={kind}>
+		<option value='fade'>fade</option>
+		<option value='blur'>blur</option>
+		<option value='fly'>fly</option>
+		<option value='slide'>slide</option>
+		<option value='scale'>scale</option>
+	</select>
+</div>
+{#if visible}
+	<p
+		transition:fn={{ x: 60, y: 40, amount: 10, start: 0.4, duration: 500 }}
+		style='padding:16px; background:#fde68a; border-radius:8px; display:inline-block'
+	>
+		Aku beranimasi dengan {kind}!
+	</p>
+{/if}`} />
+
+## 4. Referensi API
+
+Semua fungsi diimpor dari `svelte/transition`. Tabel di bawah memakai default versi Svelte 5. Tipe `EasingFunction` = `(t: number) => number`; default easing diambil dari `svelte/easing`.
+
+### `fade`
+
+Menganimasikan **opacity** saja: `0` → nilai sekarang (masuk), atau sebaliknya (keluar). Paling murah dan paling aman dari semua transisi.
+
+`fade(node, { delay, duration, easing })`
+
+| Parameter | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `delay` | `number` | `0` | tunda sebelum mulai (ms) |
+| `duration` | `number` | `400` | lama animasi (ms) |
+| `easing` | `EasingFunction` | `linear` | kurva kecepatan |
+
+```svelte
+<script>
+	import { fade } from 'svelte/transition';
+	let on = $state(true);
+</script>
+
+{#if on}
+	<div transition:fade={{ duration: 200 }}>Muncul/hilang dengan lembut</div>
+{/if}
+```
+
+### `blur`
+
+Menggabungkan filter **blur** dengan perubahan opacity. Cocok untuk efek "fokus masuk" — elemen seakan menajam dari kabur.
+
+`blur(node, { delay, duration, easing, amount, opacity })`
+
+| Parameter | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `delay` | `number` | `0` | tunda sebelum mulai (ms) |
+| `duration` | `number` | `400` | lama animasi (ms) |
+| `easing` | `EasingFunction` | `cubicInOut` | kurva kecepatan |
+| `amount` | `number` atau `string` | `5` | kekuatan blur; angka = px, string boleh `'2rem'` |
+| `opacity` | `number` | `0` | opacity di titik tersembunyi |
+
+```svelte
+<script>
+	import { blur } from 'svelte/transition';
+	let on = $state(true);
+</script>
+
+{#if on}
+	<h2 transition:blur={{ amount: 8, duration: 400 }}>Menajam dari kabur</h2>
+{/if}
+```
+
+### `fly`
+
+Menggeser elemen pada sumbu **x** dan/atau **y** sekaligus mengubah **opacity**. Saat masuk, elemen mulai dari `(x, y)` lalu meluncur ke posisi aslinya; saat keluar, ia bergerak ke `(x, y)`.
+
+`fly(node, { delay, duration, easing, x, y, opacity })`
+
+| Parameter | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `delay` | `number` | `0` | tunda sebelum mulai (ms) |
+| `duration` | `number` | `400` | lama animasi (ms) |
+| `easing` | `EasingFunction` | `cubicOut` | kurva kecepatan |
+| `x` | `number` atau `string` | `0` | offset horizontal awal/akhir |
+| `y` | `number` atau `string` | `0` | offset vertikal awal/akhir |
+| `opacity` | `number` | `0` | opacity di titik tersembunyi |
+
+```svelte
+<script>
+	import { fly } from 'svelte/transition';
+	let on = $state(true);
+</script>
+
+{#if on}
+	<!-- meluncur masuk dari 40px di bawah -->
+	<li transition:fly={{ y: 40, duration: 300 }}>Notifikasi baru</li>
+{/if}
+```
+
+<Callout type="tip">
+Set <code>opacity: 1</code> kalau kamu ingin elemen <strong>hanya bergeser tanpa memudar</strong>. Dengan default <code>opacity: 0</code>, <code>fly</code> selalu menggabungkan geser + fade.
+</Callout>
+
+### `slide`
+
+Membuka/menutup elemen dengan menganimasikan **ukurannya** pada satu sumbu — persis gerakan accordion atau menu dropdown. Sumbu `y` (default) menganimasikan tinggi; sumbu `x` menganimasikan lebar.
+
+`slide(node, { delay, duration, easing, axis })`
+
+| Parameter | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `delay` | `number` | `0` | tunda sebelum mulai (ms) |
+| `duration` | `number` | `400` | lama animasi (ms) |
+| `easing` | `EasingFunction` | `cubicOut` | kurva kecepatan |
+| `axis` | `'x'` atau `'y'` | `'y'` | sumbu buka/tutup |
+
+```svelte
+<script>
+	import { slide } from 'svelte/transition';
+	let open = $state(false);
+</script>
+
+<button onclick={() => (open = !open)}>Detail</button>
+{#if open}
+	<!-- tinggi membuka dari 0 -> penuh, seperti accordion -->
+	<div transition:slide={{ duration: 250 }}>Isi panel yang tersembunyi…</div>
+{/if}
+```
+
+### `scale`
+
+Menganimasikan **scale** (zoom) bersama **opacity**. Saat masuk, elemen membesar dari `start` ke `1`; saat keluar, mengecil kembali ke `start`.
+
+`scale(node, { delay, duration, easing, start, opacity })`
+
+| Parameter | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `delay` | `number` | `0` | tunda sebelum mulai (ms) |
+| `duration` | `number` | `400` | lama animasi (ms) |
+| `easing` | `EasingFunction` | `cubicOut` | kurva kecepatan |
+| `start` | `number` | `0` | skala di titik tersembunyi (mis. `0.8` = mulai 80%) |
+| `opacity` | `number` | `0` | opacity di titik tersembunyi |
+
+```svelte
+<script>
+	import { scale } from 'svelte/transition';
+	let on = $state(true);
+</script>
+
+{#if on}
+	<!-- pop kecil: membesar dari 80% sambil memudar masuk -->
+	<div transition:scale={{ start: 0.8, duration: 200 }}>Tooltip</div>
+{/if}
+```
+
+### `draw`
+
+Menganimasikan **goresan (stroke)** sebuah path SVG seakan sedang "digambar" dari ujung ke ujung. Hanya bekerja pada elemen SVG yang punya method `getTotalLength()` (mis. `<path>`, `<line>`, `<polyline>`). Elemen butuh `stroke` yang terlihat agar efeknya kelihatan.
+
+`draw(node, { delay, speed, duration, easing })`
+
+| Parameter | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `delay` | `number` | `0` | tunda sebelum mulai (ms) |
+| `speed` | `number` | — | kecepatan gambar; durasi dihitung dari panjang path / speed |
+| `duration` | `number` atau `(len: number) => number` | `800` | lama animasi (ms); fungsi menerima panjang path |
+| `easing` | `EasingFunction` | `cubicInOut` | kurva kecepatan |
+
+```svelte
+<script>
+	import { draw } from 'svelte/transition';
+	let show = $state(true);
+</script>
+
+{#if show}
+	<svg viewBox="0 0 100 100" width="100" height="100">
+		<!-- garis "tergambar" selama 1200ms -->
+		<path
+			transition:draw={{ duration: 1200 }}
+			d="M10 50 L40 80 L90 20"
+			fill="none"
+			stroke="black"
+			stroke-width="4"
+		/>
+	</svg>
+{/if}
+```
+
+<Callout type="warning">
+<code>speed</code> dan <code>duration</code> saling eksklusif: kalau <code>duration</code> diisi, <code>speed</code> diabaikan. Kalau keduanya kosong, default <code>duration: 800</code> dipakai. Gunakan <code>speed</code> kalau kamu mau beberapa path dengan panjang berbeda tetap "tergambar" dengan kecepatan visual yang sama.
+</Callout>
+
+### `crossfade`
+
+Beda kelas dari enam fungsi di atas. `crossfade` adalah sebuah **factory**: kamu memanggilnya sekali, dan ia mengembalikan **sepasang** transition `[send, receive]`. Kalau sebuah elemen di-`send` keluar dan elemen lain di-`receive` masuk dengan **`key` yang sama**, Svelte membuat elemen itu seakan **terbang dari posisi lama ke posisi baru** (deferred transition) — efek "berpindah tempat", bukan hilang-lalu-muncul. Klasik untuk memindahkan kartu antar kolom (mis. to-do → done).
+
+`crossfade({ delay, duration, easing, fallback })` → `[send, receive]`
+
+| Parameter | Tipe | Default | Keterangan |
+| --- | --- | --- | --- |
+| `delay` | `number` | `0` | tunda sebelum mulai (ms) |
+| `duration` | `number` atau `(len: number) => number` | `(d) => Math.sqrt(d) * 30` | lama animasi; fungsi menerima jarak tempuh |
+| `easing` | `EasingFunction` | `cubicOut` | kurva kecepatan |
+| `fallback` | `(node, params, intro) => TransitionConfig` | — | transisi cadangan saat tak ada pasangan `key` |
+
+Fungsi `send` dan `receive` yang dihasilkan **wajib** diberi parameter `key` untuk mencocokkan pasangan:
+
+```svelte
+<script>
+	import { crossfade } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
+
+	// panggil sekali; pakai send/receive di kedua list
+	const [send, receive] = crossfade({
+		duration: 300,
+		// fallback dipakai saat tak ada pasangan (mis. item benar-benar baru/dihapus)
+		fallback: (node) => ({ duration: 200, css: (t) => 'opacity: ' + t })
+	});
+
+	let todo = $state([{ id: 1, t: 'Belajar transition' }]);
+	let done = $state([]);
+
+	function finish(item) {
+		todo = todo.filter((i) => i !== item);
+		done = [...done, item]; // key sama -> kartu "terbang" ke kolom done
+	}
+	function undo(item) {
+		done = done.filter((i) => i !== item);
+		todo = [...todo, item];
+	}
+</script>
+
+<div style="display:flex; gap:24px">
+	<ul>
+		{#each todo as item (item.id)}
+			<li in:receive={{ key: item.id }} out:send={{ key: item.id }} animate:flip>
+				<button onclick={() => finish(item)}>{item.t}</button>
+			</li>
+		{/each}
+	</ul>
+	<ul>
+		{#each done as item (item.id)}
+			<li in:receive={{ key: item.id }} out:send={{ key: item.id }} animate:flip>
+				<s><button onclick={() => undo(item)}>{item.t}</button></s>
+			</li>
+		{/each}
+	</ul>
+</div>
+```
+
+### Tipe yang dikembalikan
+
+Setiap fungsi transition mengembalikan `TransitionConfig`. Kalau kamu menulis custom transition, inilah bentuk yang harus kamu kembalikan:
+
+| Field | Tipe | Keterangan |
+| --- | --- | --- |
+| `delay` | `number` | tunda sebelum mulai (ms) |
+| `duration` | `number` | lama animasi (ms) |
+| `easing` | `EasingFunction` | kurva `(t) => number` |
+| `css` | `(t: number, u: number) => string` | string CSS per progress; `t` = 0→1, `u` = `1 - t`. Disukai (jalan di GPU) |
+| `tick` | `(t: number, u: number) => void` | callback per frame di main thread; untuk efek yang tak bisa dengan CSS |
+
+<Callout type="tip">
+Pasangkan transition di modul ini dengan <code>animate:flip</code> dari <code>svelte/animate</code> ketika elemen di dalam <code>{`{#each}`}</code> berpindah posisi. <code>transition:</code> mengurus item yang <em>ditambah/dihapus</em>, sedangkan <code>flip</code> membuat item yang <em>tetap ada tapi bergeser</em> meluncur halus ke tempat barunya. Keduanya saling melengkapi di elemen yang sama.
+</Callout>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Default transition Svelte 5 adalah <code>local</code>.</strong> Animasi cuma jalan kalau blok pembungkus <em>langsung</em> (tempat elemen berada) yang berubah. Kalau transisi "tiba-tiba tidak muncul" saat parent muncul/hilang (mis. pindah halaman, atau toggle seksi di atasnya), tambahkan modifier <code>|global</code>: <code>transition:fade|global</code>. Catatan: ini <strong>terbalik</strong> dari Svelte 3/4 yang default-nya <code>global</code>.
+</Callout>
+
+<Callout type="warning">
+<code>crossfade</code> tidak akan "terbang" kalau <code>key</code> pada <code>send</code> dan <code>receive</code> tidak persis sama, atau kalau pasangannya tidak hadir di frame yang sama. Kalau kartu malah memudar di tempat alih-alih berpindah, kemungkinan besar <code>key</code> tidak cocok dan <code>fallback</code> yang dipakai. Pastikan <code>key</code> stabil dan identik di kedua list, dan selalu sediakan <code>fallback</code> agar item yang benar-benar baru/dihapus tetap punya animasi.
+</Callout>
+
+<Callout type="tip">
+Untuk SVG, <code>draw</code> mensyaratkan <code>getTotalLength()</code> — artinya elemen seperti <code>&lt;path&gt;</code>, <code>&lt;line&gt;</code>, <code>&lt;polyline&gt;</code>, <code>&lt;rect&gt;</code>, atau <code>&lt;circle&gt;</code>. Elemen tanpa method itu (mis. <code>&lt;g&gt;</code> atau <code>&lt;text&gt;</code>) akan error. Pastikan juga ada <code>stroke</code> yang terlihat, karena efeknya menganimasikan goresan, bukan isian (<code>fill</code>).
+</Callout>
+
+<Callout type="tip">
+Hormati preferensi pengguna: bungkus durasi dengan cek <code>prefers-reduced-motion</code> (lewat <code>matchMedia</code> atau media query CSS) supaya pengguna yang sensitif terhadap gerakan bisa mendapat versi tanpa animasi. Animasi yang aksesibel adalah animasi yang bisa dimatikan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-transition" label="svelte/transition — dokumentasi resmi Svelte" />

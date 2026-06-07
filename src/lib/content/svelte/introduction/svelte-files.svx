@@ -1,0 +1,257 @@
+---
+title: .svelte files
+product: svelte
+section: introduction
+sectionTitle: Introduction
+sectionOrder: 1
+order: 3
+status: stable
+description: Membedah anatomi sebuah file .svelte — blok script, script module, markup, dan style — beserta urutan eksekusi dan aturan dasarnya.
+docs: https://svelte.dev/docs/svelte/svelte-files
+keywords: [svelte-files, script, script-module, markup, style, scoped-css]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sebuah file `.svelte` adalah **satu komponen** — satu potongan UI yang bisa dipakai ulang. Svelte menyebut isinya sebagai "superset dari HTML": HTML biasa, ditambah beberapa bumbu khusus. Di dalamnya ada maksimal **empat blok**, dan semuanya **opsional** — boleh ada semua, boleh cuma satu, boleh kosong sama sekali:
+
+1. **`<script module>`** — kode yang jalan **sekali** saat modul pertama kali dievaluasi.
+2. **`<script>`** — logika komponen yang jalan **setiap kali** sebuah instance komponen dibuat.
+3. **Markup** — HTML plus ekspresi Svelte (`{ekspresi}`, `{#if}`, event handler). Inilah yang tampil.
+4. **`<style>`** — CSS yang otomatis ter-*scope* ke komponen ini saja.
+
+Analogi yang enak: bayangkan komponen itu **satu orang aktor di panggung**. `<script>` adalah otak & naskahnya (apa yang dia tahu dan lakukan), markup adalah penampilan & gerak-geriknya yang dilihat penonton, dan `<style>` adalah kostum & make-up yang khusus dipakai aktor itu — kostum aktor A tidak nyangkut ke aktor B. Tiga peran, satu orang. Lalu `<script module>`? Itu seperti **briefing satu kali sebelum pertunjukan dimulai** untuk semua aktor yang memerankan karakter yang sama.
+
+Buat yang datang dari **Vue**, susunan ini langsung terasa akrab: persis seperti Single File Component (SFC) dengan blok `<script>`, `<template>`, dan `<style>`. Bedanya, Svelte tidak punya tag `<template>` pembungkus — markup ditulis **langsung** di body file. Buat yang datang dari **React**, ini terasa lebih "rapi-rapi": di React satu komponen adalah satu fungsi yang me-`return` JSX, dan CSS biasanya hidup di file atau sistem terpisah. Di Svelte, ketiganya satu rumah.
+
+Perbedaan paling penting yang **tidak kelihatan** dari struktur: reaktivitas Svelte datang dari **compiler**, bukan dari runtime. Saat kamu menulis `let n = $state(0)`, Svelte meng-compile file ini menjadi JavaScript yang sudah tahu kapan harus memperbarui DOM. Tidak ada Virtual DOM, tidak ada `useState`/`ref` sebagai pembungkus runtime — `$state` adalah penanda untuk compiler. Itulah kenapa file `.svelte` harus melewati compiler Svelte dulu sebelum jadi kode yang bisa dijalankan browser.
+
+### Dua jenis `<script>`
+
+Ini bagian yang paling sering bikin bingung pendatang baru, jadi pelan-pelan:
+
+- **`<script>` biasa** → berisi JavaScript (atau TypeScript bila ditambah atribut `lang="ts"`) yang jalan **saat sebuah instance komponen dibuat**. Variabel level-atas di sini bisa dirujuk di markup, dan menjadi reaktif lewat rune. Tiap kali komponen dipakai, blok ini jalan lagi dari awal, dan state-nya **milik instance itu sendiri**.
+- **`<script module>`** → jalan **sekali** saat modulnya pertama kali dievaluasi, **bukan** per instance. Variabel di sini bisa diakses dari bagian lain komponen, tapi **tidak bisa** sebaliknya merujuk variabel level-instance. Cocok untuk konstanta, helper, atau hitungan lintas-instance (misal "berapa banyak komponen ini yang sudah dibuat"). Karena jalan sekali dan dibagi, state di sini **akumulatif** antar semua instance.
+
+Di React, `<script module>` kira-kira seperti variabel atau konstanta yang ditaruh **di luar** fungsi komponen; di Vue, seperti kode di luar `setup`.
+
+<Callout type="tip">
+Kamu boleh `export` dari `&lt;script module&gt;` (misal `export const MAX = 10`), dan komponen lain bisa meng-`import`-nya. Satu-satunya yang **tidak** boleh adalah `export default` — sebab default export sebuah file `.svelte` sudah dipakai untuk komponennya sendiri.
+</Callout>
+
+### Urutan eksekusi
+
+Aturannya sederhana tapi penting:
+
+1. **`<script module>` jalan duluan, dan hanya sekali** — saat modul pertama kali di-import/dievaluasi.
+2. **`<script>` biasa jalan setelahnya, dan berulang** — sekali untuk **tiap** instance komponen yang dibuat.
+
+Karena itulah kode di `<script module>` bisa "menumpuk": misalnya sebuah penghitung global akan terus bertambah tiap instance baru lahir, sementara state di `<script>` biasa selalu mulai segar untuk masing-masing instance.
+
+## 2. Contoh kode
+
+Komponen `.svelte` lengkap dengan keempat bagian:
+
+```svelte
+<!-- Counter.svelte -->
+<script module>
+	// Jalan SEKALI saat modul dievaluasi, dibagi ke semua instance.
+	// Cocok untuk konstanta & hitungan lintas-instance.
+	let totalDibuat = 0;
+	export const MAX = 10; // boleh diexport (TAPI bukan `export default`)
+</script>
+
+<script>
+	// Jalan untuk SETIAP instance; state-nya milik instance itu.
+	let { title } = $props(); // props dari parent (Svelte 5)
+	totalDibuat += 1; // menumpuk: tiap kartu baru menaikkan angka bersama ini
+	let id = totalDibuat;
+	let n = $state(0); // state lokal & reaktif
+</script>
+
+<!-- Markup: HTML + ekspresi Svelte -->
+<article class="card">
+	<h3>{title} (kartu #{id})</h3>
+	<p>Nilai: {n} / maks {MAX}</p>
+	<button onclick={() => n++}>Tambah</button>
+</article>
+
+<!-- Style ter-scope: .card di sini TIDAK memengaruhi .card di komponen lain -->
+<style>
+	.card {
+		border: 1px solid #ccc;
+		border-radius: 8px;
+		padding: 1rem;
+	}
+</style>
+```
+
+Kalau pakai **TypeScript**, cukup tambahkan `lang="ts"` di tag script:
+
+```svelte
+<script lang="ts">
+	// Sekarang boleh tulis tipe seperti biasa
+	let { title }: { title: string } = $props();
+	let n: number = $state(0);
+</script>
+
+<button onclick={() => n++}>{title}: {n}</button>
+```
+
+`<style>` yang ter-*scope* itu nyata kekuatannya. Selector `.card` di atas di-compile menjadi sesuatu seperti `.card.svelte-xyz123` — Svelte menambahkan hash unik per komponen sehingga aturan CSS-nya **tidak bocor** ke komponen lain, walau ada komponen lain yang juga punya class `.card`:
+
+```svelte
+<!-- Badge.svelte -->
+<span class="card">Ini class .card juga, TAPI tidak terkena border di atas</span>
+
+<style>
+	/* Aturan ini hanya berlaku untuk elemen di file INI */
+	.card {
+		color: tomato;
+	}
+</style>
+```
+
+## 3. Coba sendiri
+
+Demo di bawah adalah **satu komponen `.svelte` mandiri** yang memamerkan blok `<script>` (dengan `$state`/`$derived`), markup (event handler & blok kontrol), dan `<style>` ter-scope. Ubah-ubah isinya dan lihat live preview bergerak otomatis.
+
+```svelte
+<script>
+	let nama = $state('Svelte');
+	let klik = $state(0);
+	let panjang = $derived(nama.length);
+</script>
+
+<section class="kartu">
+	<h3>Halo, {nama}!</h3>
+	<input bind:value={nama} placeholder="ketik nama" />
+	<p>Nama punya {panjang} huruf.</p>
+	{#if klik === 0}
+		<p>Belum diklik sama sekali.</p>
+	{:else}
+		<p>Sudah diklik {klik} kali.</p>
+	{/if}
+	<button onclick={() => klik++}>Klik aku</button>
+</section>
+
+<style>
+	.kartu {
+		border: 1px solid #4b6;
+		border-radius: 10px;
+		padding: 1rem;
+		font-family: sans-serif;
+	}
+	button {
+		margin-top: 0.5rem;
+	}
+</style>
+```
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Struktur satu komponen"
+	svelte={`<!-- Counter.svelte: script + markup + style ter-scope dalam 1 file -->
+<script>
+	let count = $state(0);
+</script>
+<button onclick={() => count++}>{count}</button>
+<style>
+	button { font-weight: bold; }
+</style>`}
+	react={`// Counter.jsx: 1 fungsi + JSX; CSS biasanya di file terpisah
+import { useState } from 'react';
+export default function Counter() {
+	const [count, setCount] = useState(0);
+	return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}`}
+	vue={`<!-- Counter.vue: SFC dengan 3 blok terpisah -->
+<script setup>
+import { ref } from 'vue';
+const count = ref(0);
+</script>
+<template>
+	<button @click="count++">{{ count }}</button>
+</template>
+<style scoped>
+button { font-weight: bold; }
+</style>`}
+	diff={{ svelte: [3], react: [4], vue: [4] }}
+	note="React: satu fungsi yang me-return JSX, styling umumnya di luar file komponen. Vue SFC: tiga blok terpisah (script/template/style scoped) — paling dekat ke Svelte. Svelte: bentuknya mirip SFC, tapi reaktivitas dihasilkan compiler sehingga tak perlu pembungkus runtime seperti ref() atau useState(); markup ditulis langsung tanpa tag <template>."
+/>
+
+## 5. Latihan
+
+<Exercise title="Hitung total instance dengan &lt;script module&gt;">
+
+Buat komponen `Tiket.svelte`. Setiap kali sebuah tiket dirender, ia harus mendapat **nomor urut** unik (1, 2, 3, ...) yang dibagi-pakai oleh semua instance. Selain itu tiap tiket punya `nama` (dari props) dan sebuah counter lokal `cap` yang berdiri sendiri per tiket.
+
+Petunjuk: taruh penghitung bersama di `<script module>` (jalan sekali, akumulatif), dan state lokal di `<script>` biasa. Ingat aturan urutan eksekusi.
+
+{#snippet solution()}
+
+```svelte
+<!-- Tiket.svelte -->
+<script module>
+	// Jalan sekali; angka ini dibagi & menumpuk untuk semua instance.
+	let totalTiket = 0;
+</script>
+
+<script>
+	let { nama } = $props();
+
+	// Tiap instance menaikkan angka bersama, lalu menyimpan salinannya.
+	totalTiket += 1;
+	const nomor = totalTiket;
+
+	// State lokal: berdiri sendiri per tiket.
+	let cap = $state(0);
+</script>
+
+<article>
+	<h4>Tiket #{nomor} — {nama}</h4>
+	<button onclick={() => cap++}>Cap stempel ({cap})</button>
+</article>
+```
+
+Kalau kamu render `<Tiket nama="A" />` lalu `<Tiket nama="B" />`, A dapat nomor 1 dan B dapat nomor 2, tapi `cap` masing-masing terpisah.
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+File `.svelte` <strong>harus</strong> di-compile oleh Svelte sebelum bisa jalan — kamu tidak bisa meng-import-nya sebagai modul JS biasa atau menjalankannya langsung di Node tanpa toolchain Svelte (Vite + plugin Svelte). Rune seperti <code>$state</code> juga hanya bermakna di dalam file yang di-compile Svelte (<code>.svelte</code> atau <code>.svelte.js</code>/<code>.svelte.ts</code>); di file <code>.js</code>/<code>.ts</code> biasa mereka tidak berarti apa-apa.
+</Callout>
+
+<Callout type="warning">
+<code>&lt;script module&gt;</code> jalan <strong>sekali per modul</strong>, jadi jangan menaruh state yang seharusnya unik per komponen di sana — semua instance akan berbagi nilai yang sama dan saling "menimpa". State per-instance selalu di <code>&lt;script&gt;</code> biasa. Selain itu, kode di <code>&lt;script module&gt;</code> <strong>tidak bisa</strong> merujuk variabel level-instance (arah aksesnya satu arah: instance boleh baca module, module tidak boleh baca instance).
+</Callout>
+
+<Callout type="tip">
+Tidak ada aturan ketat soal urutan penulisan blok di file, tapi konvensi yang paling lazim dan enak dibaca adalah: <code>&lt;script module&gt;</code> → <code>&lt;script&gt;</code> → markup → <code>&lt;style&gt;</code>. Editor dan tooling Svelte juga mengasumsikan susunan ini.
+</Callout>
+
+<Callout type="legacy">
+Di Svelte 4, blok level-modul ditulis <code>&lt;script context="module"&gt;</code>. Svelte 5 menyederhanakannya jadi <code>&lt;script module&gt;</code> saja. Sintaks lama masih dikenali, tapi untuk kode baru pakai yang baru.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: '<script context="module">', modern: '<script module>', note: 'blok level-modul (jalan sekali)' },
+	{ legacy: 'export let title', modern: 'let { title } = $props()', note: 'menerima props di <script> instance' },
+	{ legacy: '$: total = a + b', modern: 'let total = $derived(a + b)', note: 'nilai turunan reaktif' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-files" label="Svelte files (.svelte) — dokumentasi resmi" />

@@ -1,0 +1,299 @@
+---
+title: Link options
+product: kit
+section: advanced
+sectionTitle: Advanced
+sectionOrder: 4
+order: 4
+status: stable
+description: Atur preload, history, fokus, dan scroll navigasi lewat atribut data-sveltekit-* pada elemen anchor — tanpa nulis satu baris JavaScript pun.
+docs: https://svelte.dev/docs/kit/link-options
+keywords: [link-options, preload-data, preload-code, replacestate, keepfocus, noscroll]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di SvelteKit, sebuah `<a href="/dashboard">` biasa bukan sekadar link HTML polos. Begitu app-mu ter-hydrate, SvelteKit memasang **client-side router**: klik link tidak memuat ulang seluruh halaman dari server, melainkan hanya mengambil data yang berubah lalu menukar komponen. Nah, **link options** adalah cara kamu memberi *instruksi* ke router itu — bukan lewat kode JavaScript, melainkan lewat **atribut `data-sveltekit-*` yang ditempel langsung di HTML**.
+
+Kenapa lewat atribut HTML, bukan props atau fungsi? Karena perilaku navigasi itu sifatnya **deklaratif dan kontekstual**. Kamu jarang mau mengatur satu link saja; biasanya kamu mau bilang "semua link di dalam navbar ini di-preload saat hover" atau "semua link di area komentar ini jangan di-preload". Atribut HTML bisa **diwariskan ke anak-anaknya** (mirip CSS `inherit`), jadi kamu set sekali di elemen induk dan berlaku ke semua `<a>` di dalamnya. Ini jauh lebih ringkas daripada menambah prop ke ratusan link satu per satu.
+
+**Analogi: rambu lalu lintas di dalam komplek.** Bayangkan link-mu adalah mobil, dan elemen HTML pembungkusnya adalah jalan. Kamu tidak menempel instruksi di setiap mobil; kamu memasang rambu di pintu masuk komplek: "di area ini, batas kecepatan 20" atau "di sini dilarang parkir". Setiap mobil yang lewat otomatis mengikuti rambu terdekat di atasnya. Kalau ada satu blok yang butuh aturan beda, kamu pasang rambu baru di blok itu yang **menimpa** rambu komplek. Persis seperti itulah `data-sveltekit-*` bekerja: dipasang di induk, diwariskan ke bawah, bisa ditimpa per-link.
+
+Ada **enam** atribut yang perlu kamu kuasai, dan mereka jatuh ke dalam dua kelompok:
+
+**Kelompok A — Performa / preloading (membuat navigasi terasa instan):**
+
+- **`data-sveltekit-preload-data`** — kapan men-*download data* (menjalankan fungsi `load` halaman tujuan) lebih awal. Nilai: `"hover"`, `"tap"`, atau `false`.
+- **`data-sveltekit-preload-code`** — kapan men-*download kode/modul* halaman tujuan lebih awal (tanpa menjalankan `load`-nya). Nilai: `"eager"`, `"viewport"`, `"hover"`, `"tap"`, atau `false`.
+
+**Kelompok B — Perilaku navigasi (mengubah cara router berpindah):**
+
+- **`data-sveltekit-reload`** — paksa full-page reload (matikan client-side routing untuk link ini).
+- **`data-sveltekit-replacestate`** — ganti entri history saat ini alih-alih menambah entri baru.
+- **`data-sveltekit-keepfocus`** — pertahankan fokus pada elemen yang sedang aktif setelah navigasi.
+- **`data-sveltekit-noscroll`** — jangan otomatis scroll ke atas setelah navigasi.
+
+### Preload itu memanfaatkan "jeda intensi"
+
+Inti dari dua atribut preload adalah satu observasi sederhana: **antara saat user memutuskan untuk mengklik dan saat jarinya benar-benar menekan, ada jeda 100-300ms.** Jeda itu biasanya terbuang sia-sia. SvelteKit memakainya untuk diam-diam menyiapkan halaman tujuan, jadi begitu klik terjadi, datanya sudah siap dan halaman muncul nyaris seketika.
+
+**Analogi: pelayan restoran yang jeli.** Pelayan yang baik memperhatikan saat matamu mulai melirik menu dessert; ia diam-diam memberi tahu dapur "siapkan, sepertinya meja 5 mau pesan". Begitu kamu benar-benar memesan, hidangannya keluar nyaris seketika. `data-sveltekit-preload-data="hover"` melakukan hal yang sama: saat kursormu hinggap di sebuah link, `load` halaman tujuan langsung dijalankan — sebelum klik terjadi.
+
+Bedanya **data** vs **code** penting dipahami:
+
+- **preload-code** hanya mengunduh *modul JavaScript* untuk halaman tujuan (komponen `+page.svelte`, `+layout.svelte`, dan file `+page.js`-nya). Ia **tidak menjalankan `load`**, jadi tidak ada request ke API/database. Murah dan aman.
+- **preload-data** melakukan semua yang dilakukan preload-code, **plus menjalankan fungsi `load`** halaman tujuan — artinya request data sungguhan. Lebih cepat saat diklik, tapi lebih "mahal" karena bisa memicu fetch yang akhirnya terbuang kalau user batal klik.
+
+Karena data preload memerlukan kodenya lebih dulu, **preload-data otomatis menyertakan preload-code**. Konsekuensinya: `data-sveltekit-preload-code` hanya berpengaruh kalau ia **lebih agresif** daripada `data-sveltekit-preload-data` yang berlaku. Urutan keagresifan (dari paling rajin ke paling santai): `eager` &rarr; `viewport` &rarr; `hover` &rarr; `tap`. Jadi men-set `preload-code="tap"` di tempat yang sudah punya `preload-data="hover"` itu sia-sia — data (yang lebih agresif) sudah mencakup code.
+
+### Perilaku navigasi: meniru detail browser
+
+Kelompok B mengisi celah antara "navigasi SPA" dan "navigasi browser klasik". Saat browser melakukan full reload, beberapa hal terjadi otomatis: history bertambah, halaman scroll ke atas, fokus reset ke `<body>`. Client-side router SvelteKit meniru perilaku default ini supaya terasa natural — tapi kadang kamu mau menyimpang. Empat atribut di kelompok B adalah tombol untuk menyimpang itu, masing-masing punya padanan programatik di opsi `goto()` (`pushState`/`replaceState`, `noScroll`, `keepFocus`) yang kita bahas di bagian contoh.
+
+## 2. Contoh kode
+
+Mulai dari yang paling sering dipakai: men-set default preload untuk **seluruh app** sekali di `app.html`, lalu menimpanya per-area.
+
+```html
+<!-- src/app.html — atribut diwariskan ke SEMUA <a> di dalam <body>.
+     Ini sudah jadi default di template SvelteKit. -->
+<body data-sveltekit-preload-data="hover">
+	%sveltekit.body%
+</body>
+```
+
+```svelte
+<!-- Menimpa default per-area & per-link di komponen Svelte -->
+<nav>
+	<!-- Mewarisi "hover" dari <body>: data di-preload saat kursor hinggap -->
+	<a href="/dashboard">Dashboard</a>
+
+	<!-- Timpa jadi "tap": data baru di-preload saat link MULAI ditekan
+	     (mousedown/touchstart). Hemat untuk halaman berat / mobile. -->
+	<a href="/laporan-besar" data-sveltekit-preload-data="tap">Laporan</a>
+</nav>
+
+<!-- Matikan preload untuk SELURUH area komentar sekaligus.
+     Semua <a> di dalam <section> ini ikut mati. -->
+<section data-sveltekit-preload-data="false">
+	{#each comments as comment}
+		<a href="/u/{comment.user}">{comment.user}</a>
+	{/each}
+</section>
+```
+
+<Callout type="tip">
+Atribut ini menerima <strong>nilai dinamis</strong> dari ekspresi Svelte, bukan cuma string statis. Pola umum: pilih <code>"tap"</code> saat di mobile dan <code>"hover"</code> saat di desktop, atau matikan secara bersyarat dengan memberi nilai <code>false</code>. Saat sebuah ekspresi menghasilkan <code>false</code>, SvelteKit memperlakukannya sebagai "mati" (preload nonaktif untuk link itu).
+</Callout>
+
+Selanjutnya **preload-code** untuk kasus di mana kamu mau kode siap lebih awal tapi tak mau memicu request data:
+
+```svelte
+<!-- Sidebar yang selalu terlihat. Kita mau MODUL halaman tujuan terunduh
+     segera setelah halaman ini selesai (eager), tapi JANGAN jalankan load-nya
+     (biar tidak ada fetch data yang mungkin terbuang). -->
+<aside data-sveltekit-preload-code="eager" data-sveltekit-preload-data="tap">
+	<a href="/pengaturan">Pengaturan</a>
+	<a href="/profil">Profil</a>
+</aside>
+```
+
+```svelte
+<!-- "viewport": kode di-preload saat link MASUK ke layar.
+     Cocok untuk daftar panjang — link di paling bawah baru disiapkan
+     ketika user scroll mendekatinya, bukan semuanya sekaligus. -->
+<ul>
+	{#each articles as article}
+		<li>
+			<a href="/artikel/{article.slug}" data-sveltekit-preload-code="viewport">
+				{article.title}
+			</a>
+		</li>
+	{/each}
+</ul>
+```
+
+<Callout type="warning">
+<code>"eager"</code> dan <code>"viewport"</code> <strong>hanya berlaku untuk link yang sudah ada di DOM tepat setelah navigasi</strong>. Link yang muncul belakangan (mis. dari blok kondisional yang baru jadi <code>true</code>, atau item yang ditambahkan ke daftar setelah render awal) tidak ikut ter-preload oleh kedua mode itu — untuk link dinamis seperti itu, andalkan <code>"hover"</code>/<code>"tap"</code>.
+</Callout>
+
+Sekarang **kelompok B** — perilaku navigasi. Contoh paling klasik: form pencarian yang mengetik ke URL query, di mana kamu tak mau setiap ketikan menumpuk history dan tak mau fokus lepas dari input.
+
+```svelte
+<!-- src/routes/search/+page.svelte -->
+<form data-sveltekit-replacestate data-sveltekit-keepfocus data-sveltekit-noscroll>
+	<!-- replacestate: tiap submit MENGGANTI entri history, bukan menambah.
+	     Jadi tombol Back tidak terjebak melewati 20 versi query. -->
+	<!-- keepfocus: fokus tetap di input setelah hasil dimuat -> user bisa
+	     terus mengetik tanpa klik ulang. -->
+	<!-- noscroll: halaman tidak melompat ke atas tiap hasil diperbarui. -->
+	<input name="q" placeholder="Cari..." />
+	<button>Cari</button>
+</form>
+
+<!-- Link biasa yang memodifikasi tampilan tanpa "merusak" posisi:
+     mis. tab filter yang hanya mengubah query string -->
+<a href="?sort=terbaru" data-sveltekit-noscroll data-sveltekit-replacestate>
+	Urutkan: Terbaru
+</a>
+```
+
+```svelte
+<!-- data-sveltekit-reload: matikan client-side routing, paksa full reload.
+     Gunakan saat link menuju rute yang DILAYANI sistem lain (mis. halaman
+     PHP lama, atau /admin yang adapter-nya beda) sehingga router SvelteKit
+     tak bisa menanganinya. rel="external" punya efek yang sama. -->
+<a href="/admin-legacy" data-sveltekit-reload>Panel admin lama</a>
+<a href="https://blog.contoh.com" rel="external">Blog (situs terpisah)</a>
+```
+
+Setiap atribut kelompok B punya **padanan programatik** lewat `goto()` dari `$app/navigation`. Pakai ini kalau navigasimu dipicu logika, bukan klik link:
+
+```js
+// src/lib/actions.js (dipanggil dari event handler)
+import { goto } from '$app/navigation';
+
+async function applyFilter(sort) {
+	await goto(`?sort=${sort}`, {
+		replaceState: true,  // = data-sveltekit-replacestate
+		noScroll: true,      // = data-sveltekit-noscroll
+		keepFocus: true,     // = data-sveltekit-keepfocus
+		invalidateAll: false // jalankan ulang SEMUA load? (default false)
+	});
+}
+```
+
+## 3. Coba sendiri
+
+Link options butuh client-side router SvelteKit yang sungguhan (preload, history, scroll), jadi tidak bisa dijalankan di playground browser terisolasi. Sebagai gantinya, pakai **tabel keputusan** ini untuk memilih atribut yang tepat, lalu **langkah uji lokal** untuk membuktikannya di proyekmu.
+
+```text
+PETA KEPUTUSAN: atribut mana yang kupakai?
+──────────────────────────────────────────────────────────
+Mau navigasi terasa instan, halaman ringan & sering diklik
+   -> data-sveltekit-preload-data="hover"   (default; data siap saat hover)
+
+Halaman berat / di mobile / link banyak & jarang diklik
+   -> data-sveltekit-preload-data="tap"     (tunggu sampai ditekan)
+
+Mau kode siap tapi JANGAN fetch data dulu
+   -> data-sveltekit-preload-code="eager|viewport"  + preload-data="tap"
+
+Matikan preload di satu area (mis. feed komentar berisi banyak link)
+   -> data-sveltekit-preload-data="false"   (pasang di elemen induk)
+
+Link ke sistem/situs lain (router SvelteKit tak bisa menangani)
+   -> data-sveltekit-reload   atau   rel="external"
+
+Tab/filter/pagination yang sering -> jangan banjiri tombol Back
+   -> data-sveltekit-replacestate
+
+Form pencarian / input -> jangan lepaskan fokus, jangan lompat ke atas
+   -> data-sveltekit-keepfocus + data-sveltekit-noscroll
+```
+
+```bash
+# Uji preload-data (lihat jeda intensi bekerja):
+# 1) Pastikan <body data-sveltekit-preload-data="hover"> di app.html.
+# 2) Buka DevTools > Network, lalu HOVER (jangan klik) sebuah <a>
+#    yang menuju rute ber-load.
+# 3) Amati request __data.json muncul SEBELUM kamu mengklik.
+#    Ganti link itu ke data-sveltekit-preload-data="tap" -> request
+#    baru muncul saat tombol mouse MULAI ditekan, bukan saat hover.
+```
+
+```bash
+# Uji replacestate (history tidak menumpuk):
+# 1) Buat /search dengan link ?sort=a, ?sort=b, ?sort=c TANPA atribut apa pun.
+#    Klik berurutan, lalu tekan Back 3x -> kamu melewati tiap versi. (default)
+# 2) Tambah data-sveltekit-replacestate pada link-link itu. Klik berurutan,
+#    tekan Back 1x -> langsung kembali ke halaman SEBELUM /search.
+#    (tiap navigasi mengganti entri, bukan menambah)
+```
+
+<Callout type="tip">
+Untuk membuktikan <code>noscroll</code> & <code>keepfocus</code>: bikin halaman panjang dengan input di atas dan link <code>?x=1</code> di bawah. Scroll ke bawah, fokuskan ke input, klik link. Tanpa atribut: halaman melompat ke atas dan fokus hilang. Dengan <code>data-sveltekit-noscroll data-sveltekit-keepfocus</code>: posisi scroll & fokus tetap.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Setel link options untuk tiga skenario UX">
+Kamu sedang membangun halaman e-commerce. Tentukan atribut <code>data-sveltekit-*</code> (dan/atau opsi <code>goto()</code>) yang tepat untuk tiga skenario berikut, dan jelaskan singkat <em>kenapa</em>:
+
+1. **Navbar utama** (Home, Kategori, Keranjang) — selalu terlihat, halaman ringan, sangat sering diklik. Mau terasa secepat mungkin.
+2. **Grid produk** berisi 60 kartu, masing-masing link ke halaman detail yang menjalankan `load` berat (query stok + review). User biasanya hanya mengklik 1-2. Jangan boroskan request, tapi kode boleh disiapkan saat kartu mendekati layar.
+3. **Bar filter** (Harga, Rating, Urutkan) yang mengubah query string halaman daftar. User sering gonta-ganti filter dan tetap melihat-lihat grid. Tombol Back tidak boleh terjebak, posisi scroll tidak boleh melompat.
+
+{#snippet solution()}
+
+  ```svelte
+  <!-- 1) Navbar: data preload saat hover -> halaman ringan + sering diklik,
+        jadi "mahal"-nya preload-data terbayar oleh kecepatan terasa instan. -->
+  <nav data-sveltekit-preload-data="hover">
+  	<a href="/">Home</a>
+  	<a href="/kategori">Kategori</a>
+  	<a href="/keranjang">Keranjang</a>
+  </nav>
+
+  <!-- 2) Grid produk: KODE disiapkan saat kartu masuk layar (viewport),
+        tapi DATA hanya saat ditekan (tap) -> tidak ada query stok/review
+        yang terbuang untuk 58 kartu yang tak diklik. preload-code lebih
+        agresif dari preload-data, jadi keduanya berlaku. -->
+  <ul data-sveltekit-preload-code="viewport" data-sveltekit-preload-data="tap">
+  	{#each products as p}
+  		<li><a href="/produk/{p.slug}">{p.name}</a></li>
+  	{/each}
+  </ul>
+
+  <!-- 3) Bar filter: replacestate (Back tak menumpuk tiap kombinasi filter)
+        + noscroll (grid tidak melompat ke atas tiap filter diubah). -->
+  <div data-sveltekit-replacestate data-sveltekit-noscroll>
+  	<a href="?sort=harga">Harga</a>
+  	<a href="?sort=rating">Rating</a>
+  	<a href="?sort=terbaru">Terbaru</a>
+  </div>
+  ```
+
+  Kalau filter dipasang lewat tombol/JS alih-alih `<a>`, padanannya:
+
+  ```js
+  import { goto } from '$app/navigation';
+
+  function setSort(sort) {
+  	// replaceState + noScroll = dua atribut di atas, versi programatik
+  	goto(`?sort=${sort}`, { replaceState: true, noScroll: true });
+  }
+  ```
+
+  Inti penalaran: skenario 1 mengutamakan kecepatan (data eager karena murah & sering dipakai); skenario 2 mengutamakan hemat request (pisahkan code dari data — siapkan kode, tahan data); skenario 3 soal kualitas navigasi (jaga history & scroll tetap waras saat user bereksplorasi).
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>data-sveltekit-preload-code</code> hanya berpengaruh kalau ia <strong>lebih agresif</strong> daripada <code>preload-data</code> yang berlaku di tempat yang sama. Urutan keagresifan: <code>eager</code> &gt; <code>viewport</code> &gt; <code>hover</code> &gt; <code>tap</code>. Jadi memasang <code>preload-code="hover"</code> berdampingan dengan <code>preload-data="hover"</code> (atau lebih agresif) itu sia-sia — preload-data sudah otomatis menyertakan kodenya. preload-code baru berguna ketika kamu sengaja membuatnya lebih rajin daripada preload-data (mis. <code>code="viewport"</code> + <code>data="tap"</code>).
+</Callout>
+
+<Callout type="pitfall">
+<code>data-sveltekit-keepfocus</code> aman di <strong>form pencarian</strong>, tapi <strong>berbahaya pada link biasa</strong>. Setelah pindah halaman, user (terutama pengguna screen reader/keyboard) mengharapkan fokus berpindah ke konten baru. Menahan fokus di link yang tadi diklik bisa membuat mereka "tersesat". Dokumentasi resmi pun menyarankan keepfocus hanya untuk elemen yang memang harus tetap fokus (input pencarian), bukan untuk link navigasi.
+</Callout>
+
+<Callout type="warning">
+Preload bukan sihir gratis. <code>preload-data</code> menjalankan <code>load</code> halaman tujuan lebih awal — yang berarti request API/DB yang <strong>terbuang</strong> kalau user batal mengklik. Untuk halaman berat atau di mobile (di mana "hover" praktis berarti "saat menyentuh" dan kuota lebih mahal), pilih <code>"tap"</code> agar request hanya jalan saat user benar-benar berniat pindah. SvelteKit juga otomatis melewati preload bila <code>navigator.connection.saveData</code> aktif (mode hemat data).
+</Callout>
+
+<Callout type="tip">
+<code>data-sveltekit-reload</code> dan <code>rel="external"</code> punya efek sama: keduanya mematikan client-side routing dan memaksa full-page navigation. Pakai untuk link yang menuju rute di luar kendali router SvelteKit (sistem lama, subdomain berbeda, file unduhan). Untuk link ke situs eksternal sungguhan, <code>rel="external"</code> lebih idiomatis karena sekaligus bermakna semantik HTML standar.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/link-options" label="SvelteKit — Link options (preload-data, preload-code, reload, replacestate, keepfocus, noscroll)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-navigation" label="SvelteKit — $app/navigation (goto: replaceState, noScroll, keepFocus, invalidateAll)" />

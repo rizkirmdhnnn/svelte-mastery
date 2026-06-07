@@ -1,0 +1,272 @@
+---
+title: class
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 19
+status: stable
+description: Memberi kelas CSS secara dinamis di Svelte 5 — atribut class dengan objek/array (clsx), directive class:name lama, dan cara menggabungkan kelas dengan rapi.
+docs: https://svelte.dev/docs/svelte/class
+keywords: [class, clsx, conditional class, class directive, styling]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Hampir setiap UI butuh **kelas CSS yang berubah tergantung state**: tombol jadi `active` saat dipilih, baris jadi `selected` saat di-klik, alert jadi `error` atau `success`. Pertanyaannya cuma satu: bagaimana cara paling enak menyusun string `class` yang isinya kondisional?
+
+Di React kamu pasti pernah merasakan "neraka string kelas":
+
+```jsx
+// React tanpa helper — cepat berantakan
+<div className={`card ${isActive ? 'active' : ''} ${isBig ? 'big' : ''}`}>
+```
+
+Spasi nyangkut, ternary bertumpuk, dan akhirnya semua orang menyerah lalu memasang library `clsx` atau `classnames`. Nah, kabar baiknya: **Svelte 5 memasang `clsx` itu langsung ke dalam atribut `class`**. Kamu tidak perlu install apa pun.
+
+Ada dua cara memberi kelas dinamis di Svelte. Penting membedakannya karena docs resmi sekarang **merekomendasikan yang pertama** dan menandai yang kedua sebagai gaya lama:
+
+- **Atribut `class` (modern, Svelte 5.16+)** — kamu mengisi `class` dengan **string, objek, atau array**. Svelte memprosesnya lewat clsx: key/elemen yang *truthy* dirangkai jadi string kelas, yang *falsy* dibuang. Ini cara yang dianjurkan.
+- **Directive `class:nama` (lama, tetap jalan)** — kamu menempel satu directive per kelas: `class:active={isActive}`. Masih valid dan tidak deprecated, tapi kurang "composable".
+
+### Analogi: daftar tamu vs stiker satu-satu
+
+Bayangkan kamu menentukan siapa yang boleh masuk ke sebuah ruangan (kelas CSS yang aktif di elemen).
+
+Cara **directive `class:`** itu seperti menempel stiker "BOLEH MASUK" satu per satu ke tiap orang: `class:active`, `class:big`, `class:error`. Satu stiker, satu nama. Kalau ada sepuluh kondisi, ada sepuluh stiker berjejer di elemenmu.
+
+Cara **atribut objek `class={...}`** itu seperti menyerahkan **satu daftar tamu** ke petugas: "ini daftarnya, masukkan yang statusnya `true`". Satu tempat, semua aturan terkumpul rapi, dan gampang digabung dengan daftar lain (misalnya daftar dari komponen induk). Inilah arti "composable".
+
+### Kenapa atribut objek lebih unggul
+
+Alasan utamanya **komposisi**. Objek dan array bisa di-*nest* dan diratakan otomatis oleh clsx. Ini menyelesaikan masalah klasik: "komponen Button punya kelas dasarnya sendiri, tapi pemakai juga mau menambah kelas dari luar." Dengan atribut, tinggal `class={['cool-button', props.class]}` — kelas internal dan kelas dari pemakai menyatu tanpa drama string. Dengan directive `class:`, hal seperti ini hampir mustahil ditulis rapi.
+
+<Callout type="tip">
+Catatan versi: atribut <code>class</code> dengan objek/array butuh <strong>Svelte 5.16+</strong>. Untuk dukungan tipe <code>ClassValue</code> (berguna saat menerima prop <code>class</code> di TypeScript) butuh <strong>Svelte 5.19+</strong>. Kalau objek <code>class</code> kamu "tidak mempan", cek dulu versi Svelte di <code>package.json</code>.
+</Callout>
+
+## 2. Contoh kode
+
+### Atribut `class` — string, objek, dan array
+
+```svelte
+<script>
+	let cool = $state(true);
+	let large = $state(false);
+	let faded = $state(false);
+</script>
+
+<!-- 1) String / ternary biasa: tetap boleh untuk kasus sederhana -->
+<div class={large ? 'box large' : 'box small'}>String ternary</div>
+
+<!-- 2) OBJEK (clsx): key dengan nilai truthy jadi kelas aktif.
+     Di sini 'cool' aktif kalau cool === true,
+     'lame' aktif kalau cool === false (jadi kebalikannya). -->
+<div class={{ cool, lame: !cool }}>Pakai objek</div>
+
+<!-- Shorthand { cool } itu sama dengan { cool: cool }:
+     nama key = nama variabel, sama seperti shorthand atribut biasa. -->
+
+<!-- 3) ARRAY (clsx): tiap elemen truthy ikut masuk.
+     Pola `kondisi && 'nama-kelas'` populer: kalau kondisi false,
+     hasilnya false dan dibuang clsx; kalau true, jadi 'nama-kelas'. -->
+<div class={[faded && 'saturate-0 opacity-50', large && 'scale-200', 'box']}>
+	Pakai array
+</div>
+
+<style>
+	.box { padding: 1rem; border: 1px solid #ccc; }
+	.cool { color: teal; font-weight: bold; }
+	.lame { color: gray; }
+	.large { font-size: 2rem; }
+</style>
+```
+
+### Komposisi: gabung kelas internal komponen dengan kelas dari pemakai
+
+Ini "killer feature" dari atribut objek/array. Array bisa di-*nest*, dan clsx meratakannya:
+
+```svelte
+<!-- Button.svelte -->
+<script>
+	// pemakai boleh mengoper kelas tambahan lewat prop `class`
+	let { class: extra, children } = $props();
+</script>
+
+<!-- 'btn' selalu ada; lalu apa pun yang dioper pemakai ikut digabung.
+     extra boleh berupa string, objek, atau array — clsx urus semuanya. -->
+<button class={['btn', extra]}>
+	{@render children?.()}
+</button>
+```
+
+```svelte
+<!-- Pemakai: -->
+<Button class="primary">Simpan</Button>
+
+<!-- atau kondisional, tetap rapi: -->
+<Button class={{ primary: isPrimary, danger: isDanger }}>Hapus</Button>
+```
+
+<Callout type="tip">
+Di TypeScript, beri tipe prop <code>class</code> dengan <code>ClassValue</code> agar menerima string/objek/array secara aman:
+
+```svelte
+<script lang="ts">
+	import type { ClassValue } from 'svelte/elements';
+	let { class: extra }: { class?: ClassValue } = $props();
+</script>
+```
+</Callout>
+
+### Directive `class:nama` — gaya lama yang masih jalan
+
+```svelte
+<script>
+	let cool = $state(true);
+	let active = $state(false);
+</script>
+
+<!-- class:nama={boolean} -> toggle satu kelas berdasarkan kondisi -->
+<div class:cool={cool} class:lame={!cool}>Directive klasik</div>
+
+<!-- Shorthand: kalau nama kelas == nama variabel, cukup `class:cool` -->
+<p class:active>Status</p>
+
+<button onclick={() => (active = !active)}>Toggle</button>
+```
+
+Secara hasil, `class:cool={cool} class:lame={!cool}` **identik** dengan `class={{ cool, lame: !cool }}`. Bedanya hanya gaya penulisan dan kemampuan komposisi.
+
+## 3. Coba sendiri
+
+Mainkan checkbox-nya dan perhatikan bagaimana objek `class` menyalakan/mematikan kelas secara reaktif. Coba juga lihat bahwa nilai `false` pada array benar-benar hilang dari atribut.
+
+<Playground code={`<script>
+  let active = $state(true);
+  let big = $state(false);
+  let faded = $state(false);
+</script>
+<label><input type="checkbox" bind:checked={active} /> active</label>
+<label><input type="checkbox" bind:checked={big} /> big</label>
+<label><input type="checkbox" bind:checked={faded} /> faded</label>
+<hr />
+<!-- versi OBJEK -->
+<p class={{ active, big, faded }}>
+  Kotak (objek): aktifkan checkbox di atas
+</p>
+<!-- versi ARRAY dengan pola kondisi && 'kelas' -->
+<p class={['box', big && 'big', faded && 'faded']}>
+  Kotak (array)
+</p>
+<!-- versi DIRECTIVE lama, hasilnya sama -->
+<p class:active class:big={big} class:faded={faded}>
+  Kotak (directive class:)
+</p>
+<style>
+  .box { border: 1px dashed #999; }
+  .active { color: teal; font-weight: bold; }
+  .big { font-size: 1.6rem; }
+  .faded { opacity: 0.4; }
+  p { padding: 0.5rem; }
+</style>`} />
+
+<Callout type="tip">
+Di dalam Playground hindari backtick dan <code>$&#123;...&#125;</code> karena merusak template. Untuk merangkai kelas dinamis, gunakan objek/array <code>class</code> seperti di atas (lebih bersih daripada string + plus operator).
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Badge status dengan kelas dinamis">
+Buat satu komponen Svelte 5 yang menampilkan badge status pesanan. Aturannya:
+
+1. Ada variabel `status` (string) bernilai salah satu dari `'pending'`, `'paid'`, atau `'failed'`. Sediakan tiga tombol untuk menggantinya.
+2. Badge `<span>` selalu punya kelas dasar `badge`.
+3. Tambahkan kelas warna sesuai status: `is-pending`, `is-paid`, atau `is-failed`. **Gunakan atribut objek `class`** (bukan directive).
+4. Tambahkan kelas `pulse` HANYA ketika status `'pending'` (untuk animasi menunggu), digabung di objek/array yang sama.
+
+Pakai `$derived` bila perlu untuk menentukan kondisi.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	let status = $state('pending');
+
+	// turunan boolean untuk tiap kondisi (opsional, biar objeknya enak dibaca)
+	let isPending = $derived(status === 'pending');
+</script>
+
+<div>
+	<button onclick={() => (status = 'pending')}>Pending</button>
+	<button onclick={() => (status = 'paid')}>Paid</button>
+	<button onclick={() => (status = 'failed')}>Failed</button>
+</div>
+
+<!-- objek class: key truthy yang aktif.
+     Hanya satu dari is-* yang true karena cocok-string ke status. -->
+<span
+	class={{
+		badge: true,
+		'is-pending': status === 'pending',
+		'is-paid': status === 'paid',
+		'is-failed': status === 'failed',
+		pulse: isPending
+	}}
+>
+	{status}
+</span>
+
+<style>
+	.badge { padding: 0.2rem 0.6rem; border-radius: 999px; color: white; }
+	.is-pending { background: #b8860b; }
+	.is-paid { background: seagreen; }
+	.is-failed { background: crimson; }
+	.pulse { animation: pulse 1s infinite; }
+	@keyframes pulse { 50% { opacity: 0.5; } }
+</style>
+```
+
+Alternatif pakai array (sama validnya):
+
+```svelte
+<span class={['badge', 'is-' + status, isPending && 'pulse']}>{status}</span>
+```
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Nilai <code>false</code> di string biasa tidak hilang — di objek/array baru hilang.</strong> Kalau kamu merangkai string sendiri seperti <code>class=&#123;'box ' + (big && 'big')&#125;</code>, saat <code>big</code> bernilai <code>false</code> hasilnya jadi <code>"box false"</code> — kelas hantu <code>false</code> nyangkut! Pakai objek <code>&#123;&#123; box: true, big &#125;&#125;</code> atau array <code>&#123;['box', big && 'big']&#125;</code> supaya clsx membuang yang falsy dengan benar.
+</Callout>
+
+<Callout type="warning">
+Hati-hati membedakan <code>undefined/null</code> vs <code>false</code> pada atribut <em>biasa</em> (bukan lewat clsx). Pada atribut, <code>false</code> di-stringify jadi teks <code>"false"</code>, sedangkan <code>undefined</code>/<code>null</code> menghilangkan atribut sepenuhnya. Di dalam objek/array <code>class</code> hal ini tidak jadi masalah karena clsx hanya mengambil yang truthy — tapi ingat aturan ini saat kamu menulis atribut lain secara manual.
+</Callout>
+
+<Callout type="tip">
+Untuk <strong>menggabungkan kelas dari luar komponen</strong>, selalu pilih atribut array: <code>class=&#123;['btn', props.class]&#125;</code>. Objek dan array boleh di-<em>nest</em> dan akan diratakan clsx, jadi <code>props.class</code> boleh berupa string, objek, maupun array — semuanya menyatu mulus. Pola ini sulit ditiru dengan directive <code>class:</code>.
+</Callout>
+
+<Callout type="legacy">
+Directive <code>class:nama=&#123;kondisi&#125;</code> <strong>tidak deprecated</strong> dan tetap berfungsi di Svelte 5 — jangan panik kalau melihatnya di kode lama. Namun docs resmi kini merekomendasikan atribut objek/array karena <em>"lebih powerful dan composable"</em>. Untuk kode baru, lebih baik membiasakan diri dengan <code>class=&#123;&#123; ... &#125;&#125;</code>.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'class:active={isActive}', modern: 'class={{ active: isActive }}', note: 'satu kelas kondisional' },
+	{ legacy: 'class:a class:b={x}', modern: 'class={{ a: true, b: x }}', note: 'banyak kelas terkumpul di satu objek' },
+	{ legacy: "class={'btn ' + extra}", modern: "class={['btn', extra]}", note: 'array aman dari nilai falsy & bisa di-nest' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/class" label="class — atribut & directive (dokumentasi resmi Svelte)" />

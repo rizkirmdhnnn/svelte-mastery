@@ -1,0 +1,330 @@
+---
+title: drizzle
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 2
+status: stable
+description: Add-on drizzle untuk sv — pasang ORM Drizzle ke SvelteKit, pilih database (SQLite/PostgreSQL/MySQL) & driver-nya, lalu kelola schema, koneksi, dan migrasi.
+docs: https://svelte.dev/docs/cli/drizzle
+keywords: [drizzle, orm, sv add, database, schema, migrasi]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sv add drizzle` adalah add-on yang **memasang dan mengonfigurasi [Drizzle ORM](https://orm.drizzle.team)** ke dalam proyek SvelteKit-mu. Satu perintah ini menanyakan beberapa pilihan (database apa, driver mana, pakai Docker atau tidak), lalu menyuntik: paket dependensi yang tepat, file koneksi database server-only, file schema, file `drizzle.config.ts`, sebuah `.env`, dan beberapa script `db:*` di `package.json`. Tujuannya menghapus pekerjaan setup yang biasanya bikin pusing di hari pertama: "driver mana yang cocok dengan database-ku, di mana koneksi diletakkan supaya tidak bocor ke browser, dan bagaimana cara migrasi."
+
+Kalau kamu datang dari ekosistem Node, posisi Drizzle paling gampang dipahami dengan membandingkannya ke **Prisma** atau **TypeORM** yang mungkin sudah kamu pakai di Next.js/Nest.js. Ketiganya sama-sama "ORM": lapisan yang membuatmu menulis query database dalam TypeScript yang ter-type, bukan string SQL mentah. Bedanya filosofi:
+
+- **Prisma** punya bahasa schema sendiri (`schema.prisma`) dan sebuah *engine* biner terpisah. Abstraksinya tebal — kamu jarang menyentuh SQL, tapi juga "jauh" dari SQL.
+- **Drizzle** menulis schema **langsung dalam TypeScript** dan hampir tidak menyembunyikan SQL. Query Drizzle dibaca seperti SQL (`db.select().from(user).where(...)`). Tidak ada engine biner, tidak ada langkah codegen wajib untuk tipe — tipe muncul dari schema TS-mu secara langsung. Hasilnya: bundle ringan, dingin-start cepat (penting untuk serverless/edge), dan kontrol penuh atas query.
+
+Trade-off-nya objektif: Drizzle menuntutmu lebih paham SQL (ia tidak menyembunyikannya), sedangkan Prisma lebih "ramah pemula" dengan API yang lebih jinak. Add-on `sv add drizzle` memilih Drizzle karena cocok dengan semangat SvelteKit yang ringan dan dekat ke platform.
+
+### Analogi: cetak biru, mandor, dan buku catatan renovasi
+
+Bayangkan database-mu sebagai **sebuah gedung**, dan tiga konsep inti Drizzle sebagai tiga peran di proyek konstruksi:
+
+- **Schema** (`schema.ts`) adalah **cetak biru (blueprint)** — satu-satunya sumber kebenaran tentang bentuk gedung: ada tabel/ruangan apa, kolom/perabotnya apa, tipe datanya apa. Kamu mengubah gedung dengan mengubah cetak birunya, bukan dengan membobok dinding sembarangan.
+- **Koneksi** (`db` di `index.ts`) adalah **mandor** — satu orang yang dipercaya memegang kunci dan benar-benar masuk ke gedung untuk mengambil/menaruh barang. Semua perintahmu (`select`, `insert`) lewat mandor ini. Mandor ini **hanya boleh ada di sisi server** — kamu tidak akan menyerahkan kunci gedung ke pengunjung (browser).
+- **Migrasi** adalah **buku catatan renovasi** — riwayat berurutan setiap perubahan struktur ("12 Mei: tambah kolom telepon", "20 Mei: hapus tabel draft"). Dengan buku ini, gedung di server lokalmu, di server tim, dan di produksi bisa dirombak ke bentuk yang sama persis, langkah demi langkah, tanpa menebak-nebak.
+
+Tiga peran ini akan kita lihat sebagai tiga file nyata di bagian berikut.
+
+### Tiga pertanyaan yang ditanyakan add-on
+
+Saat kamu menjalankannya, add-on menanyakan tiga hal:
+
+1. **Database mana?** Pilihannya `sqlite`, `postgresql`, atau `mysql`. Ini menentukan dialek SQL dan tipe kolom yang tersedia.
+2. **Driver/klien mana?** Tiap database punya beberapa pustaka driver. Pilihan ini menentukan *bagaimana* aplikasimu menyambung ke database (lewat file lokal, TCP, atau HTTP ke layanan cloud).
+3. **Pakai Docker?** Khusus `postgresql`/`mysql`, add-on bisa membuat `docker-compose.yml` agar kamu punya instance database lokal sekali `docker compose up` — tanpa install Postgres manual.
+
+| Database | Driver/klien yang ditawarkan | Cocok untuk |
+|---|---|---|
+| `sqlite` | `better-sqlite3` | File lokal, app kecil, prototipe, runtime Node biasa |
+| `sqlite` | `libsql` | SQLite versi jaringan (file lokal atau remote), edge-friendly |
+| `sqlite` | `turso` | Layanan SQLite ter-host (libSQL di cloud) |
+| `postgresql` | `postgres.js` | Postgres umum lewat TCP (driver cepat & modern) |
+| `postgresql` | `neon` | Postgres serverless Neon lewat HTTP (cocok edge) |
+| `mysql` | `mysql2` | MySQL/MariaDB umum lewat TCP |
+| `mysql` | `planetscale` | MySQL serverless PlanetScale lewat HTTP |
+
+<Callout type="tip">
+Bingung pilih apa untuk belajar? Ambil **`sqlite` + `better-sqlite3`**. Tanpa server database, tanpa Docker, tanpa kredensial — databasenya cuma satu file (mis. `local.db`) di folder proyek. Kamu bisa fokus belajar Drizzle, bukan mengurus infrastruktur. Pindah ke Postgres nanti hanya soal ganti dialek & driver; pola schema/query Drizzle-nya nyaris sama.
+</Callout>
+
+## 2. Contoh kode
+
+Memasang add-on. Mode interaktif menanyakan tiap pilihan; mode non-interaktif menulis semuanya dalam satu string (berguna untuk skrip/CI).
+
+```bash
+# Interaktif — sv bertanya database, driver, dan Docker satu per satu.
+npx sv add drizzle
+
+# Non-interaktif — semua jawaban dikunci dalam satu argumen.
+# Format: drizzle="database:<db>+client:<driver>+docker:<yes|no>"
+npx sv add drizzle="database:postgresql+client:postgres.js+docker:yes"
+
+# Contoh paling ringan untuk belajar (tanpa server DB, tanpa Docker):
+npx sv add drizzle="database:sqlite+client:better-sqlite3"
+```
+
+Setelah selesai, add-on menambahkan kira-kira struktur ini (untuk pilihan SQLite + better-sqlite3):
+
+```bash
+my-app/
+├─ src/lib/server/db/
+│  ├─ index.ts        # KONEKSI: instance `db` (mandor) — server-only
+│  └─ schema.ts       # SCHEMA: definisi tabel (cetak biru)
+├─ drizzle.config.ts  # config untuk drizzle-kit (alat migrasi/studio)
+├─ .env               # menyimpan DATABASE_URL (jangan di-commit)
+└─ package.json       # +script: db:push, db:generate, db:migrate, db:studio
+```
+
+**Schema** — cetak birunya. Perhatikan tabel didefinisikan dengan TypeScript biasa; tipe baris (`User`) bisa diturunkan otomatis dari sini, tanpa codegen.
+
+```ts
+// src/lib/server/db/schema.ts  (dialek SQLite)
+import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+
+// satu tabel "user" dengan dua kolom. Ini SATU-SATUNYA sumber kebenaran
+// soal bentuk tabel — ubah di sini, lalu migrasikan.
+export const user = sqliteTable('user', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	age: integer('age'),
+	username: text('username').notNull().unique()
+});
+
+// Tipe TS diturunkan LANGSUNG dari schema — tak perlu generate apa pun.
+export type User = typeof user.$inferSelect;       // bentuk baris saat di-SELECT
+export type NewUser = typeof user.$inferInsert;    // bentuk data saat INSERT
+```
+
+Versi Postgres berbeda hanya di *import dialek* dan tipe kolomnya, polanya sama:
+
+```ts
+// src/lib/server/db/schema.ts  (dialek PostgreSQL)
+import { pgTable, serial, integer, text } from 'drizzle-orm/pg-core';
+
+export const user = pgTable('user', {
+	id: serial('id').primaryKey(),            // serial = auto-increment Postgres
+	age: integer('age'),
+	username: text('username').notNull().unique()
+});
+```
+
+**Koneksi** — mandornya. Inilah file yang membuat instance `db` yang kamu pakai di seluruh kode server.
+
+```ts
+// src/lib/server/db/index.ts  (SQLite + better-sqlite3)
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+import { env } from '$env/dynamic/private';      // alias SvelteKit, server-only
+import * as schema from './schema';
+
+// Gagal cepat kalau kredensial belum diisi — lebih baik error jelas di start.
+if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
+
+const client = new Database(env.DATABASE_URL);    // buka file local.db
+
+// `db` = mandor. Sertakan { schema } agar query relasional ter-type penuh.
+export const db = drizzle(client, { schema });
+```
+
+**Memakai `db` di endpoint server** — Drizzle membaca seperti SQL, tapi ter-type:
+
+```ts
+// src/routes/api/users/+server.ts
+import { json } from '@sveltejs/kit';
+import { db } from '$lib/server/db';
+import { user } from '$lib/server/db/schema';
+import { eq } from 'drizzle-orm';
+
+// GET /api/users  -> ambil semua user
+export async function GET() {
+	const rows = await db.select().from(user);     // SELECT * FROM user
+	return json(rows);
+}
+
+// POST /api/users  -> sisipkan user baru
+export async function POST({ request }) {
+	const { username, age } = await request.json();
+	// .returning() mengembalikan baris yang baru dibuat (didukung SQLite/Postgres)
+	const [created] = await db.insert(user).values({ username, age }).returning();
+	return json(created, { status: 201 });
+}
+```
+
+## 3. Coba sendiri
+
+Drizzle membaca/menulis ke database asli lewat driver Node, jadi tidak bisa dijalankan di live preview browser. Berikut **alur kerja end-to-end** beranotasi yang bisa kamu ikuti di proyek SvelteKit lokal — dari pasang add-on sampai melihat datanya.
+
+```bash
+# 1) Punya proyek SvelteKit dulu (kalau belum):
+npx sv create my-app --template minimal --types ts --install npm
+cd my-app
+
+# 2) Pasang add-on Drizzle dengan pilihan paling ringan (SQLite):
+npx sv add drizzle="database:sqlite+client:better-sqlite3"
+
+# 3) Isi DATABASE_URL di .env (add-on biasanya sudah mengisi default).
+#    Untuk better-sqlite3, ini cukup sebuah path file:
+#      DATABASE_URL=local.db
+
+# 4) Edit src/lib/server/db/schema.ts sesuai kebutuhanmu (lihat Bagian 2).
+
+# 5) Dorong schema ke database. "push" membuat/menyelaraskan tabel
+#    LANGSUNG dari schema, tanpa file migrasi — cepat untuk prototyping.
+npm run db:push
+
+# 6) Buka Drizzle Studio: GUI di browser untuk melihat & mengedit isi tabel.
+npm run db:studio        # buka URL yang muncul (mis. https://local.drizzle.studio)
+
+# 7) Jalankan app dan ketuk endpoint yang memakai `db`:
+npm run dev
+curl http://localhost:5173/api/users
+```
+
+Empat script `db:*` yang ditambahkan add-on, dan bedanya:
+
+| Script | Menjalankan | Untuk apa |
+|---|---|---|
+| `npm run db:push` | `drizzle-kit push` | Menyelaraskan struktur DB **langsung** dari `schema.ts`. Cepat, **tanpa** riwayat file migrasi. Ideal saat prototyping. |
+| `npm run db:generate` | `drizzle-kit generate` | Membandingkan schema dengan keadaan terakhir lalu **menulis file migrasi SQL** (`.sql` ber-nomor) ke folder `drizzle/`. Belum menyentuh DB. |
+| `npm run db:migrate` | `drizzle-kit migrate` | **Menjalankan** file-file migrasi yang sudah di-generate ke database, berurutan. Inilah jalur untuk produksi. |
+| `npm run db:studio` | `drizzle-kit studio` | Membuka **Drizzle Studio**, GUI web untuk menjelajah/mengedit data. |
+
+Inti yang sering bikin bingung pemula: **`db:push` vs `db:generate` + `db:migrate`**. Keduanya sama-sama mengubah struktur database, tapi caranya beda:
+
+- `db:push` = "sketsa langsung di dinding". Cepat, enak saat eksperimen sendiri, tapi **tidak meninggalkan jejak** dan bisa **menghilangkan data** saat ia memutuskan perlu drop/ubah kolom.
+- `db:generate` + `db:migrate` = "buat blueprint resmi, lalu eksekusi sesuai blueprint". Tiap perubahan jadi file `.sql` yang bisa di-review, di-commit ke git, dan dijalankan ulang persis sama di server lain. Inilah cara yang aman untuk tim & produksi.
+
+```ts
+// drizzle.config.ts — dibaca oleh drizzle-kit (push/generate/migrate/studio).
+// PENTING: file ini dijalankan oleh drizzle-kit di Node BIASA, di LUAR SvelteKit.
+// Maka ia memakai process.env (bukan $env/dynamic/private yang khas SvelteKit).
+import { defineConfig } from 'drizzle-kit';
+
+if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
+
+export default defineConfig({
+	schema: './src/lib/server/db/schema.ts', // di mana cetak biru berada
+	dbCredentials: { url: process.env.DATABASE_URL },
+	dialect: 'sqlite',                       // 'sqlite' | 'postgresql' | 'mysql'
+	verbose: true,
+	strict: true
+});
+```
+
+## 4. Latihan
+
+<Exercise title="Tambah tabel post (relasi ke user) lalu migrasikan dengan benar">
+
+Kamu sudah punya proyek SvelteKit dengan add-on Drizzle (SQLite + better-sqlite3) dan tabel `user`. Tugas:
+
+1. Tambahkan tabel `post` di `schema.ts` dengan kolom: `id` (primary key auto-increment), `title` (teks, wajib), `content` (teks), dan `authorId` (integer) yang merujuk ke `user.id` (foreign key).
+2. Buat endpoint `GET /api/posts` yang mengambil semua post.
+3. Jelaskan: untuk membawa perubahan schema ini ke produksi dengan **riwayat yang aman** (bukan `push`), urutan perintah `db:*` mana yang kamu jalankan, dan apa beda perannya?
+
+{#snippet solution()}
+
+  ```ts
+  // src/lib/server/db/schema.ts
+  import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+
+  export const user = sqliteTable('user', {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    age: integer('age'),
+    username: text('username').notNull().unique()
+  });
+
+  export const post = sqliteTable('post', {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    title: text('title').notNull(),
+    content: text('content'),
+    // foreign key: authorId menunjuk ke kolom id di tabel user.
+    authorId: integer('author_id')
+      .notNull()
+      .references(() => user.id)
+  });
+
+  export type Post = typeof post.$inferSelect;
+  ```
+
+  ```ts
+  // src/routes/api/posts/+server.ts
+  import { json } from '@sveltejs/kit';
+  import { db } from '$lib/server/db';
+  import { post } from '$lib/server/db/schema';
+
+  // GET /api/posts -> SELECT * FROM post
+  export async function GET() {
+    const rows = await db.select().from(post);
+    return json(rows);
+  }
+  ```
+
+  ```bash
+  # Jalur aman untuk produksi (punya riwayat, bisa di-commit & di-review):
+  npm run db:generate   # 1) tulis file migrasi .sql baru ke folder drizzle/
+                        #    (membandingkan schema vs snapshot terakhir)
+  npm run db:migrate    # 2) jalankan migrasi itu ke database, berurutan
+
+  # Beda peran:
+  # - db:generate  : MENULIS instruksi perubahan (SQL) — belum menyentuh DB.
+  #                  Outputnya di-commit ke git sebagai jejak sejarah.
+  # - db:migrate   : MENGEKSEKUSI instruksi tsb ke database sungguhan.
+  # (db:push melewati keduanya: ubah DB langsung tanpa file — enak utk coba
+  #  cepat sendiri, TAPI tak punya riwayat & bisa menghapus data. Hindari di prod.)
+  ```
+
+  Catatan: dengan `{ schema }` yang sudah disertakan saat membuat `db`, kamu juga bisa memakai query relasional Drizzle (mis. `db.query.post.findMany({ with: { author: true } })`) setelah mendefinisikan `relations()` — tapi untuk latihan ini `select().from(post)` sudah cukup.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+
+File `db` ada di `src/lib/server/db/` — folder `$lib/server` itu **server-only**. Jangan pernah meng-`import { db }` ke dalam komponen `.svelte`, `+page.svelte`, atau modul universal `+page.js`. SvelteKit akan **menolak build** kalau modul `$lib/server` sampai ter-import ke kode klien. Mengakses database hanya boleh dari tempat server: `+server.js`, `+page.server.js`, `+layout.server.js`, form actions, atau `hooks.server.js`. Ini "mandor pemegang kunci tidak menyerahkan kunci ke pengunjung".
+</Callout>
+
+<Callout type="pitfall">
+Driver SQLite menentukan di mana app-mu bisa jalan. **`better-sqlite3` bersifat sinkron dan khusus Node** — ia tidak akan jalan di runtime edge/serverless seperti Cloudflare Workers atau Vercel Edge. Kalau target deploy-mu edge, pilih **`libsql`/`turso`** (SQLite jaringan) atau database serverless seperti **`neon`** (Postgres) / **`planetscale`** (MySQL) yang bicara lewat HTTP. Pilih driver sambil memikirkan **tempat deploy**, bukan cuma "yang penting jalan di laptop".
+</Callout>
+
+<Callout type="tip">
+`db:push` dan `db:generate`+`db:migrate` adalah **dua jalur yang tidak untuk dicampur** di proyek serius. Pilih satu pola: pakai `push` untuk fase eksperimen awal sendirian, lalu **beralih** ke `generate`+`migrate` begitu ada data berharga atau orang lain ikut bekerja. Mencampur keduanya bisa membuat snapshot/riwayat migrasi tidak konsisten.
+</Callout>
+
+<Callout type="pitfall">
+`drizzle.config.ts` dijalankan oleh **drizzle-kit di Node biasa**, di luar runtime SvelteKit. Karena itu ia memakai `process.env.DATABASE_URL`, **bukan** `$env/dynamic/private` (alias yang hanya hidup di dalam SvelteKit). Sebaliknya, file koneksi app (`src/lib/server/db/index.ts`) berjalan di dalam SvelteKit, jadi **boleh** memakai `$env/dynamic/private`. Tertukar di antara keduanya adalah penyebab umum error "DATABASE_URL is not set" yang membingungkan.
+</Callout>
+
+<Callout type="warning">
+`.env` berisi kredensial database (host, user, password). **Jangan commit ke git** — pastikan ada di `.gitignore` (template `sv` sudah mengaturnya). Untuk produksi, set `DATABASE_URL` lewat secret/environment platform hosting-mu, bukan dari file `.env` yang ikut ter-deploy.
+</Callout>
+
+Padanan istilah dari ORM lain ke Drizzle (kalau kamu pindah dari Prisma):
+
+<LegacyVsModern legacyLabel="Prisma" modernLabel="Drizzle" rows={[
+	{ legacy: 'schema.prisma (DSL khusus)', modern: 'schema.ts (TypeScript biasa)', note: 'schema Drizzle = kode TS, bukan bahasa terpisah' },
+	{ legacy: 'prisma generate (wajib codegen)', modern: 'tipe via typeof user.$inferSelect', note: 'tipe langsung dari schema, tanpa langkah generate' },
+	{ legacy: 'prisma db push', modern: 'npm run db:push', note: 'sama-sama "sketsa langsung" tanpa file migrasi' },
+	{ legacy: 'prisma migrate dev / deploy', modern: 'db:generate lalu db:migrate', note: 'pisah: tulis migrasi, lalu jalankan' },
+	{ legacy: 'prisma studio', modern: 'npm run db:studio', note: 'GUI penjelajah data' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/drizzle" label="sv — Add-on drizzle (opsi database, driver, Docker)" />
+
+<DocsLink href="https://orm.drizzle.team/docs/overview" label="Drizzle ORM — dokumentasi resmi (schema, query, drizzle-kit)" />

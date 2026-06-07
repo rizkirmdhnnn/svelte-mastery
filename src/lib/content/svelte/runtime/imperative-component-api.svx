@@ -1,0 +1,310 @@
+---
+title: Imperative component API
+product: svelte
+section: runtime
+sectionTitle: Runtime
+sectionOrder: 6
+order: 4
+status: stable
+description: Memasang, membongkar, dan merender komponen Svelte secara manual dari JavaScript biasa lewat mount, unmount, render, dan hydrate.
+docs: https://svelte.dev/docs/svelte/imperative-component-api
+keywords: [mount, unmount, render, hydrate, flushSync]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Hampir sepanjang waktu, komponen Svelte dirender oleh komponen Svelte lain — secara **deklaratif**, di dalam markup. Kamu menulis `<Profil user={u} />` dan Svelte yang mengurus kapan ia lahir, kapan update, kapan dibongkar. Kamu tidak pernah memanggil "tolong pasang komponen ini" dengan tangan.
+
+Tapi ada momen ketika kamu harus turun satu lapis ke **JavaScript biasa** dan memasang komponen secara **imperatif** — dengan perintah eksplisit, dari luar dunia komponen:
+
+- **Bootstrap aplikasi.** File `main.js`/`main.ts` yang menjadi titik masuk aplikasi harus "menyalakan" komponen root pertama. Tidak ada komponen induk di atasnya, jadi seseorang harus memasangnya secara manual.
+- **Menanam widget ke aplikasi non-Svelte.** Kamu punya app lama berbasis React/Vue/jQuery dan ingin menyisipkan satu widget Svelte ke sebuah `<div>` tertentu. Svelte tidak mengontrol pohon itu, jadi kamu yang menempelkan.
+- **UI yang muncul atas perintah fungsi.** Toast, modal, atau context menu yang lahir karena sebuah fungsi `showToast('Tersimpan')` dipanggil — bukan karena ada di markup.
+- **Testing & SSR manual.** Di test kamu memasang komponen ke DOM palsu lalu memeriksanya; di server kamu mengubah komponen menjadi string HTML.
+
+### Analogi: taman otomatis vs menanam dengan tangan
+
+Bayangkan markup Svelte sebagai **taman pintar berpengairan otomatis**. Selama tanaman ada di dalam petak taman, sistem menyiram, memupuk, dan mencabutnya tepat waktu tanpa kamu pikirkan — itulah render deklaratif.
+
+Imperative API adalah saat kamu keluar dari petak taman, mengambil sekop, dan **menanam satu pot di teras** (lokasi yang bukan bagian dari sistem otomatis). Karena kamu yang menanamnya dengan tangan, kamu juga yang bertanggung jawab **mencabutnya** nanti. `mount()` adalah menanam; `unmount()` adalah mencabut. Lupa mencabut = pot terbengkalai = memory leak.
+
+### Empat fungsi dari `'svelte'`
+
+Semua di-import dari paket `'svelte'`:
+
+- **`mount(Component, options)`** — instansiasi komponen lalu tempelkan ke elemen DOM. Ini **pengganti** `new Component({ target })` gaya Svelte 4. Mengembalikan objek berisi *exports* komponen tersebut.
+- **`unmount(instance, options)`** — bongkar instance yang tadi di-mount, jalankan cleanup-nya. Pengganti `app.$destroy()`.
+- **`render(Component, options)`** — **khusus server**: ubah komponen menjadi string HTML (`head` + `body`) untuk SSR, tanpa menyentuh DOM. Tidak ada interaktivitas; murni teks.
+- **`hydrate(Component, options)`** — kebalikan pasangan `render`: ambil HTML hasil server yang sudah ada di `target`, lalu **pasang interaktivitas** di atasnya (event handler, reaktivitas) tanpa membuang dan merender ulang DOM dari nol.
+
+### Satu kejutan penting: efek tidak langsung jalan
+
+Inilah hal yang paling sering bikin orang bingung, dan wajib kamu hafal:
+
+> **Effects — termasuk callback `onMount` dan fungsi `action` (`use:`) — TIDAK berjalan selama `mount()` (atau `hydrate()`).**
+
+Saat `mount()` selesai dan mengembalikan nilai, DOM komponen memang sudah terpasang, **tapi** `$effect` dan `onMount` di dalamnya belum tentu sudah dieksekusi. Svelte menjadwalkannya untuk berjalan **secara asinkron** sesudahnya (di microtask berikutnya). Di aplikasi normal kamu tak akan sadar — sepersekian milidetik kemudian efeknya jalan sendiri. Tapi di **test** (yang sinkron) ini jadi masalah: kamu mount, lalu langsung cek apakah `onMount` sudah mengubah sesuatu — ternyata belum. Untuk memaksanya jalan **sekarang juga**, ada `flushSync()`.
+
+### `flushSync`: paksa antrean diproses sekarang
+
+Svelte **mem-batch** pekerjaan reaktif demi performa: kalau kamu mengubah lima state sekaligus, Svelte tidak menyentuh DOM lima kali, melainkan menggabungkannya lalu memperbarui DOM sekali di "flush" berikutnya. Pikirkan ini seperti **antrean kasir**: pelanggan (perubahan state) menumpuk dulu, lalu diproses dalam satu gelombang.
+
+`flushSync(fn?)` adalah tombol "**proses antrean ini SEKARANG, sinkron, jangan tunggu**". Setelah `flushSync()` kembali, semua efek yang tertunda — termasuk `onMount` pasca-`mount` — sudah pasti selesai dan DOM sudah pasti final. Ia paling berguna di **kode test** dan di kasus langka saat kamu harus membaca DOM tepat setelah mengubah state. Di kode aplikasi normal, hindari — biarkan Svelte mem-batch sendiri demi performa.
+
+## 2. Contoh kode
+
+Bootstrap aplikasi — pola paling dasar, isi dari `main.js`:
+
+```js
+// main.js — titik masuk, di LUAR dunia komponen Svelte
+import { mount } from 'svelte';
+import App from './App.svelte';
+
+// mount mengembalikan objek berisi EXPORTS komponen (fungsi/nilai
+// yang kamu `export` dari dalam App.svelte), bukan instance class.
+const app = mount(App, {
+	target: document.getElementById('app'), // elemen DOM tujuan (wajib)
+	props: { judul: 'Halo' }                 // props awal (opsional)
+});
+
+export default app;
+```
+
+Props reaktif — kunci utamanya: oper objek `$state`, lalu ubah **propertinya**:
+
+```js
+import { mount, unmount } from 'svelte';
+import App from './App.svelte';
+
+// Bungkus props dalam objek $state supaya bisa diubah secara REAKTIF
+// setelah mount. Mengubah propertinya akan memicu update di komponen.
+const props = $state({ pesan: 'Halo', tema: 'gelap' });
+
+const app = mount(App, {
+	target: document.getElementById('app'),
+	props
+});
+
+// Update reaktif: cukup ubah properti objeknya. JANGAN ganti seluruh
+// variabel `props = {...}` (itu memutus koneksi reaktif).
+props.pesan = 'Halo lagi';
+props.tema = 'terang';
+
+// Selesai? Bongkar. `outro: true` memainkan transisi keluar dulu,
+// dan mengembalikan Promise yang resolve setelah transisi rampung.
+await unmount(app, { outro: true });
+```
+
+Opsi lengkap `mount` — selain `target` dan `props` ada beberapa opsi lain:
+
+```js
+import { mount } from 'svelte';
+import Widget from './Widget.svelte';
+
+const widget = mount(Widget, {
+	target: document.querySelector('#slot'), // wajib: Element/Document/ShadowRoot
+	anchor: document.querySelector('#sebelum'), // opsional: sisipkan SEBELUM node ini
+	props: { warna: 'biru' },                   // opsional
+	context: new Map([['tema', 'gelap']]),      // opsional: context awal (Map)
+	intro: true                                  // opsional: mainkan transisi masuk
+	// events: { ... }  // ADA tapi TIDAK disarankan — pakai prop callback (onsave) di komponen
+});
+```
+
+SSR di server — `render` mengubah komponen menjadi string HTML:
+
+```js
+// Dijalankan DI SERVER, saat dikompilasi dengan opsi `server`.
+import { render } from 'svelte';
+import App from './App.svelte';
+
+// render TIDAK menyentuh DOM — ia menghasilkan teks HTML.
+const { head, body } = render(App, {
+	props: { judul: 'Beranda' }
+});
+
+// Susun jadi dokumen HTML utuh untuk dikirim ke browser.
+const html = `<!doctype html>
+<html>
+	<head>${head}</head>
+	<body><div id="app">${body}</div></body>
+</html>`;
+// kirim `html` sebagai respons HTTP...
+```
+
+Memaksa efek jalan dengan `flushSync` (paling sering di test):
+
+```js
+import { mount, flushSync, unmount } from 'svelte';
+import Counter from './Counter.svelte';
+
+const target = document.createElement('div');
+document.body.appendChild(target);
+
+const app = mount(Counter, { target, props: { awal: 0 } });
+
+// Tepat di sini, onMount/$effect di dalam Counter BELUM tentu jalan.
+// flushSync memproses semua efek yang tertunda secara sinkron, SEKARANG.
+flushSync();
+
+// Setelah flushSync, DOM dijamin final — aman untuk diperiksa.
+console.log(target.querySelector('button')?.textContent);
+
+unmount(app);
+```
+
+## 3. Coba sendiri
+
+Modul ini bermain di luar satu komponen tunggal (kita menulis kode `main.js`-level dan kode test), jadi tidak ada live playground. Sebagai gantinya, telusuri contoh "toast imperatif" beranotasi berikut — pola nyata yang sering kamu temui: sebuah fungsi biasa yang **melahirkan** komponen atas perintah, lalu **membongkarnya** sendiri setelah beberapa detik.
+
+```js
+// toast.js — helper yang bisa dipanggil dari MANA SAJA di app
+import { mount, unmount } from 'svelte';
+import Toast from './Toast.svelte';
+
+// showToast bukan komponen — ini fungsi JS biasa. Ia memasang
+// komponen Toast secara imperatif setiap kali dipanggil.
+export function showToast(pesan, durasi = 3000) {
+	// props dibungkus $state agar bisa kita ubah reaktif nanti
+	// (mis. animasi progress, atau ganti teks tanpa remount).
+	const props = $state({ pesan, sisa: durasi });
+
+	const instance = mount(Toast, {
+		target: document.body, // tempel langsung ke body, di luar pohon app
+		props,
+		intro: true            // mainkan transisi masuk saat muncul
+	});
+
+	// Karena KITA yang menanam, KITA yang harus mencabut.
+	// Tanpa unmount ini, tiap toast menumpuk = memory leak.
+	const id = setTimeout(() => {
+		unmount(instance, { outro: true }); // transisi keluar dulu, baru hilang
+	}, durasi);
+
+	// Kembalikan fungsi "tutup paksa" agar pemanggil bisa menutup lebih awal.
+	return () => {
+		clearTimeout(id);
+		unmount(instance, { outro: true });
+	};
+}
+```
+
+```js
+// Pemakaian dari kode mana pun — bahkan dari luar komponen Svelte:
+import { showToast } from './toast.js';
+
+document.querySelector('#simpan').addEventListener('click', () => {
+	const tutup = showToast('Berhasil disimpan!');
+	// ...kalau perlu, panggil tutup() untuk menutup sebelum 3 detik.
+});
+```
+
+<Callout type="tip">
+Perhatikan tanggung jawab yang berpasangan: setiap <code>mount()</code> idealnya punya satu <code>unmount()</code> yang jelas siapa yang memicunya. Di contoh ini pemicunya <code>setTimeout</code>. Di widget yang ditanam ke app lain, pemicunya biasanya event "halaman ditutup" atau "komponen induk non-Svelte di-destroy". Selalu tanya: <em>"siapa yang akan mencabut pot ini, dan kapan?"</em>
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Bikin modal imperatif yang resolve sebuah Promise">
+Tulis fungsi `konfirmasi(pesan)` di file `konfirmasi.js` yang **memasang** komponen `Dialog.svelte` secara imperatif ke `document.body` dan mengembalikan sebuah `Promise<boolean>`. Promise itu `resolve(true)` kalau pengguna menekan "Ya" dan `resolve(false)` kalau menekan "Tidak". Setelah salah satu ditekan, komponen harus di-`unmount`. Asumsikan `Dialog.svelte` menerima props: `pesan` (string), `onya` (callback), dan `ontidak` (callback). Pakai prop callback, bukan event dispatcher.
+
+{#snippet solution()}
+
+```js
+// konfirmasi.js
+import { mount, unmount } from 'svelte';
+import Dialog from './Dialog.svelte';
+
+export function konfirmasi(pesan) {
+	// Bungkus Promise: ia baru resolve saat user memilih.
+	return new Promise((resolve) => {
+		// Deklarasikan instance dulu supaya bisa diakses di dalam callback.
+		let instance;
+
+		// Helper: tutup dialog lalu resolve dengan jawaban tertentu.
+		const selesai = (jawaban) => {
+			unmount(instance, { outro: true }); // cabut yang kita tanam
+			resolve(jawaban);
+		};
+
+		// Komunikasi keluar lewat PROP CALLBACK (Svelte 5), bukan dispatcher.
+		instance = mount(Dialog, {
+			target: document.body,
+			props: {
+				pesan,
+				onya: () => selesai(true),
+				ontidak: () => selesai(false)
+			},
+			intro: true
+		});
+	});
+}
+```
+
+```svelte
+<!-- Dialog.svelte — komponen yang dipasang secara imperatif -->
+<script>
+	// Props callback: cara modern Svelte 5 berkomunikasi ke "pemanggil",
+	// menggantikan createEventDispatcher.
+	let { pesan, onya, ontidak } = $props();
+</script>
+
+<div class="backdrop">
+	<div class="dialog">
+		<p>{pesan}</p>
+		<button onclick={onya}>Ya</button>
+		<button onclick={ontidak}>Tidak</button>
+	</div>
+</div>
+```
+
+```js
+// Pemakaian — jadi enak dibaca seperti API native confirm():
+const setuju = await konfirmasi('Hapus berkas ini?');
+if (setuju) hapus();
+```
+
+Kuncinya: `mount` melahirkan Dialog, props callback (`onya`/`ontidak`) menjadi jembatan dari komponen kembali ke kode pemanggil, dan begitu salah satu ditekan kita `unmount` (mencabut yang kita tanam) lalu `resolve` Promise-nya. Tidak ada `createEventDispatcher`, tidak ada `new Dialog()`.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Efek tidak jalan saat <code>mount()</code> kembali.</strong> <code>onMount</code>, <code>$effect</code>, dan fungsi <code>action</code> dijadwalkan asinkron <em>setelah</em> mount. Kalau di test kamu mount lalu langsung meng-<code>assert</code> hasil efeknya, hasilnya akan kosong. Panggil <code>flushSync()</code> dulu untuk memaksa semua efek tertunda berjalan sinkron, baru periksa DOM-nya.
+</Callout>
+
+<Callout type="warning">
+<strong>Props reaktif: ubah PROPERTI, jangan ganti variabelnya.</strong> Oper objek <code>$state</code> sebagai <code>props</code>, lalu update lewat <code>props.x = ...</code>. Kalau kamu menulis <code>props = {`{ x: 1 }`}</code> (mengganti seluruh referensi), koneksi reaktif ke komponen putus dan update tidak akan sampai. Komponen memegang referensi ke objek lama, bukan yang baru.
+</Callout>
+
+<Callout type="warning">
+<strong>Setiap <code>mount</code> butuh <code>unmount</code>.</strong> Komponen yang kamu pasang manual tidak ikut "taman otomatis" Svelte — tidak ada induk yang akan membongkarnya. Lupa <code>unmount</code> berarti efek, interval, dan listener di dalamnya terus hidup = memory leak. Selalu simpan nilai kembalian <code>mount</code> dan pastikan ada jalur yang memanggil <code>unmount</code>.
+</Callout>
+
+<Callout type="legacy">
+<strong>Komponen Svelte 5 bukan class lagi.</strong> <code>new Component({`{ target, props }`})</code>, <code>app.$destroy()</code>, <code>app.$set(...)</code>, dan <code>app.$on(...)</code> dari Svelte 4 <strong>sudah dihapus</strong>. Gantinya: <code>mount()</code>, <code>unmount()</code>, props lewat objek <code>$state</code>, dan event lewat opsi <code>events</code> (atau lebih baik: prop callback seperti <code>onsave</code>).
+</Callout>
+
+<Callout type="tip">
+<strong>Pakai <code>render</code> hanya di server.</strong> <code>render()</code> hanya tersedia saat kompilasi dengan opsi <code>server</code> dan mengembalikan <code>{`{ head, body }`}</code> berupa string — tanpa interaktivitas. Pasangannya di browser adalah <code>hydrate()</code>, yang "menghidupkan" HTML hasil <code>render</code> tanpa membuang DOM dan merender ulang dari nol. Di aplikasi SvelteKit, semua ini sudah diurus framework — kamu jarang memanggilnya langsung.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'new Component({ target, props })', modern: 'mount(Component, { target, props })', note: 'Komponen bukan class lagi di Svelte 5.' },
+	{ legacy: 'app.$destroy()', modern: 'unmount(app)', note: 'Tambah { outro: true } untuk transisi keluar.' },
+	{ legacy: 'app.$set({ x: 1 })', modern: 'ubah properti objek $state yang dioper sebagai props', note: 'Tak ada $set; reaktivitas lewat $state.' },
+	{ legacy: 'app.$on("save", fn)', modern: 'prop callback onsave={fn} (atau opsi events)', note: 'createEventDispatcher juga ditinggalkan.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/imperative-component-api" label="Imperative component API (mount, unmount, render, hydrate) — Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/svelte#flushSync" label="flushSync — Svelte" />

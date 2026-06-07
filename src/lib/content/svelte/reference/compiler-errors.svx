@@ -1,0 +1,513 @@
+---
+title: Compiler errors
+product: svelte
+section: reference
+sectionTitle: Reference
+sectionOrder: 8
+order: 15
+status: reference
+description: Daftar lengkap kode error compiler Svelte 5 — arti, penyebab umum, dan cara memperbaikinya, dikelompokkan per kategori.
+docs: https://svelte.dev/docs/svelte/compiler-errors
+keywords: [compiler errors, runes, legacy, diagnostics, build error, svelte 5]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+**Compiler error** adalah error yang terjadi saat Svelte *meng-compile* file `.svelte` kamu menjadi JavaScript — jauh **sebelum** aplikasi pernah dijalankan di browser. Kalau compiler menemukan sesuatu yang tidak masuk akal (sintaks salah, rune dipakai di tempat keliru, tag tidak ditutup), ia **menolak menghasilkan output** dan melempar error dengan kode unik seperti `legacy_export_invalid` atau `props_duplicate`. Build gagal, dan kamu wajib memperbaikinya dulu.
+
+### Analogi: editor naskah vs pembaca buku
+
+Bayangkan kamu menerbitkan buku. Ada dua jenis "masalah" yang bisa muncul:
+
+- **Compiler error** itu seperti **editor naskah** yang membaca tulisanmu sebelum dicetak. Kalau ada kalimat yang secara tata bahasa rusak — kurung buka tanpa kurung tutup, kata yang tidak ada artinya — editor mengembalikan naskahmu dan berkata "saya tidak akan mencetak ini sampai kamu betulkan". Tidak ada satu pun eksemplar yang tercetak. Kerusakannya ketahuan **lebih awal**, dan itu bagus.
+- **Runtime error** (dibahas di modul terpisah) itu seperti **pembaca** yang menemukan halaman sobek *saat sedang membaca* buku yang sudah tercetak. Bukunya jalan, tapi di tengah-tengah ada yang meledak.
+
+Compiler error adalah jaring pengaman paling murah: ia menangkap kesalahan saat kamu masih mengetik, bukan saat user sudah memakai aplikasimu.
+
+### Kaitan ke React & Vue
+
+Kamu sudah akrab dengan ini, hanya namanya berbeda:
+
+- Di **React**, `Adjacent JSX elements must be wrapped in an enclosing tag` atau `Unexpected token` dari Babel — itu compiler error JSX. Svelte punya padanannya, mis. `node_invalid_placement` (struktur HTML ilegal) atau `js_parse_error`.
+- Di **Vue**, template compiler menolak `v-if` dan `v-for` yang konflik, atau `Element is missing end tag`. Svelte punya `element_unclosed`, `block_unclosed`, dan teman-temannya.
+
+Bedanya, Svelte adalah *compiler sungguhan* (bukan runtime library), jadi ia bisa memeriksa **jauh lebih banyak** hal di compile time — termasuk pemakaian rune yang salah, yang di framework lain baru ketahuan saat runtime.
+
+### Anatomi kode error
+
+Hampir semua kode error memakai pola `subjek_masalah` dalam snake_case, sering dengan awalan kategori:
+
+- `props_duplicate` → subjek **props**, masalahnya **duplicate** (`$props()` dipanggil dua kali).
+- `legacy_export_invalid` → kategori **legacy**, **export** (yaitu `export let`) **invalid** di mode runes.
+- `css_global_invalid_placement` → kategori **css**, soal `:global`, penempatannya **invalid**.
+
+Begitu kamu hafal pola ini, membaca pesan error jadi seperti membaca alamat: kamu langsung tahu "ini soal CSS" atau "ini soal rune".
+
+### Tiga tingkat diagnostik Svelte
+
+Jangan tertukar — Svelte punya tiga jenis "keluhan" yang dibahas di modul berbeda:
+
+| Jenis | Kapan terjadi | Memblokir? | Modul |
+| --- | --- | --- | --- |
+| **Compiler error** | Saat compile (build) | Ya, build gagal | Modul ini |
+| **Compiler warning** | Saat compile (build) | Tidak, hanya saran | `compiler-warnings` |
+| **Runtime error/warning** | Saat app berjalan di browser | Tergantung | `runtime-errors`, `runtime-warnings` |
+
+Fokus modul ini: yang **memblokir build**.
+
+## 2. Contoh kode
+
+Tiga error paling sering ditemui pendatang dari Svelte 4 ke Svelte 5 — beserta perbaikannya:
+
+```svelte
+<!-- ❌ legacy_export_invalid -->
+<!-- Begitu satu rune dipakai (di sini $state), SELURUH komponen masuk "runes mode".
+     Di runes mode, 'export let' dilarang. -->
+<script>
+	export let title;          // ❌ memicu legacy_export_invalid
+	let count = $state(0);     // ← rune ini yang "mengaktifkan" runes mode
+</script>
+
+<!-- ✅ Perbaikan: ambil prop lewat $props() -->
+<script>
+	let { title } = $props();  // ✅ cara runes
+	let count = $state(0);
+</script>
+```
+
+```svelte
+<!-- ❌ props_duplicate -->
+<!-- $props() hanya boleh dipanggil SEKALI per komponen. -->
+<script>
+	let { a } = $props();
+	let { b } = $props();      // ❌ memicu props_duplicate
+</script>
+
+<!-- ✅ Perbaikan: destrukturisasi semua prop dalam satu panggilan -->
+<script>
+	let { a, b } = $props();   // ✅ satu panggilan, ambil semua
+</script>
+```
+
+```svelte
+<!-- ❌ state_invalid_export -->
+<!-- Kamu tidak boleh meng-export variabel $state yang nanti di-REASSIGN,
+     karena nilai yang diimport modul lain tidak akan ikut ter-update. -->
+<script module>
+	export let counter = $state(0); // ❌ state_invalid_export (reassign + export)
+</script>
+
+<!-- ✅ Perbaikan A: export fungsi yang membaca nilainya -->
+<script module>
+	let counter = $state(0);
+	export function getCounter() {
+		return counter;         // pemanggil selalu dapat nilai terkini
+	}
+	export function increment() {
+		counter += 1;
+	}
+</script>
+
+<!-- ✅ Perbaikan B: export OBJEK state, lalu mutasi field-nya (jangan reassign) -->
+<script module>
+	export const store = $state({ counter: 0 }); // objeknya tetap, field-nya berubah
+</script>
+```
+
+## 3. Coba sendiri
+
+Modul ini bersifat referensi dan beberapa kasus butuh konteks komponen penuh, jadi tidak ada live playground. Pelajari pasangan **error → perbaikan** beranotasi berikut; coba tebak kodenya sebelum membaca anotasi.
+
+```svelte
+<!-- render_tag_invalid_expression -->
+<!-- {@render ...} HANYA menerima pemanggilan fungsi (call expression). -->
+{@render children}     <!-- ❌ ini referensi, bukan panggilan -->
+{@render children()}   <!-- ✅ panggil snippet-nya dengan () -->
+```
+
+```svelte
+<!-- each_item_invalid_assignment -->
+<!-- Di runes mode, item dari {#each} tidak boleh di-reassign / di-bind langsung. -->
+{#each items as item}
+	<input bind:value={item} />   <!-- ❌ each_item_invalid_assignment -->
+{/each}
+
+<!-- ✅ Perbaikan: bind ke properti objek (mutasi field), atau pakai index -->
+{#each items as item, i}
+	<input bind:value={items[i]} />  <!-- ✅ menulis balik ke array -->
+{/each}
+```
+
+```svelte
+<!-- mixed_event_handler_syntaxes -->
+<!-- Jangan campur sintaks event lama (on:) dan baru (on...) di elemen yang sama. -->
+<button on:click={a} onclick={b}>x</button>  <!-- ❌ mixed_event_handler_syntaxes -->
+
+<!-- ✅ Perbaikan: pakai SATU gaya — di Svelte 5 gunakan properti modern -->
+<button onclick={a}>x</button>               <!-- ✅ -->
+```
+
+```svelte
+<!-- event_handler_invalid_modifier -->
+<!-- Event modifier gaya lama (|preventDefault) sudah tidak ada di runes mode. -->
+<form on:submit|preventDefault={kirim}>...    <!-- ❌ -->
+
+<!-- ✅ Perbaikan: tangani sendiri di dalam handler -->
+<form onsubmit={(e) => { e.preventDefault(); kirim(e); }}>...  <!-- ✅ -->
+```
+
+```svelte
+<!-- bind_invalid_value -->
+<!-- bind: hanya boleh menarget state atau prop (sesuatu yang bisa ditulis), bukan derived/const. -->
+<script>
+	const nama = $derived(user.nama);
+</script>
+<input bind:value={nama} />   <!-- ❌ bind_invalid_value: nama bersifat read-only -->
+
+<!-- ✅ Perbaikan: bind ke $state, atau ke prop $bindable -->
+<script>
+	let nama = $state('');
+</script>
+<input bind:value={nama} />   <!-- ✅ -->
+```
+
+## 4. Referensi lengkap kode error
+
+Berikut daftar kode error compiler dikelompokkan per kategori. Kolom **Arti & penyebab umum** menjelaskan *kapan* error muncul; kolom **Cara perbaiki** memberi langkah konkret dalam gaya Svelte 5.
+
+### 4.1 Runes: state, derived, props, effect
+
+Inti Svelte 5. Kebanyakan error di sini muncul karena rune dipakai di tempat atau cara yang salah.
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `state_invalid_placement` | `$state()` dipakai bukan sebagai nilai deklarasi/inisialisasi awal (mis. di tengah ekspresi atau hasil fungsi) | Hanya pakai sebagai nilai awal: `let x = $state(...)` atau field kelas |
+| `state_invalid_export` | Meng-`export` variabel `$state` yang nanti di-reassign | Export fungsi yang mengembalikan nilainya, atau export objek `$state` lalu mutasi field-nya |
+| `state_field_duplicate` | Dua field `$state` bernama sama dalam satu kelas | Hapus deklarasi field yang duplikat |
+| `state_field_invalid_assignment` | Menetapkan nilai ke field state sebelum field-nya dideklarasikan | Deklarasikan field `$state` lebih dulu, baru assign |
+| `derived_invalid_export` | Meng-export `$derived` dari `<script module>` | Export sebuah fungsi sebagai gantinya |
+| `props_duplicate` | `$props()` dipanggil lebih dari sekali | Panggil sekali; destrukturisasi semua prop di satu tempat |
+| `props_invalid_identifier` | Hasil `$props()` tidak di-destrukturisasi jadi objek | Pakai `let { ... } = $props()` |
+| `props_invalid_pattern` | Pola destrukturisasi `$props()` punya properti nested atau computed key | Destrukturisasi datar; ambil bagian nested di body komponen |
+| `props_invalid_placement` | `$props()` dipanggil bukan di top-level komponen | Pindahkan ke top-level `<script>` |
+| `props_illegal_name` | Nama prop diawali `$$` (reserved) | Ganti nama prop |
+| `props_id_invalid_placement` | `$props.id()` dipakai bukan di top-level komponen | Pindahkan pemanggilan ke top-level |
+| `effect_invalid_placement` | `$effect()` dipakai bukan sebagai statement ekspresi (mis. di-assign ke variabel) | Tulis `$effect(() => ...)` sebagai statement berdiri sendiri |
+| `host_invalid_placement` | `$host()` dipakai di luar custom element | Hanya gunakan di dalam komponen yang dikompilasi sebagai custom element |
+| `inspect_trace_invalid_placement` | `$inspect.trace()` bukan statement pertama dalam fungsi | Jadikan baris pertama di fungsi tersebut |
+| `inspect_trace_generator` | `$inspect.trace()` dipakai di generator function | Jangan pakai di generator |
+| `rune_invalid_name` | Identifier berawalan `$` yang bukan rune valid | Periksa ejaan; daftar rune: `$state`, `$derived`, `$effect`, `$props`, `$bindable`, `$inspect`, `$host` |
+| `rune_invalid_arguments` | Rune dipanggil dengan argumen padahal tidak menerima | Hapus argumennya |
+| `rune_invalid_arguments_length` | Jumlah argumen rune tidak sesuai | Sesuaikan jumlah argumen |
+| `rune_invalid_computed_property` | Mengakses properti computed dari rune (mis. `$state[key]`) | Akses langsung, tanpa bracket dinamis |
+| `rune_invalid_spread` | Memakai spread saat memanggil rune | Hapus operator spread |
+| `rune_invalid_usage` | Rune dipakai dalam mode non-runes | Pastikan komponen ada di runes mode (mis. dengan memakai rune lain) |
+| `rune_missing_parentheses` | Rune ditulis tanpa tanda kurung pemanggilan | Tambahkan `()`, mis. `$props()` bukan `$props` |
+| `rune_removed` | Rune sudah dihapus dari Svelte | Cek changelog/migration guide untuk penggantinya |
+| `rune_renamed` | Rune diganti namanya | Pakai nama baru yang disebutkan di pesan error |
+| `runes_mode_invalid_import` | Mengimpor sesuatu yang tidak boleh di runes mode | Hapus import tersebut |
+
+### 4.2 Legacy mode (Svelte 4 di komponen runes)
+
+Error ini muncul ketika kamu mencampur API gaya Svelte 4 di dalam komponen yang sudah masuk runes mode. Padanan modernnya:
+
+<LegacyVsModern rows={[
+	{ legacy: 'export let title (legacy_export_invalid)', modern: 'let { title } = $props()', note: 'Props jadi destrukturisasi objek.' },
+	{ legacy: '$: y = x * 2 (legacy_reactive_statement_invalid)', modern: 'let y = $derived(x * 2)', note: 'Nilai turunan pakai $derived; efek samping pakai $effect.' },
+	{ legacy: '$$props (legacy_props_invalid)', modern: 'let props = $props()', note: 'Akses seluruh objek props lewat $props().' },
+	{ legacy: '$$restProps (legacy_rest_props_invalid)', modern: 'let { ...rest } = $props()', note: 'Sisa props lewat rest destructuring.' },
+	{ legacy: 'await di luar runes (legacy_await_invalid)', modern: 'Aktifkan runes mode lebih dulu', note: 'top-level await hanya didukung di runes mode.' },
+	{ legacy: 'on:click + onclick bareng (mixed_event_handler_syntaxes)', modern: 'onclick={handler}', note: 'Pilih satu gaya; gunakan properti modern.' }
+]} />
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `legacy_export_invalid` | `export let` dipakai di runes mode | Ganti dengan `let { ... } = $props()` |
+| `legacy_reactive_statement_invalid` | Label reaktif `$:` dipakai di runes mode | Ganti dengan `$derived` (nilai) atau `$effect` (efek samping) |
+| `legacy_props_invalid` | `$$props` dipakai di runes mode | Ambil objek props penuh: `let props = $props()` |
+| `legacy_rest_props_invalid` | `$$restProps` dipakai di runes mode | Pakai rest: `let { ...rest } = $props()` |
+| `legacy_await_invalid` | `await` dipakai di luar runes mode | Pastikan komponen di runes mode dulu |
+| `mixed_event_handler_syntaxes` | Mencampur `on:event` (lama) dan `onevent` (baru) di elemen sama | Pakai satu gaya saja; gunakan `onevent` modern |
+| `declaration_tag_no_legacy_mode` | Tag deklarasi (`{@const}` tertentu) tak boleh di legacy mode | Beralih ke runes mode |
+
+<Callout type="legacy">
+Penting: dalam <strong>satu file komponen</strong> kamu tidak boleh mencampur mode legacy dan runes. Begitu kamu memakai <em>satu</em> rune (mis. <code>$state</code>), seluruh komponen otomatis masuk runes mode — dan semua API gaya Svelte 4 (<code>export let</code>, <code>$:</code>, <code>$$props</code>) langsung jadi error. Migrasikan satu file utuh, bukan setengah-setengah.
+</Callout>
+
+### 4.3 Binding (`bind:`)
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `bind_invalid_value` | `bind:` menarget sesuatu yang read-only (derived/const) | Bind ke `$state` atau prop `$bindable` |
+| `bind_invalid_target` | Binding dipakai di elemen yang tidak mendukungnya | Cek elemen yang valid untuk binding tersebut |
+| `bind_invalid_name` | Nama binding tidak dikenal | Periksa ejaan nama binding |
+| `bind_invalid_expression` | Target binding bukan Identifier/MemberExpression/pasangan `{get, set}` | Bind ke variabel atau properti objek, atau pakai getter/setter |
+| `bind_invalid_parens` | Sintaks `bind:x={get, set}` ditulis dengan tanda kurung berlebih | Hapus tanda kurung pembungkus di sekitar `get, set` |
+| `bind_group_invalid_expression` | `bind:group` menarget yang bukan Identifier/MemberExpression | Gunakan variabel atau properti objek sebagai target |
+| `bind_group_invalid_snippet_parameter` | `bind:group` menarget parameter snippet | Jangan bind group ke parameter snippet |
+| `constant_binding` | `bind:` menarget konstanta | Ganti `const` jadi state yang bisa ditulis |
+
+### 4.4 Event handler
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `event_handler_invalid_modifier` | Modifier event tidak valid (mis. `\|preventDefault` di runes) | Tangani manual di dalam handler (`e.preventDefault()`) |
+| `event_handler_invalid_modifier_combination` | Dua modifier yang tidak bisa dipasang bersamaan | Pisahkan logikanya di dalam handler |
+| `event_handler_invalid_component_modifier` | Modifier selain `once` dipakai pada komponen | Hanya `once` yang valid pada event komponen |
+| `attribute_invalid_event_handler` | Nilai handler berupa string literal, bukan ekspresi | Pakai ekspresi dalam kurung kurawal: `onclick={fn}` |
+
+### 4.5 Snippet, render, dan slot
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `render_tag_invalid_expression` | `{@render}` berisi sesuatu yang bukan pemanggilan fungsi | Panggil snippet-nya: `{@render nama()}` |
+| `render_tag_invalid_call_expression` | Memanggil snippet via `.apply/.bind/.call` | Panggil snippet secara langsung |
+| `render_tag_invalid_spread_argument` | Argumen spread di dalam `{@render}` | Oper argumen secara eksplisit, tanpa spread |
+| `snippet_invalid_export` | Snippet ter-export mereferensi sesuatu non-modul | Hanya referensi nilai modul atau snippet ter-export lain |
+| `snippet_invalid_rest_parameter` | Snippet memakai rest parameter | Pakai parameter biasa; snippet tidak mendukung rest |
+| `snippet_parameter_assignment` | Parameter snippet di-reassign atau di-bind | Jangan tulis ulang parameter snippet |
+| `snippet_shadowing_prop` | Snippet bernama sama dengan prop | Ganti nama snippet atau prop |
+| `snippet_conflict` | Menggabungkan snippet `children` eksplisit dengan konten implisit | Pilih salah satu cara mengisi children |
+| `slot_snippet_conflict` | Mencampur `<slot>` (lama) dan `{@render}` (baru) di komponen sama | Pakai snippet sepenuhnya di Svelte 5 |
+| `slot_attribute_duplicate` | Nama slot duplikat dalam satu komponen | Buat nama slot unik |
+| `slot_attribute_invalid` | Nilai atribut `slot` tidak statis | Pakai string statis |
+| `slot_attribute_invalid_placement` | Atribut `slot` di elemen tanpa parent komponen/custom element | Pindahkan ke anak langsung komponen |
+| `slot_default_duplicate` | Konten default bertabrakan dengan `slot="default"` | Pilih salah satu cara mengisi slot default |
+| `slot_element_invalid_attribute` | `<slot>` menerima atribut yang tidak diizinkan | `<slot>` hanya menerima atribut dan `let:` |
+| `slot_element_invalid_name` | Nama slot tidak statis | Pakai nama statis |
+| `slot_element_invalid_name_default` | Nama slot memakai `default` (reserved) | Pakai nama lain |
+| `let_directive_invalid_placement` | Direktif `let:` di posisi yang salah | Taruh `let:` pada slot/elemen yang benar |
+
+### 4.6 Block (`{#if}`, `{#each}`, `{#await}`, `{#key}`, `{#snippet}`)
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `block_unclosed` | Sebuah block tidak ditutup | Tambahkan tag penutup, mis. `{/if}` |
+| `block_unexpected_close` | Tag penutup tanpa block pembuka yang cocok | Hapus penutup atau tambahkan pembuka |
+| `block_unexpected_character` | Karakter tak terduga setelah `{#` | Periksa sintaks block |
+| `block_duplicate_clause` | Klausa block muncul lebih dari sekali (mis. dua `:else`) | Hapus klausa duplikat |
+| `block_invalid_continuation_placement` | Klausa lanjutan (`:else`, `:then`) di posisi salah | Letakkan di dalam block yang sesuai |
+| `block_invalid_elseif` | Menulis `elseif` | Pakai `else if` (dua kata) |
+| `block_invalid_placement` | Jenis block dipakai di lokasi yang tidak boleh | Pindahkan ke konteks yang valid |
+| `expected_block_type` | Setelah `{#` tidak ada tipe block valid | Pakai `if`, `each`, `await`, `key`, atau `snippet` |
+| `each_item_invalid_assignment` | Reassign/bind argumen `{#each}` di runes mode | Bind ke `array[index]` atau properti objek |
+| `each_key_without_as` | `{#each}` tanpa `as` tapi memakai key | Tambahkan `as item` atau hapus key |
+| `const_tag_invalid_expression` | `{@const}` bukan satu deklarasi variabel | Pakai tepat satu deklarasi |
+| `const_tag_invalid_placement` | `{@const}` bukan anak langsung block yang valid | Taruh di dalam `{#each}`, `{#if}`, snippet, dll. |
+| `const_tag_invalid_reference` | `{@const}` mereferensi yang tak tersedia di konteks snippet | Pindahkan deklarasi ke scope yang benar |
+| `const_tag_cycle` | Ketergantungan melingkar antar `{@const}` | Putus siklus referensi |
+| `debug_tag_invalid_arguments` | `{@debug}` diberi ekspresi, bukan identifier | Berikan daftar identifier saja |
+
+### 4.7 Elemen, tag, dan struktur HTML
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `element_unclosed` | Elemen tidak ditutup | Tambahkan tag penutup atau jadikan self-closing |
+| `element_invalid_closing_tag` | Menutup elemen yang tidak pernah dibuka | Hapus tag penutup yang menggantung |
+| `element_invalid_closing_tag_autoclosed` | Elemen sudah ditutup otomatis oleh elemen lain | Susun ulang struktur agar valid |
+| `node_invalid_placement` | Struktur HTML melanggar aturan (mis. `<div>` di dalam `<p>`) | Perbaiki nesting agar sesuai HTML valid |
+| `tag_invalid_name` | Nama elemen/komponen tidak valid | Perbaiki nama tag |
+| `tag_invalid_placement` | Tag dipakai di lokasi yang tidak diizinkan | Pindahkan ke posisi yang valid |
+| `void_element_invalid_content` | Elemen void (mis. `<input>`) diberi konten/penutup | Hapus konten; void element tidak punya children |
+| `textarea_invalid_content` | `<textarea>` punya atribut `value` sekaligus konten | Pilih salah satu sumber nilai |
+| `title_illegal_attribute` | `<title>` punya atribut/direktif | Hapus atribut dari `<title>` |
+| `title_invalid_content` | `<title>` berisi selain teks dan tag | Hanya teks (dan tag) di dalam `<title>` |
+| `illegal_element_attribute` | Elemen tidak mendukung atribut non-event | Hapus atribut yang tidak didukung |
+
+### 4.8 Atribut dan direktif
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `attribute_duplicate` | Atribut sama muncul dua kali di satu elemen | Hapus duplikatnya |
+| `attribute_empty_shorthand` | Atribut shorthand kosong | Isi nilainya atau hapus |
+| `attribute_invalid_name` | Nama atribut tidak valid | Perbaiki nama atribut |
+| `attribute_invalid_type` | `type` pada input ber-binding dua arah tidak statis | Buat `type` statis |
+| `attribute_invalid_multiple` | `multiple` pada `<select>` ber-binding tidak statis | Buat `multiple` statis |
+| `attribute_invalid_event_handler` | Handler event berupa string, bukan ekspresi | Pakai ekspresi dalam kurawal |
+| `attribute_invalid_sequence_expression` | Ekspresi dipisah koma sebagai nilai atribut (runes mode) | Bungkus dengan tanda kurung |
+| `attribute_unquoted_sequence` | Nilai atribut campur teks dan `{...}` tanpa tanda kutip | Beri tanda kutip di sekeliling nilai |
+| `attribute_contenteditable_dynamic` | `contenteditable` dinamis padahal ada binding dua arah | Jadikan `contenteditable` statis |
+| `attribute_contenteditable_missing` | Binding `textContent/innerHTML/innerText` tanpa `contenteditable` | Tambahkan atribut `contenteditable` |
+| `expected_attribute_value` | Nilai atribut diharapkan tapi tidak ada | Berikan nilai atribut |
+| `directive_invalid_value` | Nilai direktif bukan ekspresi dalam kurawal | Bungkus nilai dalam `{...}` |
+| `directive_missing_name` | Nama direktif kosong | Lengkapi nama direktif |
+| `component_invalid_directive` | Direktif tidak valid untuk komponen | Hapus direktif yang tidak didukung |
+| `style_directive_invalid_modifier` | Direktif `style:` pakai modifier selain `important` | Hanya `important` yang valid |
+
+### 4.9 CSS dan `:global`
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `css_empty_declaration` | Deklarasi CSS kosong | Hapus deklarasi kosong |
+| `css_expected_identifier` | Identifier CSS valid diharapkan | Perbaiki sintaks selector/properti |
+| `css_selector_invalid` | Selector tidak valid | Perbaiki selector |
+| `css_global_invalid_placement` | `:global()` bukan di awal/akhir selector | Letakkan `:global()` di ujung selector |
+| `css_global_invalid_selector` | `:global()` tidak berisi tepat satu selector | Isi dengan satu selector |
+| `css_global_invalid_selector_list` | `:global()` memuat type/universal selector di compound | Sederhanakan isi `:global()` |
+| `css_global_block_invalid_combinator` | Selector `:global` mengikuti combinator | Hapus combinator sebelum `:global` |
+| `css_global_block_invalid_declaration` | Block `:global` top-level berisi selain rule | Hanya rule di dalam block `:global` top-level |
+| `css_global_block_invalid_list` | `:global` dicampur dengan selector tak ber-scope dalam list | Pisahkan selector |
+| `css_global_block_invalid_modifier` | `:global` memodifikasi selector lain | Jangan modifikasi selector dengan `:global` |
+| `css_global_block_invalid_modifier_start` | `:global` hanya boleh dimodifikasi sebagai descendant | Sesuaikan struktur selector |
+| `css_global_block_invalid_placement` | `:global` di dalam pseudoclass | Pindahkan keluar dari pseudoclass |
+| `css_nesting_selector_invalid_placement` | Nesting selector (`&`) di tempat tidak valid | Pakai hanya di dalam rule atau `:global()` tunggal |
+| `css_type_selector_invalid_placement` | `:global()` diikuti type selector | Susun ulang selector |
+
+### 4.10 `<svelte:*>` dan `<svelte:options>`
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `svelte_meta_invalid_tag` | Nama tag `<svelte:...>` tidak valid | Perbaiki nama, mis. `<svelte:head>`, `<svelte:window>` |
+| `svelte_meta_duplicate` | Lebih dari satu meta element jenis sama | Sisakan satu |
+| `svelte_meta_invalid_content` | Meta element diberi children | Hapus children |
+| `svelte_meta_invalid_placement` | Meta tag di dalam elemen/block | Letakkan di top-level template |
+| `svelte_self_invalid_placement` | `<svelte:self>` di luar conditional/loop/snippet/slot | Bungkus dalam `{#if}`/`{#each}`/snippet |
+| `svelte_component_missing_this` | `<svelte:component>` tanpa atribut `this` | Tambahkan `this={Komponen}` (atau cukup `<Komponen />` di Svelte 5) |
+| `svelte_component_invalid_this` | Nilai `this` bukan ekspresi | Berikan ekspresi komponen |
+| `svelte_element_missing_this` | `<svelte:element>` tanpa atribut `this` | Tambahkan `this={tagName}` |
+| `svelte_fragment_invalid_attribute` | `<svelte:fragment>` punya atribut selain `slot`/`let:` | Hapus atribut lain |
+| `svelte_fragment_invalid_placement` | `<svelte:fragment>` bukan anak langsung komponen | Jadikan anak langsung komponen |
+| `svelte_head_illegal_attribute` | `<svelte:head>` punya atribut/direktif | Hapus atribut |
+| `svelte_body_illegal_attribute` | `<svelte:body>` punya atribut non-event | Hanya event handler yang diizinkan |
+| `svelte_boundary_invalid_attribute` | `<svelte:boundary>` pakai atribut selain `onerror`/`failed` | Pakai hanya `onerror` dan `failed` |
+| `svelte_boundary_invalid_attribute_value` | Nilai atribut boundary berupa string | Pakai ekspresi non-string |
+| `svelte_options_invalid_attribute` | `<svelte:options>` pakai atribut non-statis | Pakai atribut statis |
+| `svelte_options_invalid_attribute_value` | Nilai opsi tidak valid | Cek nilai yang diizinkan |
+| `svelte_options_unknown_attribute` | Atribut `<svelte:options>` tidak dikenal | Hapus atau perbaiki atribut |
+| `svelte_options_deprecated_tag` | Memakai `tag` (usang) | Pakai `customElement` |
+| `svelte_options_invalid_tagname` | Nama custom element tidak lowercase-hyphenated | Pakai nama seperti `my-element` |
+| `svelte_options_reserved_tagname` | Nama tag custom element reserved | Pilih nama lain |
+| `svelte_options_invalid_customelement` | Konfigurasi custom element tidak valid | Perbaiki konfigurasi |
+| `svelte_options_invalid_customelement_props` | Config props bukan object literal statis | Pakai object literal statis |
+| `svelte_options_invalid_customelement_shadow` | Mode shadow bukan `"open"`/`"none"`/objek config | Pakai nilai shadow yang valid |
+
+### 4.11 Script, module, dan store
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `script_duplicate` | Lebih dari satu `<script>` atau `<script module>` | Sisakan satu `<script>` instance dan satu `<script module>` |
+| `script_invalid_context` | Atribut context bukan `"module"` | Pakai `<script module>` (Svelte 5) |
+| `script_invalid_attribute_value` | Atribut script bukan boolean | Perbaiki nilai atribut |
+| `script_reserved_attribute` | Atribut script yang reserved dipakai | Hapus atribut tersebut |
+| `module_illegal_default_export` | Komponen punya default export | Hapus default export; pakai named export |
+| `export_undefined` | Nama yang di-export tidak terdefinisi | Definisikan dulu sebelum export |
+| `declaration_duplicate` | Variabel dideklarasikan dua kali dengan nama sama | Ganti nama atau hapus duplikat |
+| `declaration_duplicate_module_import` | Variabel bernama sama dengan import modul | Ganti salah satu nama |
+| `declaration_tag_invalid_type` | Tag deklarasi tidak pakai `let`/`const` | Pakai `let` atau `const` |
+| `store_invalid_subscription` | Mereferensi nilai store (`$store`) di `<script module>` | Subscribe di `<script>` instance, bukan module |
+| `store_invalid_subscription_module` | Subscription store di file non-`.svelte` | Subscribe hanya di file `.svelte` |
+| `store_invalid_scoped_subscription` | Subscribe ke store yang bukan top-level | Deklarasikan store di top-level |
+| `dollar_binding_invalid` | Memakai `$` sebagai nama variabel | Ganti nama |
+| `dollar_prefix_invalid` | Prefix `$` dipakai di luar store/variabel reaktif | Hapus prefix `$` |
+| `global_reference_invalid` | Nama variabel ilegal yang bentrok dengan global | Akses lewat `globalThis.namaGlobal` |
+| `import_svelte_internal_forbidden` | Import dari `svelte/internal/*` | Jangan import API internal |
+
+### 4.12 Parser, sintaks, dan lain-lain
+
+Error tingkat rendah dari parser. Biasanya hasil dari typo: kurung/tag yang hilang, atau JavaScript yang tidak valid.
+
+| Kode | Arti & penyebab umum | Cara perbaiki |
+| --- | --- | --- |
+| `js_parse_error` | JavaScript di dalam `<script>`/ekspresi gagal di-parse | Perbaiki sintaks JS sesuai pesan |
+| `unexpected_eof` | Input berakhir mendadak (ada yang belum ditutup) | Tutup tag/kurung yang menggantung |
+| `unexpected_reserved_word` | Kata kunci JS dipakai di tempat ilegal | Ganti identifier |
+| `unterminated_string_constant` | String tidak ditutup | Tambahkan tanda kutip penutup |
+| `expected_token` | Token tertentu diharapkan tapi tidak ada | Tambahkan token yang diminta pesan |
+| `expected_identifier` | Identifier diharapkan | Lengkapi nama |
+| `expected_pattern` | Identifier atau pola destrukturisasi diharapkan | Perbaiki pola |
+| `expected_tag` | Tipe tag valid diharapkan | Perbaiki sintaks tag |
+| `expected_whitespace` | Spasi diharapkan | Tambahkan spasi |
+| `illegal_await_expression` | `await` di dalam direktif atau binding | Pindahkan `await` ke `<script>`/`{#await}` |
+| `illegal_element_attribute` | Elemen tidak mendukung atribut non-event | Hapus atribut |
+| `invalid_arguments_usage` | Kata kunci `arguments` dipakai di template | Hindari `arguments` di markup |
+| `options_unrecognised` | Opsi compiler tidak dikenal | Periksa nama opsi |
+| `options_invalid_value` | Nilai opsi compiler tidak valid | Perbaiki nilai opsi |
+| `options_removed` | Opsi compiler sudah dihapus | Hapus opsi tersebut |
+| `typescript_invalid_feature` | Fitur TypeScript yang butuh preprocessing | Aktifkan preprocessor TS yang sesuai |
+| `duplicate_class_field` | Field kelas dideklarasikan dua kali | Hapus duplikat |
+| `constant_assignment` | Assign ke konstanta | Ganti `const` jadi `let`/state |
+| `reactive_declaration_cycle` | Siklus dependensi antar deklarasi reaktif (legacy `$:`) | Putus ketergantungan melingkar |
+| `transition_duplicate` | Transition sama dipasang dua kali | Sisakan satu |
+| `transition_conflict` | Beberapa direktif transition bentrok | Pakai satu `transition:` (atau pasangan `in:`/`out:`) |
+| `animation_duplicate` | Beberapa direktif `animate:` di satu elemen | Sisakan satu `animate:` |
+| `animation_missing_key` | `animate:` tanpa `{#each}` ber-key | Tambahkan key pada `{#each}` |
+| `animation_invalid_placement` | Elemen `animate:` bukan satu-satunya anak `{#each}` ber-key | Jadikan elemen tersebut anak tunggal block |
+
+## 5. Latihan
+
+<Exercise title="Identifikasi dan perbaiki tiga compiler error">
+
+Komponen berikut gagal di-compile dengan **tiga** compiler error berbeda. Sebutkan kode error masing-masing, lalu tulis versi yang benar dalam gaya Svelte 5.
+
+```svelte
+<script>
+	export let label;
+	let { value } = $props();
+	let { onsubmit } = $props();
+	let total = $state(0);
+</script>
+
+<button on:click={() => total++} onclick={() => total++}>
+	{label}: {total}
+</button>
+```
+
+{#snippet solution()}
+
+Tiga error yang muncul:
+
+1. **`legacy_export_invalid`** — `export let label` dipakai di runes mode (komponen ini sudah runes karena memakai `$state` dan `$props`).
+2. **`props_duplicate`** — `$props()` dipanggil dua kali (`let { value }` lalu `let { onsubmit }`).
+3. **`mixed_event_handler_syntaxes`** — `on:click` (lama) dan `onclick` (baru) dipasang bersamaan di `<button>` yang sama.
+
+Versi yang benar:
+
+```svelte
+<script>
+	// satu panggilan $props() untuk SEMUA prop, termasuk 'label'
+	let { label, value, onsubmit } = $props();
+	let total = $state(0);
+</script>
+
+<!-- satu sintaks event saja: properti modern 'onclick' -->
+<button onclick={() => total++}>
+	{label}: {total}
+</button>
+```
+
+{/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="tip">
+<strong>Baca prefix kodenya dulu.</strong> Kode error seperti <code>css_global_invalid_placement</code> atau <code>props_duplicate</code> memberitahumu kategori (CSS, props) sebelum kamu membaca pesannya. Cari kode persisnya di halaman ini atau di docs resmi — setiap kode punya halaman penjelasan sendiri. Ini jauh lebih cepat daripada menebak dari pesan bahasa Inggris.
+</Callout>
+
+<Callout type="pitfall">
+Banyak error "legacy" sebenarnya gejala dari <strong>runes mode yang tak sengaja aktif</strong>. Kalau kamu lihat <code>legacy_export_invalid</code> padahal merasa menulis kode Svelte 4, cek apakah ada satu <code>$state</code>/<code>$derived</code>/<code>$props</code> nyelip di komponen itu. Satu rune saja sudah membuat <strong>seluruh file</strong> masuk runes mode, dan saat itu <code>export let</code>, <code>$:</code>, serta <code>$$props</code> semuanya ikut error.
+</Callout>
+
+<Callout type="warning">
+<code>props_duplicate</code> sering muncul saat refactor: kamu menambah prop baru dengan menulis baris <code>let &#123; baru &#125; = $props()</code> kedua, alih-alih menambahkannya ke destrukturisasi yang sudah ada. <code>$props()</code> hanya boleh dipanggil <strong>sekali</strong> — gabungkan semua prop ke satu baris destrukturisasi.
+</Callout>
+
+<Callout type="pitfall">
+Hati-hati dengan <code>node_invalid_placement</code> dan <code>element_invalid_closing_tag_autoclosed</code>. Keduanya muncul dari aturan HTML, bukan dari Svelte: mis. menaruh <code>&lt;div&gt;</code> di dalam <code>&lt;p&gt;</code>, atau <code>&lt;td&gt;</code> di luar <code>&lt;tr&gt;</code>. Browser akan "auto-close" tag tertentu secara diam-diam, dan Svelte menolaknya di compile time supaya hasil render-mu tidak berbeda dari ekspektasi. Perbaiki struktur HTML-nya, bukan mencari trik Svelte.
+</Callout>
+
+<Callout type="tip">
+Untuk error dari migrasi Svelte 4 → 5, jalankan dulu <code>npx sv migrate svelte-5</code>. Tool ini mengotomasi sebagian besar penggantian yang memicu error <code>legacy_*</code> (mis. <code>export let</code> → <code>$props()</code>, <code>on:click</code> → <code>onclick</code>), dan menandai bagian ambigu dengan komentar <code>@migration-task</code> untuk kamu tinjau manual.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/compiler-errors" label="Svelte — Compiler errors (daftar resmi & terbaru)" />
+<DocsLink href="https://svelte.dev/docs/svelte/compiler-warnings" label="Svelte — Compiler warnings (peringatan non-blocking)" />
+<DocsLink href="https://svelte.dev/docs/svelte/v5-migration-guide" label="Svelte 5 Migration Guide — untuk membereskan error legacy_*" />

@@ -1,0 +1,365 @@
+---
+title: Migrating to SvelteKit v2
+product: kit
+section: appendix
+sectionTitle: Appendix
+sectionOrder: 6
+order: 4
+status: stable
+description: Panduan lengkap memindahkan proyek dari SvelteKit 1 ke SvelteKit 2 — semua breaking change, alasannya, dan cara memperbaikinya satu per satu.
+docs: https://svelte.dev/docs/kit/migrating-to-sveltekit-2
+keywords: [migration, sveltekit-2, breaking-changes, sv-migrate, cookies, redirect]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Migrasi SvelteKit 1 ke 2 itu beda jenis dengan migrasi Svelte 4 ke 5. Svelte 5 mengganti **bahasa reaktivitasnya** (runes vs `$:`/`export let`) — itu perubahan besar dan "filosofis". SvelteKit 2, sebaliknya, lebih mirip **mengencangkan baut-baut yang dulu longgar**: API-nya secara garis besar tetap sama (`load`, form actions, `+server.js`, hooks), tapi banyak perilaku diam-diam yang dulu "kebetulan jalan" sekarang dibikin eksplisit, lebih aman, atau dihapus karena bisa menggigit kamu di produksi.
+
+Kalau kamu datang dari React/Vue, anggap ini seperti **bump major version dari sebuah meta-framework** (mirip Next 12 ke 13 App Router, atau Nuxt 2 ke 3) — tapi jauh lebih ringan. Tidak ada rombak arsitektur rute, tidak ada paradigma rendering baru. Kebanyakan perubahan bisa dikerjakan oleh codemod otomatis, sisanya tinggal cari-ganti manual yang terhitung jari.
+
+### Analogi: rumah lama yang di-renovasi, bukan dibongkar
+
+Bayangkan kamu pindah ke SvelteKit 2 seperti kontraktor yang merenovasi rumah lama. Dindingnya tidak dipindah, denahnya sama — kamu masih tahu di mana dapur dan kamar. Yang berubah: stop kontak yang dulu tanpa grounding sekarang **wajib di-ground** (cookies wajib `path`), pintu yang dulu bisa "kebetulan" kebuka sendiri sekarang harus benar-benar **kamu dorong** (`error()`/`redirect()` tetap dipanggil, tapi kalau dulu kamu mengandalkan auto-await, sekarang harus eksplisit `await`), dan beberapa "fitur ajaib" yang ternyata rawan korslet dicabut total (`trackServerFetches`).
+
+Renovasi semacam ini justru bagus: rumahnya jadi lebih aman dihuni. Tapi seperti renovasi sungguhan, kamu harus tahu **persis baut mana yang dikencangkan**, karena kalau ada yang terlewat, rumahnya kelihatan baik-baik saja sampai suatu hari ada yang konslet di tengah malam (baca: bug runtime di produksi yang tidak ketahuan saat dev).
+
+### Mengapa perubahan-perubahan ini dibuat
+
+Tema besar SvelteKit 2 ada tiga, dan hampir semua breaking change masuk salah satunya:
+
+- **Eksplisit lebih baik daripada ajaib.** Auto-await top-level promise dan `throw redirect()` itu "pintar", tapi menyembunyikan apa yang sebenarnya terjadi. SvelteKit 2 memilih perilaku yang bisa kamu baca langsung dari kodenya.
+- **Aman secara default.** Cookie tanpa `path` eksplisit dulu memakai default yang sering bikin bug halus (cookie nyangkut di path yang salah). `trackServerFetches` dicabut karena berisiko membocorkan URL privat ke klien. Path relatif jadi default supaya app lebih portabel (bisa di-host di sub-path tanpa drama).
+- **Selaras dengan ekosistem modern.** Node 18.13+, Vite 5, Svelte 4+, TypeScript 5 — menanggalkan beban dukungan versi tua supaya bisa pakai fitur platform yang lebih baru.
+
+Sebelum mulai, naikkan dulu versinya, lalu jalankan **migration tool** resmi yang mengerjakan mayoritas perubahan mekanis untukmu. Sisanya kita kupas manual di bawah.
+
+## 2. Contoh kode
+
+Cara tercepat: jalankan codemod resmi dari CLI `sv`. Ia akan menyentuh banyak file sekaligus (mengubah `throw error` jadi `error`, menambahkan `path` ke cookies, dll.) dan menandai bagian yang perlu kamu cek manual.
+
+```bash
+# Di root proyek, dengan working tree BERSIH (commit dulu semua perubahan!)
+npx sv migrate sveltekit-2
+
+# Codemod akan:
+#  - menghapus `throw` di depan error()/redirect()
+#  - menambahkan `path: '/'` di cookies.set/delete/serialize
+#  - menambahkan komentar penanda (/* @migration task: ... */) di tempat
+#    yang perlu kamu putuskan sendiri
+#
+# Setelah selesai, baca diff-nya baris per baris. Codemod itu konservatif,
+# bukan dukun — selalu verifikasi hasilnya.
+```
+
+Dua perubahan paling sering ketemu adalah `error()`/`redirect()` dan cookies. Perhatikan: fungsi-fungsi ini **melempar (throw) sendiri di dalam dirinya**, jadi menambahkan `throw` di depannya sekarang justru salah secara tipe (TypeScript akan protes karena return type-nya `never`).
+
+```js
+// src/routes/admin/+page.server.js
+import { error, redirect } from '@sveltejs/kit';
+
+export async function load({ locals }) {
+	// ❌ SvelteKit 1: throw error(403, 'Forbidden');
+	// ✅ SvelteKit 2: cukup panggil — error() throw sendiri di dalamnya.
+	if (!locals.user) {
+		error(403, 'Forbidden'); // baris setelah ini TIDAK akan dieksekusi
+	}
+
+	if (!locals.user.isAdmin) {
+		// ❌ SvelteKit 1: throw redirect(303, '/login');
+		// ✅ SvelteKit 2: sama — redirect() throw sendiri.
+		redirect(303, '/login');
+	}
+
+	return { user: locals.user };
+}
+```
+
+```js
+// src/routes/session/+server.js
+// Cookies WAJIB punya `path` sekarang. Dulu path default ditebak dari URL
+// request, yang sering bikin bug halus (cookie nyangkut di /session saja,
+// padahal kamu mau berlaku se-situs). Sekarang eksplisit = tak ada kejutan.
+export function POST({ cookies }) {
+	cookies.set('session', 'abc123', { path: '/' }); // path WAJIB
+	return new Response('ok');
+}
+
+export function DELETE({ cookies }) {
+	cookies.delete('session', { path: '/' }); // path WAJIB juga di delete
+	return new Response('ok');
+}
+```
+
+Perubahan ketiga yang gampang kelewat: **top-level promise tidak lagi di-await otomatis**. Dulu SvelteKit "baik hati" menunggu promise yang kamu taruh langsung di objek return `load`. Sekarang tidak — kalau kamu lupa `await`, klien menerima objek Promise mentah, bukan datanya.
+
+```js
+// src/routes/blog/+page.server.js
+
+// ❌ SvelteKit 1 — "ajaib": promise di top-level di-await otomatis.
+export function load() {
+	const posts = fetch('/api/posts').then((r) => r.json());
+	return { posts }; // dulu SvelteKit diam-diam menunggu `posts`
+}
+
+// ✅ SvelteKit 2 — eksplisit: kamu yang await.
+export async function load({ fetch }) {
+	const posts = await fetch('/api/posts').then((r) => r.json());
+	return { posts };
+}
+
+// Kalau ada beberapa promise dan kamu ingin paralel, gabung dengan Promise.all:
+export async function load({ fetch }) {
+	const [posts, tags] = await Promise.all([
+		fetch('/api/posts').then((r) => r.json()),
+		fetch('/api/tags').then((r) => r.json())
+	]);
+	return { posts, tags };
+}
+```
+
+<Callout type="tip">
+Catatan penting: yang dihapus cuma <em>auto-await di level paling atas objek return</em>. Kalau kamu sengaja mengembalikan promise yang <strong>belum</strong> di-await sebagai nilai bersarang (mis. <code>return &#123; lazy: fetchSlow() &#125;</code>) untuk di-<em>stream</em> dan di-<code>&#123;#await&#125;</code> di komponen, itu tetap fitur yang valid dan didukung. Perubahannya: SvelteKit tak lagi menebak-nebak mana yang harus ditunggu — kamu yang memutuskan.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini soal mengubah kode di sisi server (load, hooks, cookies) — bukan komponen yang bisa dirender live di browser. Jadi alih-alih playground, berikut **peta perubahan lengkap** plus contoh sebelum/sesudah beranotasi yang bisa kamu cocokkan langsung ke proyekmu.
+
+### Tabel breaking changes v1 → v2
+
+| Perubahan | SvelteKit 1 (lama) | SvelteKit 2 (baru) | Auto oleh codemod? |
+|---|---|---|---|
+| `error()` / `redirect()` | `throw error(500, msg)` | `error(500, msg)` | Ya |
+| Cookies wajib `path` | `cookies.set(n, v)` | `cookies.set(n, v, { path: '/' })` | Ya (pakai `path: '/'`) |
+| Top-level promise | di-await otomatis | wajib `await` sendiri | Sebagian |
+| `goto()` ke URL eksternal | `goto('https://...')` | `window.location.href = '...'` | Tidak |
+| Path relatif | `paths.relative` default `false` | default `true` | n/a |
+| `dangerZone.trackServerFetches` | ada | dihapus | n/a |
+| `preloadCode()` | banyak argumen, tanpa `base` | satu argumen, wajib `base` | Tidak |
+| `resolvePath()` | `@sveltejs/kit` | diganti `resolveRoute()` dari `$app/paths` | Sebagian |
+| `handleError` hook | `(error, event)` | dapat tambahan `status` & `message` | Tidak |
+| Env dinamis saat prerender | boleh | dilarang; pakai `$env/static/*` | Tidak |
+| `use:enhance` callback | `{ form, data }` | `{ formElement, formData }` | Tidak |
+| Form dengan `<input type="file">` | bebas | wajib `enctype="multipart/form-data"` | Tidak |
+| `tsconfig.json` | boleh `paths`/`baseUrl` | dilarang; pakai `alias` di `svelte.config.js` | Tidak |
+| `vitePreprocess` | dari `@sveltejs/kit/vite` | dari `@sveltejs/vite-plugin-svelte` | Ya |
+| `getRequest()` (node) | throw langsung saat over limit | error muncul saat membaca body | n/a |
+| `$app/stores` (sejak 2.12) | `import { page } from '$app/stores'` + `$page` | `$app/state` + `page` (tanpa `$`) | Ya (`sv migrate app-state`) |
+
+### Detail yang TIDAK ditangani codemod (kerjakan manual)
+
+```js
+// (a) goto() tak lagi menerima URL eksternal.
+import { goto } from '$app/navigation';
+
+// ❌ SvelteKit 1
+// goto('https://example.com');
+
+// ✅ SvelteKit 2 — navigasi eksternal = pakai API browser biasa.
+window.location.href = 'https://example.com';
+// goto() sekarang KHUSUS untuk navigasi internal (dalam app) saja.
+```
+
+```js
+// (b) resolvePath() -> resolveRoute(). Perhatikan: resolveRoute SUDAH
+//     menyertakan `base`, jadi jangan tambahkan base lagi (dobel nanti).
+
+// ❌ SvelteKit 1
+// import { resolvePath } from '@sveltejs/kit';
+// import { base } from '$app/paths';
+// const url = base + resolvePath('/blog/[slug]', { slug: 'halo' });
+
+// ✅ SvelteKit 2
+import { resolveRoute } from '$app/paths';
+const url = resolveRoute('/blog/[slug]', { slug: 'halo' }); // base sudah include
+```
+
+```js
+// (c) hooks.server.js — handleError sekarang dapat `status` & `message`.
+//     Berguna untuk membedakan 404 (expected) dari 500 (bug beneran).
+export function handleError({ error, event, status, message }) {
+	// `status` default 500 & `message` 'Internal Error' untuk error tak terduga.
+	// Untuk error yang KAMU lempar via error(404, ...), status = 404.
+	if (status !== 404) {
+		// Cuma lapor ke Sentry kalau benar-benar error server, bukan 404 biasa.
+		// reportToSentry(error, event);
+	}
+	return { message: status === 404 ? 'Halaman tak ditemukan' : 'Aduh, error.' };
+}
+```
+
+```svelte
+<!-- (d) use:enhance — nama properti callback berubah. -->
+<script>
+	import { enhance } from '$app/forms';
+</script>
+
+<!-- Form dgn file WAJIB enctype, kalau tidak use:enhance akan error. -->
+<form
+	method="POST"
+	enctype="multipart/form-data"
+	use:enhance={({ formElement, formData, action, cancel }) => {
+		// ❌ SvelteKit 1: ({ form, data, action, cancel })
+		// ✅ SvelteKit 2: `form`  -> `formElement`
+		//                `data`  -> `formData`
+		return async ({ result, update }) => {
+			await update();
+		};
+	}}
+>
+	<input type="file" name="avatar" />
+	<button>Upload</button>
+</form>
+```
+
+```js
+// (e) tsconfig.json -> jangan pakai paths/baseUrl. Pindahkan alias ke config.
+// svelte.config.js
+export default {
+	kit: {
+		alias: {
+			$components: 'src/lib/components',
+			$utils: 'src/lib/utils'
+		}
+	}
+};
+// SvelteKit akan generate alias ini ke .svelte-kit/tsconfig.json yang di-extend.
+```
+
+## 4. Latihan
+
+<Exercise title="Perbaiki file load & cookies dari SvelteKit 1 ke 2">
+Berikut sebuah `+page.server.js` gaya SvelteKit 1. Ada **empat** hal yang akan error atau berperilaku salah di SvelteKit 2. Temukan dan perbaiki semuanya.
+
+```js
+import { error, redirect } from '@sveltejs/kit';
+
+export function load({ locals, cookies, fetch }) {
+	if (!locals.user) {
+		throw redirect(303, '/login');
+	}
+
+	const profile = fetch('/api/profile').then((r) => r.json());
+
+	cookies.set('last_seen', Date.now().toString());
+
+	if (!profile) {
+		throw error(404, 'Profil tidak ada');
+	}
+
+	return { profile };
+}
+```
+
+{#snippet solution()}
+
+  ```js
+  import { error, redirect } from '@sveltejs/kit';
+
+  // 1) load jadi async karena kita perlu `await` (top-level promise tak lagi
+  //    di-await otomatis).
+  export async function load({ locals, cookies, fetch }) {
+  	// 2) redirect() TANPA throw — ia throw sendiri.
+  	if (!locals.user) {
+  		redirect(303, '/login');
+  	}
+
+  	// 3) WAJIB await; tanpa ini `profile` cuma objek Promise mentah,
+  	//    dan cek `if (!profile)` di bawah jadi tidak masuk akal.
+  	const profile = await fetch('/api/profile').then((r) => r.json());
+
+  	// 4) cookies.set WAJIB punya `path`.
+  	cookies.set('last_seen', Date.now().toString(), { path: '/' });
+
+  	// 5) error() juga TANPA throw.
+  	if (!profile) {
+  		error(404, 'Profil tidak ada');
+  	}
+
+  	return { profile };
+  }
+  ```
+
+  Ringkas: `async` + `await`, buang `throw` dari `redirect()`/`error()`, dan tambah `path: '/'` ke `cookies.set`. Empat hal, semuanya khas SvelteKit 2.
+
+  {/snippet}</Exercise>
+
+<Exercise title="Modernkan akses `page` store (SvelteKit 2.12+)">
+Komponen ini memakai `$app/stores` gaya lama. Tuliskan versi SvelteKit 2.12+ yang memakai `$app/state`. (Asumsikan kamu pakai Svelte 5 runes.)
+
+```svelte
+<script>
+	import { page } from '$app/stores';
+</script>
+
+<p>Path sekarang: {$page.url.pathname}</p>
+{#if $page.error}
+	<p>Error: {$page.error.message}</p>
+{/if}
+```
+
+{#snippet solution()}
+
+  ```svelte
+  <script>
+  	// $app/state menggantikan $app/stores. `page` di sini adalah objek
+  	// reaktif berbasis runes — BUKAN store — jadi TANPA prefix `$`.
+  	import { page } from '$app/state';
+  </script>
+
+  <p>Path sekarang: {page.url.pathname}</p>
+  {#if page.error}
+  	<p>Error: {page.error.message}</p>
+  {/if}
+  ```
+
+  Bedanya cuma dua: sumber import (`$app/stores` -> `$app/state`) dan hilangnya `$` di depan `page`. Jalankan `npx sv migrate app-state` untuk konversi otomatis seluruh proyek. Catatan: `$app/state` butuh Svelte 5; kalau masih Svelte 4, tetap pakai `$app/stores`.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menambahkan <code>throw</code> di depan <code>error()</code> atau <code>redirect()</code> di SvelteKit 2. Fungsi-fungsi ini sudah <code>throw</code> sendiri (return type-nya <code>never</code>). Menulis <code>throw redirect(...)</code> bukan cuma redundan — TypeScript akan menandainya error, dan logika setelahnya tetap dianggap "tak terjangkau". Jika kamu malah menulis <code>const x = error(...)</code> berharap dapat objek untuk dilempar nanti, itu pola lama yang harus dibuang.
+</Callout>
+
+<Callout type="warning">
+Bug paling licik saat migrasi adalah <strong>lupa <code>await</code></strong> pada top-level promise. Di SvelteKit 1 ini "kebetulan jalan" karena auto-await; di SvelteKit 2 kodenya tetap meng-<em>compile</em> tanpa keluhan, tapi komponenmu menerima objek <code>Promise</code> mentah, bukan datanya. Gejalanya: data tampil <code>[object Promise]</code> atau <code>undefined</code>. Telusuri semua <code>load</code>-mu dan pastikan tiap <code>fetch</code>/query yang masuk objek return sudah benar-benar di-<code>await</code> (atau memang sengaja di-stream lewat <code>&#123;#await&#125;</code>).
+</Callout>
+
+<Callout type="warning">
+Cookie tanpa <code>path</code> sekarang melempar error. Di SvelteKit 1, path default ditebak dari URL request, yang sering bikin cookie cuma berlaku di satu sub-path dan "hilang" di halaman lain. Hampir selalu yang kamu mau adalah <code>path: '/'</code> (berlaku se-situs). Periksa <code>cookies.set</code>, <code>cookies.delete</code>, dan <code>cookies.serialize</code>.
+</Callout>
+
+<Callout type="tip">
+Selalu mulai migrasi dengan <code>git commit</code> bersih, lalu jalankan <code>npx sv migrate sveltekit-2</code>. Codemod menambahkan komentar <code>/* @migration task: ... */</code> di tempat yang butuh keputusanmu — jangan abaikan. Setelah itu, naikkan dependency (Node 18.13+, Vite 5, Svelte 4+, TypeScript 5), hapus <code>paths</code>/<code>baseUrl</code> dari <code>tsconfig.json</code> (pindah ke <code>kit.alias</code>), dan pindahkan import <code>vitePreprocess</code> ke <code>@sveltejs/vite-plugin-svelte</code>. Jalankan <code>npm run build</code> + <code>svelte-check</code>; biarkan error tipe memandumu ke sisa yang belum beres.
+</Callout>
+
+<Callout type="legacy">
+Kalau kamu menemukan tutorial atau jawaban Stack Overflow lama yang menyetel <code>dangerZone.trackServerFetches: true</code>, atau memakai <code>resolvePath</code> dari <code>@sveltejs/kit</code>, atau <code>goto('https://situs-lain.com')</code> — itu pola SvelteKit 1 yang sudah tidak berlaku. Padanan modernnya: fitur track server fetch dicabut (alasan keamanan), gunakan <code>resolveRoute</code> dari <code>$app/paths</code>, dan untuk navigasi keluar app pakai <code>window.location.href</code>.
+</Callout>
+
+### Ringkasan padanan lama → modern
+
+<LegacyVsModern rows={[
+	{ legacy: "throw error(500, 'x')", modern: "error(500, 'x')", note: 'fungsi throw sendiri' },
+	{ legacy: "throw redirect(303, '/y')", modern: "redirect(303, '/y')", note: 'sama' },
+	{ legacy: "cookies.set('n', v)", modern: "cookies.set('n', v, { path: '/' })", note: 'path wajib' },
+	{ legacy: 'return { data: fetch(u) }', modern: 'return { data: await fetch(u) }', note: 'tak ada auto-await' },
+	{ legacy: "goto('https://x.com')", modern: "window.location.href = 'https://x.com'", note: 'goto internal-only' },
+	{ legacy: "resolvePath('/b/[s]', p)", modern: "resolveRoute('/b/[s]', p)", note: 'base sudah include' },
+	{ legacy: "import { page } from '$app/stores' lalu pakai $page", modern: "import { page } from '$app/state' lalu pakai page", note: '2.12+, butuh Svelte 5' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/migrating-to-sveltekit-2" label="SvelteKit — Migrating to SvelteKit 2 (daftar lengkap breaking changes)" />
+<DocsLink href="https://svelte.dev/docs/cli/sv-migrate" label="CLI sv — perintah `sv migrate` (codemod resmi)" />
+<DocsLink href="https://svelte.dev/docs/kit/migrating" label="SvelteKit — Migrating from Sapper (jika datang dari proyek yang sangat lama)" />

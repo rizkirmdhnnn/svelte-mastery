@@ -1,0 +1,274 @@
+---
+title: sv migrate
+product: cli
+section: commands
+sectionTitle: Perintah
+sectionOrder: 2
+order: 4
+status: stable
+description: Otomasi upgrade kode dengan sv migrate <target> — svelte-5, sveltekit-2, self-closing-tags, app-state, dan lainnya — plus cara meninjau hasilnya lewat penanda @migration.
+docs: https://svelte.dev/docs/cli/sv-migrate
+keywords: [sv migrate, codemod, svelte-5, sveltekit-2, runes, upgrade]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sv migrate <target>` adalah perintah untuk **mengubah kode lama jadi kode baru secara otomatis**. Ia membaca file-filemu, menulis ulang sintaks yang sudah usang ke padanan terbaru, lalu menandai bagian yang terlalu rumit untuk diotomasi agar kamu tinjau manual. Dalam istilah teknis, ini sebuah **codemod** — program yang memodifikasi program lain.
+
+Kalau kamu datang dari React, ini saudara dekat `npx @next/codemod` (yang dipakai Next.js untuk upgrade lintas versi) atau `react-codemod`. Dari Vue, ini analog dengan `@vue/compat` + tooling migrasi Vue 2→3. Bedanya, di ekosistem Svelte semua disatukan di bawah satu CLI: `sv` punya `create` (bikin proyek), `add` (tambah integrasi), dan `migrate` (upgrade). Satu pintu untuk membuat **dan** merawat proyek.
+
+### Analogi: tukang renovasi yang mengganti instalasi, bukan merobohkan rumah
+
+Bayangkan kamu punya rumah lama dengan kabel listrik model lama. Kamu **tidak** ingin merobohkan rumah dan membangun ulang dari nol — itu mahal dan berisiko. Yang kamu mau: panggil tukang yang menelusuri tembok, mengganti kabel lama dengan kabel standar baru, **tanpa** mengubah denah rumahmu.
+
+`sv migrate` persis tukang itu. Ia tidak menulis ulang logika aplikasimu; ia hanya mengganti "instalasi"-nya: `export let` jadi `$props()`, `on:click` jadi `onclick`, `<slot>` jadi `{@render}`, dan seterusnya. Dan seperti tukang yang jujur, kalau ia menemukan sambungan kabel yang aneh dan tidak yakin maksudnya, ia **tidak menebak sembarangan** — ia menempelkan stiker peringatan (`@migration-task`) dan bilang: "yang ini kamu yang putuskan, ya."
+
+Itulah filosofi inti perintah ini: **biarkan mesin mengerjakan yang membosankan dan mekanis, simpan otakmu untuk yang ambigu.**
+
+### Daftar target migrasi
+
+`sv migrate` bukan satu transformasi, tapi sekumpulan target. Kamu memilih target dengan menyebut namanya: `npx sv migrate svelte-5`. Tabel di bawah merangkum semua target resmi, dari yang paling sering dipakai sampai yang langka.
+
+| Target | Mengubah apa | Kapan dipakai |
+|---|---|---|
+| `svelte-5` | Komponen Svelte 4 → Svelte 5 (runes & sintaks baru) di seluruh codebase | Upgrade aplikasi Svelte 4 ke 5 |
+| `sveltekit-2` | Proyek SvelteKit 1 → SvelteKit 2 (struktur, dependensi, tanda tangan API) | Upgrade SvelteKit 1 ke 2 |
+| `self-closing-tags` | Menghapus garis miring pada elemen non-void, mis. `<div />` → `<div></div>` | Menyesuaikan markup ke aturan HTML yang lebih ketat |
+| `app-state` | `$app/stores` → `$app/state` di file `.svelte` | Modernisasi akses state aplikasi SvelteKit |
+| `svelte-4` | Aplikasi Svelte 3 → Svelte 4 (dependensi & sintaks) | Upgrade lawas dari Svelte 3 |
+| `package` | `@sveltejs/package` v1 → v2 | Upgrade tooling library komponen |
+| `routes` | Konvensi routing pra-rilis → routing filesystem SvelteKit 1 | Proyek SvelteKit sangat lama (pra-1.0) |
+
+Dua yang paling penting hari ini adalah **`svelte-5`** dan **`sveltekit-2`** — keduanya hampir selalu jadi pasangan saat kamu memodernkan proyek lama. Sisanya bersifat situasional.
+
+### Apa yang diubah `svelte-5` secara otomatis
+
+Saat kamu menjalankan `npx sv migrate svelte-5`, codemod menelusuri tiap file `.svelte` dan menerapkan pemetaan mekanis ini:
+
+<LegacyVsModern legacyLabel="Svelte 4 (sebelum)" modernLabel="Svelte 5 (sesudah migrate)" rows={[
+	{ legacy: 'export let title', modern: 'let { title } = $props()', note: 'Props jadi destructuring objek.' },
+	{ legacy: 'export let value = 0', modern: 'let { value = 0 } = $props()', note: 'Default lewat default destructuring.' },
+	{ legacy: '$: double = a * 2', modern: 'let double = $derived(a * 2)', note: 'Nilai turunan → $derived.' },
+	{ legacy: '$: console.log(a)', modern: '$effect(() => console.log(a))', note: 'Efek samping → $effect.' },
+	{ legacy: 'on:click={fn}', modern: 'onclick={fn}', note: 'Event jadi properti biasa.' },
+	{ legacy: '<slot />', modern: '{@render children()}', note: 'children dari $props().' },
+	{ legacy: '<slot name="head" />', modern: '{@render head()}', note: 'Named slot → named snippet prop.' },
+	{ legacy: 'createEventDispatcher()', modern: 'let { onsave } = $props()', note: 'Event → callback prop.' },
+	{ legacy: '$$props / $$restProps', modern: 'let { ...rest } = $props()', note: 'Sisa props lewat rest destructuring.' },
+	{ legacy: 'beforeUpdate / afterUpdate', modern: '$effect.pre(...) / $effect(...)', note: 'Lifecycle update → effect.' }
+]} />
+
+Yang penting dipahami: pemetaan di atas **mekanis dan aman** — `sv migrate svelte-5` bisa mengerjakannya tanpa ragu. Yang **tidak** bisa diotomasi dengan percaya diri adalah pola ambigu: blok `$:` yang mencampur perhitungan nilai dengan efek samping, binding dua-arah yang kompleks, atau reaktivitas yang dependensinya tersebar. Untuk kasus begitu, codemod memilih jujur ketimbang sok tahu — dan di situlah penanda `@migration` muncul.
+
+### `@migration-task`: stiker "tinjau aku"
+
+Setelah migrasi selesai, jangan langsung anggap kelar. Codemod menyisipkan komentar bertanda `@migration` (sering ditulis `@migration-task`) di tempat-tempat yang butuh keputusan manusia. Cara menemukannya gampang: cari saja string itu di seluruh proyek.
+
+```bash
+# Cari semua penanda yang ditinggalkan codemod
+grep -rn "@migration" src/
+
+# Alternatif lebih cepat kalau punya ripgrep
+rg "@migration" src/
+```
+
+Anggap penanda ini seperti daftar "barang yang tukang tidak berani sentuh tanpa izinmu". Selama masih ada `@migration-task` yang belum dibereskan, migrasimu belum benar-benar selesai.
+
+## 2. Contoh kode
+
+Perintah dasarnya cuma satu baris: sebut nama target.
+
+```bash
+# Upgrade komponen Svelte 4 → Svelte 5 (runes) di seluruh proyek.
+npx sv migrate svelte-5
+
+# Upgrade SvelteKit 1 → 2. Biasanya dijalankan SEBELUM svelte-5
+# kalau proyekmu masih SvelteKit 1.
+npx sv migrate sveltekit-2
+
+# Bereskan elemen non-void yang ditulis self-closing (<div /> dsb).
+npx sv migrate self-closing-tags
+
+# SvelteKit: pindah dari $app/stores ke $app/state.
+npx sv migrate app-state
+```
+
+Urutan yang disarankan saat memodernkan proyek lama dari nol — dari "kendaraan" ke "mesin":
+
+```bash
+# Langkah 0 — WAJIB: pastikan git bersih dulu (lihat Tips di bawah).
+git status        # harus "nothing to commit, working tree clean"
+
+# Langkah 1 — upgrade framework-nya dulu (SvelteKit 1 → 2).
+npx sv migrate sveltekit-2
+
+# Langkah 2 — baru upgrade compiler-nya (Svelte 4 → 5 / runes).
+npx sv migrate svelte-5
+
+# Langkah 3 — review semua penanda yang ditinggalkan.
+grep -rn "@migration" src/
+
+# Langkah 4 — pasang dependensi yang barangkali ter-update, lalu uji.
+npm install
+npm run check     # type-check + cek error Svelte
+npm run dev       # uji manual di browser
+```
+
+Perlu diingat, `sv migrate` mengubah file **di tempat** (in place). Tidak ada folder output baru; file lamamu langsung ditimpa dengan versi baru. Inilah kenapa langkah 0 (git bersih) bukan opsional.
+
+## 3. Coba sendiri
+
+Karena `sv migrate` adalah perintah terminal yang mengubah file proyek, tidak ada playground live untuk perintahnya. Sebagai gantinya, mari telusuri **satu file nyata sebelum dan sesudah** migrasi, supaya kamu tahu persis apa yang dikerjakan codemod — termasuk bagian yang ia tandai untuk kamu.
+
+Misalkan ada komponen Svelte 4 ini sebelum migrasi:
+
+```svelte
+<!-- ❌ Sebelum: Counter.svelte (Svelte 4) -->
+<script>
+	import { createEventDispatcher } from 'svelte';
+	const dispatch = createEventDispatcher();
+
+	export let start = 0;        // prop dari parent
+	let count = start;
+
+	$: double = count * 2;       // ini DERIVED (menghitung nilai)
+	$: if (count > 10) {         // ini EFEK + assignment → AMBIGU
+		count = 10;
+		dispatch('limit');
+	}
+</script>
+
+<button on:click={() => count++}>
+	<slot /> {count} (x2={double})
+</button>
+```
+
+Setelah `npx sv migrate svelte-5`, kira-kira jadi seperti ini:
+
+```svelte
+<!-- ✅ Sesudah: Counter.svelte (Svelte 5) -->
+<script>
+	// createEventDispatcher → callback prop 'onlimit'.
+	// export let → destructuring $props(); <slot> → 'children'.
+	let { start = 0, onlimit, children } = $props();
+
+	let count = $state(start);
+
+	// Pemetaan yang JELAS dikerjakan otomatis: $: derived → $derived.
+	let double = $derived(count * 2);
+
+	// Blok $: yang ambigu (efek + assignment) TIDAK ditebak.
+	// Codemod menempelkan stiker dan membungkusnya jadi $effect mentah:
+	// @migration-task: tinjau logika ini secara manual
+	$effect(() => {
+		if (count > 10) {
+			count = 10;       // ⚠ $effect yang menulis $state-nya sendiri = rawan loop
+			onlimit?.();
+		}
+	});
+</script>
+
+<button onclick={() => count++}>
+	{@render children?.()} {count} (x2={double})
+</button>
+```
+
+Perhatikan dua hal. Pertama, transformasi mekanis (`export let`, `createEventDispatcher`, `on:click`, `<slot>`, `$: double`) dikerjakan sempurna tanpa campur tanganmu. Kedua, blok `$:` yang mencampur **menghitung sesuatu** dengan **melakukan sesuatu** ditandai `@migration-task` — karena di sini manusia harus memutuskan. Versi yang lebih sehat: pisahkan batas (clamp) jadi `$derived` dan biarkan efek hanya memanggil callback.
+
+```svelte
+<!-- ✅ Hasil tinjauan manual (lebih sehat daripada $effect mentah) -->
+<script>
+	let { start = 0, onlimit, children } = $props();
+	let raw = $state(start);
+	// clamp jadi nilai turunan murni — tidak ada efek yang menulis state
+	let count = $derived(Math.min(raw, 10));
+	$effect(() => {
+		if (raw > 10) onlimit?.();   // efek HANYA memanggil callback, tidak set state
+	});
+</script>
+
+<button onclick={() => raw++}>
+	{@render children?.()} {count} (x2={count * 2})
+</button>
+```
+
+Pelajarannya: `@migration-task` bukan bug, melainkan undangan untuk berpikir. Codemod sengaja konservatif supaya tidak diam-diam mengubah perilaku programmu.
+
+## 4. Latihan
+
+<Exercise title="Susun rencana migrasi proyek lama">
+
+Kamu mewarisi sebuah proyek **SvelteKit 1 + Svelte 4** yang masih memakai `$app/stores`, banyak `export let`, beberapa `<div />` self-closing, dan belum di-commit ke git sejak kemarin (ada perubahan yang belum tersimpan). Tugasmu: tuliskan urutan perintah yang aman untuk memigrasi proyek ini ke SvelteKit 2 + Svelte 5, lalu jelaskan kenapa urutannya begitu dan bagaimana kamu memastikan migrasinya tuntas.
+
+{#snippet solution()}
+
+```bash
+# 1) Amankan kondisi git DULU — sv migrate menimpa file di tempat.
+git add -A && git commit -m "checkpoint sebelum migrasi"
+git status        # pastikan working tree bersih
+
+# 2) Upgrade framework-nya lebih dulu: SvelteKit 1 → 2.
+#    (kerangka/kendaraan dulu, baru isi mesinnya)
+npx sv migrate sveltekit-2
+
+# 3) Upgrade compiler-nya: Svelte 4 → 5 (runes).
+npx sv migrate svelte-5
+
+# 4) Modernisasi akses state SvelteKit: $app/stores → $app/state.
+npx sv migrate app-state
+
+# 5) Rapikan markup: hapus self-closing pada elemen non-void.
+npx sv migrate self-closing-tags
+
+# 6) Pastikan TUNTAS: cari semua penanda yang ditinggalkan codemod.
+grep -rn "@migration" src/      # selesaikan satu per satu
+
+# 7) Verifikasi: install ulang, type-check, jalankan, uji manual.
+npm install
+npm run check
+npm run dev
+```
+
+Kenapa urutannya begini:
+
+- **Git bersih dulu** karena `sv migrate` menulis ulang file di tempat. Tanpa commit/checkpoint, kamu tidak bisa `git diff` untuk meninjau perubahan, dan tidak bisa kembali kalau hasilnya kacau.
+- **`sveltekit-2` sebelum `svelte-5`**: upgrade "kendaraan" (framework) dulu, baru "mesin" (compiler). Membalik urutan bisa membuat codemod Svelte 5 berjalan di atas struktur SvelteKit lama yang belum kompatibel.
+- **Migrasi belum selesai sampai `grep "@migration"` kosong.** Penanda itu adalah keputusan yang sengaja diserahkan ke manusia; `npm run check` lalu uji manual memastikan tak ada perilaku yang berubah diam-diam.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="warning">
+<strong>Selalu commit (atau stash) dulu sebelum `sv migrate`.</strong> Perintah ini mengubah file <strong>di tempat</strong> dan tidak punya tombol undo bawaan. Dengan git bersih, kamu bisa meninjau seluruh perubahan lewat <code>git diff</code> dan membatalkannya dengan <code>git checkout .</code> kalau perlu. Tanpa itu, kamu menerbangkan pesawat tanpa parasut.
+</Callout>
+
+<Callout type="pitfall">
+Migrasi <strong>tidak selesai</strong> begitu perintahnya berhenti. Codemod meninggalkan komentar <code>@migration-task</code> di setiap tempat yang terlalu ambigu untuk diotomasi (terutama blok <code>$:</code> yang mencampur perhitungan dan efek samping, atau binding dua-arah rumit). Wajib hukumnya menjalankan <code>grep -rn "@migration" src/</code> sesudahnya dan membereskan tiap penanda. Build yang "berhasil" tapi masih menyisakan penanda berarti masih ada utang teknis.
+</Callout>
+
+<Callout type="warning">
+Jangan paksa setiap <code>$:</code> ambigu menjadi <code>$effect</code> mentah saat meninjau. Aturannya: kalau blok itu <em>menghitung sebuah nilai</em>, pakai <code>$derived</code>; kalau ia <em>melakukan sesuatu</em> (fetch, log, panggil callback), pakai <code>$effect</code>. <code>$effect</code> yang menulis ke <code>$state</code> lain gampang memicu loop tak sengaja — seperti contoh clamp di bagian "Coba sendiri".
+</Callout>
+
+<Callout type="tip">
+Migrasi tidak harus sekali tembak untuk seluruh proyek. Svelte 5 menjalankan komponen legacy dan runes berdampingan (asal tak dicampur <em>dalam satu file</em>), jadi kamu bisa memigrasi <strong>file demi file</strong>. Strategi yang nyaman: mulai dari komponen daun (leaf) yang tak punya anak, jalankan migrate, tinjau, commit; lalu naik ke komponen kontainer. Riwayat git jadi rapi dan mudah di-review per langkah.
+</Callout>
+
+<Callout type="legacy">
+Tutorial lama menyebut paket terpisah seperti <code>svelte-migrate</code> atau skrip ad-hoc untuk upgrade. Sekarang semuanya disatukan di CLI resmi: <code>npx sv migrate &lt;target&gt;</code>. Untuk upgrade modern yang relevan hari ini, target yang kamu butuhkan hampir selalu <code>sveltekit-2</code> lalu <code>svelte-5</code>.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-migrate" label="sv migrate — referensi CLI lengkap" />
+
+<DocsLink href="https://svelte.dev/docs/svelte/v5-migration-guide" label="Svelte 5 Migration Guide — detail tiap perubahan & @migration-task" />

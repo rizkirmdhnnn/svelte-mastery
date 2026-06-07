@@ -1,0 +1,407 @@
+---
+title: $app/navigation
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 8
+status: reference
+description: Referensi lengkap modul $app/navigation SvelteKit — goto, invalidate, invalidateAll, preloadData/preloadCode, hook navigasi (beforeNavigate/afterNavigate/onNavigate), shallow routing (pushState/replaceState), dan disableScrollHandling.
+docs: https://svelte.dev/docs/kit/$app-navigation
+keywords: [app-navigation, goto, invalidate, preloadData, beforeNavigate, shallow-routing]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/navigation` adalah modul virtual SvelteKit yang berisi **fungsi** untuk mengontrol router dari dalam kode. Kalau `$app/state` adalah jarum-jarum indikator yang kamu **baca** (di mana aku sekarang? lagi pindah halaman?), maka `$app/navigation` adalah **setir, pedal, dan kotak peralatan** yang kamu pakai untuk **bertindak**: membelokkan mobil ke alamat lain, menyuruh sistem mengambil data terbaru, memanaskan mesin tujuan sebelum sampai, sampai memasang sabuk pengaman agar penumpang tidak keluar saat form belum disimpan.
+
+Penting: ini modul virtual, artinya SvelteKit menyuntikkannya saat build — tidak ada file fisik di `node_modules` yang bisa kamu buka, dan **tidak bisa di-import di luar konteks SvelteKit**. Hampir semua fungsinya hanya berarti di **klien** (browser), karena navigasi client-side memang terjadi di browser. Memanggil `goto()` di dalam `load` server adalah kesalahan umum; untuk redirect di server pakai `redirect()` dari `@sveltejs/kit`.
+
+### Analogi: setir, pedal, dan kotak peralatan
+
+Bayangkan aplikasimu adalah mobil yang melaju di jalan. `$app/navigation` adalah perlengkapan di tangan pengemudi:
+
+- **Setir** — `goto(url)`: membelokkan mobil ke alamat internal lain tanpa "mematikan mesin" (tanpa full reload).
+- **Tombol refresh data** — `invalidate(...)` dan `invalidateAll()`: menyuruh sistem mengambil ulang data. `invalidate` itu refresh satu panel tertentu; `invalidateAll` itu palu godam yang me-refresh seluruh dashboard.
+- **Pemanas mesin tujuan** — `preloadData(href)` dan `preloadCode(href)`: memanaskan rute tujuan sebelum benar-benar diklik, supaya saat sampai terasa instan.
+- **Sabuk pengaman & sensor pintu** — `beforeNavigate`, `afterNavigate`, `onNavigate`: hook siklus hidup navigasi. `beforeNavigate` bisa membatalkan keberangkatan (mis. "yakin keluar? form belum disimpan"), `onNavigate` cocok untuk transisi mulus antar pemandangan (View Transitions), `afterNavigate` jalan setiap kali sudah sampai.
+- **Buku catatan perjalanan** — `pushState`/`replaceState`: mencatat entri baru di riwayat browser **tanpa benar-benar pindah halaman**. Ini fondasi *shallow routing* (mis. membuka modal sebagai entri history agar tombol Back menutupnya).
+- **Saklar manual rem-tangan kamera** — `disableScrollHandling()`: mematikan pengelolaan scroll otomatis SvelteKit untuk satu navigasi (jarang dipakai, dan sengaja "tidak nyaman" karena melanggar ekspektasi user).
+
+Inti yang perlu kamu pegang: **navigasi** (`goto`), **muat ulang data** (`invalidate*`), **prefetch** (`preload*`), **hook siklus hidup** (`*Navigate`), dan **shallow routing** (`pushState`/`replaceState`).
+
+### Kenapa client-side navigation, bukan `<a href>` biasa saja?
+
+Sebenarnya untuk link biasa kamu **tidak perlu** `goto` — cukup `<a href="/about">`, dan SvelteKit otomatis mencegatnya jadi navigasi client-side (mengambil hanya data + komponen yang berubah, bukan reload halaman penuh). `goto()` dipakai justru saat navigasi **bukan** dipicu klik link: setelah submit berhasil, setelah timer, setelah memutuskan tujuan secara dinamis, atau saat kamu ingin mengatur opsi seperti `replaceState` / `noScroll` / `keepFocus`.
+
+Bagi yang datang dari React: `goto` ≈ `router.push`/`router.replace` (Next.js) atau `navigate()` (React Router). `invalidate`/`invalidateAll` ≈ `router.refresh()` (Next.js) atau `revalidate`/`queryClient.invalidateQueries`. `preloadData` ≈ prefetch otomatis `<Link prefetch>`. `beforeNavigate`/`onNavigate` ≈ navigation blocker / route guards Vue Router (`beforeEach`).
+
+## 2. Contoh kode
+
+```svelte
+<!-- src/routes/products/+page.svelte — goto, invalidate, invalidateAll, preload -->
+<script>
+	import { goto, invalidate, invalidateAll, preloadData } from '$app/navigation';
+
+	let { data } = $props();
+	let q = $state('');
+
+	function search() {
+		// goto() = navigasi client-side internal. Ia mengembalikan Promise
+		// yang resolve SETELAH navigasi (termasuk load tujuan) selesai.
+		// replaceState: true -> ganti entri history, jadi tombol Back tidak
+		// menumpuk satu entri per ketikan pencarian.
+		goto('/products?q=' + encodeURIComponent(q), { replaceState: true });
+	}
+
+	async function refreshFavorites() {
+		// invalidate menjalankan ulang HANYA load yang memanggil
+		// depends('app:favorites'). Bedah laser, bukan palu godam.
+		await invalidate('app:favorites');
+	}
+
+	async function hardRefresh() {
+		// invalidateAll = palu godam: jalankan ulang SEMUA load (dan remote
+		// query) untuk halaman aktif. Pakai saat banyak data perlu refresh.
+		await invalidateAll();
+	}
+
+	async function openFirst() {
+		// preloadData mengembalikan hasilnya; kalau load tujuan menghasilkan
+		// redirect, kita bisa langsung goto ke lokasi akhirnya.
+		const result = await preloadData('/products/' + data.products[0].id);
+		if (result.type === 'redirect') {
+			goto(result.location);
+		} else if (result.type === 'loaded' && result.status === 200) {
+			console.log('Data tujuan sudah panas:', result.data);
+		}
+	}
+</script>
+
+<input bind:value={q} onkeydown={(e) => e.key === 'Enter' && search()} placeholder="Cari…" />
+<button onclick={refreshFavorites}>Refresh favorit</button>
+<button onclick={hardRefresh}>Refresh semua</button>
+
+<ul>
+	{#each data.products as p}
+		<!-- preloadData saat hover: load tujuan dipanaskan sebelum diklik.
+		     Ini yang dilakukan atribut data-sveltekit-preload-data secara otomatis. -->
+		<li onmouseenter={() => preloadData('/products/' + p.id)}>
+			<a href={'/products/' + p.id}>{p.name}</a>
+		</li>
+	{/each}
+</ul>
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — hook siklus hidup navigasi -->
+<script>
+	import { beforeNavigate, afterNavigate, onNavigate } from '$app/navigation';
+
+	let dirty = $state(false); // true kalau ada form yang belum disimpan
+
+	// beforeNavigate: jalan SEBELUM navigasi. cancel() membatalkannya.
+	beforeNavigate(({ cancel, to, type }) => {
+		if (dirty && !confirm('Ada perubahan belum disimpan. Tetap keluar?')) {
+			// Membatalkan navigasi internal. Untuk type 'leave' (tutup tab /
+			// pindah ke situs lain), cancel() memicu dialog bawaan browser.
+			cancel();
+		}
+		// to bisa null kalau tujuan di luar app SvelteKit (mis. link eksternal).
+		if (to?.route.id === null) console.log('Pindah ke rute non-SvelteKit');
+	});
+
+	// onNavigate: jalan TEPAT sebelum navigasi client-side. Return Promise
+	// untuk menunggu, dan boleh return cleanup yang jalan setelah DOM diperbarui.
+	// Pola standar mengintegrasikan View Transitions API:
+	onNavigate((navigation) => {
+		if (!document.startViewTransition) return;
+
+		return new Promise((resolve) => {
+			document.startViewTransition(async () => {
+				resolve();          // izinkan navigasi melanjutkan...
+				await navigation.complete; // ...lalu tunggu DOM tujuan siap.
+			});
+		});
+	});
+
+	// afterNavigate: jalan saat mount pertama (type 'enter') DAN setiap kali
+	// navigasi selesai. Cocok untuk analytics / fokus heading demi a11y.
+	afterNavigate(({ type, from, to }) => {
+		if (type !== 'enter') console.log('Navigasi selesai:', to?.url.pathname);
+	});
+
+	let { children } = $props();
+</script>
+
+{@render children()}
+```
+
+```svelte
+<!-- src/routes/photos/+page.svelte — shallow routing: pushState/replaceState -->
+<script>
+	import { pushState, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
+
+	let { data } = $props();
+
+	function showModal(photo) {
+		// pushState membuat entri history BARU di URL saat ini ('' = URL tak berubah)
+		// dan menaruh data di page.state. TIDAK ada navigasi & TIDAK menjalankan load.
+		// Efeknya: tombol Back browser akan menutup modal (pop entri ini).
+		pushState('', { selected: photo });
+	}
+</script>
+
+{#each data.photos as photo}
+	<button onclick={() => showModal(photo)}>{photo.title}</button>
+{/each}
+
+<!-- page.state berisi apa yang kita push. Saat Back ditekan, state kembali kosong. -->
+{#if page.state.selected}
+	<div class="modal" role="dialog">
+		<img src={page.state.selected.src} alt={page.state.selected.title} />
+		<!-- replaceState: ganti entri saat ini (tanpa menambah history) -->
+		<button onclick={() => replaceState('', {})}>Tutup</button>
+	</div>
+{/if}
+```
+
+<Callout type="tip">
+<code>page.state</code> di blok terakhir berasal dari <code>$app/state</code> dan harus kamu ketik di <code>app.d.ts</code> lewat interface <code>App.PageState</code> (mis. <code>interface PageState &#123; selected?: Photo &#125;</code>). Tanpa itu TypeScript akan protes. <code>pushState</code>/<code>replaceState</code> mengisi <code>page.state</code> ini, dan ia otomatis kosong lagi saat user menekan Back.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini tidak bisa dijalankan di playground browser (modul virtual `$app/*` cuma ada di dalam proyek SvelteKit, butuh server & router). Jadi kita bedah satu pola nyata yang paling sering bikin bingung: **shallow routing untuk modal yang ramah tombol Back**. Baca anotasinya baris per baris.
+
+```svelte
+<!-- src/routes/+page.svelte — daftar item, klik untuk buka detail sebagai modal -->
+<script>
+	import { preloadData, pushState, goto } from '$app/navigation';
+	import Detail from './[id]/+page.svelte'; // komponen halaman detail dipakai ulang
+
+	let { data } = $props();
+
+	async function open(e, id) {
+		// 1) Hormati niat user: klik kanan/tengah, Ctrl/Cmd+klik -> biarkan
+		//    browser buka tab baru seperti link biasa. Jangan cegat.
+		if (e.metaKey || e.ctrlKey || e.button !== 0) return;
+		e.preventDefault();
+
+		// 2) preloadData menjalankan load milik /[id] untuk id ini.
+		//    Hasilnya { type:'loaded', status, data } atau { type:'redirect', location }.
+		const result = await preloadData('/items/' + id);
+
+		if (result.type === 'loaded' && result.status === 200) {
+			// 3) Alih-alih navigasi, kita pushState: URL tetap, tapi kita simpan
+			//    data load tujuan ke page.state.detail. Back akan menutup modal.
+			pushState('/items/' + id, { detail: result.data });
+		} else {
+			// 4) Fallback: kalau preload gagal/redirect, navigasi sungguhan.
+			goto('/items/' + id);
+		}
+	}
+</script>
+
+<ul>
+	{#each data.items as item}
+		<li>
+			<!-- href tetap valid: tanpa JS atau dengan Ctrl+klik, ini link normal -->
+			<a href={'/items/' + item.id} onclick={(e) => open(e, item.id)}>
+				{item.title}
+			</a>
+		</li>
+	{/each}
+</ul>
+```
+
+```svelte
+<!-- Bagian modal-nya (biasanya di +layout.svelte atau file yang sama) -->
+<script>
+	import { page } from '$app/state';
+</script>
+
+{#if page.state.detail}
+	<!-- Render komponen halaman detail dengan data dari page.state, BUKAN dari load.
+	     Saat user menekan Back, page.state.detail jadi undefined -> modal hilang,
+	     tanpa request jaringan tambahan. Itulah inti shallow routing. -->
+	<div class="modal">
+		<Detail data={page.state.detail} />
+	</div>
+{/if}
+```
+
+Yang membuat pola ini kuat: link tetap **link sungguhan** (SEO & Ctrl+klik aman), navigasi terasa instan karena `preloadData`, dan tombol Back bekerja intuitif karena setiap modal adalah satu entri history dari `pushState`. Inilah cara membangun "modal foto ala Instagram" yang URL-nya tetap dapat dibagikan.
+
+## 4. Ringkasan API
+
+Semua tanda tangan (semua fungsi diekspor dari `'$app/navigation'`):
+
+```ts
+// — Navigasi & data —
+function goto(url: string | URL, opts?: {
+	replaceState?: boolean;   // ganti entri history (bukan push)
+	noScroll?: boolean;       // jangan reset scroll ke atas
+	keepFocus?: boolean;      // jangan reset fokus ke <body>
+	invalidateAll?: boolean;  // jalankan ulang SEMUA load setelah navigasi
+	invalidate?: (string | URL | ((url: URL) => boolean))[]; // invalidate spesifik
+	state?: App.PageState;    // isi page.state untuk navigasi ini
+}): Promise<void>;
+
+function invalidate(resource: string | URL | ((url: URL) => boolean)): Promise<void>;
+function invalidateAll(): Promise<void>;
+
+function preloadData(href: string): Promise<
+	| { type: 'loaded'; status: number; data: Record<string, any> }
+	| { type: 'redirect'; location: string }
+>;
+function preloadCode(pathname: string): Promise<void>;
+
+// — Hook siklus hidup (panggil saat inisialisasi komponen) —
+function beforeNavigate(cb: (nav: BeforeNavigate) => void): void;
+function afterNavigate(cb: (nav: AfterNavigate) => void): void;
+function onNavigate(cb: (nav: OnNavigate) => MaybePromise<(() => void) | void>): void;
+
+// — Shallow routing —
+function pushState(url: string | URL, state: App.PageState): void;
+function replaceState(url: string | URL, state: App.PageState): void;
+
+// — Lain-lain —
+function disableScrollHandling(): void;
+```
+
+Ringkasan kegunaan dan nilai balik:
+
+| Fungsi | Kegunaan | Mengembalikan |
+| --- | --- | --- |
+| `goto` | Navigasi client-side ke rute internal | Promise yang resolve saat navigasi selesai |
+| `invalidate` | Jalankan ulang load yang `depends` cocok | Promise selesai saat load ulang rampung |
+| `invalidateAll` | Jalankan ulang semua load + remote query halaman aktif | Promise |
+| `preloadData` | Jalankan load tujuan lebih awal (data panas) | Promise objek `loaded` atau `redirect` |
+| `preloadCode` | Unduh modul rute tujuan (tanpa jalankan load) | Promise (void) |
+| `beforeNavigate` | Intersep sebelum navigasi; bisa `cancel()` | void |
+| `afterNavigate` | Jalan saat mount & tiap navigasi selesai | void |
+| `onNavigate` | Tepat sebelum nav client-side; cocok View Transitions | void (cb boleh return Promise/cleanup) |
+| `pushState` | Tambah entri history + isi `page.state`, tanpa pindah | void |
+| `replaceState` | Ganti entri history + isi `page.state`, tanpa pindah | void |
+| `disableScrollHandling` | Matikan scroll otomatis untuk navigasi ini | void |
+
+Tipe navigasi (`nav.type`) yang muncul di hook:
+
+| `type` | Kapan terjadi | Tersedia di |
+| --- | --- | --- |
+| `enter` | Mount pertama / hidrasi awal halaman | `afterNavigate` saja |
+| `link` | Klik elemen `<a>` | semua hook |
+| `goto` | Panggilan `goto()` atau `redirect()` | semua hook |
+| `popstate` | Tombol Back/Forward browser | semua hook (punya `delta`) |
+| `form` | Submit `<form>` yang memicu navigasi | semua hook |
+| `leave` | Keluar dari app (tutup tab / pindah ke situs lain) | `beforeNavigate` & `onNavigate` |
+
+Bentuk objek navigasi (disederhanakan):
+
+```ts
+interface Navigation {
+	from: { params; route: { id: string | null }; url: URL } | null;
+	to:   { params; route: { id: string | null }; url: URL } | null;
+	type: 'enter' | 'link' | 'goto' | 'popstate' | 'form' | 'leave';
+	willUnload: boolean;       // true kalau dokumen akan di-unload (full reload)
+	delta?: number;            // hanya untuk 'popstate': +1 maju, -1 mundur
+	complete: Promise<void>;   // resolve saat navigasi & DOM tujuan selesai
+}
+
+// BeforeNavigate menambahkan:  cancel(): void
+// OnNavigate ~ Navigation tanpa 'enter' (selalu navigasi client-side)
+// AfterNavigate: type tidak pernah 'leave', willUnload selalu false
+```
+
+<Callout type="tip">
+Format identifier custom untuk <code>invalidate</code> adalah <code>[a-z]+:</code> diikuti apa saja, mis. <code>invalidate('app:user')</code> atau <code>invalidate('data:posts')</code>. Di sisi <code>load</code>, daftarkan dengan <code>depends('app:user')</code>. Cara ini lebih tahan-banting daripada mencocokkan URL karena tak bergantung pada string URL yang bisa berubah.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Route guard 'belum disimpan' + transisi halus">
+Buat `+layout.svelte` yang melakukan dua hal sekaligus:
+
+1. **Cegah kehilangan data**: kalau ada perubahan belum disimpan (`dirty === true`), `beforeNavigate` harus meminta konfirmasi dan `cancel()` navigasi jika user menolak. Pastikan ini juga berlaku saat user menutup tab (`type === 'leave'`).
+2. **Transisi halus**: integrasikan View Transitions API lewat `onNavigate`, tapi hanya jika browser mendukung `document.startViewTransition`.
+
+Anggap ada state `dirty` yang di-set oleh halaman anak (lewat context atau store) — untuk latihan cukup deklarasikan `let dirty = $state(false)` di layout.
+
+{#snippet solution()}
+
+  ```svelte
+  <!-- src/routes/+layout.svelte -->
+  <script>
+    import { beforeNavigate, onNavigate } from '$app/navigation';
+
+    let { children } = $props();
+    let dirty = $state(false); // di app nyata: di-set oleh form anak
+
+    // (1) Guard perubahan belum disimpan.
+    beforeNavigate((nav) => {
+      if (!dirty) return;
+      // Untuk type 'leave', cancel() memicu dialog konfirmasi bawaan browser.
+      // Untuk navigasi internal, kita konfirmasi sendiri.
+      if (nav.type === 'leave') {
+        nav.cancel();
+        return;
+      }
+      if (!confirm('Perubahan belum disimpan. Yakin keluar?')) {
+        nav.cancel();
+      }
+    });
+
+    // (2) View Transitions: bungkus navigasi client-side.
+    onNavigate((nav) => {
+      if (!document.startViewTransition) return;
+      return new Promise((resolve) => {
+        document.startViewTransition(async () => {
+          resolve();            // lepaskan navigasi
+          await nav.complete;   // tunggu DOM tujuan terpasang
+        });
+      });
+    });
+  </script>
+
+  {@render children()}
+  ```
+
+  Kunci: `beforeNavigate` dipanggil saat inisialisasi komponen (bukan di event handler); `cancel()` membatalkan keberangkatan; untuk `type === 'leave'` cukup `cancel()` lalu biarkan browser yang memunculkan dialog; `onNavigate` me-return Promise agar SvelteKit menunggu transisi, dan `nav.complete` memastikan DOM tujuan sudah siap sebelum animasi selesai.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>goto()</code> hanya untuk navigasi <strong>internal</strong>. Untuk URL eksternal pakai <code>window.location.href = '...'</code> atau <code>&lt;a&gt;</code> biasa — memberi URL eksternal ke <code>goto()</code> akan ditolak. Dan <code>goto()</code> hanya jalan di klien: jangan memanggilnya di <code>load</code>/hooks server. Untuk pengalihan dari sisi server, pakai <code>redirect(303, '/login')</code> dari <code>@sveltejs/kit</code> (dipanggil <strong>tanpa</strong> <code>throw</code> di depannya — fungsi itu melempar sendiri).
+</Callout>
+
+<Callout type="warning">
+Hook <code>beforeNavigate</code>, <code>afterNavigate</code>, dan <code>onNavigate</code> <strong>harus dipanggil saat inisialisasi komponen</strong> (di top-level <code>&lt;script&gt;</code>), bukan di dalam event handler atau callback async. Memanggilnya di tempat salah akan error. Mereka otomatis dibersihkan saat komponen unmount, jadi tak perlu unsubscribe manual.
+</Callout>
+
+<Callout type="warning">
+<code>pushState</code>/<code>replaceState</code> dari <code>$app/navigation</code> <strong>bukan</strong> <code>history.pushState</code> bawaan browser. Jangan panggil <code>history.pushState</code>/<code>history.replaceState</code> native di app SvelteKit — itu memutus pelacakan history internal SvelteKit. Selalu pakai versi dari <code>$app/navigation</code> agar <code>page.state</code> dan tombol Back tetap konsisten.
+</Callout>
+
+<Callout type="tip">
+Bedakan tiga "refresh": <code>invalidate(x)</code> menjalankan ulang hanya load yang <code>depends(x)</code> (presisi); <code>invalidateAll()</code> menjalankan ulang semua load halaman (mahal tapi tuntas); sedangkan <code>goto(url, &#123; invalidateAll: true &#125;)</code> menggabungkan pindah halaman <em>plus</em> refresh penuh dalam satu langkah. Pilih yang paling sempit yang memenuhi kebutuhanmu agar hemat request.
+</Callout>
+
+<Callout type="tip">
+<code>preloadData</code> mengembalikan hasil load tujuan, jadi kamu bisa memutuskan tindak lanjut: kalau <code>result.type === 'redirect'</code>, lanjutkan dengan <code>goto(result.location)</code>; kalau <code>'loaded'</code>, datanya sudah panas sehingga klik berikutnya terasa instan. Untuk sekadar prefetch deklaratif, atribut <code>data-sveltekit-preload-data="hover"</code> pada container link sudah cukup tanpa menulis JS apa pun.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-navigation" label="SvelteKit — $app/navigation (goto, invalidate, preloadData, hooks, shallow routing)" />
+<DocsLink href="https://svelte.dev/docs/kit/shallow-routing" label="SvelteKit — Shallow routing (pushState/replaceState + page.state)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-state" label="SvelteKit — $app/state (page, navigating, updated)" />

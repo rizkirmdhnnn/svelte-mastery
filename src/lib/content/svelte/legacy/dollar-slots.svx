@@ -1,0 +1,292 @@
+---
+title: $$slots
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 8
+status: legacy
+description: API lama Svelte 4 untuk mengecek slot mana yang terisi oleh parent — padanan modernnya cukup cek prop snippet biasa.
+docs: https://svelte.dev/docs/svelte/legacy-$$slots
+keywords: [$$slots, slot, legacy, snippet, children, conditional slot]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+<Callout type="legacy">
+Modul ini membahas <strong>API lama Svelte 4</strong>. <code>$$slots</code> hanya hidup di komponen non-runes (legacy mode) yang masih memakai <code>&lt;slot&gt;</code>. Kalau kamu menulis komponen Svelte 5 baru, kamu <strong>tidak akan pernah</strong> mengetik <code>$$slots</code> — padanannya cuma mengecek prop snippet biasa. Tujuan halaman ini: supaya kamu paham saat membaca kode lama atau mengonversinya.
+</Callout>
+
+## 1. Konsep
+
+Di Svelte 4, sebuah komponen bisa menyediakan banyak "lubang" tempat parent menaruh markup, lewat elemen `<slot>` — termasuk **named slot** seperti `<slot name="description" />`. Masalahnya: parent **tidak wajib** mengisi setiap slot. Kalau slot `description` kosong, kamu mungkin tidak mau merender garis pemisah, judul kecil, atau wadah kosong yang menggantung.
+
+Pertanyaannya jadi: *"bagaimana komponen anak tahu apakah sebuah slot benar-benar diisi parent atau tidak?"* Jawaban Svelte 4 adalah objek ajaib bernama **`$$slots`**.
+
+`$$slots` adalah objek yang **key-nya berisi nama slot yang terisi**. Jadi kalau parent mengisi `slot="description"`, maka `$$slots.description` ada (truthy); kalau tidak, key itu tidak ada (undefined). Kamu memakainya di dalam `{#if}` untuk merender sesuatu **hanya bila** slotnya terisi.
+
+### Analogi: lampu indikator di panel
+
+Bayangkan komponen anak seperti sebuah mesin dengan beberapa **slot colokan**: satu untuk `title`, satu untuk `description`, satu untuk `footer`. Di atas tiap colokan ada **lampu indikator**. Saat parent benar-benar mencolokkan sesuatu ke slot `description`, lampu indikator `description` menyala.
+
+Nah, `$$slots` adalah **panel lampu indikator** itu. `$$slots.description` = "apakah lampu description menyala?". Komponen anak melihat panel ini untuk memutuskan: "oh, colokan description kosong, berarti aku tidak usah pasang garis pemisah di atasnya". Anak tidak bisa melihat *isi* colokannya dari panel ini — ia hanya tahu **terisi atau tidak**.
+
+### Mengapa ini perlu di Svelte 4
+
+Tanpa `$$slots`, satu-satunya cara "fallback" pada slot adalah konten default di dalam tag slot, mis. `<slot name="description">teks default</slot>`. Tapi itu hanya bisa memberi **isi pengganti**, bukan menyembunyikan **markup di sekitarnya** (garis `<hr>`, heading, wadah). `$$slots` mengisi celah itu: ia membuat seluruh blok markup jadi kondisional terhadap keberadaan slot.
+
+### Mengapa ini hilang di Svelte 5
+
+Di Svelte 5 (runes mode), `<slot>` digantikan oleh **snippet**. Konten yang dulu dikirim lewat slot kini dikirim sebagai **prop biasa** bertipe snippet — konten default jadi `children`, named slot jadi snippet prop bernama (mis. `description`). Karena snippet hanyalah prop, **mengecek keberadaannya jadi sepele**: cukup `{#if description}`. Tidak perlu objek khusus seperti `$$slots`, karena "apakah prop ini ada?" adalah pertanyaan JavaScript biasa.
+
+Jadi `$$slots` adalah solusi untuk masalah yang **tidak lagi ada** dengan cara yang sama di Svelte 5. Idenya tetap (render kondisional bila slot terisi), tapi mekanismenya berubah dari "objek ajaib khusus" menjadi "cek prop biasa".
+
+<LegacyVsModern rows={[
+	{ legacy: '$$slots.description', modern: 'description (prop snippet)', note: 'Cek keberadaan = cek prop biasa.' },
+	{ legacy: '{#if $$slots.description}', modern: '{#if description}', note: 'Render kondisional tetap pakai #if.' },
+	{ legacy: '<slot name="description" />', modern: '{@render description()}', note: 'Named slot jadi snippet prop bernama.' },
+	{ legacy: '<slot />', modern: '{@render children()}', note: 'Slot default jadi snippet children.' }
+]} />
+
+## 2. Contoh kode
+
+Pertama, bentuk **lama (Svelte 4)** memakai `$$slots`. Perhatikan: `<hr>` dan judul kecil hanya muncul kalau parent benar-benar mengisi slot `description`.
+
+```svelte
+<!-- Card.svelte — INI API LAMA (Svelte 4), legacy mode -->
+<div class="card">
+	<!-- slot bernama 'title' selalu dirender -->
+	<slot name="title" />
+
+	<!-- $$slots.description = true HANYA jika parent mengisi slot="description".
+	     Tanpa cek ini, <hr> akan muncul menggantung walau deskripsi kosong. -->
+	{#if $$slots.description}
+		<hr />
+		<small class="label">Keterangan</small>
+		<slot name="description" />
+	{/if}
+</div>
+```
+
+```svelte
+<!-- Parent.svelte (Svelte 4) -->
+<script>
+	import Card from './Card.svelte';
+</script>
+
+<!-- Card ini mengisi description -> $$slots.description truthy -> <hr> muncul -->
+<Card>
+	<h3 slot="title">Kopi Susu</h3>
+	<p slot="description">Manis, dingin, bikin melek.</p>
+</Card>
+
+<!-- Card ini TIDAK mengisi description -> blok #if dilewati -> tanpa <hr> -->
+<Card>
+	<h3 slot="title">Air Putih</h3>
+</Card>
+```
+
+Sekarang bentuk **modern (Svelte 5, runes)**. `$$slots` hilang total; `description` menjadi prop snippet, dan kita cek seperti variabel biasa.
+
+```svelte
+<!-- Card.svelte — Svelte 5 runes, padanan modern -->
+<script>
+	// 'title' dan 'description' kini snippet prop biasa.
+	// 'description' opsional, jadi bisa undefined.
+	let { title, description } = $props();
+</script>
+
+<div class="card">
+	{@render title()}
+
+	<!-- Cek keberadaan prop = pengganti $$slots.description.
+	     Kalau parent tak mengirim snippet description, blok ini dilewati. -->
+	{#if description}
+		<hr />
+		<small class="label">Keterangan</small>
+		{@render description()}
+	{/if}
+</div>
+```
+
+```svelte
+<!-- Parent.svelte (Svelte 5) -->
+<script>
+	import Card from './Card.svelte';
+</script>
+
+<!-- snippet bernama 'description' -> otomatis jadi prop description -->
+<Card>
+	{#snippet title()}<h3>Kopi Susu</h3>{/snippet}
+	{#snippet description()}<p>Manis, dingin, bikin melek.</p>{/snippet}
+</Card>
+
+<!-- Tanpa snippet description -> prop description undefined -> #if dilewati -->
+<Card>
+	{#snippet title()}<h3>Air Putih</h3>{/snippet}
+</Card>
+```
+
+<Callout type="tip">
+Intinya satu baris: <code>&#123;#if $$slots.description&#125;</code> di Svelte 4 menjadi <code>&#123;#if description&#125;</code> di Svelte 5. Yang berubah cuma "dari mana datangnya nilai yang dicek" — dari objek ajaib <code>$$slots</code> menjadi prop snippet biasa di <code>$props()</code>.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini soal komponen multi-file (parent mengirim slot ke anak), jadi tidak cocok untuk live playground satu-komponen. Sebagai gantinya, perhatikan contoh statis berikut yang menyandingkan **alur lama vs alur modern** untuk kasus paling umum: slot opsional `footer`.
+
+```svelte
+<!-- ============ LAMA: Svelte 4 + $$slots ============ -->
+<!-- Panel.svelte -->
+<div class="panel">
+	<slot />
+	{#if $$slots.footer}
+		<!-- footer terisi -> render area footer + garis pemisah -->
+		<footer>
+			<hr />
+			<slot name="footer" />
+		</footer>
+	{/if}
+</div>
+
+<!-- Pemakaian -->
+<Panel>
+	<p>Isi utama panel.</p>
+	<div slot="footer">Hak cipta 2026</div>  <!-- $$slots.footer = true -->
+</Panel>
+
+<Panel>
+	<p>Panel tanpa footer.</p>             <!-- $$slots.footer = undefined -->
+</Panel>
+```
+
+```svelte
+<!-- ============ MODERN: Svelte 5 runes ============ -->
+<!-- Panel.svelte -->
+<script>
+	// 'children' = konten default (pengganti <slot />),
+	// 'footer'   = snippet opsional (pengganti slot name="footer").
+	let { children, footer } = $props();
+</script>
+
+<div class="panel">
+	{@render children()}
+
+	{#if footer}
+		<!-- cek prop snippet biasa: tak ada $$slots lagi -->
+		<footer>
+			<hr />
+			{@render footer()}
+		</footer>
+	{/if}
+</div>
+
+<!-- Pemakaian -->
+<Panel>
+	<p>Isi utama panel.</p>
+	{#snippet footer()}<div>Hak cipta 2026</div>{/snippet}
+</Panel>
+
+<Panel>
+	<p>Panel tanpa footer.</p>            <!-- footer undefined -> #if dilewati -->
+</Panel>
+```
+
+<Callout type="warning">
+Di Svelte 5, kalau sebuah snippet opsional <strong>tidak</strong> dibungkus pengecekan, memanggilnya langsung saat ia <code>undefined</code> akan error. Jadi pola <code>&#123;#if footer&#125;...&#123;@render footer()&#125;...&#123;/if&#125;</code> bukan cuma gaya — ia juga penjaga keamanan. Alternatif ringkas: <code>&#123;@render footer?.()&#125;</code> dengan optional chaining.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Konversi komponen $$slots ke snippet Svelte 5">
+Diberikan komponen Svelte 4 berikut yang memakai `$$slots` untuk menampilkan tombol aksi hanya bila slot `actions` terisi:
+
+```svelte
+<!-- Dialog.svelte (Svelte 4 — JANGAN dipakai di proyek baru) -->
+<div class="dialog">
+	<slot name="header" />
+	<div class="body"><slot /></div>
+	{#if $$slots.actions}
+		<div class="actions"><slot name="actions" /></div>
+	{/if}
+</div>
+```
+
+Tulis ulang `Dialog.svelte` dalam **Svelte 5 runes**: ubah `<slot>` jadi snippet prop, ubah konten default jadi `children`, dan ganti `$$slots.actions` jadi pengecekan prop biasa. Lalu tunjukkan satu pemakaian parent yang mengisi `header` dan `actions`.
+
+{#snippet solution()}
+
+```svelte
+<!-- Dialog.svelte (Svelte 5 runes) -->
+<script>
+	// header & actions = snippet prop bernama, children = konten default.
+	// actions opsional -> bisa undefined.
+	let { header, children, actions } = $props();
+</script>
+
+<div class="dialog">
+	{@render header()}
+
+	<div class="body">
+		{@render children()}
+	</div>
+
+	<!-- pengganti $$slots.actions: cek prop snippet langsung -->
+	{#if actions}
+		<div class="actions">
+			{@render actions()}
+		</div>
+	{/if}
+</div>
+```
+
+```svelte
+<!-- Parent.svelte -->
+<script>
+	import Dialog from './Dialog.svelte';
+</script>
+
+<Dialog>
+	{#snippet header()}<h2>Hapus item?</h2>{/snippet}
+
+	<!-- konten tanpa nama -> otomatis jadi children -->
+	<p>Tindakan ini tidak bisa dibatalkan.</p>
+
+	{#snippet actions()}
+		<button>Batal</button>
+		<button>Hapus</button>
+	{/snippet}
+</Dialog>
+```
+
+Pemetaannya selalu sama: `<slot name="x" />` jadi `{@render x()}` + parent mengirim `{#snippet x()}`, `<slot />` jadi `{@render children()}`, dan `{#if $$slots.x}` jadi `{#if x}`. Tidak ada lagi objek `$$slots` — keberadaan slot kini sekadar "apakah prop snippet-nya ada".
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>$$slots</code> <strong>hanya berfungsi di komponen legacy</strong> (yang masih memakai <code>export let</code> dan <code>&lt;slot&gt;</code>). Begitu sebuah komponen memakai runes (<code>$props()</code>, <code>$state()</code>), <code>$$slots</code> tidak relevan lagi dan slot pun tidak dipakai — semuanya lewat snippet. Jangan mencampur <code>$$slots</code> dengan snippet dalam satu komponen.
+</Callout>
+
+<Callout type="pitfall">
+<code>$$slots</code> hanya memberi tahu slot <strong>terisi atau tidak</strong> — ia <strong>tidak</strong> memberi akses ke isinya. Begitu pula padanan modernnya: <code>&#123;#if description&#125;</code> hanya mengecek keberadaan snippet, bukan membaca konten di dalamnya. Kalau kamu butuh data dari parent, kirimkan lewat <strong>argumen snippet</strong> (<code>&#123;@render row(item)&#125;</code>), bukan lewat trik mengintip isi slot.
+</Callout>
+
+<Callout type="warning">
+Saat mengonversi kode lama, hati-hati: <code>$$slots.footer</code> truthy bila slot terisi <strong>apa pun isinya</strong>. Tapi snippet bisa saja dikirim namun parent ingin kosong dalam kondisi tertentu. Cek <code>&#123;#if footer&#125;</code> hanya mengecek apakah <strong>snippet-nya dikirim</strong>, bukan apakah snippet itu menghasilkan markup. Kalau parent mengirim snippet yang kadang kosong, logika "tampil/tidak" sebaiknya dipindah ke sisi parent.
+</Callout>
+
+<Callout type="tip">
+Saudara dekat <code>$$slots</code> adalah <code>$$props</code> dan <code>$$restProps</code> — sama-sama variabel ajaib Svelte 4 yang lenyap di runes mode. Pola mentalnya seragam: apa pun yang dulu "objek ajaib berawalan <code>$$</code>" kini menjadi <strong>data biasa</strong> yang kamu ambil eksplisit dari <code>$props()</code>.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-$$slots" label="$$slots — dokumentasi legacy Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/snippet" label="&#123;#snippet&#125; — padanan modern di Svelte 5" />

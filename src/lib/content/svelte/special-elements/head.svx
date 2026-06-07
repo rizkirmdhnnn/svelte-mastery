@@ -1,0 +1,258 @@
+---
+title: <svelte:head>
+product: svelte
+section: special-elements
+sectionTitle: Special elements
+sectionOrder: 5
+order: 5
+status: stable
+description: Menyisipkan title, meta, dan link ke dalam <head> dokumen secara deklaratif dan SSR-friendly, langsung dari dalam komponen.
+docs: https://svelte.dev/docs/svelte/svelte-head
+keywords: [svelte-head, seo, meta-tags, document-title, ssr]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Setiap halaman web punya dua bagian besar: `<head>` dan `<body>`. `<body>` adalah isi yang dilihat pengguna — teks, tombol, gambar. `<head>` adalah **metadata**: judul tab browser (`<title>`), deskripsi untuk Google (`<meta name="description">`), ikon, tag Open Graph yang bikin preview cantik saat link dibagikan di WhatsApp/Twitter, sampai `<link rel="canonical">`. Pengguna nyaris tidak pernah melihat `<head>` secara langsung, tapi **browser, mesin pencari, dan media sosial sangat bergantung padanya**.
+
+### Analogi: label di luar kaleng
+
+Bayangkan halamanmu adalah sebuah kaleng makanan. Isi kaleng (`<body>`) itu yang nanti dimakan orang. Tapi **label yang tertempel di luar kaleng** — nama produk, komposisi, barcode, foto sajian — itulah yang menentukan apakah orang mau mengambilnya dari rak, bagaimana kasir memindainya, dan bagaimana ia tampil di etalase. `<head>` adalah label luar itu. Masalahnya: komponenmu hidup di dalam kaleng (`<body>`), sedangkan label ada di luar. Bagaimana caranya menempelkan tulisan ke label dari dalam kaleng?
+
+Jawabannya `<svelte:head>`. Ia adalah **"pintu portal"** dari mana pun di dalam komponenmu menuju `<head>` dokumen. Apa pun yang kamu taruh di dalam `<svelte:head>` tidak dirender di tempat komponenmu berada, melainkan "diteleportasi" ke dalam `<head>` halaman.
+
+### Kalau datang dari React/Vue
+
+Polanya akan terasa familiar tapi lebih ringkas:
+
+- **React** murni: kamu set `document.title = ...` di dalam `useEffect`, atau pakai library seperti `react-helmet`. **Next.js** punya `next/head` atau Metadata API.
+- **Vue**: pakai `@unhead/vue` / `useHead`, atau di **Nuxt** ada `useHead()` / `definePageMeta`.
+- **Svelte**: tidak butuh library apa pun. `<svelte:head>` sudah **built-in**, dan ia bekerja saat SSR maupun saat navigasi di klien.
+
+### Kenapa berbentuk markup, bukan `document.title = ...`?
+
+Karena niatnya **deklaratif dan terikat daur hidup komponen**. Kalau kamu menulis `document.title = produk.nama` secara manual, kamu harus ingat: mengembalikannya saat pindah halaman, memperbaruinya tiap kali `produk` berubah, dan memastikan urutannya benar. Dengan `<svelte:head>`, kamu cukup *mendeklarasikan* "halaman ini judulnya begini" — Svelte yang mengurus: saat prop berubah, judul ikut berubah; saat komponen di-unmount, kontribusi head-nya dicabut otomatis. Tidak ada cleanup yang bisa lupa.
+
+### Yang bikin ini penting: SSR & SEO
+
+Inilah alasan utama `<svelte:head>` jauh lebih dari sekadar "set judul tab". Saat **server-side rendering**, Svelte mengumpulkan isi semua `<svelte:head>` **secara terpisah** dari `<body>`, lalu framework (SvelteKit) menyisipkannya ke `<head>` asli pada HTML yang dikirim ke browser. Artinya: crawler Google, bot WhatsApp, dan Twitter card scraper **langsung melihat** `<title>` dan `<meta>` yang benar di byte pertama HTML — sebelum satu baris JavaScript pun dijalankan.
+
+Bandingkan dengan pola SPA murni yang hanya `document.title = ...` di `onMount`: judul baru berubah *setelah* JS dieksekusi. Bot yang tidak menjalankan JS (atau menjalankannya seadanya) akan melihat judul kosong/default. Di sinilah `<svelte:head>` + SSR menang telak untuk SEO dan social preview.
+
+## 2. Contoh kode
+
+Penggunaan paling dasar — judul tab, deskripsi, dan canonical link statis:
+
+```svelte
+<!-- Isi blok ini TIDAK dirender di posisi komponen,
+     melainkan disisipkan ke <head> dokumen. -->
+<svelte:head>
+	<title>Beranda — Toko Saya</title>
+	<meta name="description" content="Toko online serba ada, kirim ke seluruh Indonesia" />
+	<link rel="canonical" href="https://tokosaya.com/" />
+</svelte:head>
+```
+
+Judul & meta **dinamis** dari props — di sinilah kekuatannya terlihat. Saat `produk` berubah, head ikut diperbarui secara reaktif tanpa kode tambahan:
+
+```svelte
+<script>
+	let { produk } = $props();
+</script>
+
+<svelte:head>
+	<!-- ekspresi {produk.nama} diperbarui otomatis saat prop berubah -->
+	<title>{produk.nama} — Toko Saya</title>
+	<meta name="description" content={produk.ringkasan} />
+
+	<!-- Open Graph: ini yang bikin preview cantik di WhatsApp/Facebook/Twitter -->
+	<meta property="og:title" content={produk.nama} />
+	<meta property="og:description" content={produk.ringkasan} />
+	<meta property="og:image" content={produk.gambar} />
+</svelte:head>
+
+<h1>{produk.nama}</h1>
+```
+
+Di **SvelteKit**, pola yang umum: layout memberi judul *default*, lalu tiap halaman menimpanya dengan data dari `load`. Karena layout dirender lebih dulu (lapisan luar) dan halaman setelahnya, `<title>` dari halaman yang "menang":
+
+```svelte
+<!-- src/routes/+layout.svelte — judul default untuk seluruh situs -->
+<script>
+	let { children } = $props();
+</script>
+
+<svelte:head>
+	<title>Toko Saya</title>
+	<meta name="description" content="Toko online serba ada" />
+</svelte:head>
+
+{@render children()}
+```
+
+```svelte
+<!-- src/routes/produk/[slug]/+page.svelte — menimpa judul default -->
+<script>
+	// data berasal dari load() di +page.js / +page.server.js
+	let { data } = $props();
+</script>
+
+<svelte:head>
+	<!-- title ini menang atas title di +layout.svelte -->
+	<title>{data.produk.nama} — Toko Saya</title>
+	<meta name="description" content={data.produk.ringkasan} />
+	<link rel="canonical" href={'https://tokosaya.com/produk/' + data.produk.slug} />
+</svelte:head>
+
+<h1>{data.produk.nama}</h1>
+```
+
+```js
+// src/routes/produk/[slug]/+page.js — ambil data untuk mengisi head
+export async function load({ params, fetch }) {
+	// pakai event.fetch (di-destructure jadi `fetch`) agar SSR-friendly
+	const res = await fetch('/api/produk/' + params.slug);
+	const produk = await res.json();
+	return { produk };
+}
+```
+
+## 3. Coba sendiri
+
+Ketik judul dan deskripsi di bawah, lalu **lihat judul tab browser ikut berubah**. Centang "noindex" untuk melihat bagaimana sebuah `<meta>` bisa ditambah/dihapus secara kondisional — perhatikan `{#if}` berada **di dalam** `<svelte:head>`, bukan membungkusnya. `$effect` di bawah membaca `document.title` setelah Svelte selesai menyisipkan ke head, jadi kamu bisa membuktikan teleportasinya benar-benar terjadi.
+
+```svelte
+<script>
+	let judul = $state('Beranda');
+	let deskripsi = $state('Halaman utama toko saya');
+	let noindex = $state(false);
+	let judulTabAktual = $state('');
+
+	$effect(() => {
+		judul; // dependensi: jalankan ulang saat judul berubah
+		// dibaca SETELAH svelte:head menulis ke document.head
+		judulTabAktual = document.title;
+	});
+</script>
+
+<svelte:head>
+	<title>{judul} - Toko Saya</title>
+	<meta name="description" content={deskripsi} />
+	{#if noindex}
+		<meta name="robots" content="noindex" />
+	{/if}
+</svelte:head>
+
+<div style="display: grid; gap: 8px; max-width: 360px;">
+	<label>Judul tab:
+		<input bind:value={judul} style="width: 100%;" />
+	</label>
+	<label>Deskripsi:
+		<input bind:value={deskripsi} style="width: 100%;" />
+	</label>
+	<label>
+		<input type="checkbox" bind:checked={noindex} />
+		Tambahkan meta robots=noindex
+	</label>
+</div>
+
+<p style="margin-top: 12px;">
+	document.title sekarang: <strong>{judulTabAktual}</strong>
+</p>
+<p style="color: #666; font-size: 13px;">
+	Lihat judul tab/jendela preview di atas — ikut berubah, padahal
+	svelte:head ditulis dari dalam body komponen.
+</p>
+```
+
+## 4. Latihan
+
+<Exercise title="Komponen Seo yang reusable">
+
+Banyak halaman butuh `<title>`, deskripsi, dan Open Graph yang serupa. Daripada menulis ulang `<svelte:head>` di tiap halaman, buat satu komponen `Seo.svelte` yang menerima props lalu mengisi head.
+
+Buat `Seo.svelte` dengan ketentuan:
+
+1. Menerima props `title`, `description`, dan `image` (opsional) lewat `$props()`.
+2. Render `<svelte:head>` berisi `<title>`, `<meta name="description">`, serta tag Open Graph `og:title` dan `og:description`.
+3. Tampilkan `<meta property="og:image">` **hanya jika** `image` diberikan (pakai `{#if}` di dalam `<svelte:head>`).
+4. Buat `title` punya akhiran brand, mis. menghasilkan `"Kontak — Toko Saya"`.
+
+Petunjuk: gunakan `$derived` untuk menyusun judul lengkap, dan ingat `{#if}` boleh berada di dalam `<svelte:head>` tapi tidak boleh membungkusnya.
+
+{#snippet solution()}
+
+```svelte
+<!-- Seo.svelte -->
+<script>
+	let { title, description, image } = $props();
+
+	// susun judul lengkap sekali, dipakai untuk <title> dan og:title
+	let judulLengkap = $derived(title + ' — Toko Saya');
+</script>
+
+<svelte:head>
+	<title>{judulLengkap}</title>
+	<meta name="description" content={description} />
+
+	<meta property="og:title" content={judulLengkap} />
+	<meta property="og:description" content={description} />
+
+	<!-- og:image hanya muncul kalau prop image ada -->
+	{#if image}
+		<meta property="og:image" content={image} />
+	{/if}
+</svelte:head>
+```
+
+```svelte
+<!-- Cara pakai di sebuah halaman -->
+<script>
+	import Seo from './Seo.svelte';
+</script>
+
+<Seo
+	title="Kontak"
+	description="Hubungi tim Toko Saya kapan saja"
+	image="https://tokosaya.com/og/kontak.png"
+/>
+
+<h1>Halaman Kontak</h1>
+```
+
+Intinya: `<svelte:head>` bisa "dipinjam" oleh komponen mana pun — termasuk komponen kecil seperti `Seo` — dan tetap disisipkan ke head yang sama. Ini bikin metadata jadi komponen yang reusable, persis seperti `react-helmet`/`useHead`, tapi tanpa library tambahan.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+
+`<svelte:head>` harus berada di <strong>top-level</strong> komponen — <strong>tidak boleh</strong> dibungkus di dalam `{#if}`, `{#each}`, atau elemen lain. Tapi jangan keliru: kamu <em>boleh</em> menaruh `{#if}` di <strong>dalam</strong> `<svelte:head>` untuk menampilkan meta secara kondisional. Jadi `{#if cond}<svelte:head>…</svelte:head>{/if}` SALAH, sedangkan `<svelte:head>{#if cond}<meta … />{/if}</svelte:head>` BENAR.
+</Callout>
+
+<Callout type="warning">
+
+Kalau beberapa komponen sama-sama menulis `<title>` (mis. layout dan halaman di SvelteKit), <strong>hanya satu yang menang</strong> — yang terakhir dalam urutan head, yaitu komponen yang lebih dalam/spesifik (halaman menimpa layout). Ini fitur, bukan bug: pakai untuk memberi judul default di layout dan menimpanya per halaman. Tapi kalau judulmu "tiba-tiba berubah" tak terduga, kemungkinan ada dua `<title>` yang saling menimpa.
+</Callout>
+
+<Callout type="tip">
+
+Jangan taruh metadata yang harus <strong>selalu ada di setiap halaman</strong> — seperti `<meta charset>`, `<meta name="viewport">`, dan favicon — di `<svelte:head>`. Itu tempatnya di `src/app.html` (SvelteKit). `<svelte:head>` untuk hal yang <strong>berbeda per halaman</strong> (judul, deskripsi, OG, canonical). Begitu juga atribut `lang` pada `<html>`: tidak bisa diatur via `<svelte:head>`, set di `app.html`.
+</Callout>
+
+<Callout type="tip">
+
+`<svelte:head>` bukan cuma untuk title/meta. Kamu juga bisa menyisipkan <strong>structured data JSON-LD</strong> untuk rich result Google, misalnya `<script type="application/ld+json">{@html dataLd}</script>` di dalamnya — sangat berguna untuk halaman produk, artikel, atau resep.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/svelte-head" label="<svelte:head> — dokumentasi resmi Svelte" />

@@ -1,0 +1,306 @@
+---
+title: better-auth
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 1
+status: stable
+description: Add-on sv yang memasang setup autentikasi siap-pakai (Better Auth + Drizzle) ke proyek SvelteKit lewat satu perintah.
+docs: https://svelte.dev/docs/cli/better-auth
+keywords: [better-auth, sv add, autentikasi, drizzle, session, oauth]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di modul auth manual (level 8) kamu menulis sendiri seluruh rantai: baca cookie di `hooks.server.js`, tukar `sessionId` jadi user lewat tabel session di database, isi `event.locals.user`, set cookie `httpOnly`, hash password, dan seterusnya. Itu penting untuk **paham cara kerjanya** — tapi di proyek nyata, menulis ulang semua itu dari nol setiap kali bikin app baru itu melelahkan dan rawan salah (lupa `httpOnly`, lupa rotasi session, lupa rate-limit login).
+
+`sv add better-auth` adalah jalan pintas yang benar. Ia menjalankan add-on resmi yang **men-generate seluruh lapisan auth itu untukmu**, sudah memakai praktik aman, dan terintegrasi dengan database lewat Drizzle.
+
+### Analogi: rumah rangka (pre-fab) vs membangun bata per bata
+
+Modul auth manual itu seperti membangun rumah bata per bata: kamu tahu persis setiap sambungan, tapi lama. `sv add better-auth` seperti memesan **rumah rangka pre-fabricated**: dinding, pintu, dan instalasi listrik datang sudah jadi dan teruji, kamu tinggal pasang di pondasi (proyek SvelteKit-mu) lalu mengatur dekorasinya (provider login mana yang dipakai, halaman apa). Kamu tetap pemilik rumahnya — semua kode di-generate ke repo-mu, bukan disembunyikan di balik SaaS — jadi bisa kamu modifikasi kapan saja.
+
+### Apa itu Better Auth, dan kenapa add-on ini memilihnya
+
+[Better Auth](https://www.better-auth.com) adalah library autentikasi **framework-agnostic untuk TypeScript**. "Framework-agnostic" artinya inti logikanya (session, hashing, OAuth flow, verifikasi email) tidak terikat SvelteKit — tapi ia punya adaptor resmi untuk SvelteKit. Add-on `better-auth` memasang Better Auth **dengan Drizzle sebagai database adapter**: artinya tabel `user`, `session`, `account`, dan `verification` disimpan di database-mu sendiri (SQLite/Postgres/MySQL), bukan di server pihak ketiga.
+
+Bedanya dengan layanan seperti Clerk/Auth0: di sana auth adalah SaaS — cepat tapi datamu dititip di vendor dan ada biaya per-user. Better Auth self-hosted: kamu pegang penuh database dan kontrol, gratis, tapi kamu yang bertanggung jawab atas database dan deployment. Add-on ini membuat jalur self-hosted itu jadi sependek mungkin.
+
+### Mengapa butuh Drizzle dulu
+
+Auth butuh tempat menyimpan user dan session. Karena add-on ini memakai **Drizzle adapter**, ia mengandalkan setup database Drizzle. Kalau proyekmu belum punya Drizzle, jalankan dulu `sv add drizzle` (atau pilih keduanya sekaligus), karena add-on `better-auth` akan menambahkan skema tabel auth ke skema Drizzle yang sudah ada. Urutan mentalnya: **database (Drizzle) dulu → auth (Better Auth) menumpang di atasnya.**
+
+### Yang tetap sama dengan modul auth manual
+
+Konsep intinya tidak berubah: kebenaran auth tetap hidup di **server** (`event.locals`), bukan di state client. Better Auth tetap memakai cookie session yang `httpOnly`, dan kamu tetap memproteksi rute lewat `hooks.server.ts` + `load` server. Yang dihemat add-on adalah *plumbing*-nya — bukan konsepnya. Jadi semua intuisi dari modul auth manual tetap berlaku; sekarang implementasinya tinggal pakai.
+
+## 2. Contoh kode
+
+Perintah intinya satu baris. Demo pages opsional bisa kamu pilih lewat parameter `demo`.
+
+```bash
+# Setup default: email & password + demo pages
+npx sv add better-auth
+
+# Hanya demo email/password (eksplisit, sama dengan default)
+npx sv add better-auth="demo:password"
+
+# Hanya demo GitHub OAuth
+npx sv add better-auth="demo:github"
+
+# Dua-duanya: email/password DAN GitHub OAuth
+npx sv add better-auth="demo:password,github"
+
+# Kalau belum punya database: pasang Drizzle dulu, lalu better-auth.
+# (sv bisa memasang beberapa add-on sekaligus)
+npx sv add drizzle better-auth
+```
+
+Setelah add-on jalan, kamu akan punya kira-kira file berikut. Pertama, **instance Better Auth** di sisi server — ini "otak" auth-nya:
+
+```ts
+// src/lib/server/auth.ts — instance Better Auth (server-only)
+import { betterAuth } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { sveltekitCookies } from 'better-auth/svelte-kit';
+import { getRequestEvent } from '$app/server';
+import { db } from '$lib/server/db';            // instance Drizzle dari add-on drizzle
+import * as schema from '$lib/server/db/schema'; // termasuk tabel auth yang ditambahkan
+
+export const auth = betterAuth({
+	// Adapter Drizzle: 'provider' menyesuaikan DB-mu — 'sqlite' | 'pg' | 'mysql'.
+	database: drizzleAdapter(db, { provider: 'sqlite', schema }),
+
+	// Login email + password aktif secara default.
+	emailAndPassword: { enabled: true },
+
+	// Hanya jika kamu pilih demo:github. clientId/secret dari .env.
+	// socialProviders: { github: { clientId: ..., clientSecret: ... } },
+
+	// Plugin penting: menyetel cookie session lewat mekanisme SvelteKit.
+	// getRequestEvent memberi Better Auth akses ke request aktif.
+	plugins: [sveltekitCookies(getRequestEvent)]
+});
+```
+
+Kedua, **hook server** — petugas di pintu yang sama seperti modul auth manual, tapi sekarang Better Auth yang mengisi `locals`:
+
+```ts
+// src/hooks.server.ts — jalan untuk SETIAP request
+import { auth } from '$lib/server/auth';
+import { svelteKitHandler } from 'better-auth/svelte-kit';
+import { building } from '$app/environment';
+
+export async function handle({ event, resolve }) {
+	// 1) Ambil session dari cookie (Better Auth yang memverifikasi & query DB).
+	const session = await auth.api.getSession({ headers: event.request.headers });
+
+	// 2) Tempel ke locals — sama perannya dgn locals.user di modul auth manual.
+	event.locals.user = session?.user ?? null;
+	event.locals.session = session?.session ?? null;
+
+	// 3) svelteKitHandler menangani endpoint /api/auth/* milik Better Auth
+	//    (sign-in, sign-up, callback OAuth, dll.) tanpa kamu bikin route manual.
+	return svelteKitHandler({ event, resolve, auth, building });
+}
+```
+
+Ketiga, **client auth** untuk dipakai di komponen (memanggil endpoint `/api/auth/*` di atas):
+
+```ts
+// src/lib/auth-client.ts — dipakai di browser
+import { createAuthClient } from 'better-auth/svelte';
+
+// Mengembalikan client + store session reaktif (berbasis nanostore,
+// kompatibel dengan sintaks store Svelte: $session).
+export const authClient = createAuthClient();
+```
+
+Keempat, agar `locals.user`/`locals.session` type-safe, add-on menambah deklarasi tipe:
+
+```ts
+// src/app.d.ts — tipe untuk event.locals
+declare global {
+	namespace App {
+		interface Locals {
+			user: import('better-auth').User | null;
+			session: import('better-auth').Session | null;
+		}
+	}
+}
+
+export {};
+```
+
+## 3. Coba sendiri
+
+Modul ini butuh server (database, cookie, hook) jadi tidak bisa dijalankan di live playground. Sebagai gantinya, perhatikan dua sisi yang paling sering kamu sentuh setelah add-on terpasang — **proteksi rute di server** dan **form login di client** — dengan anotasi.
+
+```ts
+// src/routes/dashboard/+layout.server.ts — guard area privat.
+import { redirect } from '@sveltejs/kit';
+
+export async function load({ locals }) {
+	// locals.user sudah diisi hooks.server.ts via Better Auth.
+	// Kalau belum login, tendang ke /login.
+	// SvelteKit 2: redirect() MELEMPAR sendiri — TANPA "throw" di depan.
+	if (!locals.user) {
+		redirect(303, '/login');
+	}
+
+	// Aman dikembalikan ke halaman: ini sudah tervalidasi di server.
+	return { user: locals.user };
+}
+```
+
+```svelte
+<!-- src/routes/login/+page.svelte — form login pakai authClient (client-side) -->
+<script>
+	import { authClient } from '$lib/auth-client';
+	import { goto } from '$app/navigation';
+
+	let email = $state('');
+	let password = $state('');
+	let error = $state('');
+
+	async function handleLogin(e) {
+		e.preventDefault();
+		// authClient memanggil endpoint /api/auth/sign-in/email.
+		// Better Auth yang menyetel cookie session httpOnly di balik layar.
+		const res = await authClient.signIn.email({ email, password });
+		if (res.error) {
+			error = res.error.message ?? 'Login gagal';
+		} else {
+			goto('/dashboard'); // sukses: cookie sudah terpasang
+		}
+	}
+</script>
+
+<!-- Elemen semantik: <form> + <button type=submit> = accessible by default -->
+<form onsubmit={handleLogin}>
+	<input type="email" bind:value={email} placeholder="Email" />
+	<input type="password" bind:value={password} placeholder="Password" />
+	<button type="submit">Masuk</button>
+	{#if error}<p role="alert">{error}</p>{/if}
+</form>
+```
+
+```svelte
+<!-- Membaca status login reaktif di komponen mana pun -->
+<script>
+	import { authClient } from '$lib/auth-client';
+
+	// useSession() mengembalikan store; akses isinya dengan prefix $.
+	const session = authClient.useSession();
+</script>
+
+{#if $session.data}
+	<p>Halo, {$session.data.user.name}</p>
+	<!-- signOut menghapus cookie & mengakhiri session di server -->
+	<button onclick={() => authClient.signOut()}>Keluar</button>
+{:else}
+	<a href="/login">Masuk</a>
+{/if}
+```
+
+<Callout type="tip">
+Perhatikan pembagian tugasnya: <strong>guard & data sensitif</strong> selalu di server (<code>+layout.server.ts</code> baca <code>locals.user</code>), sedangkan <strong>aksi & tampilan UI</strong> (form login, tombol logout, status session) di client lewat <code>authClient</code>. Persis pola "kebenaran di server, kenyamanan di client" dari modul auth manual — bedanya sekarang plumbing-nya digenerate.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Pasang Better Auth, lalu proteksi /app dan tambah logout">
+Kamu punya proyek SvelteKit baru tanpa auth. Kerjakan langkah-langkah berikut:
+
+1. **Pasang**: tambahkan database Drizzle lalu Better Auth dengan demo email/password, dalam satu perintah.
+2. **Migrasi**: jelaskan perintah apa yang WAJIB dijalankan setelah add-on terpasang, supaya tabel `user`/`session` benar-benar ada di database. (Petunjuk: add-on Drizzle menambah skrip `db:push`.)
+3. **Guard**: proteksi semua rute di bawah `/app` lewat `hooks.server.ts` — kalau `locals.user` kosong dan pathname diawali `/app`, redirect ke `/login`.
+4. **Logout**: buat tombol "Keluar" di komponen yang memanggil `authClient.signOut()` lalu mengarahkan ke `/login`.
+
+{#snippet solution()}
+
+  ```bash
+  # 1) Pasang Drizzle + Better Auth (email/password) sekaligus
+  npx sv add drizzle better-auth="demo:password"
+
+  # 2) WAJIB: buat tabel di database dari skema Drizzle.
+  #    Tanpa ini, login error karena tabel user/session belum ada.
+  npm run db:push
+  # (alternatif eksplisit: npx drizzle-kit push)
+  ```
+
+  ```ts
+  // 3) src/hooks.server.ts — guard /app secara terpusat
+  import { auth } from '$lib/server/auth';
+  import { svelteKitHandler } from 'better-auth/svelte-kit';
+  import { building } from '$app/environment';
+  import { redirect } from '@sveltejs/kit';
+
+  export async function handle({ event, resolve }) {
+    const session = await auth.api.getSession({ headers: event.request.headers });
+    event.locals.user = session?.user ?? null;
+    event.locals.session = session?.session ?? null;
+
+    // Guard: area /app butuh login. SvelteKit 2 -> tanpa "throw".
+    if (event.url.pathname.startsWith('/app') && !event.locals.user) {
+      redirect(303, '/login');
+    }
+
+    return svelteKitHandler({ event, resolve, auth, building });
+  }
+  ```
+
+  ```svelte
+  <!-- 4) Tombol logout di komponen apa pun -->
+  <script>
+    import { authClient } from '$lib/auth-client';
+    import { goto } from '$app/navigation';
+
+    async function keluar() {
+      await authClient.signOut();
+      goto('/login');
+    }
+  </script>
+
+  <button onclick={keluar}>Keluar</button>
+  ```
+
+  Inti: add-on memasang seluruh plumbing, tapi <em>kamu</em> tetap memutuskan kebijakan akses (guard di hook) dan tetap wajib menjalankan migrasi DB. Proteksi terjadi di server via <code>locals</code>; logout dilakukan client via <code>authClient</code>.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Setelah <code>sv add better-auth</code>, tabel auth <strong>belum ada di database</strong> — add-on hanya menambahkan <em>skema</em> Drizzle. Kamu WAJIB menjalankan migrasi (mis. <code>npm run db:push</code> atau <code>npx drizzle-kit generate</code> lalu <code>migrate</code>) sebelum mencoba login. Lupa langkah ini = error "table user does not exist" saat sign-in. Ini penyebab nomor satu "kok auth-nya nggak jalan?".
+</Callout>
+
+<Callout type="warning">
+Add-on menambah <code>BETTER_AUTH_SECRET</code> di <code>.env</code> — ini kunci untuk menandatangani session. Untuk produksi, <strong>buat secret baru yang acak & rahasia</strong> (mis. <code>npx @better-auth/cli secret</code> atau <code>openssl rand -base64 32</code>) dan set lewat environment variable di hosting; JANGAN pakai nilai contoh dan JANGAN commit <code>.env</code> ke git. Kalau secret bocor, penyerang bisa memalsukan session.
+</Callout>
+
+<Callout type="tip">
+Memilih <code>demo:github</code> berarti kamu perlu mendaftarkan OAuth App di GitHub dan mengisi <code>GITHUB_CLIENT_ID</code> + <code>GITHUB_CLIENT_SECRET</code> di <code>.env</code>. Set <strong>callback URL</strong> di GitHub ke <code>http&#58;//localhost&#58;5173/api/auth/callback/github</code> saat dev (dan domain produksimu saat live). Tanpa kredensial & callback yang benar, tombol "Login with GitHub" akan gagal saat redirect balik.
+</Callout>
+
+<Callout type="pitfall">
+Jangan mengakses <code>$lib/server/auth.ts</code> dari kode client. File auth memuat rahasia (secret, client secret) dan query database — ia <strong>server-only</strong>. Untuk kebutuhan client gunakan <code>$lib/auth-client.ts</code> (<code>authClient</code>). Memakai data session untuk <em>otorisasi</em> tetap harus di server (<code>locals</code> di <code>+layout.server.ts</code>/<code>+page.server.ts</code>), bukan hanya mengandalkan <code>$session</code> di client yang bisa direkayasa.
+</Callout>
+
+<Callout type="tip">
+Add-on ini titik awal, bukan titik akhir. Setelah terpasang, langkah lanjutan yang umum: tambah provider sosial lain, aktifkan verifikasi email / reset password, atur <a href="https://www.better-auth.com/docs/concepts/plugins">plugin Better Auth</a> (2FA, organization, rate-limit), dan sesuaikan halaman demo jadi UI asli aplikasimu. Semua kode ada di repo-mu, jadi bebas dimodifikasi.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/better-auth" label="sv CLI — Add-on better-auth (instalasi & opsi demo)" />
+<DocsLink href="https://www.better-auth.com/docs/integrations/svelte-kit" label="Better Auth — Integrasi SvelteKit (auth.ts, hooks, client)" />
+<DocsLink href="https://svelte.dev/docs/cli/drizzle" label="sv CLI — Add-on drizzle (prasyarat database)" />
+<DocsLink href="https://www.better-auth.com/docs/concepts/plugins" label="Better Auth — Plugins (OAuth, 2FA, email verification, dll.)" />

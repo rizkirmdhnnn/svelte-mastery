@@ -1,0 +1,462 @@
+---
+title: $app/server
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 10
+status: reference
+description: API khusus sisi server SvelteKit — getRequestEvent, read, dan remote functions (query/form/command/prerender) untuk mengakses request & data server dari mana saja.
+docs: https://svelte.dev/docs/kit/$app-server
+keywords: [app-server, getRequestEvent, read, remote-functions, query, command]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/server` adalah modul virtual SvelteKit yang isinya **hanya boleh berjalan di server**. Berbeda dari saudaranya `$app/state`/`$app/navigation`/`$app/forms` yang dipakai di komponen klien, modul ini terkunci: kalau kamu meng-import-nya dari kode yang bisa sampai ke browser (`+page.svelte`, `+page.js` universal), build akan **gagal**. Itu fitur, bukan bug — penguncian ini memastikan secret, query database, dan logika sensitif tidak pernah bocor ke bundle klien.
+
+### Analogi: kompartemen mesin yang terkunci
+
+Kalau `$app/*` lain adalah dashboard yang dilihat pengemudi, `$app/server` adalah **kompartemen mesin di balik kap** yang cuma boleh dibuka mekanik. Isinya dua jenis perkakas:
+
+1. **Helper request tingkat rendah** — `getRequestEvent()` (akses konteks request yang sedang berjalan) dan `read()` (baca isi file/aset di runtime server).
+2. **Remote functions** — `query`, `form`, `command`, `prerender`: fungsi server yang bisa kamu **panggil langsung dari komponen** seolah fungsi lokal, padahal eksekusinya di server lewat `fetch` otomatis.
+
+### `getRequestEvent` — "siapa yang sedang dilayani sekarang?"
+
+Biasanya kamu menerima `RequestEvent` sebagai argumen handler: `load({ cookies, locals })`, `+server.js` `GET({ request })`, dst. Masalahnya muncul saat kamu ingin memakai `cookies`/`locals` di **fungsi helper yang dalam** — kamu terpaksa mengoper `event` turun berlapis-lapis (prop-drilling versi backend).
+
+`getRequestEvent()` memutus rantai itu. Bayangkan resepsionis hotel yang selalu tahu **tamu mana yang sedang dilayani saat ini**. Staf bagian mana pun, sedalam apa pun di gedung, bisa bertanya ke resepsionis dan langsung dapat konteks tamu aktif — tanpa tamu itu harus mengantar tiketnya sendiri ke tiap departemen. Di balik layar SvelteKit memakai `AsyncLocalStorage` untuk menyimpan event "ambient" selama satu request berlangsung. Jadi helper sedalam apa pun cukup memanggil `getRequestEvent()` untuk dapat `cookies`, `locals`, `request`, `url`, dan kawan-kawan.
+
+### Remote functions — RPC bertipe untuk komponenmu
+
+Pola normal "ambil data" di web: bikin endpoint (`+server.js`), tulis `fetch('/api/...')` di klien, validasi input manual, serialisasi JSON, tangani error. Banyak lem (glue code) untuk hal yang sederhana.
+
+**Remote functions** memangkasnya: kamu menulis fungsi server di file `*.remote.js`, lalu **meng-import dan memanggilnya langsung dari komponen**. SvelteKit otomatis menyiapkan jalur jaringannya, memvalidasi argumen, dan menyajikan hasilnya secara reaktif. Ini RPC (Remote Procedure Call) bertipe.
+
+Buat yang datang dari ekosistem lain, kaitannya kira-kira begini:
+
+- **Next.js** — mirip Server Actions / Server Functions (`'use server'`). `command`/`form` ≈ Server Actions; `query` ≈ pemanggilan async ke fungsi server.
+- **tRPC** — `query` ≈ `t.procedure.query`, `command` ≈ `t.procedure.mutation`, hanya tanpa router/boilerplate; type-safety datang dari import langsung.
+- **Nuxt/Vue** — mirip memanggil `server/api/*` lewat `$fetch`, tapi di sini fungsinya di-import bukan dipanggil via path string.
+
+Ada empat jenis, dipilih berdasar niat:
+
+| Niat | Pakai | HTTP |
+|---|---|---|
+| Baca data | `query` | GET (boleh di-cache) |
+| Submit `<form>` | `form` | POST |
+| Mutasi dari luar form (mis. tombol) | `command` | POST |
+| Baca data yang di-render saat build | `prerender` | (statis) |
+
+<Callout type="warning">
+Remote functions masih <strong>experimental</strong> (sejak SvelteKit 2.27). Kamu harus mengaktifkannya di <code>svelte.config.js</code> dan menaruh definisinya di file ber-ekstensi <code>.remote.js</code> / <code>.remote.ts</code>. API-nya bisa berubah antar versi minor. <code>getRequestEvent</code> (2.20) dan <code>read</code> (2.4) sudah stabil.
+</Callout>
+
+## 2. Ringkasan API
+
+Semua signature di bawah di-import dari `'$app/server'`. Untuk fungsi remote, parameter pertama `validate` bersifat opsional dan menerima salah satu dari: sebuah **Standard Schema** (Zod, Valibot, ArkType), atau string literal `'unchecked'` (lewati validasi — argumen dipercaya apa adanya).
+
+| Export | Tanda tangan (ringkas) | Sejak | Kegunaan |
+|---|---|---|---|
+| `getRequestEvent` | `getRequestEvent(): RequestEvent` | 2.20 | Ambil `RequestEvent` aktif tanpa mengopernya sebagai argumen |
+| `read` | `read(asset: string): Response` | 2.4 | Baca isi aset yang di-`import` sebagai `Response` di server |
+| `query` | `query(fn)` &#124; `query(validate, fn)` | 2.27 | Remote function baca-data (GET, boleh di-cache) |
+| `query.batch` | `query.batch(validate, fn)` | 2.35 | Gabungkan banyak panggilan jadi satu request (anti N+1) |
+| `query.live` | `query.live(...)` | 2.27 | Versi query yang streaming/real-time |
+| `form` | `form(fn)` &#124; `form(validate, fn)` | 2.27 | Objek yang di-`spread` ke elemen `<form>`; submit ter-enhance |
+| `command` | `command(fn)` &#124; `command(validate, fn)` | 2.27 | Mutasi data dari luar form (mis. tombol, event) |
+| `prerender` | `prerender(fn, opts?)` &#124; `prerender(validate, fn, opts?)` | 2.27 | Seperti `query`, tapi hasilnya di-render saat build |
+| `requested` | `requested(query, limit)` | (lanjutan) | Iterasi permintaan refresh dari klien (untuk live query) |
+
+Tipe nilai balik penting:
+
+- `query(...)` mengembalikan **RemoteQueryFunction**. Memanggilnya (mis. `getPosts()`) menghasilkan objek query yang **awaitable** sekaligus punya properti reaktif: `.current` (nilai terakhir), `.loading`, `.error`, dan method `.refresh()`.
+- `command(...)` mengembalikan fungsi async biasa: `await addLike(id)`.
+- `form(...)` mengembalikan objek yang di-`spread` ke `<form>` (`<form {...createPost}>`), plus helper seperti `.enhance`, `.fields`, dan `.pending`.
+- `prerender(...)` mengembalikan query yang nilainya sudah di-snapshot saat build.
+
+`opts` untuk `prerender`: `{ inputs?: () => Input[], dynamic?: boolean }` — `inputs` mendaftarkan argumen mana saja yang harus diprerender; `dynamic: true` mengizinkan argumen di luar daftar dilayani saat runtime.
+
+### Setup remote functions (sekali saja)
+
+```js
+// svelte.config.js
+export default {
+	kit: {
+		experimental: {
+			// Wajib: mengaktifkan fungsi query/form/command/prerender.
+			remoteFunctions: true
+		}
+	},
+	compilerOptions: {
+		experimental: {
+			// Mengizinkan `await` langsung di markup komponen (dipakai query).
+			async: true
+		}
+	}
+};
+```
+
+## 3. Contoh kode
+
+### `getRequestEvent` — helper tanpa oper `event`
+
+```js
+// src/lib/server/auth.js
+import { getRequestEvent } from '$app/server';
+import { error } from '@sveltejs/kit';
+
+export function requireUser() {
+	// Mengambil RequestEvent "yang sedang berjalan" — TIDAK perlu kamu oper
+	// `event` dari handler ke fungsi ini.
+	const { locals } = getRequestEvent();
+
+	// error() melempar sendiri secara internal -> TANPA `throw` di depannya.
+	if (!locals.user) error(401, 'Harus login dulu');
+
+	return locals.user;
+}
+```
+
+```js
+// src/routes/dashboard/+page.server.js
+import { requireUser } from '$lib/server/auth';
+
+export async function load() {
+	// Bersih: tak ada lagi prop-drilling `event` ke helper.
+	const user = requireUser();
+	return { user };
+}
+```
+
+<Callout type="warning">
+<code>getRequestEvent()</code> hanya valid <strong>selama sebuah request berlangsung</strong> (di dalam <code>load</code>, actions, <code>+server.js</code>, hooks, atau remote function). Memanggilnya di top-level modul — saat modul pertama di-evaluasi, di luar konteks request — akan error. Di environment tanpa <code>AsyncLocalStorage</code>, ia harus dipanggil <strong>sinkron</strong> (sebelum <code>await</code> pertama).
+</Callout>
+
+### `read` — baca isi aset di server
+
+```js
+// src/routes/og/+server.js
+import { read } from '$app/server';
+// Vite mengubah import aset ini jadi string URL ter-hash.
+import logo from '$lib/assets/logo.png';
+
+export async function GET() {
+	// read() mengubah URL aset itu menjadi Response yang isinya bisa dibaca
+	// dari filesystem build — HANYA bekerja di server.
+	const res = read(logo);
+	const bytes = await res.arrayBuffer();
+
+	return new Response(bytes, {
+		headers: { 'content-type': 'image/png' }
+	});
+}
+```
+
+Pola umum lain: membaca file font untuk generasi gambar OG, atau membaca file teks/JSON yang sengaja kamu bundel sebagai aset.
+
+```js
+// Baca font sebagai ArrayBuffer (mis. untuk satori/og-image).
+import { read } from '$app/server';
+import interFont from '$lib/fonts/Inter.ttf';
+
+const fontData = await read(interFont).arrayBuffer();
+```
+
+### `query` — baca data dari komponen
+
+```js
+// src/routes/posts/data.remote.js  (perhatikan ekstensi .remote.js!)
+import { query } from '$app/server';
+import * as db from '$lib/server/db';
+
+// Tanpa argumen: cukup fn.
+export const getPosts = query(async () => {
+	// Kode ini hanya jalan di server; aman menyentuh DB/secret.
+	return await db.posts.findAll();
+});
+
+// Dengan validasi argumen via Standard Schema (Valibot di sini).
+import * as v from 'valibot';
+import { error } from '@sveltejs/kit';
+
+export const getPost = query(v.string(), async (slug) => {
+	// `slug` dijamin sudah tervalidasi sesuai schema sebelum fn dipanggil.
+	const post = await db.posts.find(slug);
+	if (!post) error(404, 'Post tidak ditemukan');
+	return post;
+});
+```
+
+```svelte
+<!-- src/routes/posts/+page.svelte -->
+<script>
+	// Di-import seperti fungsi biasa; SvelteKit mengurus jaringannya.
+	import { getPosts } from './data.remote.js';
+</script>
+
+<!-- `await` langsung di markup (butuh compilerOptions.experimental.async). -->
+{#each await getPosts() as post}
+	<article><a href="/posts/{post.slug}">{post.title}</a></article>
+{/each}
+```
+
+Kalau tidak mau memakai `await` di markup, pakai properti reaktifnya:
+
+```svelte
+<script>
+	import { getPosts } from './data.remote.js';
+	const posts = getPosts(); // objek query reaktif
+</script>
+
+{#if posts.loading}
+	<p>Memuat…</p>
+{:else if posts.error}
+	<p>Gagal: {posts.error.message}</p>
+{:else}
+	{#each posts.current as post}
+		<article>{post.title}</article>
+	{/each}
+{/if}
+
+<!-- Ambil ulang data terbaru kapan pun (mis. tombol refresh). -->
+<button onclick={() => posts.refresh()}>Muat ulang</button>
+```
+
+### `form` — submit form ter-enhance
+
+```js
+// src/routes/posts/data.remote.js
+import { form } from '$app/server';
+import { redirect } from '@sveltejs/kit';
+import * as v from 'valibot';
+
+export const createPost = form(
+	v.object({ title: v.string(), body: v.string() }),
+	async ({ title, body }) => {
+		const post = await db.posts.create({ title, body });
+		// redirect() throw sendiri -> TANPA `throw` di depannya.
+		redirect(303, '/posts/' + post.slug);
+	}
+);
+```
+
+```svelte
+<!-- src/routes/posts/new/+page.svelte -->
+<script>
+	import { createPost } from '../data.remote.js';
+</script>
+
+<!-- Spread {...createPost} memasang method/action + progressive enhancement. -->
+<!-- Tanpa JS: tetap POST biasa. Dengan JS: submit via fetch tanpa reload. -->
+<form {...createPost}>
+	<input name="title" />
+	<textarea name="body"></textarea>
+	<button>Simpan</button>
+</form>
+```
+
+### `command` — mutasi dari luar form
+
+```js
+// src/routes/likes.remote.js
+import { query, command } from '$app/server';
+import * as v from 'valibot';
+
+export const getLikes = query(v.string(), async (id) => db.getLikes(id));
+
+export const addLike = command(v.string(), async (id) => {
+	await db.incrementLike(id);
+	// "Single-flight mutation": minta query terkait di-refresh. SvelteKit
+	// mengirim balik data baru dalam response yang SAMA, jadi UI langsung update.
+	await getLikes(id).refresh();
+});
+```
+
+```svelte
+<script>
+	import { getLikes, addLike } from './likes.remote.js';
+	let { post } = $props();
+	const likes = getLikes(post.id);
+</script>
+
+<!-- Panggil command seperti fungsi async biasa. -->
+<button onclick={() => addLike(post.id)}>
+	Suka ({likes.current ?? 0})
+</button>
+```
+
+### `prerender` — query yang dibekukan saat build
+
+```js
+// src/routes/blog/data.remote.js
+import { prerender } from '$app/server';
+import * as v from 'valibot';
+
+// Tanpa argumen: hasil di-snapshot sekali saat build.
+export const getAllPosts = prerender(async () => db.posts.findAll());
+
+// Dengan argumen: daftarkan input mana saja yang harus diprerender.
+export const getPost = prerender(
+	v.string(),
+	async (slug) => db.posts.find(slug),
+	{
+		// Slug-slug ini di-render saat build menjadi data statis.
+		inputs: () => ['halo-dunia', 'post-kedua'],
+		// true = slug di luar daftar tetap dilayani dinamis saat runtime.
+		dynamic: true
+	}
+);
+```
+
+## 4. Coba sendiri
+
+Modul ini berjalan di server (remote functions butuh build SvelteKit + flag experimental), jadi tidak bisa dijalankan di playground browser. Di bawah ini **alur lengkap** sebuah fitur "todo" memakai `query` (baca) + `command` (tulis), dengan anotasi langkah demi langkah. Salin ke proyek SvelteKit (setelah mengaktifkan `remoteFunctions`) untuk mencobanya.
+
+```js
+// 1) src/routes/todos/data.remote.js
+//    File HARUS ber-ekstensi .remote.js agar dikenali sebagai remote function.
+import { query, command } from '$app/server';
+import { getRequestEvent } from '$app/server';
+import * as v from 'valibot';
+import * as db from '$lib/server/db';
+
+// READ: query mengembalikan objek reaktif (awaitable + .current/.refresh()).
+export const getTodos = query(async () => {
+	// getRequestEvent() memberi akses cookies tanpa argumen event dioper.
+	const { locals } = getRequestEvent();
+	return db.todos.forUser(locals.userId);
+});
+
+// WRITE: command memvalidasi argumen lalu memutasi, lalu me-refresh query.
+export const addTodo = command(v.string(), async (text) => {
+	const { locals } = getRequestEvent();
+	await db.todos.add(locals.userId, text);
+
+	// Single-flight: data terbaru ikut terkirim di response yang sama.
+	await getTodos().refresh();
+});
+```
+
+```svelte
+<!-- 2) src/routes/todos/+page.svelte -->
+<script>
+	import { getTodos, addTodo } from './data.remote.js';
+
+	const todos = getTodos(); // panggil sekali; objek query reaktif
+	let text = $state('');
+
+	async function submit() {
+		await addTodo(text); // memanggil server; getTodos otomatis ter-refresh
+		text = '';
+	}
+</script>
+
+<form onsubmit={(e) => (e.preventDefault(), submit())}>
+	<input bind:value={text} placeholder="Todo baru…" />
+	<button>Tambah</button>
+</form>
+
+{#if todos.loading}
+	<p>Memuat…</p>
+{:else}
+	<ul>
+		{#each todos.current as t}
+			<li>{t.text}</li>
+		{/each}
+	</ul>
+{/if}
+```
+
+Perhatikan: tidak ada satu pun `+server.js`, `fetch('/api/...')`, atau parsing JSON manual. Import fungsi server → panggil → selesai. Validasi (`v.string()`) dan jalur jaringannya ditangani SvelteKit.
+
+## 5. Latihan
+
+<Exercise title="Counter view dengan query + command + getRequestEvent">
+Buat fitur penghitung "jumlah view" sebuah artikel memakai remote functions:
+
+1. `getViews(slug)` — sebuah `query` yang mengembalikan jumlah view artikel. Validasi `slug` sebagai string.
+2. `recordView(slug)` — sebuah `command` yang menambah view +1, lalu **me-refresh** `getViews(slug)` agar angkanya ikut update di klien (single-flight).
+3. Gunakan `getRequestEvent()` di dalam salah satu fungsi untuk mengambil `request.headers` (mis. mencatat user-agent) tanpa mengoper `event` sebagai argumen.
+
+Tulis satu file `views.remote.js` dan potongan `+page.svelte` yang memanggil `recordView` saat komponen mount serta menampilkan `getViews(slug).current`.
+
+{#snippet solution()}
+
+  ```js
+  // src/routes/articles/[slug]/views.remote.js
+  import { query, command, getRequestEvent } from '$app/server';
+  import * as v from 'valibot';
+  import * as db from '$lib/server/db';
+
+  export const getViews = query(v.string(), async (slug) => {
+    return db.views.count(slug);
+  });
+
+  export const recordView = command(v.string(), async (slug) => {
+    // getRequestEvent(): ambil header tanpa argumen event dioper-oper.
+    const { request } = getRequestEvent();
+    const ua = request.headers.get('user-agent') ?? 'unknown';
+
+    await db.views.increment(slug, ua);
+
+    // Single-flight: kirim balik angka view terbaru di response yang sama.
+    await getViews(slug).refresh();
+  });
+  ```
+
+  ```svelte
+  <!-- src/routes/articles/[slug]/+page.svelte -->
+  <script>
+    import { getViews, recordView } from './views.remote.js';
+
+    let { data } = $props();
+    const slug = data.slug;
+    const views = getViews(slug);
+
+    // Catat view sekali saat komponen muncul di klien.
+    $effect(() => {
+      recordView(slug);
+    });
+  </script>
+
+  <p>Dilihat {views.current ?? 0} kali</p>
+  ```
+
+  Kunci: `query`/`command` divalidasi dengan Standard Schema (`v.string()`); `getRequestEvent()` memberi `request`/`cookies`/`locals` tanpa prop-drilling; `recordView` memanggil `getViews(slug).refresh()` agar angka ter-update tanpa fetch manual.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Remote functions <strong>wajib</strong> ada di file <code>*.remote.js</code> / <code>*.remote.ts</code> dan butuh <code>kit.experimental.remoteFunctions: true</code> di <code>svelte.config.js</code>. Menaruh <code>query</code>/<code>form</code>/<code>command</code> di <code>+page.server.js</code> atau file biasa tidak akan dikenali. Karena masih experimental, kunci versi SvelteKit-mu dan cek changelog sebelum upgrade minor.
+</Callout>
+
+<Callout type="warning">
+Jangan pernah meng-import <code>$app/server</code> dari kode yang bisa sampai ke klien (<code>+page.svelte</code>, <code>+page.js</code> universal, atau modul yang di-import keduanya). Build akan gagal. Tujuannya menjaga secret tetap di server. Untuk remote functions, kamu memang meng-import file <code>.remote.js</code> dari komponen — tapi yang dikirim ke klien hanyalah <em>stub</em> pemanggil jaringan, bukan body fungsinya.
+</Callout>
+
+<Callout type="warning">
+Argumen remote function datang dari jaringan, jadi <strong>tidak tepercaya</strong>. Selalu validasi dengan Standard Schema (Zod/Valibot/ArkType). Opsi <code>'unchecked'</code> melewati validasi sepenuhnya — pakai hanya jika kamu benar-benar yakin dan sudah memvalidasi sendiri di tempat lain.
+</Callout>
+
+<Callout type="tip">
+<code>getRequestEvent()</code> menghapus kebutuhan mengoper <code>event</code> berlapis-lapis ke helper. Pola bagus: buat <code>requireUser()</code>/<code>getSession()</code> di <code>$lib/server</code> yang memanggil <code>getRequestEvent()</code> di dalamnya, lalu panggil dari <code>load</code>, actions, dan remote function mana pun. Ingat: panggil saat request aktif, bukan di top-level modul, dan sinkron sebelum <code>await</code> pertama bila adapter-mu tanpa <code>AsyncLocalStorage</code>.
+</Callout>
+
+<Callout type="tip">
+Dukungan <code>read()</code> bergantung adapter — ia membaca dari output build, jadi bekerja baik di <code>adapter-node</code>, Vercel, dan Netlify. Beberapa runtime edge punya batasan akses filesystem; cek dokumentasi adapter-mu sebelum mengandalkan <code>read()</code> untuk aset besar.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-server" label="SvelteKit — $app/server (getRequestEvent, read, query, form, command, prerender)" />
+<DocsLink href="https://svelte.dev/docs/kit/remote-functions" label="SvelteKit — Remote functions (panduan lengkap query/form/command/prerender)" />

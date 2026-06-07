@@ -1,50 +1,90 @@
-// Auto-built module manifest. Every `.svx` file under `content/` becomes a
-// module; its frontmatter (`metadata`) drives nav, search, prev/next, progress.
+// Auto-built module manifest. Every `.svx` under content/ is a module; its
+// frontmatter drives nav, search, prev/next, progress. Taxonomy: product → section.
+export type Product = 'svelte' | 'kit' | 'cli';
+export type Status = 'stable' | 'legacy' | 'reference';
 
 export type ModuleMeta = {
-	slug: string; // e.g. "level-2-reactivity/02-state"
-	level: number; // 1..8
-	levelTitle: string;
-	order: number; // order within the level
+	slug: string; // "svelte/runes/state" — equals the content path (minus .svx)
+	product: Product;
+	section: string;
+	sectionTitle: string;
+	sectionOrder: number;
+	order: number;
 	title: string;
 	description: string;
-	docs?: string; // official docs URL
+	status: Status;
+	docs?: string;
 	keywords?: string[];
-	updated?: string; // ISO date of last update (git commit or frontmatter override)
+	updated?: string; // ISO date (git commit or frontmatter override)
 };
 
-// Metadata comes from a generated manifest (scripts/gen-manifest.mjs), NOT from
-// importing the `.svx` modules — so the sidebar never pulls lesson code into the
-// shared layout chunk, and each module stays in its own lazy chunk.
 import { generatedModules } from './modules.generated';
 
+export const PRODUCT_ORDER: Product[] = ['svelte', 'kit', 'cli'];
+export const PRODUCT_TITLES: Record<Product, string> = {
+	svelte: 'Svelte',
+	kit: 'SvelteKit',
+	cli: 'CLI'
+};
+
 export const modules: ModuleMeta[] = [...generatedModules]
-	.filter((m) => typeof m.level === 'number')
-	.sort((a, b) => a.level - b.level || a.order - b.order);
+	.filter((m) => typeof m.product === 'string')
+	.sort(
+		(a, b) =>
+			PRODUCT_ORDER.indexOf(a.product) - PRODUCT_ORDER.indexOf(b.product) ||
+			a.sectionOrder - b.sectionOrder ||
+			a.order - b.order ||
+			a.slug.localeCompare(b.slug)
+	);
 
-export type Level = { level: number; title: string; modules: ModuleMeta[] };
+export type Section = { section: string; title: string; order: number; modules: ModuleMeta[] };
+export type ProductGroup = {
+	product: Product;
+	title: string;
+	sections: Section[];
+	modules: ModuleMeta[];
+};
 
-export const levels: Level[] = [...new Set(modules.map((m) => m.level))]
-	.sort((a, b) => a - b)
-	.map((level) => {
-		const inLevel = modules.filter((m) => m.level === level);
-		return { level, title: inLevel[0]?.levelTitle ?? `Level ${level}`, modules: inLevel };
-	});
+export const products: ProductGroup[] = PRODUCT_ORDER.map((product) => {
+	const inProduct = modules.filter((m) => m.product === product);
+	const keys = [...new Set(inProduct.map((m) => m.section))];
+	const sections: Section[] = keys
+		.map((section) => {
+			const inSection = inProduct.filter((m) => m.section === section);
+			return {
+				section,
+				title: inSection[0]?.sectionTitle ?? section,
+				order: inSection[0]?.sectionOrder ?? 0,
+				modules: inSection
+			};
+		})
+		.sort((a, b) => a.order - b.order);
+	return { product, title: PRODUCT_TITLES[product], sections, modules: inProduct };
+}).filter((p) => p.modules.length > 0);
 
+export function productOf(slug: string): Product {
+	const head = slug.split('/')[0];
+	return (PRODUCT_ORDER.includes(head as Product) ? head : 'svelte') as Product;
+}
+
+export function getModule(slug: string): ModuleMeta | null {
+	return modules.find((m) => m.slug === slug) ?? null;
+}
+
+/** Prev/next traverse the full ordered list WITHIN a product. */
 export function neighbors(slug: string): {
 	current: ModuleMeta | null;
 	prev: ModuleMeta | null;
 	next: ModuleMeta | null;
 } {
-	const i = modules.findIndex((m) => m.slug === slug);
-	if (i === -1) return { current: null, prev: null, next: null };
-	return {
-		current: modules[i],
-		prev: modules[i - 1] ?? null,
-		next: modules[i + 1] ?? null
-	};
+	const m = getModule(slug);
+	if (!m) return { current: null, prev: null, next: null };
+	const inProduct = modules.filter((x) => x.product === m.product);
+	const i = inProduct.findIndex((x) => x.slug === slug);
+	return { current: m, prev: inProduct[i - 1] ?? null, next: inProduct[i + 1] ?? null };
 }
 
-export function getModule(slug: string): ModuleMeta | null {
-	return modules.find((m) => m.slug === slug) ?? null;
+/** First module of a product (for switcher landing). */
+export function firstOf(product: Product): ModuleMeta | null {
+	return modules.find((m) => m.product === product) ?? null;
 }

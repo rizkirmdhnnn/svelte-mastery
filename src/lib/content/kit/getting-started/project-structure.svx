@@ -1,0 +1,310 @@
+---
+title: Project structure
+product: kit
+section: getting-started
+sectionTitle: Getting started
+sectionOrder: 1
+order: 4
+status: stable
+description: Anatomi proyek SvelteKit — peran tiap folder & file (src/routes, src/lib, app.html, static, hooks, params) dan mengapa struktur folder itu sendiri yang jadi konfigurasi.
+docs: https://svelte.dev/docs/kit/project-structure
+keywords: [project-structure, src-routes, src-lib, app-html, hooks, svelte-config]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Waktu kamu menjalankan `npx sv create my-app`, kamu langsung dapat selusin folder dan file dengan nama-nama yang spesifik: `src/routes`, `src/lib`, `app.html`, `static`, `svelte.config.js`, dan teman-temannya. Pertanyaan pertama yang wajar muncul dari orang yang datang dari React/Vue: "kenapa harus persis seperti ini, dan dari mana SvelteKit tahu file mana harus diperlakukan bagaimana?"
+
+Jawabannya adalah prinsip **convention over configuration** — *konvensi mengalahkan konfigurasi*. Alih-alih kamu menulis file konfigurasi panjang yang berkata "rute ada di sini, kode server di situ, aset di sana", SvelteKit sepakat dengan kamu di awal soal **arti dari setiap lokasi**. Kamu cukup menaruh file di tempat yang benar, dan framework langsung paham harus diapakan. **Struktur folder itulah konfigurasimu.**
+
+### Analogi: rumah dengan denah standar
+
+Bayangkan SvelteKit seperti **rumah yang denahnya sudah disepakati bersama**. Begitu kamu masuk rumah mana pun yang dibangun dengan denah ini, kamu tahu: pintu depan dan ruang tamu (tempat tamu boleh masuk) ada di depan, dapur dan gudang (tempat kerja, tamu dilarang masuk) ada di belakang, dan halaman depan (tempat orang ambil koran atau lihat plang nama) ada di luar.
+
+- **`src/routes`** itu **ruang-ruang yang boleh dimasuki tamu** — setiap URL adalah sebuah pintu yang mengantar pengunjung ke sebuah ruangan.
+- **`src/lib/server`** itu **dapur dan brankas** — staf (kode server) boleh masuk, tapi tamu (browser) dilarang keras. SvelteKit memasang "satpam" yang menolak siapa pun dari sisi klien yang coba mengintip ke sini.
+- **`static/`** itu **halaman depan** — barang yang ditaruh apa adanya, siapa pun yang lewat bisa langsung ambil (favicon, `robots.txt`) tanpa diproses dulu.
+- **`app.html`** itu **rangka bangunan / pondasi** — dinding terluar yang membungkus semua ruangan.
+
+Karena denahnya seragam, siapa pun developer SvelteKit yang membuka proyekmu langsung tahu di mana mencari apa. Ini kebalikan dari "kebebasan tanpa batas" gaya Express atau React murni, di mana setiap tim menaruh segala sesuatu di tempat berbeda dan kamu harus membaca dokumentasi internal dulu sebelum paham.
+
+### Kenapa konvensi ini menguntungkan (dan harganya)
+
+Kalau kamu dari **Next.js**, kamu sudah kenal pola ini: folder `app/` (atau `pages/`) jadi peta rute, folder `public/` jadi aset statis, `next.config.js` jadi konfigurasi. Dari **Nuxt**: `pages/`, `public/`, `server/`, `nuxt.config.ts`. SvelteKit menempati kursi yang sama — bedanya ia cenderung **lebih sedikit varian** ("satu cara resmi") sehingga lebih sedikit keputusan yang harus kamu ambil.
+
+Plusnya: nol boilerplate konfigurasi rute, onboarding cepat, proyek antar tim terasa konsisten. Minusnya: kamu **harus** menghafal arti tiap nama dan lokasi — salah taruh file atau salah ketik (mis. `Page.svelte` bukannya `+page.svelte`) bikin sesuatu diam-diam tidak bekerja. Modul ini tujuannya membuat peta itu jelas sekali jalan, supaya tidak ada lokasi yang terasa "ajaib".
+
+### Inti yang membedakan file biasa vs file spesial
+
+Hanya **dua hal** yang punya makna khusus bagi SvelteKit:
+
+1. **File yang berawalan `+`** di dalam `src/routes` (mis. `+page.svelte`, `+layout.svelte`, `+page.server.js`, `+server.js`). Ini "kata kunci" routing — SvelteKit memperlakukannya secara khusus. File lain di `src/routes` (tanpa `+`) hanya dianggap komponen pendukung biasa.
+2. **File & folder berdudukan tetap** di `src` (mis. `app.html`, `hooks.server.js`, `lib/`, `params/`). Namanya sudah dipesan; SvelteKit mencarinya di lokasi persis itu.
+
+Selebihnya — isi `<script>`, runes, markup, komponen di `src/lib` — itu **Svelte murni** yang sudah kamu kuasai. Jadi kamu tidak belajar dari nol; kamu cuma menambah satu lapisan "tata letak" di atas Svelte.
+
+## 2. Contoh kode
+
+Ini anatomi lengkap proyek SvelteKit yang baru di-scaffold. Hanya `src/routes` dan `src/app.html` yang **wajib**; sisanya opsional dan muncul sesuai kebutuhan.
+
+```text
+my-app/
+├ src/
+│ ├ lib/                      ← kode reusable (util & komponen); diakses lewat alias $lib
+│ │ └ server/                 ← kode KHUSUS server; diakses lewat $lib/server; diblokir dari klien
+│ ├ params/                   ← param matcher untuk routing lanjutan (opsional)
+│ ├ routes/                   ← INI peta URL aplikasimu (file "+" itu spesial)
+│ ├ app.html                  ← template HTML terluar (shell dokumen) — WAJIB
+│ ├ error.html                ← halaman saat semua gagal total (fallback paling akhir) — opsional
+│ ├ hooks.server.js           ← intersep tiap request di server (auth, dll) — opsional
+│ ├ hooks.client.js           ← hook sisi klien (mis. tangani error klien) — opsional
+│ ├ hooks.js                  ← hook universal (reroute, transport) jalan di server & klien — opsional
+│ ├ service-worker.js         ← service worker (offline/caching) — opsional
+│ └ instrumentation.server.js ← setup observability/tracing; jalan paling awal — opsional
+├ static/                     ← aset statis disajikan apa adanya (favicon, robots.txt)
+├ tests/                      ← tes Playwright (browser), jika kamu memilihnya saat scaffold
+├ .svelte-kit/                ← folder hasil generate SvelteKit; boleh diabaikan & dihapus
+├ package.json                ← wajib punya @sveltejs/kit, svelte, vite + "type": "module"
+├ svelte.config.js            ← konfigurasi Svelte + SvelteKit (di sinilah ADAPTER dipilih)
+├ tsconfig.json               ← config TS; meng-"extends" .svelte-kit/tsconfig.json buatan Kit
+└ vite.config.js              ← config Vite (proyek Kit pada dasarnya proyek Vite + plugin Kit)
+```
+
+Daftar ringkas peran tiap bagian, dari yang paling sering kamu sentuh:
+
+| Lokasi | Wajib? | Peran |
+| --- | --- | --- |
+| `src/routes/` | ya | Peta URL. File `+page.svelte`, `+layout.svelte`, `+page.server.js`, `+server.js`, dll. |
+| `src/app.html` | ya | Template HTML terluar; berisi placeholder yang diisi SvelteKit saat render. |
+| `src/lib/` | tidak | Kode pakai-ulang; impor lewat alias `$lib` dari mana saja. |
+| `src/lib/server/` | tidak | Kode rahasia khusus server; impor lewat `$lib/server`; otomatis diblokir dari klien. |
+| `src/params/` | tidak | Param matcher untuk membatasi bentuk parameter rute (mis. hanya angka). |
+| `src/hooks.server.js` | tidak | Mencegat tiap request di server (auth, header, logging). |
+| `src/hooks.client.js` | tidak | Hook di sisi browser (mis. `handleError` klien). |
+| `src/hooks.js` | tidak | Hook universal: `reroute` (ubah path → rute) & `transport` (kirim tipe custom). |
+| `static/` | tidak | Aset yang disajikan apa adanya tanpa di-hash/diproses Vite. |
+| `svelte.config.js` | ya | Konfigurasi Kit + preprocess + pemilihan **adapter** deploy. |
+
+Sekarang `app.html` — pondasi dokumen. Isinya HTML biasa plus beberapa **placeholder** `%sveltekit.*%` yang diganti SvelteKit saat merender:
+
+```html
+<!-- src/app.html -->
+<!DOCTYPE html>
+<html lang="id">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
+		<!-- %sveltekit.assets% -> path ke folder static (atau CDN), aman di subfolder -->
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+		<!-- %sveltekit.head% -> SvelteKit menyuntik <link>/<script> yang dibutuhkan
+		     halaman + apa pun yang kamu taruh di <svelte:head>. JANGAN dihapus. -->
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<!-- %sveltekit.body% -> markup halaman dirender di SINI.
+		     Catatan penting: taruh di dalam <div>, JANGAN langsung di <body>,
+		     karena ekstensi browser kadang menyuntik node ke <body> dan
+		     bisa merusak proses hydration. -->
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>
+```
+
+Lalu `svelte.config.js` — di sinilah keputusan deploy diambil lewat **adapter**:
+
+```js
+// svelte.config.js  ->  konfigurasi Svelte + SvelteKit.
+// Ganti adapter = ganti target platform, TANPA mengubah kode aplikasimu.
+import adapter from '@sveltejs/adapter-auto'; // auto-deteksi (Vercel/Netlify/Cloudflare/dll)
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+/** @type {import('@sveltejs/kit').Config} */
+export default {
+	// preprocess: mis. agar bisa pakai TypeScript / PostCSS di dalam .svelte
+	preprocess: vitePreprocess(),
+
+	kit: {
+		// alternatif: adapter-node (server Node sendiri),
+		// adapter-static (situs statis penuh), adapter-vercel, dst.
+		adapter: adapter()
+		// di sini juga tempat mengatur alias kustom, csp, prerender default, dll.
+	}
+};
+```
+
+## 3. Coba sendiri
+
+Modul ini soal arsitektur proyek yang bersifat referensi/struktur — tidak ada satu komponen mandiri yang bisa dijalankan di live playground. Jadi mari kita pakai contoh statis untuk menjawab pertanyaan paling praktis sehari-hari: **"file ini harus aku taruh di mana?"**
+
+**Kasus 1 — fungsi/komponen yang dipakai banyak halaman.** Taruh di `src/lib`, impor lewat alias `$lib`. Alias ini menyelamatkanmu dari neraka `../../../`.
+
+```js
+// src/lib/utils/format.js
+export function rupiah(n) {
+	return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(n);
+}
+```
+
+```svelte
+<!-- src/routes/produk/+page.svelte -->
+<!-- Impor dari mana pun pakai $lib, BUKAN '../../lib/utils/format' -->
+<script>
+	import { rupiah } from '$lib/utils/format';
+	let harga = $state(15000);
+</script>
+
+<p>Harga: {rupiah(harga)}</p>
+```
+
+**Kasus 2 — kode rahasia (API key, query DB) yang TIDAK boleh bocor ke browser.** Taruh di `src/lib/server`. Ini bukan sekadar konvensi rapi — SvelteKit **memasang pengaman**: kalau ada kode klien yang nekat mengimpornya, build langsung gagal dengan error. Inilah "satpam dapur" dari analogi tadi.
+
+```js
+// src/lib/server/db.js  ->  hanya boleh dijalankan di server
+import { DATABASE_URL } from '$env/static/private'; // env privat juga server-only
+export const db = createClient(DATABASE_URL);
+```
+
+```js
+// src/routes/+page.server.js  ->  AMAN: ini memang kode server
+import { db } from '$lib/server/db';
+
+export async function load() {
+	const produk = await db.query('SELECT * FROM produk');
+	return { produk };
+}
+```
+
+```svelte
+<!-- src/routes/+page.svelte  ->  GAGAL BUILD kalau impor $lib/server di sini -->
+<script>
+	// import { db } from '$lib/server/db';  // ❌ ini kode klien — SvelteKit menolaknya
+	let { data } = $props(); // ✅ cara benar: terima hasil load lewat prop data
+</script>
+```
+
+**Kasus 3 — file yang harus diakses lewat URL persis, apa adanya.** Taruh di `static/`. File `static/robots.txt` tersaji di `/robots.txt`, `static/favicon.png` di `/favicon.png`. Bedakan dengan aset yang kamu `import` di komponen (logo, gambar di-`import`): aset yang di-impor diproses Vite (di-hash untuk cache-busting), sedangkan isi `static/` sengaja **tidak** diutak-atik karena namanya harus tetap.
+
+**Kasus 4 — logika yang harus jalan di SETIAP request server (mis. cek login).** Taruh di `src/hooks.server.js`. Hook `handle` membungkus setiap request sebelum sampai ke rute.
+
+```js
+// src/hooks.server.js  ->  jalan di server untuk SETIAP request
+export async function handle({ event, resolve }) {
+	// contoh: baca cookie sesi, tempelkan user ke event.locals
+	event.locals.user = await getUserFromCookie(event.cookies);
+	return resolve(event); // lanjutkan ke rute; tanpa ini request menggantung
+}
+```
+
+**Kasus 5 — membatasi bentuk parameter rute.** Taruh "matcher" di `src/params`. Misal kamu ingin `/produk/[id]` hanya cocok kalau `id` berupa angka:
+
+```js
+// src/params/integer.js
+/** @type {import('@sveltejs/kit').ParamMatcher} */
+export function match(value) {
+	return /^\d+$/.test(value); // true = parameter diterima rute ini
+}
+// dipakai di nama folder rute: src/routes/produk/[id=integer]/+page.svelte
+```
+
+Untuk **fallback paling akhir** saat segalanya kacau (mis. error sebelum SvelteKit sempat merender apa pun), ada `src/error.html`. Berbeda dari halaman error biasa (`+error.svelte`), file ini HTML mentah dengan dua placeholder saja:
+
+```html
+<!-- src/error.html  ->  jaring pengaman terakhir; HTML mentah, bukan komponen -->
+<!DOCTYPE html>
+<html lang="id">
+	<body>
+		<!-- %sveltekit.status%        -> kode status HTTP, mis. 500 -->
+		<!-- %sveltekit.error.message% -> teks pesan error -->
+		<h1>%sveltekit.status%</h1>
+		<p>%sveltekit.error.message%</p>
+	</body>
+</html>
+```
+
+## 4. Latihan
+
+<Exercise title="Taruh di mana? Petakan tiap file ke lokasinya">
+Untuk tiap kebutuhan berikut, tentukan **folder/file yang tepat** di proyek SvelteKit dan beri alasan singkat. Bonus: sebut padanan tempatnya di Next.js atau Nuxt bila kamu tahu.
+
+1. Sebuah komponen `Button.svelte` yang dipakai di 10 halaman berbeda.
+2. Kredensial koneksi database + fungsi query yang tidak boleh sampai ke browser.
+3. File `robots.txt` yang harus tersaji persis di URL `/robots.txt`.
+4. Logika "cek apakah user sudah login" yang harus berjalan di setiap request.
+5. Pemilihan adapter agar aplikasi bisa dideploy ke Cloudflare.
+6. Aturan agar rute `/user/[id]` hanya menerima `id` berupa angka.
+
+{#snippet solution()}
+
+```text
+Jawaban acuan
+─────────────
+
+1. Button.svelte yang dipakai banyak halaman
+   -> src/lib/components/Button.svelte, impor lewat $lib/components/Button
+   Alasan: src/lib untuk kode reusable; alias $lib menghindari ../../../.
+   Padanan: components/ (Nuxt, auto-import) atau folder bebas di Next.
+
+2. Kredensial DB + fungsi query (rahasia)
+   -> src/lib/server/db.js, impor lewat $lib/server/db
+   Alasan: src/lib/server diblokir SvelteKit dari kode klien (build gagal
+   kalau ada komponen klien mengimpornya). Env privat: $env/static/private.
+   Padanan: server/ (Nuxt) atau modul server-only di Next.
+
+3. robots.txt di URL /robots.txt
+   -> static/robots.txt
+   Alasan: isi static/ disajikan apa adanya tanpa diproses/di-hash Vite,
+   nama file tetap. Padanan: public/ (Next & Nuxt).
+
+4. Cek login di setiap request
+   -> src/hooks.server.js, fungsi handle({ event, resolve })
+   Alasan: hooks.server membungkus SETIAP request server; pasang user di
+   event.locals lalu return resolve(event). Padanan: middleware (Next/Nuxt).
+
+5. Adapter untuk Cloudflare
+   -> svelte.config.js, kit.adapter = adapter() dari @sveltejs/adapter-cloudflare
+   Alasan: target deploy diatur lewat adapter, tanpa mengubah kode app.
+   Padanan: next.config + preset / nitro preset (Nuxt).
+
+6. /user/[id] hanya menerima angka
+   -> src/params/integer.js (export match) + folder [id=integer]
+   Alasan: param matcher membatasi bentuk parameter rute.
+   Padanan: tidak ada padanan 1:1; biasanya divalidasi manual di Next/Nuxt.
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+File berawalan <code>+</code> itu <strong>spesial dan case-sensitive</strong>. <code>+page.svelte</code> berbeda total dari <code>page.svelte</code> atau <code>+Page.svelte</code>: yang tanpa <code>+</code> (atau salah huruf besar) dianggap komponen pendukung biasa, <strong>bukan</strong> rute — halamannya tidak muncul, sering tanpa pesan error yang jelas. Kalau halaman "hilang misterius", periksa dulu ejaan <code>+page.svelte</code>.
+</Callout>
+
+<Callout type="warning">
+Jangan menaruh kode rahasia (API key, query DB, token) di <code>src/lib</code> biasa lalu mengimpornya dari komponen — itu bisa <strong>ikut terbundel ke browser</strong>. Taruh di <code>src/lib/server</code> (atau pakai <code>$env/static/private</code>). SvelteKit memasang pengaman impor di <code>$lib/server</code>: kalau kode klien menyentuhnya, build sengaja gagal. Anggap kegagalan itu fitur keamanan, bukan gangguan.
+</Callout>
+
+<Callout type="warning">
+Placeholder di <code>app.html</code> wajib ada. Menghapus <code>%sveltekit.head%</code> membuat CSS/JS halaman tidak tersuntik (tampilan rusak, interaktivitas mati), dan menghapus <code>%sveltekit.body%</code> membuat halaman kosong. Taruh <code>%sveltekit.body%</code> di dalam sebuah <code>&lt;div&gt;</code>, bukan langsung di <code>&lt;body&gt;</code>, supaya ekstensi browser yang menyuntik node tidak merusak hydration.
+</Callout>
+
+<Callout type="tip">
+Folder <code>.svelte-kit/</code> adalah hasil <em>generate</em> (termasuk tipe <code>./$types</code> dan <code>tsconfig</code> yang di-<code>extends</code> oleh <code>tsconfig.json</code>-mu). Aman diabaikan dan dihapus — ia dibangun ulang otomatis saat <code>npm run dev</code> atau <code>svelte-kit sync</code>. Sudah masuk <code>.gitignore</code> bawaan, jadi <strong>jangan</strong> commit folder ini. Kalau editor mengeluh tipe <code>./$types</code> tidak ketemu, jalankan dev/sync sekali agar folder ini dibuat.
+</Callout>
+
+<Callout type="legacy">
+Beberapa tutorial lama men-scaffold dengan <code>npm create svelte@latest</code> dan menyebut "SvelteKit 1.x". Sekarang gunakan CLI resmi <code>sv</code> via <code>npx sv create my-app</code>, dan modul ini mengacu ke <strong>SvelteKit 2</strong>. Strukturnya mirip, tapi detail seperti penanganan error/redirect dan tanda tangan <code>load</code> berbeda di versi lama — kalau menemukan <code>create svelte</code> atau "SvelteKit 1", anggap itu referensi usang.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/project-structure" label="SvelteKit — Project structure (anatomi folder & file)" />
+<DocsLink href="https://svelte.dev/docs/kit/$lib" label="SvelteKit — $lib & $lib/server (alias & batas server-only)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration" label="SvelteKit — Configuration (isi svelte.config.js)" />

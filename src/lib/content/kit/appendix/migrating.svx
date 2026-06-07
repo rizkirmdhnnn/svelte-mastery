@@ -1,0 +1,286 @@
+---
+title: Migrating from Sapper
+product: kit
+section: appendix
+sectionTitle: Appendix
+sectionOrder: 6
+order: 5
+status: stable
+description: Panduan ringkas (historis) memindahkan proyek Sapper lama ke SvelteKit v2 — struktur route, preload→load, dan API @sapper/* → $app.
+docs: https://svelte.dev/docs/kit/migrating
+keywords: [sapper, migrating, preload, load, $app, routing]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sebelum ada SvelteKit, meta-framework resmi untuk Svelte bernama **Sapper** (kependekan dari *Svelte App Maker*). Posisinya persis seperti Next.js untuk React atau Nuxt untuk Vue: ia menambahkan routing berbasis file, server-side rendering, code-splitting, dan service worker di atas Svelte. SvelteKit adalah **penerus resmi** Sapper — bukan library terpisah, melainkan penulisan ulang dengan fondasi modern (Vite menggantikan Rollup/Webpack, model adapter menggantikan server bawaan). Sapper sudah lama tidak dikembangkan; jadi modul ini bersifat **historis**: kamu kemungkinan besar hanya membutuhkannya kalau mewarisi proyek Sapper lama yang perlu dipindahkan.
+
+Kabar baiknya: migrasi ini **sebagian besar mekanis**. Konsep intinya nyaris identik — routing berbasis file, fungsi pemuat data sebelum render, store untuk `page`/`navigating`, dan service worker. Yang berubah terutama **nama file**, **lokasi import**, dan **bentuk tanda tangan fungsi**. Logika bisnis di dalam komponenmu umumnya tidak perlu disentuh.
+
+### Analogi: pindah kantor, bukan ganti perusahaan
+
+Bayangkan timmu pindah dari gedung lama (Sapper) ke gedung baru (SvelteKit). Orang-orangnya sama, pekerjaannya sama, meja dan lemarinya kamu bawa semua. Yang berubah cuma **alamat dan tata letak**: ruangan yang dulu bernama `_layout` sekarang dipasang papan nama `+layout`; resepsionis yang dulu kamu hubungi lewat nomor `@sapper/app` sekarang pakai nomor `$app`; dan **formulir permintaan data** yang dulu bernama `preload` (kamu isi dua kolom `page` dan `session`, lalu menyetor lewat `this.fetch`) diganti formulir baru bernama `load` (satu kolom `event` berisi semua yang kamu butuh). Isi pekerjaannya tetap "ambil data sebelum halaman tampil" — cuma formulirnya yang dirapikan.
+
+### Apa yang benar-benar berubah (peta besar)
+
+- **Build tool**: Rollup/Webpack → **Vite**. File `webpack.config.js`/`rollup.config.js` diganti `svelte.config.js`.
+- **Server**: Sapper punya server bawaan (Polka/Express). SvelteKit netral-platform; kamu pasang **adapter** (`adapter-node`, `adapter-static`, dst.) di lapisan akhir. Mirip seperti laptop yang butuh adaptor travel berbeda di tiap negara — kode aplikasimu tetap sama, hanya "colokan" deploy yang ditukar.
+- **Konvensi file route**: `routes/about.svelte` → `routes/about/+page.svelte`; `_layout` → `+layout`; `_error` → `+error`.
+- **Pemuatan data**: `preload(page, session)` dengan `this.fetch/this.error/this.redirect` → `load(event)` dengan `event.fetch` dan fungsi `error()`/`redirect()`.
+- **Import API**: semua yang dulu dari `@sapper/app`/`@sapper/service-worker` pindah ke modul virtual `$app/*` dan `$service-worker`.
+
+<Callout type="legacy">
+Modul ini menampilkan <strong>API lama Sapper</strong> (mis. <code>preload</code>, <code>this.fetch</code>, <code>@sapper/app</code>) <em>khusus untuk diajarkan cara memindahkannya</em>. Semua itu adalah API Sapper/Svelte versi lama — <strong>jangan</strong> dipakai di proyek baru. Setiap contoh "sesudah" memakai SvelteKit v2 modern.
+</Callout>
+
+## 2. Contoh kode
+
+### Tabel pemetaan file & template
+
+Ini peta "alamat lama → alamat baru" yang paling sering kamu pakai saat memindahkan struktur proyek.
+
+<LegacyVsModern rows={[
+	{ legacy: 'src/routes/about.svelte', modern: 'src/routes/about/+page.svelte', note: 'tiap halaman jadi +page.svelte di dalam foldernya' },
+	{ legacy: 'src/routes/about/index.svelte', modern: 'src/routes/about/+page.svelte', note: 'index.svelte tidak lagi dipakai' },
+	{ legacy: 'src/routes/_layout.svelte', modern: 'src/routes/+layout.svelte', note: 'prefix _ jadi +' },
+	{ legacy: 'src/routes/_error.svelte', modern: 'src/routes/+error.svelte', note: 'halaman error per-cabang' },
+	{ legacy: 'src/template.html', modern: 'src/app.html', note: 'placeholder ikut berubah (lihat bawah)' },
+	{ legacy: 'src/node_modules/*', modern: 'src/lib/*', note: 'diakses via alias $lib' }
+]} />
+
+Di file template (`src/app.html`), placeholder Sapper diganti milik SvelteKit:
+
+```html
+<!-- src/app.html — placeholder LAMA Sapper -> BARU SvelteKit -->
+<!doctype html>
+<html lang="id">
+	<head>
+		<!-- %sapper.base%   -> hapus (tidak ada padanannya) -->
+		<!-- %sapper.styles% -> hapus -->
+		<!-- %sapper.head%   -> ganti jadi %sveltekit.head% -->
+		%sveltekit.head%
+	</head>
+	<body>
+		<!-- Dulu: <div id="sapper">%sapper.html%</div> -->
+		<!-- Sekarang: cukup %sveltekit.body% (tanpa wrapper #sapper) -->
+		<div>%sveltekit.body%</div>
+		<!-- %sapper.scripts% -> hapus (script disuntik otomatis) -->
+	</body>
+</html>
+```
+
+### preload → load
+
+Inilah perubahan paling substantif. Perhatikan tiga hal: namanya jadi `load`, ditaruh di `+page.js`/`+layout.js` (bukan di dalam `<script context="module">` komponen), dan `this.*` lenyap diganti argumen `event` plus fungsi `error()`/`redirect()` yang **di-import**.
+
+```js
+// SEBELUM (Sapper) — di dalam komponen route, <script context="module">
+// <script context="module">
+export async function preload(page, session) {
+	// data lewat argumen `page`; fetch & helper lewat `this`
+	const { slug } = page.params;
+	const res = await this.fetch(`api/articles/${slug}`); // URL relatif ke base
+
+	if (res.status === 404) {
+		this.error(404, 'Tidak ditemukan'); // helper di `this`
+		return;
+	}
+	if (!session.user) {
+		this.redirect(302, '/login'); // helper di `this`
+		return;
+	}
+
+	return { article: await res.json() };
+}
+// </script>
+```
+
+```js
+// SESUDAH (SvelteKit v2) — di file terpisah src/routes/blog/[slug]/+page.js
+import { error, redirect } from '@sveltejs/kit';
+
+export async function load(event) {
+	// SATU argumen `event`: berisi params, fetch, url, dsb.
+	const { slug } = event.params;
+	const res = await event.fetch(`/api/articles/${slug}`); // pakai URL root-relatif (/...)
+
+	// error() & redirect() di SvelteKit 2 melempar sendiri — TANPA `throw` di depan.
+	if (res.status === 404) error(404, 'Tidak ditemukan');
+
+	const data = await res.json();
+	return { article: data };
+}
+```
+
+<Callout type="warning">
+Soal <code>session</code>: Sapper punya konsep <code>session</code> bawaan yang dilempar ke <code>preload</code>. SvelteKit tidak. Untuk data autentikasi/sesi, ambil sendiri di <code>load</code> dari <code>event.cookies</code>/<code>event.locals</code> (biasanya diisi lewat <code>hooks.server.js</code>), bukan dari argumen ajaib. Cek modul Hooks & <code>locals</code> untuk polanya.
+</Callout>
+
+### Import API: @sapper/* → $app/*
+
+```js
+// SEBELUM (Sapper)
+import { goto, prefetch, prefetchRoutes, stores } from '@sapper/app';
+const { page, preloading, session } = stores();
+
+// SESUDAH (SvelteKit v2)
+import { goto, preloadData, preloadCode } from '$app/navigation';
+import { page, navigating } from '$app/stores';
+// prefetch       -> preloadData
+// prefetchRoutes -> preloadCode
+// store `preloading` -> `navigating` (punya properti from & to)
+```
+
+## 3. Coba sendiri
+
+Migrasi ini menyentuh konfigurasi build, struktur folder, dan server — jadi tidak ada live preview di browser. Sebagai gantinya, berikut **checklist langkah** yang bisa kamu jalankan urut di proyek Sapper sungguhan, plus anotasi kenapa tiap langkah perlu.
+
+```bash
+# CHECKLIST MIGRASI SAPPER -> SVELTEKIT (urut, dari yang paling fundamental)
+
+# 1) package.json: aktifkan ES modules
+#    Tambahkan:  "type": "module"
+#    Hapus deps server Sapper:  polka express sirv compression sapper
+#    Tambah:  @sveltejs/kit  + adapter (mis. @sveltejs/adapter-node)
+npm i -D @sveltejs/kit @sveltejs/adapter-node
+
+# 2) Ganti script di package.json:
+#    "sapper dev"            -> "vite dev"
+#    "sapper build"         -> "vite build"   (pakai adapter-node)
+#    "sapper export"        -> "vite build"   (pakai adapter-static)
+#    "node __sapper__/build"-> "node build"
+
+# 3) Buat svelte.config.js (gantikan rollup/webpack.config.js):
+#    pindahkan opsi preprocessor ke kit-config, pasang adapter.
+
+# 4) Rename file route (lihat tabel Bagian 2):
+#    *.svelte -> */+page.svelte ; _layout -> +layout ; _error -> +error
+#    src/template.html -> src/app.html (ganti placeholder %sapper.*%)
+#    src/node_modules/* -> src/lib/*
+
+# 5) preload -> load (pindah ke +page.js/+layout.js, buang `this`, pakai event)
+
+# 6) Ganti semua import @sapper/app -> $app/* dan @sapper/service-worker -> $service-worker
+```
+
+```js
+// Contoh svelte.config.js hasil migrasi (langkah 3).
+// Opsi preprocessor LAMA yang dulu ada di rollup.config.js pindah ke sini.
+import adapter from '@sveltejs/adapter-node'; // ganti adapter-static utk pengganti `sapper export`
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(), // dulu: opsi svelte-preprocess di rollup
+	kit: {
+		adapter: adapter() // jembatan deploy; adapter-node = pengganti `sapper build`
+	}
+};
+```
+
+```svelte
+<!-- src/client.js TIDAK punya padanan langsung. -->
+<!-- Logika init sisi-klien yang dulu di src/client.js dipindah ke +layout.svelte. -->
+<!-- src/routes/+layout.svelte (Svelte 5) -->
+<script>
+	import { onMount } from 'svelte';
+
+	let { children } = $props(); // pengganti <slot> = render children via snippet
+
+	onMount(() => {
+		// taruh kode yang dulu ada di src/client.js di sini
+		// (mis. inisialisasi analytics, dsb.)
+	});
+</script>
+
+{@render children()}
+```
+
+## 4. Latihan
+
+<Exercise title="Migrasikan satu route Sapper ke SvelteKit v2">
+Diberikan file Sapper lama <code>src/routes/articles/[slug].svelte</code> dengan <code>preload</code> berikut. Pindahkan ke struktur SvelteKit v2: tentukan path file barunya, tulis ulang `preload` jadi `load`, dan perbaiki import navigasi. Asumsikan redirect ke `/login` saat belum login.
+
+```html
+<!-- src/routes/articles/[slug].svelte (Sapper) -->
+<script context="module">
+	export async function preload(page, session) {
+		const res = await this.fetch(`articles/${page.params.slug}.json`);
+		if (res.status === 404) return this.error(404, 'Artikel tidak ada');
+		if (!session.user) return this.redirect(302, '/login');
+		return { article: await res.json() };
+	}
+</script>
+
+<script>
+	import { goto, prefetch } from '@sapper/app';
+	export let article;
+</script>
+```
+
+{#snippet solution()}
+
+  ```js
+  // Path file baru: src/routes/articles/[slug]/+page.js
+  // (logika data dipisah dari komponen .svelte)
+  import { error, redirect } from '@sveltejs/kit';
+
+  export async function load(event) {
+  	// `this.fetch` -> `event.fetch`; URL root-relatif (diawali /)
+  	const res = await event.fetch(`/articles/${event.params.slug}.json`);
+
+  	// error()/redirect() melempar sendiri di SvelteKit 2 — TANPA `throw`.
+  	if (res.status === 404) error(404, 'Artikel tidak ada');
+
+  	// `session` tidak ada lagi; sumber auth diambil dari event.locals
+  	// (diisi di hooks.server.js). Contoh sederhana:
+  	if (!event.locals.user) redirect(302, '/login');
+
+  	return { article: await res.json() };
+  }
+  ```
+
+  ```svelte
+  <!-- src/routes/articles/[slug]/+page.svelte (Svelte 5) -->
+  <script>
+  	import { goto, preloadData } from '$app/navigation'; // prefetch -> preloadData
+
+  	// data dari load() diterima via $props().data (bukan `export let`)
+  	let { data } = $props();
+  	const article = data.article;
+  </script>
+  ```
+
+  Poin kunci: `[slug].svelte` jadi folder `[slug]/` berisi `+page.js` (data) dan `+page.svelte` (UI); `this.*` hilang; `error`/`redirect` di-import dan dipanggil tanpa `throw`; `session` digantikan `event.locals`; `prefetch` jadi `preloadData`; `export let` jadi `$props()`.
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jebakan paling sering: lupa <strong>URL relatif kini di-resolve berbeda</strong>. Di Sapper, <code>this.fetch('articles/x.json')</code> relatif ke base URL. Di SvelteKit, URL relatif di-resolve terhadap <em>halaman saat ini</em>, sehingga bisa salah arah saat rute bersarang. Solusi: selalu pakai URL <strong>root-relatif</strong> yang diawali <code>/</code> (mis. <code>/articles/x.json</code>) di dalam <code>load</code>.
+</Callout>
+
+<Callout type="warning">
+<code>error()</code> dan <code>redirect()</code> di SvelteKit 2 <strong>melempar sendiri</strong> — tulis <code>error(404, ...)</code> / <code>redirect(302, ...)</code> <em>tanpa</em> <code>throw</code> di depannya (itu pola SvelteKit 1 yang sudah usang). Kalau kamu masih menulis <code>throw error(...)</code>, TypeScript akan menganggap kode setelahnya unreachable secara keliru dan tipe bisa kacau.
+</Callout>
+
+<Callout type="legacy">
+Route berbasis <strong>regex</strong> dan prop <code>segment</code> pada layout sudah tidak ada. Ganti regex dengan <em>advanced route matching</em> (param matcher di <code>src/params/</code>). Untuk <code>segment</code>, turunkan sendiri dari <code>$page.url.pathname</code>. Store <code>page</code> juga berubah bentuk: tidak ada lagi <code>path</code>/<code>query</code> — pakai <code>$page.url</code> dan <code>$page.params</code>.
+</Callout>
+
+<Callout type="tip">
+Atribut link Sapper berganti nama: <code>sapper:prefetch</code> → <code>data-sveltekit-preload-data</code>, dan <code>sapper:noscroll</code> → <code>data-sveltekit-noscroll</code>. Di service worker, ganti import <code>@sapper/service-worker</code> → <code>$service-worker</code>; <code>shell</code> jadi <code>build</code>, <code>timestamp</code> jadi <code>version</code>, dan <code>routes</code> dihapus.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/migrating" label="SvelteKit — Migrating from Sapper" />
+<DocsLink href="https://svelte.dev/docs/kit/routing" label="SvelteKit — Routing (+page, +layout, +error)" />
+<DocsLink href="https://svelte.dev/docs/kit/load" label="SvelteKit — Loading data (load)" />

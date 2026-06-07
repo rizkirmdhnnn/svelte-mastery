@@ -1,0 +1,251 @@
+---
+title: Introduction
+product: kit
+section: getting-started
+sectionTitle: Getting started
+sectionOrder: 1
+order: 1
+status: stable
+description: SvelteKit adalah meta-framework full-stack di atas Svelte + Vite yang mengurus routing, SSR, dan build — kapan kamu butuh Kit dan kapan cukup Svelte saja.
+docs: https://svelte.dev/docs/kit/introduction
+keywords: [sveltekit, meta-framework, routing, ssr, vite, adapter]
+---
+
+<script>
+	import FrameworkCompare from '$lib/components/FrameworkCompare.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+Sampai titik ini, yang kamu pelajari adalah **Svelte** — sebuah *bahasa komponen*. Svelte menjawab satu pertanyaan dengan sangat baik: "bagaimana cara menulis satu potong UI yang reaktif?" Kompilernya mengubah file `.svelte`-mu menjadi JavaScript yang merender HTML dan CSS yang menatanya. Tapi Svelte sengaja tidak berpendapat soal hal-hal di luar komponen: bagaimana satu URL berubah jadi halaman? Bagaimana data dari database sampai ke layar? Bagaimana halaman dirender lebih dulu di server biar cepat tampil dan terbaca Google? Bagaimana semuanya dibundel jadi situs yang benar-benar bisa dideploy?
+
+Di situlah **SvelteKit** masuk. SvelteKit adalah **meta-framework** — framework di atas framework. Ia memakai Svelte sebagai lapisan UI, memakai **Vite** sebagai mesin build sekaligus dev server, lalu menambahkan semua "lem" yang dibutuhkan untuk membangun aplikasi web sungguhan: routing berbasis file, server-side rendering (SSR), pengambilan data lewat `load`, form actions, endpoint API, hooks, sampai *adapter* yang membungkus hasil build agar pas dengan platform deploy tujuanmu.
+
+### Analogi: mesin mobil vs mobil utuh
+
+Bayangkan **Svelte itu mesin mobil**. Mesin yang bagus, irit, bertenaga — tapi mesin saja tidak bisa kamu pakai mengantar anak ke sekolah. Tidak ada roda, setir, rangka, lampu, atau jok. Mesin hanya menjawab "bagaimana caranya menghasilkan tenaga".
+
+**SvelteKit itu mobil utuh** yang dibangun mengelilingi mesin tadi. Ia menambahkan roda (routing — caranya kamu berpindah dari satu tempat ke tempat lain), rangka dan bodi (struktur proyek standar), sistem kelistrikan (SSR, data loading, hooks), sampai dudukan plat nomor yang sesuai aturan tiap negara (adapter untuk Vercel, Netlify, Node, Cloudflare). Kamu tetap bisa mengganti mesinnya (logika Svelte-mu), tapi sekarang kamu punya kendaraan yang benar-benar jalan di jalan raya (production).
+
+Kalau kamu datang dari React, polanya identik: **React** itu library UI, **Next.js** itu meta-framework yang membungkusnya. Dari Vue: **Vue** itu library UI, **Nuxt** itu meta-framework-nya. SvelteKit menempati kursi yang sama persis untuk Svelte — peran setara, masalah yang dipecahkan setara. Jadi kamu tidak belajar dari nol; kamu menambahkan satu *lapisan* di atas Svelte yang sudah kamu kuasai.
+
+### Tiga pekerjaan utama yang ditangani SvelteKit
+
+1. **Routing berbasis file.** Kamu tidak mendaftarkan rute satu per satu di sebuah array konfigurasi. Sebagai gantinya, **struktur folder di `src/routes` itulah peta URL-mu.** File `src/routes/about/+page.svelte` otomatis jadi halaman `/about`. Ini model yang sama dengan folder `app/` di Next.js dan `pages/` di Nuxt. File yang diawali tanda `+` (mis. `+page.svelte`, `+layout.svelte`, `+page.server.js`) punya makna khusus bagi SvelteKit.
+
+2. **Rendering dan data.** Secara default SvelteKit melakukan **SSR**: halaman dirender jadi HTML utuh di server lebih dulu (cepat tampil, ramah SEO), baru "dihidupkan" (hydration) di browser jadi aplikasi interaktif. Sesudah itu, navigasi antar halaman terasa instan seperti SPA karena dilakukan di klien — saat kamu klik sebuah `<a>` internal, router Kit yang mencegatnya, bukan reload halaman penuh. Datanya diambil lewat fungsi `load`, bukan dengan memanggil `fetch` di tengah komponen.
+
+3. **Build dan deploy.** Karena dibangun di atas Vite, kamu dapat HMR yang sangat cepat saat development dan bundling teroptimasi saat production (code-splitting, preloading, prerender bila perlu). Saat deploy, kamu memilih satu **adapter** yang menerjemahkan output build ke target platform: Node server, Vercel, Netlify, Cloudflare, atau situs statis penuh lewat `adapter-static`.
+
+### Kapan butuh SvelteKit, kapan cukup Svelte saja
+
+SvelteKit **bukan** keharusan untuk setiap proyek. Pakai **Svelte saja** (lewat `vite` + `@sveltejs/vite-plugin-svelte`, tanpa Kit) kalau kamu hanya butuh sebuah widget interaktif yang ditempel ke halaman yang sudah ada, sebuah komponen yang dibungkus jadi web component, atau eksperimen kecil tanpa routing dan tanpa server.
+
+Pakai **SvelteKit** begitu muncul salah satu dari: lebih dari satu halaman (routing), kebutuhan SEO/SSR, pengambilan data terstruktur, form yang aman dengan logika server, endpoint API, autentikasi, atau cara deploy yang rapi ke production. Singkatnya: **SvelteKit untuk membangun aplikasi/situs, Svelte saja untuk membangun komponen/widget.** Aturan praktisnya: kalau kamu mulai bertanya "halaman ini URL-nya apa ya?", itu sinyal kamu sudah butuh Kit.
+
+## 2. Contoh kode
+
+Hal terpenting yang harus klik di kepalamu soal SvelteKit: **struktur folder itu konfigurasi.** Tidak ada file router yang kamu tulis tangan — letak dan nama file-lah yang menentukan rute. Berikut anatomi proyek hasil scaffold (`npx sv create`), supaya kamu kenal mana file biasa dan mana file `+` yang spesial.
+
+```text
+my-app/
+├ src/
+│ ├ lib/                ← kode reusable; diakses lewat alias $lib
+│ │ └ server/           ← kode khusus server (rahasia, koneksi DB); tak akan ikut ke klien
+│ ├ routes/             ← INI peta URL aplikasimu (file "+" itu spesial)
+│ │ ├ +layout.svelte    ← kerangka bersama semua halaman (nav, footer)
+│ │ ├ +page.svelte      ← halaman untuk URL "/"
+│ │ └ about/
+│ │   └ +page.svelte    ← halaman untuk URL "/about"
+│ ├ app.html            ← template HTML terluar (shell dokumen)
+│ ├ hooks.server.js     ← intersep tiap request di server (auth, dll) — opsional
+│ └ hooks.client.js     ← hook sisi klien — opsional
+├ static/               ← aset statis apa adanya (favicon, robots.txt)
+├ svelte.config.js      ← konfigurasi SvelteKit + pilihan ADAPTER deploy
+├ vite.config.js        ← konfigurasi Vite (plugin, dll)
+└ package.json
+```
+
+Isi sebuah `+page.svelte` itu Svelte 5 biasa yang sudah kamu kuasai — runes, event, markup. Yang membuatnya "Kit" hanyalah lokasi dan nama file-nya.
+
+```svelte
+<!-- src/routes/+page.svelte  →  halaman untuk URL "/" -->
+<!-- Murni Svelte 5: tidak ada API Kit di dalam komponen ini. -->
+<script>
+	let count = $state(0);
+</script>
+
+<h1>Beranda</h1>
+<button onclick={() => count++}>Diklik {count} kali</button>
+
+<!-- Link internal: router SvelteKit mencegat klik <a> lalu menavigasi
+     di klien (terasa instan seperti SPA), bukan reload halaman penuh. -->
+<a href="/about">Ke halaman About</a>
+```
+
+Satu-satunya keputusan "infrastruktur" yang kamu ambil di awal ada di `svelte.config.js`: **adapter** mana yang dipakai untuk deploy. Ganti adapter = ganti target platform, tanpa menyentuh kode aplikasimu.
+
+```js
+// svelte.config.js  →  di sinilah kamu memilih ADAPTER deploy.
+import adapter from '@sveltejs/adapter-auto'; // auto-deteksi platform (Vercel/Netlify/dll)
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+	preprocess: vitePreprocess(),
+	kit: {
+		// alternatif: adapter-node (server Node sendiri),
+		// adapter-static (situs statis penuh), adapter-vercel, adapter-cloudflare, dst.
+		adapter: adapter()
+	}
+};
+```
+
+## 3. Coba sendiri
+
+Modul ini soal arsitektur SvelteKit (routing, SSR, build) yang butuh server, jadi tidak bisa dijalankan di live playground browser. Tapi langkah-langkah memulainya gampang — ini alur dari nol sampai jalan, beranotasi. Jalankan di terminalmu sendiri untuk merasakannya.
+
+```bash
+# 1. Scaffold proyek baru dengan CLI resmi `sv`.
+#    Ia bertanya beberapa opsi (TypeScript? ESLint? Prettier? dll)
+#    lalu menyiapkan struktur folder + adapter default untukmu.
+npx sv create my-app
+
+# 2. Masuk ke folder & pasang dependensi.
+cd my-app
+npm install
+
+# 3. Jalankan dev server (Vite). Buka URL yang muncul (umumnya
+#    http://localhost:5173). HMR aktif: simpan file → layar update.
+npm run dev
+
+# 4. Saat siap rilis: build untuk production.
+#    Adapter di svelte.config.js menentukan bentuk output-nya.
+npm run build
+
+# 5. Pratinjau hasil build secara lokal sebelum deploy beneran.
+npm run preview
+```
+
+Untuk membuktikan bahwa "folder = rute", tambah satu halaman baru tanpa menyentuh konfigurasi apa pun:
+
+```text
+src/routes/
+├ +page.svelte          → tetap melayani "/"
+└ about/
+  └ +page.svelte        → BARU: otomatis melayani "/about"
+```
+
+```svelte
+<!-- src/routes/about/+page.svelte -->
+<!-- Cukup buat file ini; SvelteKit langsung memetakannya ke /about.
+     Tidak ada langkah "daftarkan rute" — keberadaan file inilah rutenya. -->
+<h1>Tentang</h1>
+<p>Halaman ini muncul hanya karena foldernya bernama "about".</p>
+<a href="/">Kembali ke beranda</a>
+```
+
+<Callout type="tip">
+Begitu dev server jalan, coba klik bolak-balik antara <code>/</code> dan <code>/about</code> sambil membuka tab <strong>Network</strong> di DevTools. Navigasi <em>pertama</em> (atau reload) mengambil HTML dari server (itu SSR). Navigasi <em>berikutnya</em> antar link internal tidak mereload dokumen — router Kit yang menanganinya di klien. Itulah model "SSR untuk muat pertama, SPA untuk navigasi" yang membuat SvelteKit terasa cepat di dua sisi sekaligus.
+</Callout>
+
+## 4. Kalau di framework lain
+
+<FrameworkCompare
+	task="Framework vs meta-framework"
+	svelte={`<!-- Svelte = library UI (komponen saja). -->
+<!-- src/lib/Counter.svelte -->
+<button onclick={() => count++}>{count}</button>
+<!-- Untuk jadi APLIKASI (routing, SSR, deploy) komponen ini
+     dibungkus SvelteKit: taruh halaman di
+     src/routes/+page.svelte, pilih adapter, ambil data
+     lewat load(). SvelteKit = meta-framework-nya. -->`}
+	next={`// React = library UI; Next.js = meta-framework-nya.
+// app/page.tsx  →  halaman untuk "/" (routing berbasis file).
+export default function Home() {
+  return <h1>Beranda</h1>;
+}
+// React sendiri TIDAK punya routing/SSR/build bawaan;
+// Next.js (atau Remix) yang menyediakannya, di atas bundler-nya.`}
+	nuxt={`<!-- Vue = library UI; Nuxt = meta-framework-nya. -->
+<!-- pages/index.vue  →  halaman untuk "/" (routing berbasis file). -->
+<template>
+  <h1>Beranda</h1>
+</template>
+<!-- Vue sendiri TIDAK punya routing/SSR/build bawaan;
+     Nuxt yang menyediakannya, dibangun di atas Vite. -->`}
+	diff={{ svelte: [5, 6], next: [7], nuxt: [7] }}
+	note="Pemetaan peran setara: React+Next.js, Vue+Nuxt, Svelte+SvelteKit — ketiganya pasangan 'library UI + meta-framework'. Ketiganya menyediakan routing berbasis file, SSR, dan build/deploy, dan kebetulan Nuxt maupun SvelteKit sama-sama berdiri di atas Vite. Plus-minus objektif: ekosistem & adopsi Next/Nuxt lebih besar (lebih banyak contoh, plugin, lowongan); SvelteKit cenderung lebih ringkas, satu cara resmi (less boilerplate), bundle lebih kecil. Tidak ada yang mutlak 'benar' — pilih mengikuti bahasa UI yang kamu pakai."
+/>
+
+## 5. Latihan
+
+<Exercise title="Svelte saja atau SvelteKit?">
+
+Untuk tiap skenario berikut, tentukan apakah cukup **Svelte saja** atau sebaiknya pakai **SvelteKit**, beri alasan singkat, lalu sebutkan padanan meta-framework di React dan Vue.
+
+1. Blog dengan banyak artikel yang harus muncul cepat di Google.
+2. Widget kalkulator interaktif yang ditempel ke halaman WordPress lama.
+3. Dashboard yang mengambil data user dari database dan punya halaman login.
+
+{#snippet solution()}
+
+```text
+Jawaban acuan
+─────────────
+
+1. Blog dengan SEO  →  SvelteKit.
+   Butuh routing antar artikel + SSR/prerender agar isi langsung jadi
+   HTML (cepat & terbaca crawler). Padanan: Next.js (React), Nuxt (Vue).
+
+2. Widget kalkulator di WordPress  →  Svelte saja.
+   Tidak ada routing, tidak perlu server. Cukup compile satu komponen
+   (atau bungkus jadi custom element) lalu tempel. SvelteKit di sini
+   justru berlebihan. (Di React: pasang komponen lepas; tak perlu Next.)
+
+3. Dashboard + login + data DB  →  SvelteKit.
+   Butuh load() untuk ambil data, kode khusus server (src/lib/server),
+   form actions + hooks untuk auth. Ini wilayah meta-framework.
+   Padanan: Next.js (React), Nuxt (Vue).
+
+Pola umum: butuh routing/SSR/server  →  meta-framework (SvelteKit).
+Cuma satu komponen/widget tanpa server →  library UI saja (Svelte).
+```
+
+{/snippet}
+</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan tertukar: <strong>Svelte</strong> (library UI, paket <code>svelte</code>) dan <strong>SvelteKit</strong> (meta-framework, paket <code>@sveltejs/kit</code>) adalah dua hal berbeda. Runes seperti <code>$state</code> milik Svelte dan jalan di mana saja. API seperti <code>load</code>, <code>+page.server.js</code>, atau <code>error()</code> milik SvelteKit dan hanya bermakna di dalam struktur proyek Kit. Menaruh API server di komponen Svelte lepas (tanpa Kit) tidak akan berfungsi.
+</Callout>
+
+<Callout type="warning">
+File berawalan <code>+</code> itu <strong>spesial dan case-sensitive</strong>. <code>+page.svelte</code> berbeda dari <code>page.svelte</code> biasa — yang tanpa <code>+</code> dianggap komponen pendukung biasa, bukan rute. Salah ketik (mis. <code>+Page.svelte</code> atau lupa tanda <code>+</code>) bikin halaman tidak muncul tanpa pesan error yang jelas. Hafalkan konvensi penamaan ini sejak awal.
+</Callout>
+
+<Callout type="tip">
+Cara tercepat memulai adalah <code>npx sv create my-app</code> (CLI resmi <code>sv</code>). Hindari menyusun konfigurasi SvelteKit dari nol secara manual kecuali kamu benar-benar paham tiap bagiannya — banyak hal halus (alias <code>$lib</code>, tipe <code>./$types</code> yang di-generate, integrasi Vite) sudah dipasang otomatis oleh scaffolder.
+</Callout>
+
+<Callout type="legacy">
+Generator lama <code>npm create svelte@latest</code> sudah digantikan CLI baru <code>sv</code> (jalankan via <code>npx sv create</code>). Tutorial lama juga sering memakai <strong>SvelteKit 1</strong> dengan tanda tangan <code>load</code>/adapter yang berbeda dan masih menulis <code>throw error()</code> / <code>throw redirect()</code>. Modul ini mengacu ke <strong>SvelteKit 2</strong>, di mana <code>error()</code> dan <code>redirect()</code> dipanggil tanpa <code>throw</code> di depannya. Kalau menemukan referensi "create svelte" atau "SvelteKit 1.x", anggap itu versi lama.
+</Callout>
+
+Ringkas perpindahan istilah dari materi/tutorial lama ke yang dipakai sekarang:
+
+<LegacyVsModern rows={[
+	{ legacy: 'npm create svelte@latest', modern: 'npx sv create', note: 'CLI resmi baru: sv' },
+	{ legacy: 'throw redirect(302, "/login")', modern: 'redirect(302, "/login")', note: 'SvelteKit 2: tanpa throw' },
+	{ legacy: 'throw error(404, "Not found")', modern: 'error(404, "Not found")', note: 'SvelteKit 2: tanpa throw' }
+]} />
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/introduction" label="SvelteKit — Introduction (apa itu Kit & gambaran umum)" />
+<DocsLink href="https://svelte.dev/docs/kit/creating-a-project" label="SvelteKit — Creating a project (sv create & langkah awal)" />
+<DocsLink href="https://svelte.dev/docs/kit/project-structure" label="SvelteKit — Project structure (anatomi folder & file +)" />

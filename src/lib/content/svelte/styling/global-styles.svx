@@ -1,0 +1,193 @@
+---
+title: Global styles
+product: svelte
+section: styling
+sectionTitle: Styling
+sectionOrder: 4
+order: 2
+status: stable
+description: Menembus scoping Svelte secara sengaja dengan :global(...) dan blok :global, untuk reset global, menata konten dari @html, dan menjangkau elemen anak atau pihak ketiga.
+docs: https://svelte.dev/docs/svelte/global-styles
+keywords: [global, css, scoped, html-content, keyframes, reset]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Di Svelte setiap `<style>` itu [scoped otomatis](/belajar/svelte/styling/scoped-styles): aturanmu hanya menyentuh markup komponen itu. Bagus 95% waktu — tapi kadang kamu **memang ingin** sebuah aturan bocor keluar. Untuk itulah `:global(...)`. Ia adalah **pintu darurat yang sengaja kamu buka**: kamu memberi tahu compiler, "selector ini jangan ditempeli hash, biarkan ia berlaku global."
+
+Analoginya: scoped styling itu seperti apartemen yang lampunya hanya menerangi unit sendiri. `:global(...)` adalah **saklar lorong** yang sengaja kamu pasang dari dalam unitmu — ketika ditekan, lampu di luar unit pun menyala. Kekuatannya nyata, tapi justru karena itu kamu memakainya secara hemat dan sadar: apa pun yang kamu taruh di dalam `:global(...)` kembali ke dunia CSS global yang lama, lengkap dengan risiko tabrakan nama yang biasanya dihindari oleh scoping.
+
+### Tiga bentuk yang perlu kamu kenal
+
+1. **Satu selector global** — `:global(.foo) { ... }` menjadikan `.foo` berlaku ke seluruh dokumen, dari mana pun `.foo` itu berasal.
+2. **Selector campuran** — `.card :global(.child) { ... }`. Bagian yang scoped (`.card`) tetap mengunci aturan ini ke komponen, tapi `.child` di-global-kan. Pola ini penting untuk **menjangkau elemen yang tidak ada di markup-mu** — anak dari `{@html}`, konten slot/snippet, atau komponen pihak ketiga.
+3. **Blok `:global { ... }`** (Svelte 5) — bungkus banyak aturan sekaligus tanpa menulis `:global(...)` berulang kali:
+
+   ```svelte
+   <style>
+   	:global {
+   		/* semua aturan di sini global */
+   		body { margin: 0; }
+   		.prose a { color: var(--link); }
+   	}
+   </style>
+   ```
+
+Yang ketiga ini sangat berguna untuk **reset/normalisasi tingkat aplikasi**: taruh di komponen layout teratas, sekali, dan ia berlaku ke seluruh halaman.
+
+### Kenapa `:global` ada, bukannya stylesheet biasa saja?
+
+Kamu *boleh* saja menaruh CSS global di `app.css` impor biasa. Tapi `:global` punya keunggulan: gaya itu **hidup di sebelah komponen yang membutuhkannya** dan ikut ter-bundle/ter-code-split bersamanya. Jadi gaya untuk konten `{@html}` sebuah artikel berada di komponen artikel, bukan tercecer di satu file global raksasa. Ini menjaga prinsip "yang berubah bersama, tinggal bersama".
+
+## 2. Contoh kode
+
+Kasus paling umum: kamu merender HTML mentah dengan `{@html}` (mis. hasil Markdown). Elemen di dalamnya **tidak ada di markup-mu**, jadi selector scoped biasa tidak akan menyentuhnya — kamu butuh `:global`.
+
+```svelte
+<script>
+	let artikel = '<h2>Judul</h2><p>Paragraf dari Markdown.</p>';
+</script>
+
+<div class="prose">
+	{@html artikel}
+</div>
+
+<style>
+	/* '.prose' scoped (ada di markup), tapi h2/p datang dari @html →
+	   bungkus dengan :global agar aturannya menjangkau mereka. */
+	.prose :global(h2) {
+		font-size: 1.5rem;
+		margin-top: 1rem;
+	}
+	.prose :global(p) {
+		line-height: 1.7;
+	}
+</style>
+```
+
+Perhatikan polanya: `.prose` di **luar** `:global(...)` tetap di-scope, sehingga aturan ini tidak bocor ke `<h2>`/`<p>` di komponen lain — hanya yang berada di dalam `.prose` komponen ini. Ini jauh lebih aman daripada menulis `:global(h2)` telanjang yang akan menata **semua** `<h2>` di aplikasi.
+
+Bentuk blok untuk reset tingkat aplikasi (mis. di `+layout.svelte`):
+
+```svelte
+<style>
+	:global {
+		*,
+		*::before,
+		*::after {
+			box-sizing: border-box;
+		}
+		body {
+			margin: 0;
+			font-family: system-ui, sans-serif;
+		}
+	}
+</style>
+```
+
+Dan untuk `@keyframes` yang ingin dipakai lintas komponen, prefix namanya dengan `-global-` (Svelte membuang prefix itu di output, lalu kamu memanggilnya dengan nama tanpa prefix):
+
+```svelte
+<style>
+	.spinner {
+		animation: spin 1s linear infinite;
+	}
+	@keyframes -global-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+</style>
+```
+
+## 3. Coba sendiri
+
+Di bawah, konten di dalam `.kotak` ditambahkan lewat `{@html}`, jadi `<em>` dan `<code>`-nya bukan bagian markup statis. Aturan `:global` yang ber-scope ke `.kotak`-lah yang menatanya. Coba hapus `:global(...)` (ganti jadi `em { ... }` biasa) untuk melihat gayanya tidak lagi menempel — itulah scoping yang sedang kamu tembus dengan sengaja.
+
+```svelte
+<script>
+	let html = '<em>miring</em> dan <code>kode</code> dari @html';
+</script>
+
+<div class="kotak">
+	{@html html}
+</div>
+
+<style>
+	.kotak {
+		padding: 1rem;
+		border: 2px dashed teal;
+		border-radius: 8px;
+	}
+	/* .kotak scoped; em/code datang dari @html → butuh :global agar tersentuh */
+	.kotak :global(em) {
+		color: tomato;
+		font-style: normal;
+		font-weight: bold;
+	}
+	.kotak :global(code) {
+		background: #2228;
+		color: gold;
+		padding: 0.1rem 0.35rem;
+		border-radius: 4px;
+	}
+</style>
+```
+
+## 4. Latihan
+
+<Exercise title="Tata konten &#123;@html&#125; tanpa membocorkan gaya ke seluruh app">
+
+Kamu punya komponen `Komentar.svelte` yang merender HTML kiriman pengguna dengan `{@html body}` di dalam `<div class="isi">`. Kamu ingin semua `<a>` di dalam komentar berwarna `royalblue` dan bergaris bawah — **tapi** tautan di bagian lain aplikasi tidak boleh ikut berubah.
+
+Tulis blok `<style>`-nya. Jelaskan kenapa `:global(a)` telanjang akan salah di sini.
+
+{#snippet solution()}
+
+```svelte
+<div class="isi">
+	{@html body}
+</div>
+
+<style>
+	/* '.isi' tetap scoped → aturan ini hanya untuk <a> DI DALAM .isi komponen ini. */
+	.isi :global(a) {
+		color: royalblue;
+		text-decoration: underline;
+	}
+</style>
+```
+
+Kenapa bukan `:global(a)` telanjang? Karena itu melepas selector sepenuhnya ke global — **setiap** `<a>` di seluruh aplikasi (navbar, footer, tombol-link) akan jadi `royalblue` bergaris bawah. Dengan menaruh `.isi` di luar `:global(...)`, bagian `.isi` tetap di-scope ke komponen ini, sehingga jangkauan global-nya dibatasi hanya pada keturunan `.isi` milik `Komentar.svelte`. Pola **"scoped induk + `:global` anak"** inilah cara aman menata konten dinamis.
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>:global(.foo)</code> <strong>telanjang</strong> (tanpa selector scoped di depannya) benar-benar global — ia menata <code>.foo</code> di mana pun di dokumen. Gampang dipakai, gampang pula bikin tabrakan dengan CSS lain. Bila tujuanmu hanya menjangkau anak dinamis sebuah elemen, selalu sandarkan ke selector scoped: <code>.induk :global(.anak)</code>, bukan <code>:global(.anak)</code> sendirian.
+</Callout>
+
+<Callout type="warning">
+Svelte membuang selector yang tampak tak terpakai. Saat kamu memang menata elemen yang dipasang dari luar (anak <code>&#123;@html&#125;</code>, slot, komponen pihak ketiga), <strong>tanpa</strong> <code>:global</code> Svelte bisa menghapus aturannya dan memberi warning <code>css_unused_selector</code>. Membungkusnya dengan <code>:global(...)</code> sekaligus memberi tahu compiler "selector ini memang ditujukan ke luar scope" — jadi ia tidak dibuang.
+</Callout>
+
+<Callout type="tip">
+Untuk reset/normalisasi seluruh aplikasi, blok <code>:global &#123; ... &#125;</code> di komponen layout teratas (mis. <code>+layout.svelte</code>) lebih rapi daripada menaburkan <code>:global(...)</code> di mana-mana — dan gayanya tetap hidup berdampingan dengan komponen, bukan tercecer di file CSS global terpisah.
+</Callout>
+
+<Callout type="tip">
+Animasi yang dipakai lintas komponen: definisikan <code>@keyframes -global-namaku</code> lalu panggil dengan <code>animation: namaku ...</code> (tanpa prefix). Svelte mengeluarkannya dari scoping dan membuang <code>-global-</code> di output, sehingga satu definisi bisa dipakai banyak komponen.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/global-styles" label="Global styles — dokumentasi resmi Svelte" />

@@ -1,0 +1,231 @@
+---
+title: export let
+product: svelte
+section: legacy
+sectionTitle: Legacy APIs
+sectionOrder: 9
+order: 4
+status: legacy
+description: Cara Svelte 4 mendeklarasikan props lewat `export let` — default, rename, dan export non-prop — beserta padanan modern `$props()`.
+docs: https://svelte.dev/docs/svelte/legacy-export-let
+keywords: [export-let, props, legacy, svelte-4, dollar-props, rename]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+<Callout type="legacy">
+<strong>Ini API lama (Svelte 4).</strong> <code>export let</code> adalah cara <em>runes-mode tidak boleh dipakai</em>. Halaman ini ada supaya kamu bisa <em>membaca</em> kode lama dan tahu padanan modernnya — <strong>jangan</strong> menulis komponen baru dengan pola ini. Padanan Svelte 5: <code>let &#123; ... &#125; = $props()</code>.
+</Callout>
+
+## 1. Konsep
+
+Di Svelte 4, kamu mendeklarasikan sebuah prop dengan menulis `export let namaProp` di dalam `<script>`. Begitu kamu menulisnya, parent bisa mengisi nilai itu lewat atribut: `<Anak namaProp={...} />`.
+
+Masalahnya: kata `export` di sini **menyesatkan**. Di JavaScript biasa, `export` berarti "buka modul ini supaya file lain bisa meng-`import`". Tapi di komponen Svelte 4, `export let` justru berarti kebalikannya — "**terima** nilai ini dari parent". Hampir setiap orang yang datang dari React atau Vue tersandung di sini, karena intuisinya terbalik.
+
+### Analogi: formulir dengan kolom yang sudah dicetak
+
+Bayangkan sebuah komponen seperti **formulir kertas**. Setiap baris `export let` itu seperti satu **kolom kosong yang sudah dicetak** di formulir tersebut: "Nama: ____", "Umur: ____". Dengan mencetak kolom itu, kamu menyatakan secara publik, "formulir ini menerima sebuah Nama dan sebuah Umur." Pihak yang memakai formulir (parent) tinggal mengisi kolomnya.
+
+Kalau sebuah kolom kamu beri tulisan kecil di bawahnya — "(kosongkan jika tidak tahu, anggap 0)" — itulah **default value**: `export let umur = 0`. Kolom tetap valid walau parent tidak mengisinya.
+
+Kenapa Svelte 4 memilih kata `export`? Karena dari sudut pandang *compiler*, prop memang bagian dari "antarmuka publik" komponen — hal-hal yang dilihat dunia luar. Jadi secara teknis ada logikanya. Tapi secara *ergonomi membaca*, ia membingungkan, dan inilah salah satu alasan utama Svelte 5 menggantinya dengan sesuatu yang lebih lugas.
+
+### Mengapa Svelte 5 menggantinya dengan `$props()`
+
+Svelte 5 memandang semua props sebagai **satu objek tunggal**, persis seperti `props` di React atau hasil `defineProps()` di Vue. Kamu memanggil rune `$props()` untuk mendapatkan objek itu, lalu memakai *destructuring* objek JavaScript biasa untuk mengambil field yang kamu mau:
+
+```js
+let { nama, umur = 0 } = $props();
+```
+
+Tidak ada lagi kata `export` yang menyesatkan. Sintaksnya 100% JavaScript yang sudah kamu kenal: destructuring dengan default. Satu rune (`$props()`) menggantikan berapa pun banyaknya baris `export let`.
+
+## 2. Contoh kode
+
+Empat hal yang bisa dilakukan `export let`, dan padanan modernnya masing-masing.
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — Profil.svelte -->
+<script>
+	// Prop wajib: kalau parent tak mengisinya, Svelte memperingatkan saat dev.
+	export let nama;
+
+	// Prop dengan default: dipakai jika nilainya 'undefined' saat komponen dibuat.
+	export let umur = 0;
+
+	// Prop opsional tanpa default: pakai '= undefined' untuk MEMATIKAN
+	// peringatan "prop wajib tapi tidak diisi".
+	export let bio = undefined;
+</script>
+
+<h1>{nama} ({umur})</h1>
+{#if bio}<p>{bio}</p>{/if}
+```
+
+```svelte
+<!-- ✅ GAYA BARU (Svelte 5 runes) — Profil.svelte -->
+<script>
+	// Semua props jadi SATU objek dari $props(), lalu di-destructure.
+	// 'nama' tanpa default, 'umur' & 'bio' dengan default.
+	let { nama, umur = 0, bio = undefined } = $props();
+</script>
+
+<h1>{nama} ({umur})</h1>
+{#if bio}<p>{bio}</p>{/if}
+```
+
+Kasus khusus: **rename prop**. Kadang kamu butuh nama prop yang merupakan *reserved word* JavaScript, seperti `class`. Kamu tidak bisa menulis `export let class` (itu error sintaks), jadi Svelte 4 menyediakan trik `export { lokal as publik }`:
+
+```svelte
+<!-- ❌ GAYA LAMA (Svelte 4) — Kotak.svelte -->
+<script>
+	// Di dalam komponen variabelnya bernama 'className' (legal),
+	// tapi parent mengisinya lewat atribut 'class' (nama publik).
+	let className;
+	export { className as class };
+</script>
+
+<div class={className}><slot /></div>
+```
+
+```svelte
+<!-- ✅ GAYA BARU (Svelte 5 runes) — Kotak.svelte -->
+<script>
+	// Destructuring objek bisa langsung me-rename: 'class' (kunci publik)
+	// di-bind ke variabel lokal 'className'. Tidak perlu trik export khusus.
+	let { class: className, children } = $props();
+</script>
+
+<div class={className}>{@render children()}</div>
+```
+
+## 3. Coba sendiri
+
+> Modul ini bagian dari materi *legacy* dan butuh konteks komponen parent-child, jadi tidak ada playground live. Pelajari contoh statis beranotasi di bawah ini.
+
+Perhatikan satu hal yang sering disalahpahami: di Svelte 4, `export const`, `export function`, dan `export class` **bukan** props. Mereka adalah **API komponen** — fungsi/nilai yang diekspos ke luar dan diakses lewat `bind:this`, bukan diisi lewat atribut. Ini kebalikan arah dari `export let`.
+
+```svelte
+<!-- ❌ Svelte 4 — Greeter.svelte -->
+<script>
+	// 'export let' = props MASUK dari parent.
+	export let nama = 'dunia';
+
+	// 'export function' = API KELUAR; parent memanggilnya via bind:this.
+	// Ini BUKAN prop — parent tidak bisa menulis <Greeter greet={...} />.
+	export function greet() {
+		alert(`halo ${nama}!`);
+	}
+</script>
+```
+
+```svelte
+<!-- Pemakaian di parent (Svelte 4) -->
+<script>
+	import Greeter from './Greeter.svelte';
+	let greeter; // akan diisi instance komponen
+</script>
+
+<!-- bind:this menaruh instance Greeter ke variabel 'greeter' -->
+<Greeter bind:this={greeter} nama="Rizki" />
+<button on:click={() => greeter.greet()}>Sapa</button>
+```
+
+Padanan Svelte 5: pakai `export function` di blok `<script module>`? Bukan — untuk API instance, gunakan tetap `export function` biasa di Svelte 5 (ini satu-satunya `export` yang masih relevan), atau lebih idiomatik, ekspos lewat objek yang di-`bind`. Yang penting kamu paham: **hanya `export let` yang berubah jadi `$props()`**. `export function`/`const`/`class` sebagai API komponen tetap memakai `export` di Svelte 5.
+
+<Callout type="tip">
+Cara cepat membedakan saat membaca kode lama: <code>export <strong>let</strong></code> = data <em>masuk</em> (prop). <code>export <strong>const/function/class</strong></code> = API <em>keluar</em> (diakses parent via <code>bind:this</code>). Hanya yang pertama yang jadi <code>$props()</code>.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Migrasikan props Svelte 4 ke $props()">
+
+Di bawah ini komponen `<Tombol>` gaya **Svelte 4**. Tulis ulang sepenuhnya ke **Svelte 5 (runes)**. Yang harus berubah:
+
+- `export let` (tiga prop: satu wajib, dua dengan default) → satu `$props()`
+- rename `export { type as ... }`? Tidak ada di sini — tapi ada prop bernama publik `class` yang perlu di-rename.
+- `<slot />` → `{@render children()}` (children juga datang dari `$props()`)
+- `on:click` → `onclick` (bonus, supaya konsisten Svelte 5)
+
+```svelte
+<!-- ❌ Tombol.svelte (Svelte 4) -->
+<script>
+	export let label;            // wajib
+	export let disabled = false; // default false
+	export let onclick;          // callback (sudah berupa prop biasa)
+
+	let className;
+	export { className as class };
+</script>
+
+<button class={className} {disabled} on:click={onclick}>
+	{label} <slot />
+</button>
+```
+
+{#snippet solution()}
+
+```svelte
+<!-- ✅ Tombol.svelte (Svelte 5 runes) -->
+<script>
+	// Semua prop jadi satu destructuring dari $props().
+	// 'class' di-rename ke 'className' langsung di destructuring.
+	// 'children' menggantikan <slot />.
+	let {
+		label,
+		disabled = false,
+		onclick,
+		class: className,
+		children
+	} = $props();
+</script>
+
+<!-- on:click → onclick; <slot /> → {@render children()} -->
+<button class={className} {disabled} {onclick}>
+	{label} {@render children()}
+</button>
+```
+
+Catatan: prop `onclick` di kode Svelte 4 sebetulnya sudah berupa *callback prop* biasa (bukan `createEventDispatcher`), jadi ia tinggal ikut masuk ke `$props()` tanpa perubahan makna. Yang benar-benar khas legacy hanyalah `export let` dan trik `export { className as class }` — keduanya luruh menjadi satu baris destructuring di Svelte 5.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="legacy">
+<code>export let</code> hanya berlaku di <strong>mode legacy</strong>. Begitu sebuah komponen memakai <em>satu</em> rune saja (mis. <code>$state</code> atau <code>$props</code>), komponen itu masuk <strong>runes mode</strong> dan <code>export let</code> akan menjadi <strong>error compile</strong>. Kamu tidak bisa mencampur <code>export let</code> dan <code>$props()</code> dalam satu file — pilih salah satu per komponen.
+</Callout>
+
+<Callout type="warning">
+Default value di <code>export let x = 0</code> hanya dipakai saat nilai prop adalah <code>undefined</code> ketika komponen dibuat. Kalau parent secara eksplisit mengoper <code>null</code> (mis. <code>x=&#123;null&#125;</code>), default <strong>tidak</strong> aktif — yang masuk tetap <code>null</code>. Perilaku ini sama persis di <code>$props()</code>, jadi jangan kaget: default hanya menambal <code>undefined</code>, bukan <em>falsy</em>.
+</Callout>
+
+<Callout type="pitfall">
+Jangan tertukar arah <code>export</code>: <code>export <strong>let</strong></code> menerima data <em>dari</em> parent, sedangkan <code>export <strong>const/function/class</strong></code> mengekspos API <em>ke</em> parent (lewat <code>bind:this</code>). Hanya <code>export let</code> yang berpindah ke <code>$props()</code>. Salah menebak arah ini membuat migrasi keliru — mis. mengubah sebuah <code>export function</code> menjadi prop, padahal ia method komponen.
+</Callout>
+
+<Callout type="tip">
+Untuk rename prop bernama <em>reserved word</em> (<code>class</code>, <code>for</code>, <code>default</code>), di Svelte 5 cukup pakai sintaks rename destructuring: <code>let &#123; class: className &#125; = $props()</code>. Tidak perlu lagi trik dua baris <code>let className; export &#123; className as class &#125;</code> seperti Svelte 4 — lebih pendek dan lebih jelas.
+</Callout>
+
+<LegacyVsModern rows={[
+	{ legacy: 'export let title', modern: 'let { title } = $props()', note: 'Prop wajib → field destructuring biasa.' },
+	{ legacy: 'export let value = 0', modern: 'let { value = 0 } = $props()', note: 'Default value → default destructuring.' },
+	{ legacy: 'export let x = undefined', modern: 'let { x } = $props()', note: 'Prop opsional; field tanpa default sudah opsional di runes.' },
+	{ legacy: 'let cls; export { cls as class }', modern: 'let { class: cls } = $props()', note: 'Rename reserved word → rename destructuring satu baris.' },
+	{ legacy: 'export function greet() {}', modern: 'export function greet() {}', note: 'API komponen (bukan prop) — TIDAK berubah; tetap export.' },
+	{ legacy: '$$props', modern: 'let props = $props()', note: 'Akses seluruh objek props → tampung $props() tanpa destructure.' },
+	{ legacy: '$$restProps', modern: 'let { known, ...rest } = $props()', note: 'Sisa props → rest destructuring.' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/legacy-export-let" label="Legacy: export let — dokumentasi resmi Svelte" />
+<DocsLink href="https://svelte.dev/docs/svelte/$props" label="$props() — padanan modern Svelte 5" />

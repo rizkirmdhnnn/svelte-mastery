@@ -1,0 +1,422 @@
+---
+title: vitest
+product: cli
+section: addons
+sectionTitle: Add-ons
+sectionOrder: 3
+order: 12
+status: stable
+description: Add-on vitest untuk sv — pasang & konfigurasi Vitest di SvelteKit untuk unit test logika .svelte.ts dan component test di browser asli (atau jsdom), lengkap dengan dua "projects" client/server.
+docs: https://svelte.dev/docs/cli/vitest
+keywords: [vitest, unit test, component test, browser, jsdom, sv add]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sv add vitest` adalah add-on yang **memasang dan mengonfigurasi [Vitest](https://vitest.dev)** ke proyek SvelteKit-mu untuk **unit testing** dan **component testing**. Satu perintah ini menyuntik beberapa hal: dependensi (`vitest` plus paket pendukung sesuai pilihanmu), perubahan pada `vite.config.ts` agar Vitest paham cara mengompilasi komponen Svelte dan file `.svelte.ts`, beberapa **demo test** sebagai titik awal, dan script di `package.json` untuk menjalankannya.
+
+Kalau kamu datang dari React atau Vue, peta mentalnya nyaris identik: **Vitest menggantikan Jest** (API `describe`/`it`/`expect`-nya sengaja kompatibel), sama seperti Vitest yang dipakai komunitas Vue/Vite. Yang berubah cuma satu detail Svelte yang penting: **file `.svelte.ts` dan komponen `.svelte` perlu dikompilasi dulu** oleh plugin Svelte sebelum bisa diuji — dan justru itulah pekerjaan setup yang dibereskan add-on ini.
+
+### Analogi: satu kontraktor menyiapkan dua bengkel
+
+Bayangkan kamu menyewa kontraktor untuk menyiapkan fasilitas QA. Ia tidak membuat satu ruangan serbaguna, melainkan **dua bengkel terpisah** karena dua jenis pengujian butuh lingkungan berbeda:
+
+- **Bengkel "server"** = ruang bersih tanpa peralatan berat. Cepat dibuka-tutup, cocok untuk memeriksa **logika murni**: fungsi util, store, dan logika reaktif di file `.svelte.ts`. Tidak ada DOM, tidak ada browser — jadi ribuan tes bisa jalan dalam hitungan detik. Ini berjalan di **Node**.
+- **Bengkel "client"** = ruang dengan **mobil sungguhan** untuk dites. Lebih lambat dinyalakan, tapi inilah satu-satunya tempat menguji **komponen** yang benar-benar dirender, diklik, dan berinteraksi dengan DOM. Add-on modern menyalakan **browser asli** (Chromium lewat Playwright) di sini.
+
+Yang menentukan "tes ini masuk bengkel mana" bukan kamu setiap kali, melainkan **nama file**: tes ber-infix `.svelte.` (mis. `Tombol.svelte.test.ts`) otomatis dikirim ke bengkel client/browser, sedangkan `.test.ts` biasa masuk bengkel server/Node. Penjelasannya ada di Bagian 2 lewat config `test.projects`.
+
+### Dua `usages`: unit vs component
+
+Add-on punya opsi `usages` untuk memilih bengkel mana yang disiapkan:
+
+- `usages:unit` — hanya bengkel server. Memasang `vitest` saja. Cukup kalau kamu cuma menguji logika `.svelte.ts`/util.
+- `usages:component` — menambah bengkel client: memasang `@vitest/browser`, `vitest-browser-svelte`, dan `playwright` (sebagai penyedia browser), plus setup matcher. Untuk merender komponen sungguhan.
+
+Keduanya bisa digabung: `npx sv add vitest="usages:unit,component"` — dan inilah default yang paling umum.
+
+### Browser asli vs jsdom: kenapa add-on memilih browser
+
+Untuk component test, ada dua cara menyediakan "DOM":
+
+1. **jsdom / happy-dom** = **mannequin** dari browser. Sebuah reimplementasi DOM dalam JavaScript murni yang jalan di Node. Sangat cepat dan headless, tapi ia **bukan** browser sungguhan: tidak ada layout/CSS nyata, tidak ada rendering pixel, dan beberapa API browser di-mock atau hilang. Bug yang bergantung pada perilaku browser asli bisa lolos diam-diam.
+2. **Browser mode** = **aktor sungguhan**. Vitest menyalakan Chromium asli (lewat Playwright) dan merender komponenmu di sana. Lebih lambat dinyalakan, tapi perilakunya **persis seperti produksi** — layout, event, fokus, scroll, semuanya nyata.
+
+Add-on `sv add vitest` modern **default-nya browser mode** (lebih akurat), tapi tetap mudah di-switch ke jsdom kalau kamu butuh kecepatan dan tidak mau menginstal binary browser di CI. Kita tunjukkan keduanya nanti.
+
+### Mengapa menguji reaktivitas butuh `flushSync`
+
+Ini bagian yang paling sering bikin pendatang baru bingung. Di Svelte 5, saat kamu mengubah `$state`, DOM dan `$effect` **tidak** langsung diperbarui — Svelte menundanya ke akhir microtask agar bisa menggabungkan banyak perubahan jadi satu update efisien. Bagus untuk performa, merepotkan untuk test: kalau kamu ubah state lalu langsung memeriksa hasilnya di baris berikutnya, perubahannya **belum terjadi**.
+
+`flushSync()` dari `'svelte'` adalah tombol "kerjakan semua pekerjaan tertunda sekarang juga". Plus, `$state`/`$effect` di luar komponen butuh sebuah **scope reaktif** yang hidup — itulah gunanya `$effect.root()`. Dua alat ini wajib saat menguji logika `.svelte.ts` secara mentah. (Di component test browser mode, ini sering tidak perlu manual karena assertion `expect.element` sudah **auto-retry** menunggu DOM stabil — mirip Playwright.)
+
+## 2. Contoh kode
+
+Memasang add-on:
+
+```bash
+# Interaktif — sv menanyakan usages (unit/component) lalu memasang paketnya.
+npx sv add vitest
+
+# Non-interaktif: kunci pilihan langsung (berguna untuk skrip/CI).
+npx sv add vitest="usages:unit,component"
+```
+
+Setelah selesai, add-on menambahkan kira-kira ini:
+
+```bash
+my-app/
+├─ src/
+│  ├─ demo.spec.ts                  # demo UNIT test (jalan di Node)
+│  └─ routes/page.svelte.test.ts    # demo COMPONENT test (jalan di browser)
+├─ vite.config.ts                   # +blok `test.projects` (client & server)
+├─ vitest-setup-client.ts           # setup matcher untuk proyek browser
+└─ package.json                     # +script test:unit & test, +devDependencies
+```
+
+**File config** — jantungnya. Perhatikan `test.projects`: dua "bengkel" yang dijelaskan di Bagian 1, masing-masing dengan environment & pola file sendiri:
+
+```ts
+// vite.config.ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	plugins: [sveltekit()],
+
+	test: {
+		projects: [
+			{
+				// PROYEK "client": component & rune test di BROWSER ASLI.
+				extends: './vite.config.ts',
+				test: {
+					name: 'client',
+					environment: 'browser',
+					browser: {
+						enabled: true,
+						provider: 'playwright',            // render di Chromium sungguhan
+						instances: [{ browser: 'chromium' }]
+					},
+					// HANYA file ber-infix `.svelte.` yang masuk bengkel browser ini.
+					include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
+					exclude: ['src/lib/server/**'],         // kode khusus server tak dites di browser
+					setupFiles: ['./vitest-setup-client.ts']
+				}
+			},
+			{
+				// PROYEK "server": unit test logika murni di Node (cepat, tanpa DOM).
+				extends: './vite.config.ts',
+				test: {
+					name: 'server',
+					environment: 'node',
+					include: ['src/**/*.{test,spec}.{js,ts}'],
+					// Jangan ambil file `.svelte.` — itu jatah proyek client.
+					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+				}
+			}
+		]
+	}
+});
+```
+
+**Setup file** untuk proyek browser — menambah matcher seperti `toBeInTheDocument()`:
+
+```ts
+// vitest-setup-client.ts
+// Mendaftarkan matcher jest-dom ke `expect` Vitest (toBeVisible, toBeInTheDocument, dll.)
+import '@testing-library/jest-dom/vitest';
+```
+
+**Demo unit test** (bengkel server) — sengaja minimal, hanya menunjukkan pola `describe`/`it`/`expect`:
+
+```ts
+// src/demo.spec.ts — jalan di Node, tanpa DOM. Cepat.
+import { describe, expect, it } from 'vitest';
+
+describe('sum test', () => {
+	it('adds 1 + 2 to equal 3', () => {
+		expect(1 + 2).toBe(3);
+	});
+});
+```
+
+**Demo component test** (bengkel client/browser) — merender komponen Svelte sungguhan lalu memeriksanya seperti user:
+
+```ts
+// src/routes/page.svelte.test.ts
+import { page } from '@vitest/browser/context';   // util kueri di dalam browser
+import { describe, expect, it } from 'vitest';
+import { render } from 'vitest-browser-svelte';    // render khusus Svelte
+import Page from './+page.svelte';
+
+describe('/+page.svelte', () => {
+	it('menampilkan heading', async () => {
+		render(Page);                                  // mount komponen ke browser asli
+
+		// Cari elemen via ROLE (bukan class/id internal) — menguji yang user lihat.
+		const heading = page.getByRole('heading', { level: 1 });
+
+		// `expect.element` AUTO-RETRY: menunggu elemen muncul sampai timeout.
+		// Karena itu WAJIB di-await. Tak perlu flushSync manual di sini.
+		await expect.element(heading).toBeInTheDocument();
+	});
+});
+```
+
+**Menguji logika reaktif `.svelte.ts`** — di sinilah `flushSync` + `$effect.root` berperan. Pisahkan logika dari UI agar bisa diuji ringan:
+
+```ts
+// src/lib/counter.svelte.ts — logika reaktif, lepas dari komponen.
+export function createCounter(initial = 0) {
+	let count = $state(initial);
+	const double = $derived(count * 2);
+
+	return {
+		get count() {
+			return count;
+		},
+		get double() {
+			return double;
+		},
+		increment() {
+			count++;
+		}
+	};
+}
+```
+
+```ts
+// src/lib/counter.svelte.test.ts
+// Infix `.svelte.` -> file ini DIKOMPILASI Svelte sehingga runes hidup,
+// dan oleh config di atas ia masuk proyek "client".
+import { flushSync } from 'svelte';
+import { describe, expect, it } from 'vitest';
+import { createCounter } from './counter.svelte';
+
+describe('createCounter', () => {
+	it('increment menaikkan count, double ikut', () => {
+		// $state/$derived butuh scope reaktif hidup -> bungkus $effect.root.
+		const cleanup = $effect.root(() => {
+			const c = createCounter(0);
+			expect(c.count).toBe(0);
+
+			c.increment();
+			flushSync(); // paksa update reaktif terjadi SEKARANG sebelum assert
+
+			expect(c.count).toBe(1);
+			expect(c.double).toBe(2);
+		});
+
+		cleanup(); // WAJIB: bersihkan scope agar tidak bocor ke test lain
+	});
+});
+```
+
+<Callout type="tip">
+Saat membuat proyek baru dengan <code>npx sv create</code>, wizard sudah menawarkan opsi menambahkan Vitest langsung di awal — setara menjalankan <code>sv add vitest</code> setelahnya. Kombinasi paling umum di proyek nyata: <strong>Vitest</strong> untuk unit + component (<code>.test.ts</code> / <code>.svelte.test.ts</code> di <code>src/</code>) dan <strong>Playwright</strong> untuk E2E (<code>e2e/</code>). Keduanya runner berbeda dengan folder berbeda, jadi tidak saling menabrak.
+</Callout>
+
+## 3. Coba sendiri
+
+Component & unit test butuh Vitest + (untuk browser mode) binary browser, jadi tidak bisa dijalankan di live preview halaman ini. Berikut **alur kerja beranotasi** yang bisa kamu ikuti di proyek lokal — dari pasang add-on sampai membaca hasilnya.
+
+```bash
+# 1) Punya proyek SvelteKit dulu (kalau belum):
+npx sv create my-app --template minimal --types ts --install npm
+cd my-app
+
+# 2) Pasang add-on Vitest (unit + component):
+npx sv add vitest="usages:unit,component"
+
+# 3) Untuk browser mode (default), Vitest butuh binary browser Playwright.
+#    Add-on biasanya menjalankannya otomatis; kalau belum:
+npx playwright install chromium
+
+# 4) Jalankan SEMUA test sekali lalu keluar (mode CI):
+npm run test            # = vitest --run (kedua proyek: client + server)
+
+# 5) Mode watch saat ngoding — re-run otomatis tiap file berubah:
+npm run test:unit       # = vitest (watch). Tekan `q` untuk keluar.
+
+# 6) Jalankan SATU proyek saja (lebih cepat saat fokus):
+npm run test:unit -- --project=server   # cuma unit test Node
+npm run test:unit -- --project=client   # cuma component/browser
+
+# 7) Jalankan SATU file atau filter by nama test:
+npm run test:unit -- src/lib/counter.svelte.test.ts
+npm run test:unit -- -t "increment"     # -t = filter judul test
+
+# 8) Buka UI Vitest (dashboard interaktif di browser):
+npm run test:unit -- --ui
+```
+
+**Anatomi setup**, supaya kamu paham tiap potongannya:
+
+| Bagian | Contoh | Peran |
+|---|---|---|
+| `test.projects` | `[{ name: 'client' }, { name: 'server' }]` | Dua lingkungan terpisah dalam satu perintah: browser vs Node. |
+| Infix nama file | `Tombol.svelte.test.ts` vs `util.test.ts` | Penentu otomatis: `.svelte.` -> proyek client; tanpa itu -> server. |
+| `render()` | `render(Page)` dari `vitest-browser-svelte` | Mount komponen Svelte ke DOM (browser/jsdom). |
+| `page.getBy*` | `page.getByRole('button', { name: 'Simpan' })` | Kueri elemen seperti user; dari `@vitest/browser/context`. |
+| `expect.element` | `await expect.element(x).toBeVisible()` | Assertion **auto-retry** untuk browser mode — wajib `await`. |
+| `flushSync()` | `flushSync()` dari `'svelte'` | Paksa update reaktif batched terjadi seketika, untuk unit test runes. |
+| `$effect.root()` | `const cleanup = $effect.root(() => {...})` | Scope reaktif manual agar `$state`/`$effect` hidup di luar komponen. |
+
+**Mau pakai jsdom, bukan browser asli?** Ganti blok `browser` di proyek client dengan satu baris `environment`. Lebih cepat & tanpa binary browser, dengan trade-off akurasi:
+
+```ts
+// vite.config.ts — proyek "client" versi jsdom
+{
+	extends: './vite.config.ts',
+	test: {
+		name: 'client',
+		environment: 'jsdom',                 // <- ganti dari `browser` ke `jsdom`
+		// (hapus blok `browser: { ... }`)
+		include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
+		setupFiles: ['./vitest-setup-client.ts']
+	}
+}
+```
+
+Konsep yang sering bikin pendatang tersandung: **kenapa ada dua proyek?** Karena unit test logika murni jauh lebih cepat tanpa DOM (Node), sedangkan component test wajib punya DOM. Memisahkannya berarti ribuan unit test tetap kilat, dan hanya test yang benar-benar butuh browser yang membayar ongkos menyalakannya. Infix `.svelte.` di nama file adalah "kode pos" yang merutekan tiap test ke proyek yang tepat.
+
+## 4. Latihan
+
+<Exercise title="Tulis unit test + component test untuk fitur 'keranjang belanja'">
+Kamu punya logika keranjang di <code>src/lib/cart.svelte.ts</code> yang mengekspos <code>createCart()</code> dengan <code>items</code> (array <code>$state</code>), method <code>add(item)</code>, dan derived <code>total</code> (jumlah <code>price</code> semua item). Tugas:
+
+1. **Unit test** (`cart.svelte.test.ts`) memakai `$effect.root` + `flushSync` yang membuktikan: setelah `add({ price: 10 })` dan `add({ price: 5 })`, nilai `total` menjadi `15`. Beri komentar **mengapa** `flushSync()` dibutuhkan.
+2. **Component test** untuk `<Cart>` yang menampilkan total: render komponen, lalu pastikan teks "Total: 15" tampak setelah dua item ditambah. Pakai `render` dari `vitest-browser-svelte` + `expect.element`.
+3. Jelaskan singkat: kenapa unit test (1) masuk proyek "client" padahal tidak merender komponen?
+
+{#snippet solution()}
+
+  ```ts
+  // src/lib/cart.svelte.ts
+  export function createCart() {
+  	let items = $state<{ price: number }[]>([]);
+  	const total = $derived(items.reduce((sum, i) => sum + i.price, 0));
+
+  	return {
+  		get items() {
+  			return items;
+  		},
+  		get total() {
+  			return total;
+  		},
+  		add(item: { price: number }) {
+  			items = [...items, item];
+  		}
+  	};
+  }
+  ```
+
+  ```ts
+  // src/lib/cart.svelte.test.ts  (UNIT)
+  import { flushSync } from 'svelte';
+  import { describe, expect, it } from 'vitest';
+  import { createCart } from './cart.svelte';
+
+  describe('createCart', () => {
+  	it('total menjumlahkan harga semua item', () => {
+  		// $state + $derived butuh scope reaktif hidup -> $effect.root.
+  		const cleanup = $effect.root(() => {
+  			const cart = createCart();
+
+  			cart.add({ price: 10 });
+  			cart.add({ price: 5 });
+
+  			// flushSync dibutuhkan karena update $state & evaluasi ulang $derived
+  			// terjadi batched/asinkron. Tanpa flushSync, `total` bisa belum dihitung
+  			// ulang saat kita assert -> kita akan melihat nilai lama.
+  			flushSync();
+
+  			expect(cart.total).toBe(15);
+  		});
+
+  		cleanup(); // bersihkan agar derived/effect tidak bocor antar-test
+  	});
+  });
+  ```
+
+  ```svelte
+  <!-- src/lib/Cart.svelte -->
+  <script>
+  	import { createCart } from './cart.svelte';
+  	const cart = createCart();
+  	cart.add({ price: 10 });
+  	cart.add({ price: 5 });
+  </script>
+
+  <p>Total: {cart.total}</p>
+  ```
+
+  ```ts
+  // src/lib/Cart.svelte.test.ts  (COMPONENT)
+  import { page } from '@vitest/browser/context';
+  import { describe, expect, it } from 'vitest';
+  import { render } from 'vitest-browser-svelte';
+  import Cart from './Cart.svelte';
+
+  describe('<Cart>', () => {
+  	it('menampilkan total dari item', async () => {
+  		render(Cart);
+
+  		// Cari via teks yang user lihat; expect.element auto-retry, jadi await.
+  		await expect.element(page.getByText('Total: 15')).toBeInTheDocument();
+  	});
+  });
+  ```
+
+  Kenapa unit test (1) tetap masuk proyek "client": karena pola <code>include</code> di config merutekan SEMUA file ber-infix <code>.svelte.</code> ke proyek client. File <code>.svelte.ts</code>/<code>.svelte.test.ts</code> WAJIB dikompilasi Svelte agar runes (<code>$state</code>, <code>$derived</code>, <code>$effect.root</code>) bekerja — dan proyek client-lah yang punya plugin + environment untuk itu. Jadi rutenya soal "butuh kompilasi Svelte", bukan soal "merender komponen".
+
+  {/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Menulis runes di file <code>.ts</code> biasa.</strong> <code>$state</code>/<code>$derived</code>/<code>$effect</code> hanya hidup di file yang dikompilasi Svelte: ekstensi <code>.svelte</code> atau <code>.svelte.ts</code>/<code>.svelte.js</code>. Menaruh <code>$state</code> di <code>utils.ts</code> biasa akan gagal kompilasi atau jadi variabel mati. Begitu juga test runes: namai <code>*.svelte.test.ts</code> agar ikut dikompilasi DAN dirutekan ke proyek client.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Lupa <code>flushSync()</code> di unit test runes.</strong> Setelah mengubah <code>$state</code> atau memicu <code>$effect</code>, update di-batch ke microtask berikutnya. Assertion sinkron yang langsung jalan akan melihat <strong>nilai lama</strong>. Panggil <code>flushSync()</code> dulu. (Di component test browser mode kamu jarang butuh ini karena <code>await expect.element(...)</code> sudah auto-retry — tapi pastikan kamu meng-<code>await</code>-nya.)
+</Callout>
+
+<Callout type="warning">
+<strong>Lupa <code>await</code> pada <code>expect.element</code>.</strong> Di browser mode, <code>expect.element(...)</code> mengembalikan Promise yang auto-retry sampai kondisi terpenuhi atau timeout. Tanpa <code>await</code>, test bisa <strong>lolos palsu</strong> (hijau padahal belum diperiksa). Aturan aman: tiap <code>expect.element</code> dan tiap aksi browser selalu didahului <code>await</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Lupa <code>cleanup()</code> dari <code>$effect.root</code>.</strong> Fungsi yang dikembalikan <code>$effect.root</code> WAJIB dipanggil di akhir test. Kalau tidak, effect & state tetap "hidup" dan bocor ke test berikutnya — menyebabkan kegagalan misterius yang berubah tergantung urutan eksekusi. Simpan ke variabel <code>cleanup</code> di awal, panggil di akhir (atau di <code>afterEach</code>).
+</Callout>
+
+<Callout type="tip">
+<strong>Browser mode lebih akurat, jsdom lebih cepat.</strong> Default add-on (browser asli via Playwright) menangkap bug layout/CSS/event yang jsdom lewatkan, tapi butuh binary browser & lebih lambat start — di CI jalankan <code>npx playwright install --with-deps chromium</code>. Kalau CI-mu ringan dan test-mu tak bergantung perilaku browser nyata, <code>environment: 'jsdom'</code> (atau <code>happy-dom</code>) jauh lebih ringan. Pilih sesuai kebutuhan, bukan ikut-ikutan.
+</Callout>
+
+<Callout type="tip">
+<strong>Uji perilaku, bukan implementasi.</strong> Cari elemen lewat <strong>role/label/teks</strong> (<code>page.getByRole</code>, <code>getByLabelText</code>, <code>getByText</code>) — bukan class CSS atau struktur DOM internal. Test yang terikat pada apa yang user lihat tetap hijau saat kamu merefactor internal. Itulah inti filosofi yang sama dengan Testing Library.
+</Callout>
+
+Padanan API kalau kamu sebelumnya pakai **jsdom + `@testing-library/svelte`** (gaya lama yang masih valid) dan ingin memetakannya ke **browser mode** bawaan add-on:
+
+<LegacyVsModern legacyLabel="jsdom + @testing-library/svelte" modernLabel="Browser mode (default add-on)" rows={[
+	{ legacy: "render dari '@testing-library/svelte'", modern: "render dari 'vitest-browser-svelte'", note: 'API mirip; satu untuk jsdom, satu untuk browser asli' },
+	{ legacy: 'screen.getByRole(...)', modern: 'page.getByRole(...)', note: '`page` dari @vitest/browser/context' },
+	{ legacy: 'await userEvent.click(el)', modern: 'await page.getByRole(...).click()', note: 'interaksi langsung pada locator' },
+	{ legacy: 'expect(el).toBeInTheDocument()', modern: 'await expect.element(el).toBeInTheDocument()', note: 'browser mode auto-retry -> wajib await' },
+	{ legacy: "environment: 'jsdom'", modern: "environment: 'browser' + provider playwright", note: 'mannequin DOM vs browser sungguhan' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/vitest" label="sv — Add-on vitest (usages, config, demo test)" />
+
+<DocsLink href="https://vitest.dev/guide/browser/" label="Vitest — Browser Mode (provider, instances, setup)" />

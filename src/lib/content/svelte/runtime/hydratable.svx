@@ -1,0 +1,226 @@
+---
+title: Hydratable data
+product: svelte
+section: runtime
+sectionTitle: Runtime
+sectionOrder: 6
+order: 5
+status: stable
+description: API low-level untuk membagikan hasil kerja server (fetch/komputasi) ke proses hidrasi klien tanpa mengerjakannya ulang.
+docs: https://svelte.dev/docs/svelte/hydratable
+keywords: [hydratable, hydration, SSR, devalue, serialization]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Bayangkan dua tahap hidup sebuah halaman yang dirender di server:
+
+1. **Server-side rendering (SSR)** — server menjalankan komponenmu, mengambil data (misalnya query database, panggil API), lalu mengubah hasilnya jadi string HTML dan mengirimnya ke browser. Pengunjung langsung melihat konten, bahkan sebelum JavaScript jalan.
+2. **Hydration (hidrasi)** — di browser, Svelte "menghidupkan" HTML statis tadi: ia menjalankan ulang komponen yang sama untuk memasang event handler dan menyambungkan reaktivitas, lalu mencocokkannya dengan DOM yang sudah ada.
+
+Masalahnya: kalau di tahap (1) server sudah susah payah mengambil data, di tahap (2) komponen yang sama **jalan lagi** di browser — dan kalau tidak hati-hati, ia akan **fetch ulang data yang sama**. Boros: dua kali kerja untuk satu hasil, plus ada jeda di mana klien menunggu request keduanya selesai. Lebih parah lagi untuk nilai yang seharusnya konsisten (angka acak, timestamp): server menghasilkan `0.731...`, klien menghasilkan `0.142...`, dan DOM jadi tidak cocok (*hydration mismatch*).
+
+`hydratable` adalah jembatan untuk masalah ini. Idenya sederhana: **kerjakan sekali di server, titipkan hasilnya di dalam HTML, lalu di klien ambil titipan itu alih-alih mengerjakannya lagi.**
+
+### Analogi: meal prep hari Minggu
+
+Anggap memasak itu "mengambil data". Tanpa `hydratable`, kamu memasak makan malam di kantor (server), lalu sesampainya di rumah (klien) kamu **memasak lagi dari nol** menu yang sama — padahal sudah ada yang matang. Capek, lama, dan boros bahan.
+
+`hydratable` itu seperti **membawa pulang hasil masakan dalam kotak berlabel**. Di kantor kamu masak sekali, masukkan ke kotak, dan tempel label namanya (itulah si `key`). Di rumah kamu tinggal buka kotak berlabel itu dan langsung makan — tidak masak ulang. Labelnya penting: kalau ada banyak kotak, label memastikan kamu mengambil isi yang benar.
+
+### Cara kerjanya (tiga fase)
+
+Tanda tangannya begini:
+
+```ts
+hydratable<T>(key: string, fn: () => T): Promise<T>
+```
+
+- **`key`** — identitas unik untuk nilai yang dititipkan. Inilah "label kotak"-nya. Klien memakai key ini untuk menemukan kembali nilai yang tepat.
+- **`fn`** — fungsi yang menghasilkan data (boleh async — mengembalikan Promise pun didukung).
+
+Yang terjadi di balik layar:
+
+1. **Saat SSR**: Svelte menjalankan `fn()`, lalu **men-serialize** hasilnya dan menyelipkannya ke dalam `<head>` HTML (sebagai blok script kecil).
+2. **Saat hidrasi**: Svelte **tidak** menjalankan `fn()` lagi. Ia membaca nilai yang sudah diselipkan tadi berdasarkan `key`-nya. Tidak ada fetch kedua, tidak ada mismatch.
+3. **Setelah hidrasi selesai**: panggilan `hydratable` berikutnya (misalnya saat navigasi klien-side berikutnya) menjalankan `fn()` seperti biasa — titipannya hanya untuk render awal → hidrasi awal, bukan cache selamanya.
+
+### Kalau kamu datang dari React / Vue
+
+Polanya pasti terasa familier:
+
+- **Next.js** menyelipkan hasil `getServerSideProps`/`getStaticProps` ke dalam blok `__NEXT_DATA__` di HTML, supaya klien tidak fetch ulang saat hidrasi. `hydratable` adalah versi low-level dari ide yang sama.
+- **TanStack Query (React Query)** punya `dehydrate()` di server dan `HydrationBoundary`/`hydrate()` di klien — server menaruh cache, klien mengangkatnya. Persis seperti "titip kotak berlabel".
+- **Nuxt** menyimpan hasil `useAsyncData`/`useFetch` ke dalam `payload` yang ikut terkirim di HTML, lalu dipakai ulang di klien.
+
+Bedanya, di Svelte ini adalah primitif **low-level**. Untuk aplikasi biasa kamu jarang menulis `hydratable` langsung — **SvelteKit sudah membungkusnya**: data dari fungsi `load` otomatis diserialisasi sekali di server dan dipakai ulang di klien, tanpa kamu menyentuh `hydratable`. API ini lebih ditujukan untuk **penulis library** yang butuh berbagi state server→klien sendiri.
+
+<Callout type="tip">
+Aturan praktis: <strong>aplikasi → pakai <code>load</code> SvelteKit</strong> (ia sudah memakai mekanisme ini di balik layar). <strong>Library / kasus khusus → baru pertimbangkan <code>hydratable</code></strong>. Kalau kamu menemukan dirimu menulis <code>hydratable</code> di kode aplikasi biasa, biasanya ada jalan yang lebih tinggi-level lewat <code>load</code>.
+</Callout>
+
+## 2. Contoh kode
+
+`hydratable` paling natural dipakai bersama **async component** Svelte 5 (top-level `await` di dalam `<script>`). Berikut kasus paling umum: ambil user sekali di server, pakai ulang di klien.
+
+```svelte
+<script>
+	import { hydratable } from 'svelte';
+	import { getUser } from 'my-database-library';
+
+	// Fase server: getUser() dijalankan, hasilnya di-serialize ke <head>.
+	// Fase hidrasi klien: nilai dibaca dari titipan tadi — getUser() TIDAK
+	// dipanggil lagi, jadi tak ada round-trip kedua ke database/API.
+	// Key 'user' adalah label yang menyambungkan nilai server <-> klien.
+	const user = await hydratable('user', () => getUser());
+</script>
+
+<h1>{user.name}</h1>
+```
+
+Karena `fn` boleh mengembalikan Promise, kamu bisa menitipkan hasil fetch apa pun. Serializer yang dipakai Svelte (namanya `devalue`) lebih pintar dari `JSON.stringify` — ia mendukung tipe JSON biasa **plus** `Map`, `Set`, `URL`, `BigInt`, bahkan **Promise** (klien bisa meng-`await` hasil yang server janjikan).
+
+```svelte
+<script>
+	import { hydratable } from 'svelte';
+
+	// Contoh kedua: nilai yang HARUS stabil antara server & klien.
+	// Tanpa hydratable, crypto.randomUUID() menghasilkan nilai berbeda di
+	// server dan di klien -> hydration mismatch (atribut id berubah saat hidrasi).
+	// Dengan hydratable, UUID dibuat sekali di server lalu dipakai ulang klien.
+	const id = await hydratable('field-id', () => crypto.randomUUID());
+</script>
+
+<label for={id}>Email</label>
+<input {id} type="email" />
+```
+
+Untuk **penulis library**, beri prefix nama library pada `key` agar tidak bentrok dengan key milik library/aplikasi lain:
+
+```js
+// Di dalam sebuah library bernama "acme-charts"
+import { hydratable } from 'svelte';
+
+export function loadChartData(endpoint) {
+	// Prefix 'acme-charts:' membuat key ini kecil kemungkinannya bertabrakan
+	// dengan key 'data' generik milik kode lain di halaman yang sama.
+	return hydratable(`acme-charts:${endpoint}`, () => fetch(endpoint).then((r) => r.json()));
+}
+```
+
+## 3. Coba sendiri
+
+`hydratable` butuh siklus **render di server → hidrasi di browser**, jadi ia tidak bisa didemokan di playground satu-komponen (yang murni jalan di klien). Sebagai gantinya, telusuri contoh teranotasi berikut langkah demi langkah.
+
+```svelte
+<!-- WelcomeBanner.svelte -->
+<script>
+	import { hydratable } from 'svelte';
+
+	async function fetchGreeting() {
+		// Bayangkan ini panggilan jaringan yang "mahal" (lambat / berbayar).
+		const res = await fetch('https://api.example.com/greeting');
+		return res.json(); // { text: 'Selamat datang!' }
+	}
+
+	// LANGKAH 1 (server): fetchGreeting() jalan SEKALI saat SSR.
+	//   Hasilnya ({ text: ... }) di-serialize ke <head> dengan label 'greeting'.
+	// LANGKAH 2 (klien, saat hidrasi): nilai dibaca balik dari <head>.
+	//   fetchGreeting() TIDAK dipanggil -> nol request jaringan di hidrasi.
+	// LANGKAH 3 (klien, navigasi berikutnya): kalau komponen ini dirender lagi
+	//   sepenuhnya di klien, fetchGreeting() barulah berjalan normal.
+	const greeting = await hydratable('greeting', fetchGreeting);
+</script>
+
+<h2>{greeting.text}</h2>
+```
+
+Karena ada top-level `await`, komponen ini "menunggu" data sebelum render. Untuk menampilkan state loading selama menunggu, bungkus pemakainya dengan boundary dan beri snippet `pending`:
+
+```svelte
+<!-- Pemakai: tampilkan placeholder selama await berlangsung -->
+<svelte:boundary>
+	<WelcomeBanner />
+
+	{#snippet pending()}
+		<p>Memuat sapaan…</p>
+	{/snippet}
+</svelte:boundary>
+```
+
+<Callout type="warning">
+Karena <code>hydratable</code> menyelipkan <strong>blok script inline</strong> ke dalam HTML untuk membawa data, ia bisa berbenturan dengan <strong>Content Security Policy (CSP)</strong> yang ketat. Solusinya: untuk render dinamis, berikan <code>nonce</code> lewat opsi <code>render()</code>; untuk HTML statis, aktifkan hash dengan <code>csp: &#123; hash: true &#125;</code>. SvelteKit menangani ini untukmu lewat konfigurasi <code>csp</code> di <code>svelte.config.js</code>.
+</Callout>
+
+<Callout type="tip">
+Fitur top-level <code>await</code> di komponen (yang membuat <code>hydratable</code> enak dipakai) adalah bagian dari dukungan <strong>async</strong> Svelte 5 yang masih experimental — di banyak setup perlu diaktifkan lewat opsi compiler <code>experimental.async</code>. Cek versi Svelte-mu sebelum mengandalkannya di produksi.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Stabilkan nilai acak antara server dan klien">
+Buat komponen `RandomId.svelte` yang menghasilkan sebuah ID acak (boleh `crypto.randomUUID()` atau `Math.random()`) dan memakainya sebagai atribut `id` sebuah `<input>` plus `for` sebuah `<label>`. Targetnya: ID itu harus **sama persis** di HTML hasil server maupun setelah hidrasi di klien — tidak boleh berubah (yang akan memicu hydration mismatch). Gunakan `hydratable` dengan `key` yang deskriptif. Jelaskan dalam komentar mengapa membungkus dengan `hydratable` menyelesaikan masalah ini.
+
+{#snippet solution()}
+
+```svelte
+<!-- RandomId.svelte -->
+<script>
+	import { hydratable } from 'svelte';
+
+	// Tanpa hydratable: generator jalan dua kali (server lalu klien) dan
+	// menghasilkan nilai BERBEDA -> atribut id/for berubah saat hidrasi ->
+	// Svelte melaporkan hydration mismatch.
+	//
+	// Dengan hydratable: nilai dibuat SEKALI di server, di-serialize ke <head>
+	// dengan key 'random-id', lalu klien membaca nilai yang sama saat hidrasi.
+	// Hasilnya identik server <-> klien, mismatch hilang.
+	const id = await hydratable('random-id', () => crypto.randomUUID());
+</script>
+
+<label for={id}>Nama</label>
+<input {id} type="text" />
+```
+
+```svelte
+<!-- Pemakai dengan placeholder selama menunggu -->
+<svelte:boundary>
+	<RandomId />
+
+	{#snippet pending()}
+		<p>Menyiapkan form…</p>
+	{/snippet}
+</svelte:boundary>
+```
+
+Inti jawabannya: nilai non-deterministik (acak/waktu) **wajib** dibuat di satu tempat saja lalu dibagikan, bukan dihitung ulang di kedua sisi. `hydratable` adalah cara resmi membagikannya dari server ke klien lewat HTML, dengan `key` sebagai penyambungnya.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Key wajib unik di seluruh halaman.</strong> Kalau dua pemanggil <code>hydratable</code> memakai <code>key</code> yang sama, nilai mereka akan saling menimpa dan klien bisa membaca data yang salah. Untuk kode aplikasi pakai key yang spesifik dan deskriptif; untuk <strong>library</strong>, selalu beri prefix nama library (mis. <code>'acme:user'</code>) agar tidak bertabrakan dengan key milik kode lain.
+</Callout>
+
+<Callout type="warning">
+<strong>Hanya nilai yang bisa di-serialize yang boleh dititipkan.</strong> Serializer <code>devalue</code> mendukung tipe JSON plus <code>Map</code>, <code>Set</code>, <code>URL</code>, <code>BigInt</code>, dan <code>Promise</code> — tapi <strong>bukan</strong> fungsi, instance class custom, koneksi DB, atau elemen DOM. Kalau <code>fn</code> mengembalikan sesuatu yang tak bisa di-serialize, titipannya akan gagal. Kembalikan data murni (plain data), bukan objek "hidup".
+</Callout>
+
+<Callout type="tip">
+<strong>Untuk aplikasi, hampir selalu pakai <code>load</code> SvelteKit, bukan <code>hydratable</code> langsung.</strong> SvelteKit memakai mekanisme yang sama di balik layar untuk memindahkan data dari server ke klien tanpa fetch ganda — kamu cukup mengembalikan data dari <code>load</code>. <code>hydratable</code> adalah primitif untuk penulis library atau kasus yang berada di luar jalur <code>load</code>.
+</Callout>
+
+<Callout type="warning">
+<strong>Titipan hanya berlaku untuk render awal → hidrasi awal.</strong> Setelah hidrasi selesai, pemanggilan <code>hydratable</code> berikutnya menjalankan <code>fn()</code> seperti biasa. Jadi jangan memperlakukannya sebagai cache permanen — ia jembatan satu kali untuk menghindari kerja ganda di boot pertama, bukan pengganti caching aplikasi.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/hydratable" label="hydratable — dokumentasi resmi Svelte" />

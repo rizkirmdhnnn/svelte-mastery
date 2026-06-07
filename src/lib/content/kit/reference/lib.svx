@@ -1,0 +1,278 @@
+---
+title: $lib
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 21
+status: reference
+description: Alias $lib memetakan src/lib jadi jalur impor yang stabil, dengan $lib/server sebagai zona khusus server yang dilindungi compiler dari kebocoran ke browser.
+docs: https://svelte.dev/docs/kit/$lib
+keywords: [lib, alias, server-only, import, files-config, sveltekit]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`$lib` adalah satu **alias impor bawaan** SvelteKit yang menunjuk ke folder `src/lib`. Artinya, di mana pun di dalam proyekmu, `import Button from '$lib/Button.svelte'` selalu mengambil file `src/lib/Button.svelte` — tidak peduli file yang sedang kamu tulis berada sedalam apa di pohon folder.
+
+Kelihatannya sepele, tapi masalah yang dipecahkannya nyata dan menyebalkan: **relative path hell**. Tanpa alias, sebuah komponen di `src/routes/dashboard/laporan/[id]/+page.svelte` yang mau memakai helper bersama harus menulis `import { formatRupiah } from '../../../../lib/utils/uang.js'`. Hitung titik-duanya salah satu saja, impor langsung putus. Lebih parah: begitu kamu **memindahkan** file itu ke folder lain, semua `../` jadi salah dan harus dihitung ulang satu per satu.
+
+### Analogi: nomor kontak vs hafal nomor HP
+
+Bayangkan setiap file di proyekmu punya "nomor HP" berupa lokasi absolutnya. Relative path (`../../../`) itu seperti **menghafal nomor lengkap orang lain dari posisimu sekarang** — kalau kamu pindah kota (pindah folder), seluruh hafalanmu basi. Sementara `$lib` itu seperti **menyimpan kontak dengan nama**: kamu cukup tulis "Budi", dan ponsel yang mengurus nomor aslinya. Mau kamu di Jakarta atau Surabaya (folder dangkal atau dalam), "Budi" tetap menghubungi orang yang sama. `$lib/utils/uang` selalu berarti file yang sama, dilihat dari sudut mana pun.
+
+Kalau kamu datang dari React atau Vue, konsep ini sudah akrab — bedanya cuma satu hal penting:
+
+- Di **Next.js / Vite + React** kamu biasanya membuat alias `@/` sendiri lewat `paths` di `tsconfig.json` plus `resolve.alias` di Vite. Harus dikonfigurasi manual.
+- Di **Nuxt** ada `~/` dan `@/` yang menunjuk ke root proyek, juga bawaan framework.
+- Di **SvelteKit**, `$lib` **sudah aktif sejak menit pertama** tanpa setup apa pun. Scaffolder `sv create` sudah memasangnya, lengkap dengan tipe TypeScript-nya. Tidak ada yang perlu kamu nyalakan.
+
+### Kenapa `src/lib`, bukan folder bebas?
+
+SvelteKit sengaja memisahkan dua wilayah di `src`:
+
+- **`src/routes`** — ini "halaman publik" aplikasimu. Struktur folder di sini = peta URL. Setiap file di sini punya peran routing.
+- **`src/lib`** — ini "gudang kode reusable" yang **tidak** punya makna URL: komponen, util, store, tipe, konstanta, klien API. Apa pun yang dipakai berulang dari banyak tempat tinggal di sini, dan diambil lewat `$lib`.
+
+Pemisahan ini membuat niat kodemu jelas: lihat sebuah file di `routes` kamu tahu itu rute; lihat file di `lib` kamu tahu itu potongan reusable. `$lib` adalah jembatan resmi ke gudang itu.
+
+### `$lib/server` — gudang yang punya pintu "staff only"
+
+Di dalam `src/lib` ada satu sub-folder istimewa: **`src/lib/server`**, diakses lewat `$lib/server`. Apa pun yang kamu taruh di sini ditandai SvelteKit sebagai **server-only** — hanya boleh dijalankan di server, **tidak pernah** ikut terbundel ke browser.
+
+Analoginya: kalau `src/lib` itu toko, maka `src/lib/server` adalah **ruang belakang bertanda "khusus staf"** — tempat brankas, kunci API, dan koneksi database. Pelanggan (kode browser) tidak boleh masuk. Dan SvelteKit bukan sekadar memasang papan larangan; ia bertindak sebagai **satpam yang aktif**: kalau ada kode yang akhirnya jalan di browser mencoba meng-`import` sesuatu dari `$lib/server` — entah langsung, entah lewat rantai impor berlapis — **build-nya gagal dengan error**, bukan diam-diam membocorkan rahasiamu ke bundle klien.
+
+Inilah nilai sebenarnya: tanpa mekanisme ini, satu impor ceroboh (`import { dbPassword } from '$lib/db'` di sebuah komponen) bisa menyelipkan kredensial database ke JavaScript yang diunduh setiap pengunjung. Dengan `$lib/server`, kesalahan itu berubah dari "bocor diam-diam di production" menjadi "error keras saat development" — jauh lebih aman.
+
+## 2. Contoh kode
+
+```js
+// PERBANDINGAN: tanpa $lib vs dengan $lib
+// Misal file ini ada di src/routes/dashboard/laporan/[id]/+page.svelte
+
+// ❌ Relative path: rapuh, dan basi begitu file dipindah
+import { formatRupiah } from '../../../../lib/utils/uang.js';
+
+// ✅ Alias $lib: stabil dari kedalaman folder mana pun
+import { formatRupiah } from '$lib/utils/uang.js';
+```
+
+```svelte
+<!-- src/lib/Button.svelte — komponen reusable biasa (Svelte 5) -->
+<script>
+	// callback prop, bukan createEventDispatcher (cara modern Svelte 5)
+	let { children, onclick } = $props();
+</script>
+
+<button class="btn" {onclick}>{@render children()}</button>
+```
+
+```svelte
+<!-- src/routes/+page.svelte — memakai komponen lewat $lib -->
+<script>
+	import Button from '$lib/Button.svelte';
+</script>
+
+<Button onclick={() => alert('halo')}>Klik saya</Button>
+```
+
+Sekarang sisi server. Perhatikan rahasia hanya diimpor di file `.server`:
+
+```js
+// src/lib/server/db.js — server-only (karena ada di $lib/server)
+// Boleh memuat kredensial: file ini TIDAK PERNAH ikut ke browser.
+import { DATABASE_URL } from '$env/static/private'; // env privat = server-only juga
+import postgres from 'postgres';
+
+const sql = postgres(DATABASE_URL);
+
+export async function getUser(id) {
+	const [user] = await sql`select id, nama from users where id = ${id}`;
+	return user;
+}
+```
+
+```js
+// src/routes/profil/[id]/+page.server.js — jalan di server, jadi aman mengimpor $lib/server
+import { error } from '@sveltejs/kit';
+import { getUser } from '$lib/server/db.js';
+
+export async function load({ params }) {
+	const user = await getUser(params.id);
+	// SvelteKit 2: panggil error() langsung, TANPA "throw" di depannya
+	if (!user) error(404, 'User tidak ditemukan');
+	return { user };
+}
+```
+
+<Callout type="tip">
+Aturan praktisnya: komponen, util murni, store, dan tipe yang aman di mana saja → taruh langsung di <code>src/lib</code>. Apa pun yang menyentuh rahasia atau infrastruktur (DB, kunci API, kueri SQL, hashing password) → taruh di <code>src/lib/server</code> supaya dijaga compiler.
+</Callout>
+
+## 3. Coba sendiri
+
+Modul ini soal alias build-time dan kode sisi server, jadi tidak bisa dijalankan di live playground browser. Sebagai gantinya, telusuri skenario "satpam menolak masuk" di bawah ini langkah demi langkah — ini persis perilaku yang akan kamu temui di proyek nyata.
+
+```js
+// src/lib/server/secrets.js — server-only
+export const apiKey = 'sk-rahasia-banget';
+```
+
+```js
+// src/lib/utils.js — util "biasa" yang TANPA SADAR menarik rahasia
+// (impor ini yang jadi sumber masalah)
+import { apiKey } from '$lib/server/secrets.js';
+
+export function sapa(nama) {
+	return 'Halo, ' + nama; // sapa() sendiri tak pakai apiKey, tapi impor di atas tetap "menular"
+}
+```
+
+```svelte
+<!-- src/routes/+page.svelte — komponen ini jalan di browser -->
+<script>
+	// Mengimpor utils.js terlihat tak berdosa... tapi utils.js mengimpor $lib/server.
+	import { sapa } from '$lib/utils.js';
+</script>
+
+<p>{sapa('Dunia')}</p>
+```
+
+Saat build, SvelteKit menelusuri **rantai impor** dan menolak menyalakan aplikasi dengan pesan seperti ini:
+
+```text
+Cannot import $lib/server/secrets.js into code that runs in the browser,
+as this could leak sensitive information.
+
+ src/routes/+page.svelte imports
+  src/lib/utils.js imports
+   $lib/server/secrets.js
+```
+
+Yang harus kamu pahami dari sini:
+
+1. **Pelanggarannya tidak langsung.** `+page.svelte` tidak mengimpor `secrets.js` secara eksplisit — ia hanya mengimpor `utils.js`. SvelteKit tetap menangkapnya karena melacak **seluruh rantai**, bukan cuma satu lapis.
+2. **Tidak peduli apakah rahasianya benar-benar dipakai.** Walau `sapa()` tak menyentuh `apiKey`, keberadaan impor `$lib/server` di dalam `utils.js` sudah cukup untuk memblokir. SvelteKit memilih aman ketimbang menebak-nebak.
+3. **Cara perbaikinya:** pisahkan. Pindahkan fungsi yang butuh `apiKey` ke file `.server` atau ke `+page.server.js`, sehingga `utils.js` (yang dipakai browser) bersih dari impor server. Setelah rantai ke `$lib/server` putus dari sisi klien, error hilang.
+
+<Callout type="warning">
+Pengecualian penting: impor <strong>khusus-tipe</strong> tidak ikut diblokir. Menulis <code>import type &#123; User &#125; from '$lib/server/db.js'</code> tetap aman karena tipe dihapus saat kompilasi dan tak pernah ada di output JavaScript. Yang diblokir hanya impor <em>nilai</em> (runtime).
+</Callout>
+
+## 4. Ringkasan API
+
+Karena `$lib` bukan kumpulan fungsi melainkan sebuah konvensi alias + aturan, berikut rangkuman padatnya.
+
+**Alias & pemetaan jalur**
+
+| Tulis di kode | Menunjuk ke | Aman di browser? |
+|---|---|---|
+| `$lib` | `src/lib/` | Ya |
+| `$lib/Foo.svelte` | `src/lib/Foo.svelte` | Ya |
+| `$lib/utils/uang.js` | `src/lib/utils/uang.js` | Ya |
+| `$lib/server` | `src/lib/server/` | **Tidak** — server-only |
+| `$lib/server/db.js` | `src/lib/server/db.js` | **Tidak** — server-only |
+
+**Konfigurasi (opsional) di `svelte.config.js`**
+
+| Opsi | Default | Guna |
+|---|---|---|
+| `kit.files.lib` | `"src/lib"` | Mengubah folder mana yang dipetakan ke alias `$lib`. Jarang diubah; default sudah ideal untuk hampir semua proyek. |
+
+```js
+// svelte.config.js — contoh MENGUBAH lokasi $lib (tidak disarankan tanpa alasan kuat)
+import adapter from '@sveltejs/adapter-auto';
+
+export default {
+	kit: {
+		adapter: adapter(),
+		files: {
+			// sekarang $lib menunjuk ke src/library, bukan src/lib
+			lib: 'src/library'
+		}
+	}
+};
+```
+
+**Cara menandai modul sebagai server-only (dua mekanisme setara)**
+
+| Cara | Contoh | Efek |
+|---|---|---|
+| Taruh di folder `$lib/server` | `src/lib/server/db.js` | Seluruh isi folder jadi server-only |
+| Beri akhiran `.server` pada nama file | `src/lib/secrets.server.js` | File itu saja jadi server-only |
+
+**Modul server-only bawaan SvelteKit (untuk konteks)**
+
+| Modul | Isi | Catatan |
+|---|---|---|
+| `$env/static/private` | Env var privat (statis, saat build) | Hanya boleh diimpor di kode server |
+| `$env/dynamic/private` | Env var privat (dinamis, saat runtime) | Hanya boleh diimpor di kode server |
+| `$app/server` | Fungsi `read` untuk baca file dari filesystem | Server-only |
+
+<Callout type="tip">
+Untuk file <strong>tunggal</strong>, akhiran <code>.server.js</code> lebih ringkas daripada membuat sub-folder. Untuk <strong>banyak</strong> modul server, folder <code>$lib/server/</code> lebih rapi dan niatnya langsung kelihatan dari struktur. Keduanya memberi proteksi yang sama persis.
+</Callout>
+
+## 5. Latihan
+
+<Exercise title="Tata letak $lib & zona server">
+Sebuah aplikasi punya potongan-potongan berikut. Untuk tiap item, tentukan **di mana** ia sebaiknya tinggal (`src/lib` biasa atau `src/lib/server`), dan tulis baris **impornya** dari `src/routes/dashboard/[id]/+page.svelte` (atau dari `+page.server.js` bila memang server-only).
+
+1. Komponen kartu reusable `Card.svelte`.
+2. Fungsi `koneksiDB()` yang membuka koneksi PostgreSQL dengan password dari env.
+3. Helper murni `formatTanggal(date)` (tanpa rahasia apa pun).
+4. **Pertanyaan jebakan:** kamu meng-`import { koneksiDB } from '$lib/server/db.js'` di `+page.svelte` (bukan `+page.server.js`). Apa yang terjadi dan kenapa?
+
+{#snippet solution()}
+
+```text
+1. Card.svelte  ->  src/lib/Card.svelte  (aman di browser)
+   Impor:  import Card from '$lib/Card.svelte';
+
+2. koneksiDB()  ->  src/lib/server/db.js  (menyentuh password env = server-only)
+   Impor (HANYA dari file server, mis. +page.server.js):
+           import { koneksiDB } from '$lib/server/db.js';
+
+3. formatTanggal()  ->  src/lib/utils/tanggal.js  (util murni, aman di mana saja)
+   Impor:  import { formatTanggal } from '$lib/utils/tanggal.js';
+
+4. BUILD GAGAL. +page.svelte ikut terbundel & jalan di browser,
+   sedangkan $lib/server/db.js ditandai server-only. SvelteKit menolak
+   dengan error "Cannot import $lib/server/... into code that runs in
+   the browser...". Perbaikan: pindahkan pemakaian koneksiDB ke
+   +page.server.js (fungsi load), lalu kirim hasilnya ke halaman lewat
+   return data — bukan mengimpor modul server langsung di komponen.
+```
+
+{/snippet}
+</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>$lib</code> hanya menunjuk ke <code>src/lib</code>, <strong>bukan</strong> ke folder <code>src</code> secara umum. Mau mengimpor sesuatu dari <code>src/routes</code> atau dari root <code>src</code> lewat <code>$lib</code>? Tidak bisa — itu di luar jangkauan alias. Pindahkan kode reusable ke dalam <code>src/lib</code> dulu, baru ia bisa di-<code>$lib</code>-kan.
+</Callout>
+
+<Callout type="warning">
+Menaruh file di <code>src/lib/server</code> <strong>tidak</strong> membuatnya ajaib menjadi endpoint atau otomatis berjalan. Ia hanya jadi modul biasa yang <em>dibatasi</em> agar tak terbundel ke klien. Kode di dalamnya baru benar-benar dieksekusi kalau diimpor & dipanggil dari konteks server (mis. <code>load</code> di <code>+page.server.js</code>, <code>+server.js</code>, atau <code>hooks.server.js</code>).
+</Callout>
+
+<Callout type="pitfall">
+Jangan kira proteksi server-only menggantikan pemeriksaan keamanan biasa. <code>$lib/server</code> mencegah kode kamu <em>terbundel</em> ke browser, tapi data yang kamu <code>return</code> dari <code>load</code> tetap dikirim ke klien. Tetap saring kolom sensitif (password hash, token) sebelum dikembalikan — proteksi ini soal bundle, bukan soal isi response.
+</Callout>
+
+<Callout type="tip">
+Saat refactor besar, manfaatkan keunggulan utama <code>$lib</code>: kamu bisa memindah-mindah file <em>pemakai</em> di dalam <code>src/routes</code> tanpa menyentuh satu pun baris impor <code>$lib</code>-nya. Yang perlu konsisten cuma lokasi file yang diimpor (di <code>src/lib</code>), bukan lokasi file yang mengimpor.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$lib" label="SvelteKit — $lib (alias src/lib)" />
+<DocsLink href="https://svelte.dev/docs/kit/server-only-modules" label="SvelteKit — Server-only modules ($lib/server & proteksinya)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration" label="SvelteKit — Configuration (opsi files.lib)" />

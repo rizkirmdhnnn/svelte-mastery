@@ -1,0 +1,251 @@
+---
+title: $app/environment
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 6
+status: reference
+description: Empat konstanta lingkungan SvelteKit dari $app/environment — browser, building, dev, dan version — beserta kapan masing-masing bernilai true dan cara memakainya dengan aman.
+docs: https://svelte.dev/docs/kit/$app-environment
+keywords: [browser, building, dev, version, environment]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/environment` adalah modul virtual SvelteKit yang paling kecil sekaligus paling sering dipakai: isinya cuma **empat konstanta** — `browser`, `building`, `dev`, dan `version`. Tidak ada fungsi, tidak ada objek reaktif. Tugasnya cuma satu: menjawab pertanyaan **"sebenarnya kode ini sedang jalan di mana, dalam mode apa, dan versi berapa?"**
+
+Kenapa pertanyaan itu penting? Karena di SvelteKit, satu file kode yang sama bisa dieksekusi di **beberapa tempat dan beberapa waktu yang berbeda**. Sebuah `+page.svelte` dirender sekali di server (SSR) lalu "dihidupkan ulang" (hydrate) di browser. Sebuah `+page.js` jalan di server *dan* di klien. Bahkan sebagian kodemu dijalankan SvelteKit **saat build** untuk menganalisis aplikasimu (mengumpulkan rute, melakukan prerender). Karena lokasi dan waktu eksekusi berbeda-beda, ada hal yang hanya aman dilakukan di tempat tertentu: `localStorage` cuma ada di browser, koneksi database cuma boleh di server, dan mengirim email tidak boleh terjadi saat build sedang sekadar "membaca" aplikasimu. Empat konstanta ini adalah **rambu lalu lintas** yang memberitahumu kapan boleh melakukan apa.
+
+### Analogi: rombongan teater keliling
+
+Bayangkan aplikasimu adalah sebuah pertunjukan teater yang dipentaskan berulang kali. Naskah (kodemu) sama, tapi keadaannya berbeda-beda:
+
+- **`browser`** menjawab: aku sedang **di atas panggung di depan penonton** (`browser = true`, kode jalan di klien), atau aku **di balik layar / ruang kontrol** tempat sutradara membacakan naskah keras-keras tanpa penonton (`browser = false`, kode jalan di server saat SSR/prerender)? Lampu sorot, mikrofon, reaksi penonton — itu semua hanya ada di atas panggung. Jangan coba menyalakan lampu sorot dari ruang kontrol.
+- **`building`** menjawab: ini **gladi resik** tempat seluruh kru menjalankan pertunjukan dari awal sampai akhir untuk merekam dan memotretnya buat brosur (`building = true`, build analysis & prerender)? Saat gladi resik, kamu **tidak** memanggil katering betulan atau menjual tiket sungguhan — itu cuma latihan untuk merekam hasilnya.
+- **`dev`** menjawab: ini **pertunjukan terbuka tempat sutradara masih mengutak-atik secara langsung** (`dev = true`, dev server jalan dengan HMR), atau ini **malam pementasan resmi** (produksi)? Saat masih bareng sutradara kamu boleh pasang catatan debug di mana-mana; saat malam resmi semua itu harus bersih.
+- **`version`** adalah **nomor edisi yang tercetak di brosur acara** (`version`, sebuah string). Setiap kali pertunjukan diperbarui dan dipentaskan ulang (di-deploy ulang), edisinya berganti — sehingga penonton lama tahu ada versi baru.
+
+Pegang intinya: `browser` = **DI MANA** (klien vs server), `building` dan `dev` = **DALAM MODE APA** (build vs dev vs produksi), `version` = **EDISI BERAPA**.
+
+### Buat yang datang dari React/Vue/Next/Nuxt
+
+Mental model-nya gampang kalau dikaitkan ke tempat asalmu:
+
+- `browser` itu padanan dari pola `typeof window !== 'undefined'` yang sering kamu tulis di Next.js, atau `import.meta.client` / `import.meta.server` di Nuxt 3. Bedanya `browser` jauh lebih bersih dan—ini penting—**diketahui saat build** sehingga bisa di-*tree-shake* (lihat di bawah).
+- `dev` itu padanan `process.env.NODE_ENV === 'development'` (Next) atau `import.meta.env.DEV` (Vite) atau `import.meta.dev` (Nuxt). Tapi dokumen resmi menegaskan `dev` **tidak dijamin** sama persis dengan `NODE_ENV`/`MODE` — jangan disamakan begitu saja.
+- `building` nyaris tidak punya padanan langsung di React-land. Yang paling mirip adalah deteksi fase build statis seperti `process.env.NEXT_PHASE === 'phase-production-build'` di Next, atau `import.meta.prerender` di Nuxt. Ini "fase saat framework mengeksekusi kodemu hanya untuk menganalisis/men-generate halaman", bukan saat melayani user betulan.
+- `version` mirip "build id" custom yang biasa kamu pasang sendiri (mis. `NEXT_PUBLIC_BUILD_ID`), tapi SvelteKit menyediakannya bawaan dan mengintegrasikannya dengan deteksi "ada versi baru" (`updated` dari `$app/state`).
+
+### Kenapa pakai konstanta ini, bukan cek manual?
+
+Ini bagian yang lebih dalam dari sekadar "apa isinya". `browser` dan `dev` **diketahui nilainya saat build** untuk tiap bundle: bundle server selalu punya `browser = false`, bundle klien selalu `browser = true`. Karena Vite tahu nilainya secara statis, ia bisa **membuang blok kode yang tak akan pernah jalan** (dead-code elimination / tree-shaking). Jadi `if (browser) { ...kode berat khusus browser... }` akan **hilang total** dari bundle server, dan sebaliknya. Bandingkan dengan `typeof window !== 'undefined'`: itu baru dievaluasi saat runtime, jadi kode di dalamnya tetap ikut ter-bundle (lebih berat) dan tidak bisa di-tree-shake.
+
+`building` berbeda sifatnya: ia **variabel runtime sungguhan**, bukan konstanta build. Alasannya logis — bundle server yang **sama persis** dipakai di dua waktu: saat build menganalisis app (`building = true`) dan nanti saat melayani request user (`building = false`). Karena satu bundle melayani dua keadaan, nilainya tidak bisa "dibakukan" saat build; ia harus dicek saat jalan.
+
+## 2. Ringkasan API
+
+Modul ini mengekspor empat nilai (semua read-only):
+
+| Export | Tipe | Bernilai apa / kapan `true` |
+| --- | --- | --- |
+| `browser` | `boolean` | `true` jika app sedang jalan di **browser**; `false` saat jalan di **server** (SSR maupun prerender). |
+| `building` | `boolean` | `true` saat SvelteKit **menganalisis app di tahap build** dengan mengeksekusinya. Ini juga berlaku **selama prerendering**. Selain itu `false`. |
+| `dev` | `boolean` | `true` saat **dev server** (`vite dev`) sedang jalan. Tidak dijamin sama dengan `NODE_ENV` atau `MODE`. |
+| `version` | `string` | Nilai dari `config.kit.version.name` (default: timestamp build, mis. `"1717718400000"`). |
+
+Cara import-nya selalu sama — destructuring biasa, bukan default import:
+
+```js
+import { browser, building, dev, version } from '$app/environment';
+```
+
+Catatan penting per item:
+
+- **`browser`** — pasangannya bukan "server", tapi "bukan-browser". Saat SSR *dan* saat prerender, `browser` sama-sama `false` karena keduanya berjalan di Node, bukan di browser.
+- **`building`** — yang sering bikin kaget: prerender membuat `building` jadi `true`. Jadi kalau halaman yang kamu prerender memicu efek samping (kirim email, tulis ke DB), efek itu akan ikut jalan saat build kalau tidak kamu jaga.
+- **`dev`** — gunakan untuk *developer experience* (log, panel debug, data mock), **bukan** untuk keputusan keamanan. Untuk rahasia/konfigurasi produksi, pakai variabel environment (`$env/...`), bukan `dev`.
+- **`version`** — defaultnya timestamp build sehingga selalu berubah tiap deploy; kamu bisa menggantinya jadi mis. hash git lewat `config.kit.version.name`. Pasangannya adalah `config.kit.version.pollInterval` + `updated` dari `$app/state` untuk membujuk user me-reload saat ada versi baru.
+
+## 3. Contoh kode
+
+```js
+// src/lib/theme.js — `browser` menjaga akses localStorage agar aman saat SSR.
+import { browser } from '$app/environment';
+
+// Saat SSR (browser === false), localStorage TIDAK ADA. Tanpa penjaga ini,
+// baris di bawah akan melempar ReferenceError dan merusak render server.
+// Karena `browser` konstanta build, seluruh cabang ini juga di-tree-shake
+// keluar dari bundle server (jadi bundle server lebih ramping).
+export function getTheme() {
+	if (!browser) return 'light'; // fallback aman saat di server
+	return localStorage.getItem('theme') ?? 'light';
+}
+
+export function setTheme(value) {
+	if (browser) localStorage.setItem('theme', value);
+}
+```
+
+```js
+// src/hooks.server.js — `building` mencegah efek samping ikut jalan saat build.
+import { building } from '$app/environment';
+import { connectDB } from '$lib/server/db';
+
+// Kode TOP-LEVEL di modul server ikut dieksekusi saat build menganalisis app.
+// Tanpa penjaga `!building`, koneksi DB akan dibuka saat `vite build` — padahal
+// di lingkungan CI sering tidak ada DB, sehingga build gagal tanpa alasan jelas.
+if (!building) {
+	connectDB();
+}
+
+export async function handle({ event, resolve }) {
+	return resolve(event);
+}
+```
+
+```js
+// src/hooks.server.js (lanjutan) — `dev` untuk logging khusus pengembangan.
+import { dev, version } from '$app/environment';
+
+export async function handle({ event, resolve }) {
+	// Blok ini lenyap dari bundle produksi karena `dev` diketahui saat build.
+	if (dev) {
+		console.log('[req]', event.request.method, event.url.pathname);
+	}
+
+	const response = await resolve(event);
+	// Selipkan versi app ke setiap respons untuk memudahkan debugging deploy.
+	response.headers.set('x-app-version', version);
+	return response;
+}
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — gabungkan `version` + `updated` ($app/state) -->
+<script>
+	import { version } from '$app/environment';
+	import { updated } from '$app/state';
+
+	// updated.current jadi true saat SvelteKit mendeteksi `version` baru ter-deploy
+	// (aktif jika config.kit.version.pollInterval > 0). Lihat modul $app/state.
+</script>
+
+{#if updated.current}
+	<div class="toast">
+		Versi baru tersedia.
+		<button onclick={() => location.reload()}>Muat ulang</button>
+	</div>
+{/if}
+
+<footer>Build: {version}</footer>
+```
+
+## 4. Coba sendiri
+
+Karena `$app/environment` adalah modul **virtual milik SvelteKit**, nilainya tidak bisa dicoba di playground browser — nilainya ditentukan oleh *cara* dan *waktu* kodemu dijalankan SvelteKit, bukan oleh logika runtime biasa. Jadi cara paling efektif "mencoba"-nya adalah memahami **matriks nilai**: untuk tiap kombinasi tempat & waktu, berapa nilai tiap konstanta.
+
+```js
+// src/routes/debug/+page.js — load universal: jalan di server DAN di klien.
+import { browser, building, dev, version } from '$app/environment';
+
+export function load() {
+	// Object ini akan punya NILAI BERBEDA tergantung kapan & di mana load berjalan.
+	// Saat SSR awal -> dijalankan di server (browser:false). Saat navigasi klien
+	// berikutnya -> dijalankan di browser (browser:true). Bandingkan hasilnya!
+	return {
+		env: { browser, building, dev, version }
+	};
+}
+```
+
+Berikut nilai yang akan kamu lihat di tiap skenario nyata (perhatikan: `browser` dan `building` tidak pernah sama-sama `true` — build selalu terjadi di server):
+
+| Skenario | `browser` | `building` | `dev` |
+| --- | --- | --- | --- |
+| `vite dev`, render awal di server (SSR) | `false` | `false` | `true` |
+| `vite dev`, setelah hydrate / navigasi di browser | `true` | `false` | `true` |
+| `vite build` (analisis build & prerender) | `false` | `true` | `false` |
+| Produksi, SSR di server (mis. adapter-node) | `false` | `false` | `false` |
+| Produksi, kode jalan di browser | `true` | `false` | `false` |
+
+Cara membaca tabel ini: `dev` membedakan **kolom dev vs build/produksi**; `building` menyala **hanya saat build/prerender**; `browser` membedakan **server vs klien** di skenario mana pun. `version` selalu sebuah string non-kosong di semua baris.
+
+## 5. Latihan
+
+<Exercise title="Hooks server yang sadar lingkungan">
+Tulis `src/hooks.server.js` yang memenuhi tiga syarat sekaligus, masing-masing memakai satu konstanta dari `$app/environment`:
+
+1. **Jangan** menjalankan `seedDatabase()` (efek samping mahal) saat SvelteKit sedang membangun/prerender aplikasi — hanya jalankan saat runtime nyata.
+2. Saat **dev server**, cetak log `method` dan `pathname` tiap request. Log ini tidak boleh ikut ke bundle/lingkungan produksi.
+3. Tambahkan header `x-app-version` berisi versi aplikasi ke **setiap** respons.
+
+Anggap `seedDatabase()` sudah tersedia dari `$lib/server/db`.
+
+{#snippet solution()}
+
+  ```js
+  // src/hooks.server.js
+  import { building, dev, version } from '$app/environment';
+  import { seedDatabase } from '$lib/server/db';
+
+  // (1) Kode top-level ini ikut dieksekusi saat build menganalisis app.
+  //     `!building` memastikan seed HANYA jalan saat melayani request nyata,
+  //     bukan saat `vite build`/prerender.
+  if (!building) {
+    seedDatabase();
+  }
+
+  export async function handle({ event, resolve }) {
+    // (2) `dev` diketahui saat build -> blok ini di-tree-shake keluar dari
+    //     bundle produksi, jadi tidak ada overhead/log bocor di produksi.
+    if (dev) {
+      console.log('[req]', event.request.method, event.url.pathname);
+    }
+
+    const response = await resolve(event);
+
+    // (3) `version` = config.kit.version.name (default: timestamp build).
+    response.headers.set('x-app-version', version);
+
+    return response;
+  }
+  ```
+
+  Kuncinya: `building` adalah penjaga **runtime** untuk efek samping top-level (karena modul server ikut dieksekusi saat build), sementara `dev` adalah penjaga **build-time** yang membuat kode debug lenyap dari produksi. `version` cukup dibaca langsung sebagai string. Tidak satu pun dari ini butuh `typeof window` atau cek `process.env` manual.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+Jangan menaruh kode yang menyentuh <code>window</code>/<code>document</code>/<code>localStorage</code> di <strong>top-level modul</strong> tanpa penjaga <code>browser</code>. Modul yang sama dieksekusi saat SSR, dan di sana objek-objek itu tidak ada — render server akan crash. Bungkus dengan <code>if (browser) &#123; … &#125;</code>, atau pindahkan ke dalam <code>onMount</code> (yang memang hanya jalan di browser). Untuk import library berat yang menyentuh DOM saat di-load, pertimbangkan dynamic import di dalam cabang <code>browser</code> agar tidak ikut ke bundle server.
+</Callout>
+
+<Callout type="warning">
+<code>dev</code> <strong>tidak dijamin</strong> sama dengan <code>NODE_ENV</code> atau <code>MODE</code> (ini ditegaskan di dokumen resmi). Maka jangan pakai <code>dev</code> untuk keputusan keamanan — mis. "kalau <code>dev</code> false berarti aman membongkar secret". Untuk rahasia & konfigurasi yang beda antar lingkungan, pakai <code>$env/static/private</code> atau <code>$env/dynamic/private</code>. Anggap <code>dev</code> murni untuk <em>developer experience</em>: log, panel debug, data dummy.
+</Callout>
+
+<Callout type="pitfall">
+Banyak orang lupa bahwa <strong>prerender membuat <code>building</code> jadi <code>true</code></strong>. Kalau halaman yang kamu prerender (atau kode top-level di modul server) memicu efek samping seperti mengirim email, menulis ke DB, atau memanggil API berbayar, efek itu akan <strong>benar-benar terjadi saat <code>vite build</code></strong>. Selalu jaga efek samping yang tidak boleh jalan saat build dengan <code>if (!building) &#123; … &#125;</code>.
+</Callout>
+
+<Callout type="tip">
+Pilih <code>browser</code> daripada <code>typeof window !== 'undefined'</code> bila bisa. Selain lebih bersih, <code>browser</code> diketahui saat build sehingga Vite bisa <strong>membuang cabang yang tak terpakai</strong> (tree-shaking) — kode khusus browser lenyap dari bundle server dan sebaliknya. <code>typeof window</code> baru dicek saat runtime, jadi kodenya tetap ikut ter-bundle dan lebih berat.
+</Callout>
+
+<Callout type="tip">
+Pasangkan <code>version</code> dengan <code>config.kit.version.pollInterval</code> di <code>svelte.config.js</code> dan <code>updated</code> dari <code>$app/state</code>. SvelteKit akan rutin mengecek apakah ada <code>version</code> baru ter-deploy; saat ketemu, <code>updated.current</code> menjadi <code>true</code> dan kamu bisa menampilkan tombol "Muat ulang". Set <code>version.name</code> ke hash git agar lebih bermakna daripada timestamp default.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-environment" label="SvelteKit — $app/environment (browser, building, dev, version)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-state" label="SvelteKit — $app/state (updated, untuk deteksi versi baru)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration#version" label="SvelteKit — config.kit.version (name, pollInterval)" />

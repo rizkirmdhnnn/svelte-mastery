@@ -45,6 +45,11 @@ class ProgressStore {
 		const n = slugs.filter((s) => this.done.has(s)).length;
 		return Math.round((n / slugs.length) * 100);
 	}
+
+	/** Count of done slugs among the given list. */
+	count(slugs: string[]): number {
+		return slugs.filter((s) => this.done.has(s)).length;
+	}
 }
 
 export const progress = new ProgressStore();

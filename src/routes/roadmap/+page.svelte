@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { levels, modules } from '$lib/content';
+	import { products, modules } from '$lib/content';
 	import { progress } from '$lib/stores/progress.svelte';
-	import { roadmapMeta, FALLBACK_META, TUTORIAL_URL, SVELTEKIT_FROM_LEVEL } from '$lib/roadmap';
+	import { roadmapMeta, FALLBACK_META, TUTORIAL_URL, PRODUCT_DIVIDERS } from '$lib/roadmap';
 	import RoadmapStage from '$lib/components/RoadmapStage.svelte';
 
 	const allSlugs = $derived(modules.map((m) => m.slug));
@@ -14,17 +14,17 @@
 	<title>Roadmap Belajar — Svelte & SvelteKit Mastery</title>
 	<meta
 		name="description"
-		content="Peta belajar Svelte 5 & SvelteKit v2 dari pemula hingga expert, mengikuti urutan dokumentasi resmi."
+		content="Peta belajar Svelte 5, SvelteKit v2, dan CLI dari pemula hingga expert, mengikuti urutan dokumentasi resmi."
 	/>
 </svelte:head>
 
 <article class="roadmap">
 	<header class="rm-head">
 		<span class="kicker">🗺️ Roadmap</span>
-		<h1>Peta belajar Svelte &amp; SvelteKit</h1>
+		<h1>Peta belajar Svelte, SvelteKit &amp; CLI</h1>
 		<p class="sub">
-			Jalur dari pemula hingga expert, mengikuti urutan <strong>dokumentasi resmi</strong>. Tiap
-			tahap menaut ke modulnya di situs ini dan ke halaman docs resmi.
+			Jalur lengkap mengikuti urutan <strong>dokumentasi resmi</strong>. Tiap tahap menaut ke
+			modulnya di situs ini dan ke halaman docs resmi.
 		</p>
 		<p class="tut">
 			💡 Mau langsung hands-on? Ikuti juga
@@ -43,26 +43,27 @@
 			<div class="m-label">Mulai di sini</div>
 		</li>
 
-		{#each levels as lvl, i (lvl.level)}
-			{#if lvl.level === SVELTEKIT_FROM_LEVEL}
+		{#each products as prod (prod.product)}
+			{#if PRODUCT_DIVIDERS[prod.product]}
 				<li class="row divider">
 					<div class="rail"><span class="line"></span></div>
-					<div class="d-label">↓ Lanjut ke SvelteKit</div>
+					<div class="d-label">{PRODUCT_DIVIDERS[prod.product]}</div>
 				</li>
 			{/if}
-			<RoadmapStage
-				level={lvl.level}
-				title={lvl.title}
-				modules={lvl.modules}
-				meta={roadmapMeta[lvl.level] ?? FALLBACK_META}
-				{currentSlug}
-			/>
+			{#each prod.sections as sec (sec.section)}
+				<RoadmapStage
+					title={sec.title}
+					modules={sec.modules}
+					meta={roadmapMeta[`${prod.product}/${sec.section}`] ?? FALLBACK_META}
+					{currentSlug}
+				/>
+			{/each}
 		{/each}
 
 		<li class="row milestone end" class:done={allDone}>
 			<div class="rail"><span class="m-dot">🚀</span><span class="line"></span></div>
 			<div class="m-label">
-				{allDone ? 'Selesai — kamu siap membangun app!' : 'Tujuan: siap membangun app lengkap'}
+				{allDone ? 'Selesai — kamu siap membangun app!' : 'Tujuan: kuasai seluruh docs'}
 			</div>
 		</li>
 	</ol>

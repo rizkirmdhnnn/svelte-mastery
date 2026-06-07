@@ -1,0 +1,200 @@
+---
+title: "{#key ...}"
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 4
+status: stable
+description: Membuang lalu membangun ulang (remount) sebagian markup saat sebuah nilai berubah — untuk mereset state komponen anak dan memicu transisi ulang.
+docs: https://svelte.dev/docs/svelte/key
+keywords: [key, remount, transition, reset-state, template]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+Bayangkan Svelte sebagai tukang renovasi yang sangat hemat. Secara default, ketika data berubah, Svelte **tidak** merobohkan rumah lalu membangunnya lagi. Ia hanya menyentuh bagian yang benar-benar berubah — mengecat ulang satu dinding, mengganti satu bohlam. DOM node dan instance komponen yang sudah ada dipakai ulang semaksimal mungkin. Inilah salah satu alasan Svelte terasa cepat: tidak ada Virtual DOM, dan update bersifat *bedah* (surgical) — hanya yang berubah yang disentuh.
+
+Tapi kadang justru sifat "dipakai ulang" itulah masalahnya. Ada saat di mana kamu **mau** sebagian tampilan dibuang sepenuhnya lalu dibangun lagi dari nol. `{#key expr}` adalah tombol "bangun ulang dari nol" itu.
+
+Aturannya sederhana: selama nilai `expr` tetap, isi blok diperlakukan normal (update di tempat seperti biasa). Begitu `expr` berubah ke nilai baru, Svelte **menghancurkan (destroy) seluruh isi blok lalu membuatnya lagi (recreate)** dari awal. Komponen di dalamnya di-*reinstantiate* — state internalnya kembali ke nilai awal, `onMount` berjalan lagi, dan transisi masuk diputar ulang.
+
+### Analogi: kamar hotel vs. housekeeping
+
+Reaktivitas normal Svelte itu seperti **housekeeping**: tiap pagi kamarmu yang sama dirapikan. Barangmu masih ada, catatan di meja masih menempel, charger masih tertancap. Yang berubah hanya hal-hal kecil.
+
+`{#key id}` seperti **check-out lalu check-in ke kamar baru** setiap kali `id` berubah. Kamarnya benar-benar kosong dan bersih — tak ada satu pun jejak penghuni sebelumnya. "Jejak penghuni" di sini adalah segala state internal: variabel `$state` komponen anak, teks yang sedang diketik di sebuah input, posisi animasi, atau timer yang dipasang lewat `onMount`.
+
+### Buat yang datang dari React
+
+Ini **persis** trik `key={sesuatu}` di React untuk memaksa remount. Saat kamu mengganti prop `key` sebuah komponen React, React membuang instance lama dan membuat instance baru sehingga state-nya ter-reset. `{#key}` adalah versi Svelte yang lebih eksplisit dan *ber-scope*: alih-alih menempelkan atribut `key` ke satu elemen, kamu **membungkus** potongan markup yang ingin di-remount. Di Vue, padanan terdekatnya juga `:key` pada elemen/komponen untuk memaksa re-render — konsepnya sama, hanya beda di mana key-nya ditulis.
+
+### Tiga skenario kapan kamu butuh `{#key}`
+
+1. **Reset state komponen anak saat identitas berubah.** Misalnya halaman profil yang menampilkan `<UserProfile id={...} />`. Saat `id` berganti, kamu ingin tab aktif, draft komentar, dan scroll di dalamnya kembali fresh — bukan terbawa dari profil sebelumnya.
+2. **Memutar ulang transisi/animasi.** Transisi `in:`/`out:` hanya jalan saat elemen benar-benar masuk/keluar DOM. Kalau kamu cuma mengganti teks, elemennya dipertahankan sehingga tak ada animasi. `{#key}` memaksa elemen lama keluar dan yang baru masuk, jadi animasinya terpicu lagi.
+3. **Memaksa `onMount` / `$effect` mount berjalan ulang.** Karena isinya benar-benar di-remount, lifecycle mount dijalankan dari awal — berguna saat kamu butuh inisialisasi ulang library pihak ketiga (chart, map, editor) untuk data yang baru.
+
+Satu catatan penting: pemicunya adalah **perubahan nilai** `expr`, dibandingkan secara identitas (`!==`). Untuk primitif (number, string), ini intuitif. Untuk objek/array, yang dibandingkan adalah **referensi**-nya, bukan isinya — ini sering jadi sumber kebingungan (lihat Pitfalls).
+
+## 2. Contoh kode
+
+**Skenario 1 — reset state komponen anak.** Ini kegunaan paling khas: ada satu komponen anak ber-state yang harus "lupa segalanya" saat identitasnya berganti.
+
+```svelte
+<script>
+	import UserProfile from './UserProfile.svelte';
+
+	let selectedId = $state(1);
+</script>
+
+<button onclick={() => selectedId++}>Profil berikutnya</button>
+
+<!--
+	TANPA {#key}: saat selectedId berubah, Svelte memakai ULANG instance
+	<UserProfile> yang sama dan cuma mengganti prop `id`. Kalau komponen itu
+	punya state internal (tab aktif, draft komentar, scroll position),
+	state itu BERTAHAN — ikut "nyangkut" ke profil baru. Biasanya bukan ini
+	yang kita mau.
+
+	DENGAN {#key selectedId}: tiap kali selectedId berubah, <UserProfile>
+	lama dihancurkan total lalu instance baru dibuat. onMount jalan lagi,
+	semua $state internalnya kembali ke nilai awal. Bersih, tanpa jejak.
+-->
+{#key selectedId}
+	<UserProfile id={selectedId} />
+{/key}
+```
+
+**Skenario 2 — memutar ulang transisi saat nilai berubah.** Perhatikan kenapa tanpa `{#key}` transisinya tidak muncul.
+
+```svelte
+<script>
+	import { fly } from 'svelte/transition';
+
+	let pesan = $state('Halo');
+
+	function ganti() {
+		pesan = pesan === 'Halo' ? 'Selamat datang' : 'Halo';
+	}
+</script>
+
+<button onclick={ganti}>Ganti pesan</button>
+
+<!--
+	Transisi in:/out: HANYA berjalan saat elemen benar-benar masuk/keluar DOM.
+	Kalau kita cuma mengubah teks {pesan}, elemen <p> yang sama dipertahankan
+	Svelte, jadi tidak ada transisi — teksnya berganti begitu saja.
+
+	Dengan {#key pesan}, tiap nilai berubah: <p> lama KELUAR (transisi out)
+	dan <p> baru MASUK (transisi in). Hasilnya teks ber-animasi tiap berganti.
+-->
+{#key pesan}
+	<p transition:fly={{ y: 10, duration: 300 }}>{pesan}</p>
+{/key}
+```
+
+`{#key}` boleh membungkus apa saja: satu elemen, beberapa elemen, sebuah komponen, atau campuran. Ekspresinya pun bebas — sebuah number, string, hasil `$derived`, atau gabungan beberapa nilai. Yang penting: blok akan di-remount **setiap kali** hasil ekspresi itu berubah identitasnya.
+
+## 3. Coba sendiri
+
+Klik "Profil berikutnya" dan bandingkan dua baris di bawah. Baris pertama (tanpa `{#key}`) cuma berganti teks diam-diam. Baris kedua (dibungkus `{#key id}`) di-remount tiap ganti, sehingga transisi `fly` diputar lagi setiap kali.
+
+<Playground code={`<script>
+	import { fly } from 'svelte/transition';
+	let id = $state(1);
+	const nama = ['', 'Andi', 'Budi', 'Citra'];
+	function ganti() {
+		id = id === 3 ? 1 : id + 1;
+	}
+</script>
+<button onclick={ganti}>Profil berikutnya</button>
+<p style="margin-top:12px">Tanpa key (update di tempat, tanpa animasi):</p>
+<p style="font-weight:bold">{nama[id]} (id {id})</p>
+<p style="margin-top:12px">Dengan key (remount + animasi tiap ganti):</p>
+{#key id}
+	<p transition:fly={{ x: 24, duration: 300 }} style="font-weight:bold;color:teal">
+		{nama[id]} (id {id})
+	</p>
+{/key}`} />
+
+<Callout type="tip">
+Coba juga ganti ekspresi key-nya jadi nilai yang <strong>tidak pernah berubah</strong> (misalnya angka tetap seperti <code>&#123;#key 1&#125;</code>). Kamu akan lihat transisinya berhenti diputar ulang — bukti bahwa yang memicu remount memang murni perubahan nilai ekspresi, bukan klik tombolnya.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Penyegar kutipan dengan animasi">
+Buat satu komponen yang menampilkan sebuah kutipan dari array <code>kutipan</code>. Sediakan tombol "Kutipan baru" yang berpindah ke kutipan berikutnya (boleh memutar balik ke awal saat sampai ujung array). Bungkus tampilan kutipan dengan <code>&#123;#key&#125;</code> dan beri transisi <code>fade</code>, supaya tiap kali kutipan berganti, ia memudar keluar lalu yang baru memudar masuk.
+
+Pertanyaan untuk dipikirkan: nilai apa yang paling tepat dijadikan ekspresi key?
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { fade } from 'svelte/transition';
+
+	const kutipan = [
+		'Belajar sedikit tiap hari.',
+		'Kode yang jelas mengalahkan kode yang pintar.',
+		'Hapus dulu, optimasi nanti.'
+	];
+	let i = $state(0);
+
+	function berikutnya() {
+		i = (i + 1) % kutipan.length;
+	}
+</script>
+
+<button onclick={berikutnya}>Kutipan baru</button>
+
+<!--
+	Ekspresi key-nya adalah `i` (indeks aktif) — karena itulah yang menandakan
+	"ini sudah kutipan yang berbeda". Tiap i berubah, blok di-remount:
+	blockquote lama fade-out, yang baru fade-in.
+
+	Kalau key memakai nilai yang tak pernah berubah, transisi tak akan
+	pernah terpicu ulang — teks cuma berganti diam-diam.
+-->
+{#key i}
+	<blockquote transition:fade={{ duration: 250 }}>{kutipan[i]}</blockquote>
+{/key}
+```
+
+Kuncinya: ekspresi key harus mencerminkan **identitas** dari "benda yang sedang ditampilkan". Di sini `i` cocok karena tiap nilai `i` mewakili satu kutipan tertentu. Memakai sesuatu yang konstan akan membuat `{#key}` tak pernah memicu remount.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<strong>Jangan membungkus terlalu banyak.</strong> Remount jauh lebih berat daripada update di tempat — seluruh subtree dihancurkan lalu dibangun ulang. Kalau kamu membungkus pohon DOM besar dengan <code>&#123;#key x&#125;</code> dan <code>x</code> sering berubah, kamu membuang-buang kerja tiap perubahan. Pakai <code>&#123;#key&#125;</code> seoptimal mungkin: bungkus hanya bagian yang benar-benar perlu di-reset, dan key-nya pun yang jarang berubah.
+</Callout>
+
+<Callout type="pitfall">
+<strong>Key objek dibandingkan lewat referensi, bukan isi.</strong> <code>&#123;#key user&#125;</code> hanya remount saat <em>referensi</em> <code>user</code> berganti, bukan saat propertinya berubah. Sebaliknya, kalau kamu membuat objek baru tiap render (mis. <code>&#123;#key &#123; id &#125;&#125;</code>), referensinya selalu baru sehingga blok remount <strong>setiap kali</strong> — boros dan jarang yang kamu mau. Aman-nya: pakai key primitif yang stabil seperti sebuah <code>id</code> (mis. <code>&#123;#key user.id&#125;</code>).
+</Callout>
+
+<Callout type="warning">
+<strong>Remount membuang state yang mungkin masih kamu butuhkan.</strong> Karena isinya benar-benar dibangun ulang, hal-hal seperti input yang sedang diketik, elemen yang sedang fokus, posisi scroll, atau video yang sedang diputar di dalam blok akan ikut hilang/ter-reset. Pastikan itu memang efek yang kamu inginkan sebelum membungkus sesuatu dengan <code>&#123;#key&#125;</code>.
+</Callout>
+
+<Callout type="tip">
+<strong>Untuk mereset komponen anak, <code>&#123;#key&#125;</code> jauh lebih bersih daripada <code>$effect</code> manual.</strong> Alih-alih menulis <code>$effect</code> yang memantau sebuah id lalu menyetel ulang banyak state satu per satu, cukup bungkus komponennya dengan <code>&#123;#key id&#125;</code> dan biarkan Svelte yang membuang serta membuat ulang. Lebih sedikit kode, lebih sedikit bug. Persis seperti memberi prop <code>key</code> di React.
+</Callout>
+
+<Callout type="tip">
+<strong>Jangan tertukar dengan key di <code>&#123;#each&#125;</code>.</strong> Key di dalam <code>&#123;#each items as item (item.id)&#125;</code> dipakai untuk <em>melacak identitas tiap item list</em> saat diurut ulang/dihapus. Blok <code>&#123;#key expr&#125;</code> berdiri sendiri dan dipakai untuk <em>me-remount satu region</em> saat sebuah nilai berubah. Namanya mirip, tujuannya beda.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/key" label="&#123;#key ...&#125; — dokumentasi resmi Svelte" />

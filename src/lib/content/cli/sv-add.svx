@@ -1,0 +1,235 @@
+---
+title: sv add
+product: cli
+section: commands
+sectionTitle: Perintah
+sectionOrder: 2
+order: 2
+status: stable
+description: Menambahkan integrasi (Tailwind, Drizzle, Playwright, dll) ke proyek Svelte yang sudah ada lewat sv add, lengkap dengan flag dan cara kerja patch berbasis AST.
+docs: https://svelte.dev/docs/cli/sv-add
+keywords: [sv add, add-on, tailwindcss, drizzle, integrasi, AST patch]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+	import LegacyVsModern from '$lib/components/LegacyVsModern.svelte';
+</script>
+
+## 1. Konsep
+
+`sv create` membuat proyek dari nol. Tapi hidup proyek tidak berhenti di hari pertama: minggu depan kamu butuh Tailwind, bulan depan butuh database lewat Drizzle, lalu testing dengan Playwright. Pertanyaannya: bagaimana cara menambah integrasi itu ke proyek yang **sudah jalan**, tanpa harus baca tiga halaman setup manual dan menyalin-tempel potongan konfigurasi yang gampang salah?
+
+Jawabannya **`sv add`**. Dokumentasi resminya satu kalimat: *"`sv add` updates an existing project with new functionality."* Jadi kalau `sv create` itu membangun rumah, `sv add` adalah **tukang renovasi**: ia datang ke rumah yang sudah berdiri, menyambung pipa baru, menarik kabel, dan merapikan kembali — tanpa merobohkan apa pun yang sudah ada.
+
+### Kenapa ini lebih dari sekadar `npm install`
+
+Pasang integrasi yang "benar" hampir tidak pernah cukup dengan satu `npm install`. Coba pasang Tailwind manual: kamu harus (1) install `tailwindcss` dan `@tailwindcss/vite`, (2) daftarkan plugin di `vite.config.ts`, (3) bikin `src/app.css` berisi `@import 'tailwindcss';`, lalu (4) import CSS itu di `+layout.svelte`. Lupa satu langkah, Tailwind diam-diam tidak jalan dan kamu bingung kenapa class `bg-red-500` tidak ngefek.
+
+Kalau kamu datang dari React, `sv add` kira-kira menggabungkan peran `npx shadcn add` (menambahkan potongan terintegrasi ke proyek) dengan kenyamanan plugin "sekali klik". Bedanya, `sv add` tidak cuma menaruh file — ia juga **menyunting konfigurasi yang sudah ada** untuk kamu. Itu bagian yang paling sulit dilakukan tool lain, dan inti kelebihan `sv add`.
+
+### Analogi: robot editor yang paham tata bahasa config-mu
+
+Bayangkan kamu minta asisten menambahkan satu plugin ke `vite.config.ts`. Asisten ceroboh akan menempelkan teks plugin di akhir file (append buta) — sering merusak file kalau strukturnya tidak pas, dan kacau kalau dijalankan dua kali.
+
+`sv add` bekerja seperti asisten yang **membaca dan mengerti** isi config-mu lebih dulu. Secara teknis ia mem-parse file jadi **AST** (Abstract Syntax Tree — representasi kode sebagai pohon, bukan sekadar teks), lalu menyisipkan node yang dibutuhkan di tempat yang tepat, dan menulis ulang kode dengan format rapi. Pendekatan berbasis AST ini (lewat tool seperti `magicast`) memberi dua keuntungan besar:
+
+1. **Idempoten** — aman dijalankan ulang. Kalau plugin sudah ada, ia tidak menduplikasi. Jadi `npx sv add tailwindcss` dua kali tidak bikin dua `@import`.
+2. **Menghormati kode kustommu** — kalau `vite.config.ts`-mu sudah berisi plugin lain atau opsi server, `sv add` menyisip di antaranya, bukan menimpa. Mirip cara `git merge` yang paham struktur, bukan tukang tempel baris.
+
+### Add-on resmi yang tersedia
+
+Per dokumentasi terbaru ada 12 add-on resmi yang dipelihara tim Svelte:
+
+| Add-on | Yang dikerjakan |
+| --- | --- |
+| `tailwindcss` | Pasang Tailwind v4 + plugin Vite, buat `app.css`, import di layout |
+| `drizzle` | ORM Drizzle: pilih database (postgres/mysql/sqlite), client, opsi Docker |
+| `better-auth` | Kerangka autentikasi (pengganti modern dari add-on `lucia` lama) |
+| `eslint` | Linting + konfigurasi flat-config & integrasi Svelte |
+| `prettier` | Formatter + plugin `prettier-plugin-svelte` |
+| `vitest` | Unit testing dengan Vitest |
+| `playwright` | End-to-end testing browser |
+| `storybook` | Pengembangan & dokumentasi komponen terisolasi |
+| `mdsvex` | Markdown + komponen Svelte di file `.svx` (yang sedang kamu baca!) |
+| `paraglide` | i18n / internasionalisasi type-safe |
+| `sveltekit-adapter` | Pilih adapter deploy (node, static, vercel, cloudflare, dll) |
+| `mcp` | Integrasi Model Context Protocol untuk tooling AI |
+
+Selain itu ada **community add-on**: paket pihak ketiga yang dipublikasikan di npm dengan keyword `sv-add`. Dipanggil dengan nama paketnya, mis. `npx sv add @org-name` (mengambil paket `@org-name/sv`) atau dari path lokal `npx sv add file:../paket-lokal`.
+
+<Callout type="warning">
+Add-on komunitas **belum** ditinjau tim Svelte untuk kode berbahaya — dokumentasi menyebut eksplisit "use at your discretion". Perlakukan seperti meng-install paket npm asing mana pun: cek reputasi, sumber, dan isi sebelum menjalankan di proyek seriusmu.
+</Callout>
+
+## 2. Contoh kode
+
+Empat pola pemakaian dari yang paling santai sampai paling presisi — jalankan di terminal, dari **root proyek**:
+
+```bash
+# A. Mode interaktif: tanpa argumen.
+#    sv menampilkan daftar add-on, kamu pilih pakai spasi, Enter untuk konfirmasi.
+#    Cocok kalau belum hafal nama add-on.
+npx sv add
+
+# B. Langsung sebut nama add-on (boleh banyak, dipisah spasi).
+#    Untuk add-on yang punya opsi, sv tetap menanyakan opsinya secara interaktif.
+npx sv add tailwindcss eslint prettier
+
+# C. Non-interaktif penuh: tentukan opsi inline.
+#    Format: addon="opsi:nilai+opsi2:nilai2"  (antar-opsi dipisah tanda PLUS '+')
+#    Ini yang kamu pakai di skrip / CI agar tidak ada prompt yang menggantung.
+npx sv add drizzle="database:postgresql+client:postgres.js+docker:yes"
+
+# D. Gabungan add-on resmi + komunitas dalam satu perintah.
+npx sv add eslint @org-name
+```
+
+Beberapa flag penting yang sering dipakai:
+
+```bash
+# --cwd / -C : jalankan terhadap proyek di folder lain (bukan folder saat ini).
+npx sv add tailwindcss --cwd ./apps/web
+
+# --install : pilih package manager untuk meng-install dependensi yang ditambahkan.
+#             nilainya: npm | pnpm | yarn | bun | deno
+npx sv add vitest --install pnpm
+
+# --no-install : JANGAN install dependensi (cuma ubah file & config).
+#                Berguna kalau kamu mau install manual / batch nanti.
+npx sv add playwright --no-install
+
+# --no-git-check : lewati peringatan "ada file belum di-commit".
+#                  Default-nya sv menolak jalan kalau working tree kotor (lihat Pitfalls).
+npx sv add drizzle --no-git-check
+
+# --no-download-check : lewati konfirmasi unduh (relevan untuk add-on komunitas).
+npx sv add @org-name --no-download-check
+```
+
+Inti opsi inline untuk `drizzle` (contoh add-on paling "berparameter"):
+
+```bash
+# database (wajib): postgresql | mysql | sqlite
+# client          : tergantung database —
+#                   postgresql -> postgres.js | neon
+#                   mysql      -> mysql2 | planetscale
+#                   sqlite     -> better-sqlite3 | libsql | turso
+# docker          : yes | no   (hanya untuk postgresql/mysql)
+npx sv add drizzle="database:sqlite+client:libsql"
+```
+
+## 3. Coba sendiri
+
+`sv add` mengubah file di disk dan kadang butuh menjalankan package manager, jadi tidak bisa dijalankan di playground browser. Tapi bagian paling menarik justru bisa kita "lihat" lewat diff. Ini contoh nyata apa yang `npx sv add tailwindcss` lakukan ke proyekmu — perhatikan bahwa ia **menyunting** file yang sudah ada, bukan menimpanya.
+
+`vite.config.ts` — SEBELUM (hasil `sv create` polos):
+
+```ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	plugins: [sveltekit()]
+});
+```
+
+`vite.config.ts` — SESUDAH `npx sv add tailwindcss`:
+
+```ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+// (1) Baris import baru disisipkan di atas, bukan ditempel di bawah.
+import tailwindcss from '@tailwindcss/vite';
+
+export default defineConfig({
+	// (2) Plugin baru DISELIPKAN ke array plugins yang sudah ada —
+	//     sveltekit() lamamu tetap utuh dan urutannya terjaga.
+	plugins: [tailwindcss(), sveltekit()]
+});
+```
+
+Selain itu, dalam satu perintah yang sama `sv add` juga:
+
+```css
+/* (3) Membuat file baru src/app.css berisi entry-point Tailwind v4 */
+@import 'tailwindcss';
+```
+
+```svelte
+<script>
+	// (4) Menyisipkan import CSS ke root layout src/routes/+layout.svelte
+	//     supaya style-nya kebawa ke seluruh halaman.
+	import '../app.css';
+
+	let { children } = $props();
+</script>
+
+{@render children()}
+```
+
+Dan tentu (5) menambahkan `tailwindcss` + `@tailwindcss/vite` ke `devDependencies` lalu meng-install-nya. Lima langkah manual tadi — yang gampang sekali kelewat satu — dirangkum jadi satu baris perintah. Itulah nilai jual `sv add`: bukan ajaib, hanya otomasi yang teliti.
+
+<Callout type="tip">
+Karena patch-nya idempoten, kalau kamu ragu sebuah add-on sudah terpasang atau belum, menjalankan ulang `npx sv add <nama>` itu aman — ia tidak akan menggandakan plugin atau import. Tetap commit dulu sebelum menjalankan supaya kamu bisa melihat diff bersihnya.
+</Callout>
+
+## 4. Latihan
+
+<Exercise title="Pilih perintah sv add yang tepat">
+Untuk tiga skenario berikut, tulis satu baris perintah `sv add` yang paling pas:
+
+1. Di pipeline **CI** (tanpa interaksi manusia, working tree memang dikomit otomatis sebagian), kamu ingin menambah `vitest` **tanpa** meng-install dependensi karena install akan dilakukan satu kali di akhir.
+2. Menambah **Drizzle** dengan PostgreSQL memakai client `postgres.js` dan menyiapkan Docker, sepenuhnya non-interaktif.
+3. Menambah **Tailwind** ke sub-proyek yang ada di folder `apps/marketing`, sementara terminalmu sedang berada di root monorepo.
+
+{#snippet solution()}
+
+```bash
+# 1. --no-install agar tidak menjalankan package manager;
+#    --no-git-check supaya tidak terhenti oleh peringatan working tree kotor di CI.
+npx sv add vitest --no-install --no-git-check
+
+# 2. Opsi inline dipisah '+'; semua nilai eksplisit jadi tidak ada prompt.
+npx sv add drizzle="database:postgresql+client:postgres.js+docker:yes"
+
+# 3. --cwd (atau -C) mengarahkan sv ke proyek lain tanpa perlu 'cd'.
+npx sv add tailwindcss --cwd apps/marketing
+```
+
+{/snippet}
+</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+**Commit dulu sebelum `sv add`.** Secara default `sv` menolak jalan kalau ada perubahan belum di-commit (working tree "kotor"), justru demi keselamatanmu: kalau hasil patch-nya tidak kamu suka, `git diff` dan `git restore` jadi gampang. Memaksa lewat `--no-git-check` di mesin lokal yang berantakan berisiko mencampur edit otomatis dengan edit manualmu sehingga sulit dibedakan. Pakai flag itu di CI, bukan sebagai kebiasaan harian.
+</Callout>
+
+<Callout type="warning">
+`sv add` pintar, tapi **bukan pengganti membaca dokumentasi add-on**. Untuk hal seperti Drizzle, ia menyiapkan koneksi dan skema awal — tapi variabel lingkungan (`DATABASE_URL`), migrasi, dan kredensial tetap urusanmu. Anggap hasil `sv add` sebagai *titik awal yang benar*, lalu lanjutkan setup sesuai docs add-on tersebut.
+</Callout>
+
+<Callout type="tip">
+Untuk reprodusibilitas tim, **sebutkan add-on + opsinya secara eksplisit** (mode non-interaktif) di README atau skrip setup, mis. `npx sv add tailwindcss eslint prettier`. Dengan begitu setiap anggota tim mendapat konfigurasi identik, bukan hasil pilihan interaktif yang bisa berbeda-beda.
+</Callout>
+
+<Callout type="legacy">
+Add-on autentikasi yang lama bernama **`lucia`**; ekosistem `sv` kini mengarahkannya ke **`better-auth`**. Kalau menemukan tutorial yang menyuruh `npx sv add lucia`, periksa dulu — untuk proyek baru pakai `better-auth`. Begitu juga, semua langkah setup manual era lama (edit `tailwind.config.cjs`, `postcss.config`, dll) kini diringkas oleh `sv add` — Tailwind v4 bahkan tidak lagi butuh file PostCSS terpisah.
+</Callout>
+
+Ringkasan pergeseran dari cara manual ke `sv add`:
+
+<LegacyVsModern legacyLabel="Setup manual (rawan kelewat)" modernLabel="sv add (otomatis & idempoten)" rows={[
+	{ legacy: 'install + edit vite.config + buat app.css + import di layout', modern: 'npx sv add tailwindcss', note: '4 langkah jadi 1' },
+	{ legacy: 'pasang drizzle-kit, tulis client & schema manual', modern: 'npx sv add drizzle="database:postgresql+client:postgres.js"', note: 'opsi inline, non-interaktif' },
+	{ legacy: 'npx sv add lucia', modern: 'npx sv add better-auth', note: 'add-on auth modern' }
+]} />
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/cli/sv-add" label="sv add — referensi CLI lengkap (docs resmi)" />
+
+<DocsLink href="https://svelte.dev/docs/cli/drizzle" label="Add-on Drizzle — daftar opsi & detail setup" />

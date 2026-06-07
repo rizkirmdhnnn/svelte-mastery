@@ -1,0 +1,268 @@
+---
+title: $app/env
+product: kit
+section: reference
+sectionTitle: Reference
+sectionOrder: 7
+order: 18
+status: reference
+description: Alias $app/env — jalan pintas untuk $app/environment yang muncul saat mode explicit environment variables (experimental, sejak SvelteKit 2.62) aktif, dengan empat export yang sama persis browser, building, dev, dan version.
+docs: https://svelte.dev/docs/kit/$app-env
+keywords: [app/env, alias, explicit env, browser, building, version]
+---
+
+<script>
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`$app/env` itu **bukan modul baru**. Ia cuma **nama pendek (alias)** untuk modul yang sudah kamu kenal: [`$app/environment`](/belajar/kit/reference/app-environment). Isinya identik — empat konstanta yang sama: `browser`, `building`, `dev`, dan `version`, dengan tipe dan arti yang sama persis. Tidak ada export tambahan, tidak ada perilaku berbeda. Satu-satunya yang berubah adalah panjang string yang kamu tulis di `import`.
+
+Lalu kenapa ada dua jalan menuju barang yang sama? Karena `$app/env` hanya **muncul** ketika kamu menyalakan sebuah fitur experimental bernama **explicit environment variables** (`kit.experimental.explicitEnvironmentVariables`, tersedia sejak **SvelteKit 2.62.0**). Saat fitur itu aktif, SvelteKit menata ulang cara environment dikelola — kamu mendeklarasikan variabel environment aplikasimu secara eksplisit di file `src/env.js` atau `src/env.ts` (bukan lagi murni "ditebak" dari prefix nama) — dan sebagai bagian dari penataan itu, kamu mendapat alias pendek `$app/env` untuk konstanta lingkungan tadi.
+
+### Analogi: nama resmi vs nama panggilan
+
+Bayangkan sebuah gedung perkantoran. Nama resminya panjang: *"Menara Lingkungan Aplikasi SvelteKit"* (itu `$app/environment`). Semua orang, di kota mana pun, bisa menyebut nama lengkap itu dan tukang pos pasti mengantar ke alamat yang benar — nama resmi **selalu berlaku**.
+
+Suatu hari pengelola gedung membuka program keanggotaan baru (itulah "explicit env mode"). Begitu kamu **mendaftar** sebagai anggota, kamu boleh memakai **nama panggilan** singkat *"Menara Env"* (itu `$app/env`). Surat yang dialamatkan ke nama panggilan ini sampai ke gedung yang **persis sama** — lift yang sama, kantor yang sama, orang yang sama. Tapi ada syaratnya: nama panggilan ini **hanya dikenali kalau kamu sudah mendaftar**. Kalau kamu menulis "Menara Env" padahal belum jadi anggota, tukang pos kebingungan dan suratmu kembali (build gagal: modul tak ditemukan).
+
+Pegang intinya: `$app/env` = nama panggilan, `$app/environment` = nama resmi. **Tujuannya satu dan sama**; bedanya cuma `$app/env` butuh "kartu anggota" (`explicitEnvironmentVariables: true`) untuk dikenali.
+
+### Buat yang datang dari React/Vue/Next/Nuxt
+
+Konsep "alias modul" ini mirip dengan **path alias** yang biasa kamu pasang di `tsconfig.json`/`vite.config` — misalnya `@/utils` yang sebenarnya menunjuk ke `src/lib/utils`. Bedanya, di sini SvelteKit yang menyediakan aliasnya untuk modul virtual bawaannya, dan alias itu hanya hidup saat sebuah flag dinyalakan. Jadi jangan mencari "fitur tersembunyi" di `$app/env` — semua yang ada di sana adalah `browser`, `building`, `dev`, `version`, sama seperti `$app/environment` yang sudah kamu pelajari.
+
+### Kenapa repot bikin alias?
+
+Penataan environment yang lebih eksplisit (deklarasi di `src/env.js`/`src/env.ts`) bertujuan membuat manajemen env lebih *type-safe* dan lebih jelas asal-usulnya, ketimbang mengandalkan konvensi prefix `PUBLIC_` semata. Alias `$app/env` adalah pelengkap ergonomis dari penataan itu — sebuah jalan pintas yang lebih ringkas untuk konstanta lingkungan. Karena masih **experimental**, anggap `$app/env` sebagai bonus opt-in: kalau kamu belum menyalakan fitur tersebut, cukup pakai `$app/environment` yang stabil dan tersedia di mana saja.
+
+## 2. Ringkasan API
+
+Modul ini mengekspor **empat nilai** (semua read-only) — sama persis dengan `$app/environment`:
+
+| Export | Tipe | Bernilai apa / kapan `true` |
+| --- | --- | --- |
+| `browser` | `boolean` | `true` jika app sedang jalan di **browser**; `false` saat di **server** (SSR maupun prerender). |
+| `building` | `boolean` | `true` selama SvelteKit **menganalisis app di tahap build** dengan mengeksekusinya — termasuk **selama prerendering**. Selain itu `false`. |
+| `dev` | `boolean` | `true` saat **dev server** (`vite dev`) jalan. **Tidak dijamin** sama dengan `NODE_ENV` atau `MODE`. |
+| `version` | `string` | Nilai dari `config.kit.version.name` (default: timestamp build, mis. `"1717718400000"`). |
+
+Cara import-nya destructuring biasa (bukan default import), persis seperti `$app/environment` — hanya path-nya yang lebih pendek:
+
+```js
+// Aktif HANYA jika explicitEnvironmentVariables = true.
+import { browser, building, dev, version } from '$app/env';
+
+// Padanan stabil yang SELALU tersedia (tanpa flag apa pun):
+import { browser, building, dev, version } from '$app/environment';
+```
+
+### Cara mengaktifkan alias
+
+Alias `$app/env` baru bisa diimpor setelah kamu menyalakan flag experimental di `svelte.config.js`:
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+
+/** @type {import('@sveltejs/kit').Config} */
+export default {
+	kit: {
+		adapter: adapter(),
+		experimental: {
+			// "Whether to enable explicit environment variables using
+			//  src/env.js or src/env.ts." — default: false. Tersedia sejak v2.62.0.
+			// Begitu true, alias $app/env bisa dipakai sebagai pengganti
+			// $app/environment, dan env aplikasi dideklarasikan eksplisit
+			// di src/env.js atau src/env.ts.
+			explicitEnvironmentVariables: true
+		}
+	}
+};
+```
+
+Catatan penting per item (berlaku sama seperti di `$app/environment`):
+
+- **`browser`** — pasangannya "bukan-browser", bukan "server" saja. Saat SSR *dan* prerender, `browser` sama-sama `false` (keduanya jalan di Node). Karena `browser` diketahui saat build, cabang `if (browser) { … }` di-*tree-shake* keluar dari bundle server.
+- **`building`** — variabel **runtime** sungguhan (bukan konstanta build), karena bundle server yang sama dipakai saat build menganalisis app (`true`) dan saat melayani request (`false`). Prerender juga membuatnya `true`.
+- **`dev`** — untuk *developer experience* (log, panel debug, data mock), **bukan** untuk keputusan keamanan. Untuk rahasia/konfigurasi, pakai `$env/...`.
+- **`version`** — defaultnya timestamp build (berubah tiap deploy); bisa diganti jadi hash git lewat `config.kit.version.name`, dan dipasangkan dengan `updated` dari `$app/state` untuk mendeteksi versi baru.
+
+## 3. Contoh kode
+
+Karena `$app/env` identik dengan `$app/environment`, semua pola yang kamu kenal tinggal mengganti path-nya. Berikut yang paling sering dipakai.
+
+```js
+// src/lib/theme.js — `browser` menjaga akses localStorage agar aman saat SSR.
+import { browser } from '$app/env';
+
+// Saat SSR (browser === false), localStorage TIDAK ADA. Tanpa penjaga ini,
+// baris di bawah melempar ReferenceError dan merusak render server.
+// `browser` konstanta build -> seluruh cabang ini juga di-tree-shake
+// keluar dari bundle server.
+export function getTheme() {
+	if (!browser) return 'light'; // fallback aman saat di server
+	return localStorage.getItem('theme') ?? 'light';
+}
+```
+
+```js
+// src/hooks.server.js — `building` + `dev` + `version` lewat alias $app/env.
+import { building, dev, version } from '$app/env';
+import { connectDB } from '$lib/server/db';
+
+// Kode TOP-LEVEL modul server ikut dieksekusi saat build menganalisis app.
+// `!building` memastikan koneksi DB HANYA dibuka saat melayani request nyata,
+// bukan saat `vite build`/prerender (di CI sering tidak ada DB -> build gagal).
+if (!building) {
+	connectDB();
+}
+
+export async function handle({ event, resolve }) {
+	// `dev` diketahui saat build -> blok ini lenyap dari bundle produksi.
+	if (dev) {
+		console.log('[req]', event.request.method, event.url.pathname);
+	}
+
+	const response = await resolve(event);
+	// Selipkan versi app ke tiap respons untuk memudahkan debugging deploy.
+	response.headers.set('x-app-version', version);
+	return response;
+}
+```
+
+```svelte
+<!-- src/routes/+layout.svelte — `version` + `updated` ($app/state) -->
+<script>
+	import { version } from '$app/env';
+	import { updated } from '$app/state';
+
+	// updated.current jadi true saat SvelteKit mendeteksi `version` baru ter-deploy
+	// (aktif jika config.kit.version.pollInterval > 0).
+</script>
+
+{#if updated.current}
+	<div class="toast">
+		Versi baru tersedia.
+		<button onclick={() => location.reload()}>Muat ulang</button>
+	</div>
+{/if}
+
+<footer>Build: {version}</footer>
+```
+
+## 4. Coba sendiri
+
+`$app/env` adalah **modul virtual milik SvelteKit**, jadi nilainya tidak bisa dicoba di playground browser biasa — nilainya ditentukan oleh *cara* dan *waktu* kodemu dijalankan, bukan oleh logika runtime murni. Selain itu, alias ini hanya muncul setelah `explicitEnvironmentVariables` dinyalakan, sehingga butuh proyek SvelteKit beneran. Cara paling efektif "mencoba"-nya adalah memahami **matriks nilai** untuk tiap kombinasi tempat & waktu.
+
+```js
+// src/routes/debug/+page.js — load universal: jalan di server DAN di klien.
+// (Pastikan explicitEnvironmentVariables: true agar path $app/env resolve.)
+import { browser, building, dev, version } from '$app/env';
+
+export function load() {
+	// Object ini punya NILAI BERBEDA tergantung kapan & di mana load berjalan.
+	// Render awal -> di server (browser:false). Navigasi klien berikutnya ->
+	// di browser (browser:true). Bandingkan hasilnya di Network/console!
+	return { env: { browser, building, dev, version } };
+}
+```
+
+Nilai yang akan kamu lihat di tiap skenario nyata (perhatikan: `browser` dan `building` tidak pernah sama-sama `true` — build selalu di server):
+
+| Skenario | `browser` | `building` | `dev` |
+| --- | --- | --- | --- |
+| `vite dev`, render awal di server (SSR) | `false` | `false` | `true` |
+| `vite dev`, setelah hydrate / navigasi di browser | `true` | `false` | `true` |
+| `vite build` (analisis build & prerender) | `false` | `true` | `false` |
+| Produksi, SSR di server (mis. adapter-node) | `false` | `false` | `false` |
+| Produksi, kode jalan di browser | `true` | `false` | `false` |
+
+Cara baca tabel: `dev` membedakan **dev vs build/produksi**; `building` menyala **hanya saat build/prerender**; `browser` membedakan **server vs klien** di skenario mana pun. `version` selalu string non-kosong di semua baris. Tabel ini **identik** untuk `$app/env` maupun `$app/environment` — karena keduanya memang barang yang sama.
+
+## 5. Latihan
+
+<Exercise title="Aktifkan alias lalu migrasikan import-nya">
+Sebuah proyek SvelteKit (v2.62+) ingin mulai memakai alias pendek `$app/env`. Saat ini `src/hooks.server.js`-nya mengimpor dari `$app/environment`.
+
+Tugas:
+
+1. Tunjukkan perubahan di `svelte.config.js` agar alias `$app/env` bisa diimpor.
+2. Tulis ulang `hooks.server.js` agar memakai `$app/env`, dengan tiga syarat: (a) **jangan** menjalankan `seedDatabase()` saat build/prerender; (b) saat **dev**, cetak `method` + `pathname` tiap request (tidak boleh bocor ke produksi); (c) tambahkan header `x-app-version` berisi versi app ke **setiap** respons.
+
+Anggap `seedDatabase()` tersedia dari `$lib/server/db`.
+
+{#snippet solution()}
+
+  ```js
+  // 1) svelte.config.js — nyalakan flag agar $app/env resolve.
+  import adapter from '@sveltejs/adapter-auto';
+
+  /** @type {import('@sveltejs/kit').Config} */
+  export default {
+    kit: {
+      adapter: adapter(),
+      experimental: {
+        explicitEnvironmentVariables: true
+      }
+    }
+  };
+  ```
+
+  ```js
+  // 2) src/hooks.server.js — sekarang impor dari alias pendek.
+  import { building, dev, version } from '$app/env';
+  import { seedDatabase } from '$lib/server/db';
+
+  // (a) Kode top-level ikut jalan saat build menganalisis app.
+  //     `!building` memastikan seed HANYA jalan saat melayani request nyata.
+  if (!building) {
+    seedDatabase();
+  }
+
+  export async function handle({ event, resolve }) {
+    // (b) `dev` diketahui saat build -> blok ini di-tree-shake keluar
+    //     dari bundle produksi (tidak ada log bocor / overhead).
+    if (dev) {
+      console.log('[req]', event.request.method, event.url.pathname);
+    }
+
+    const response = await resolve(event);
+
+    // (c) `version` = config.kit.version.name (default: timestamp build).
+    response.headers.set('x-app-version', version);
+
+    return response;
+  }
+  ```
+
+  Kuncinya: secara perilaku tidak ada yang berubah dibanding memakai `$app/environment` — `building` tetap penjaga **runtime** untuk efek samping top-level, `dev` tetap penjaga **build-time** yang melenyapkan kode debug dari produksi, dan `version` cukup dibaca sebagai string. Yang berubah hanya path import-nya, dan itu pun butuh flag `explicitEnvironmentVariables` agar dikenali.
+
+  {/snippet}</Exercise>
+
+## 6. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>$app/env</code> <strong>tidak akan resolve</strong> kalau <code>kit.experimental.explicitEnvironmentVariables</code> belum kamu set ke <code>true</code>. Tanpa flag itu, <code>import ... from '$app/env'</code> menghasilkan error "module not found" saat build/dev. Kalau belum mau mengaktifkan fitur experimental, cukup pakai <code>$app/environment</code> yang stabil dan selalu tersedia — isinya sama persis.
+</Callout>
+
+<Callout type="warning">
+Fitur ini masih <strong>experimental</strong> (diperkenalkan di SvelteKit <strong>2.62.0</strong>). Itu berarti nama flag, perilaku, atau bentuk file <code>src/env.js</code>/<code>src/env.ts</code> <strong>bisa berubah</strong> di rilis berikutnya. Sematkan (pin) versi SvelteKit-mu dan baca CHANGELOG sebelum upgrade kalau proyekmu bergantung pada alias ini di production.
+</Callout>
+
+<Callout type="tip">
+Karena <code>$app/env</code> hanyalah alias, <strong>semua aturan <code>$app/environment</code> berlaku sama</strong>: <code>browser</code> &amp; <code>dev</code> di-<em>tree-shake</em> (konstanta build), <code>building</code> adalah cek <strong>runtime</strong> untuk menjaga efek samping saat build/prerender, dan <code>dev</code> <strong>tidak</strong> dijamin sama dengan <code>NODE_ENV</code> sehingga jangan dipakai untuk keputusan keamanan. Untuk pendalaman tiap konstanta, baca modul <a href="/belajar/kit/reference/app-environment"><code>$app/environment</code></a>.
+</Callout>
+
+<Callout type="tip">
+Pilih <strong>satu gaya</strong> dan konsisten di seluruh proyek. Mencampur <code>$app/env</code> di sebagian file dan <code>$app/environment</code> di file lain tidak salah secara teknis (keduanya menunjuk ke modul yang sama), tapi membingungkan pembaca dan menyulitkan pencarian. Kalau kamu sudah opt-in ke explicit env, sepakati pakai alias pendek di mana-mana; kalau belum, tetap di path panjang.
+</Callout>
+
+## 7. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/kit/$app-env" label="SvelteKit — $app/env (alias)" />
+<DocsLink href="https://svelte.dev/docs/kit/$app-environment" label="SvelteKit — $app/environment (browser, building, dev, version)" />
+<DocsLink href="https://svelte.dev/docs/kit/configuration#experimental" label="SvelteKit — config.kit.experimental.explicitEnvironmentVariables" />

@@ -1,0 +1,306 @@
+---
+title: animate:
+product: svelte
+section: template
+sectionTitle: Template syntax
+sectionOrder: 3
+order: 17
+status: stable
+description: Menganimasikan elemen list ber-key yang berpindah posisi (reorder/sort) dengan mulus memakai animate:flip dan teknik FLIP.
+docs: https://svelte.dev/docs/svelte/animate
+keywords: [animate, flip, reorder, keyed-each, custom-animate]
+---
+
+<script>
+	import Playground from '$lib/components/playground/Playground.svelte';
+	import Callout from '$lib/components/Callout.svelte';
+	import Exercise from '$lib/components/Exercise.svelte';
+	import DocsLink from '$lib/components/DocsLink.svelte';
+</script>
+
+## 1. Konsep
+
+`transition:` mengurus elemen yang **masuk dan keluar** dari DOM. Tapi ada satu kasus yang sama sekali tidak ia sentuh: elemen yang **tetap ada, hanya pindah tempat**. Bayangkan list yang kamu sort ulang. Tidak ada item yang ditambah atau dihapus — yang berubah cuma **urutannya**. Dari kacamata DOM, "Pisang" yang tadi di baris ke-3 tiba-tiba muncul di baris ke-1. Tanpa bantuan apa pun, perpindahan itu terjadi **seketika**: item-item teleport ke posisi barunya dalam satu frame. Mata pengguna kehilangan jejak "siapa pindah ke mana".
+
+Inilah pekerjaan `animate:`. Ia tidak peduli soal masuk/keluar. Tugasnya cuma satu: kalau sebuah item **berpindah posisi** karena list-nya berubah urutan, buat ia **meluncur** dari posisi lama ke posisi baru, bukan teleport. Hasilnya, mata bisa mengikuti tiap item — UX yang jauh lebih enak untuk drag-and-drop, sorting, filter, atau insert di tengah.
+
+Kalau kamu dari React, ini persis masalah yang biasanya kamu selesaikan dengan `react-flip-toolkit`, `framer-motion` (`layout` prop), atau `AutoAnimate`. Di Vue ada `<TransitionGroup>` yang memberi kelas `v-move`. Svelte menamai mekanisme yang sama dengan satu directive: `animate:flip`, dan teknik di baliknya memang bernama **FLIP**.
+
+### Analogi: trik sulap "pura-pura belum pindah"
+
+FLIP itu singkatan dari **F**irst, **L**ast, **I**nvert, **P**lay. Kedengarannya teknis, tapi idenya seperti trik sulap sederhana.
+
+Bayangkan kamu mau memindahkan lemari dari sudut kiri ruangan ke sudut kanan, dan kamu ingin penonton **melihat** lemari itu meluncur halus. Cara naif: dorong pelan-pelan sambil mengukur tiap sentimeter — capek dan berat (ini analogi browser yang menghitung ulang layout tiap frame, mahal).
+
+Cara FLIP jauh lebih licik:
+
+1. **First** — catat dulu posisi lemari sekarang (foto: "ada di kiri").
+2. **Last** — langsung *teleport* lemari ke sudut kanan, posisi finalnya. Cepat, sekali kerja.
+3. **Invert** — sekarang lemari di kanan, tapi kamu "berbohong" ke mata penonton: tempelkan transform `translate` yang membuatnya **terlihat masih di kiri**. Penonton tidak sadar lemari sebenarnya sudah di kanan.
+4. **Play** — pelan-pelan **lepas** kebohongan itu (animasikan transform dari "kelihatan di kiri" menuju nol). Mata melihat lemari meluncur dari kiri ke kanan — padahal lemari fisiknya sudah lama di kanan sejak langkah 2.
+
+Kuncinya: kerja berat (reflow/layout) terjadi **sekali** di langkah Last. Yang dianimasikan tiap frame cuma sebuah `transform: translate(...)` — properti CSS murah yang jalan di GPU/compositor, tidak memicu layout ulang. Itu sebabnya FLIP tetap 60fps walau list-nya panjang.
+
+### Kenapa wajib `{#each}` ber-key
+
+`animate:` **hanya** boleh dipasang pada anak langsung dari blok `{#each}` yang **memakai key**, mis. `{#each items as item (item.id)}`.
+
+Alasannya logis kalau kamu ingat langkah First dan Last di atas. Untuk meluncurkan item dari posisi lama ke posisi baru, Svelte harus tahu **"DOM node yang sekarang ada di baris 1 ini, sama dengan node yang tadi di baris 3 — orang yang sama, cuma pindah."** Tanpa key, Svelte mencocokkan elemen `{#each}` berdasarkan **posisi/index**, bukan identitas. Artinya saat list disort, ia menganggap "baris 1 ya tetap baris 1, isinya saja yang diganti teksnya" — tidak ada yang dianggap berpindah, jadi tidak ada yang dianimasikan (atau animasinya salah total).
+
+Key (mis. `item.id`) memberi tiap node **identitas stabil**. Dengan itu Svelte bisa berkata "node id=3 dulu di koordinat Y=120, sekarang di Y=0 — luncurkan." Jadi key bukan formalitas; ia jangkar yang dipakai FLIP untuk membandingkan posisi First vs Last.
+
+### `animate:` jalan kapan, persisnya?
+
+Penting dan sering bikin bingung: animasi `animate:` **hanya** terpicu ketika **index sebuah item yang sudah ada berubah** karena isi `{#each}` disusun ulang. Ia **tidak** ikut campur saat item ditambahkan atau dihapus — itu wilayah `transition:`/`in:`/`out:`. Maka pola yang paling sering dipakai adalah **menggabungkan keduanya** di elemen yang sama: `transition:` untuk yang datang/pergi, `animate:flip` untuk yang tinggal tapi bergeser.
+
+## 2. Contoh kode
+
+Contoh paling minimal — tambahkan `animate:flip` ke anak `{#each}` ber-key. Saat list di-sort, tiap item meluncur, bukan lompat.
+
+```svelte
+<script>
+	// flip = First, Last, Invert, Play — mesin reposisi bawaan Svelte
+	import { flip } from 'svelte/animate';
+
+	let items = $state([
+		{ id: 1, text: 'Apel' },
+		{ id: 2, text: 'Mangga' },
+		{ id: 3, text: 'Pisang' }
+	]);
+
+	function shuffle() {
+		// bikin array baru (reassign) supaya reaktivitas jalan
+		items = [...items].sort(() => Math.random() - 0.5);
+	}
+</script>
+
+<button onclick={shuffle}>Acak</button>
+
+<ul>
+	<!-- (item.id) WAJIB: key inilah jangkar identitas untuk FLIP -->
+	{#each items as item (item.id)}
+		<li animate:flip>{item.text}</li>
+	{/each}
+</ul>
+```
+
+`flip` menerima objek parameter untuk mengatur ritme animasinya:
+
+```svelte
+<script>
+	import { flip } from 'svelte/animate';
+	import { quintOut } from 'svelte/easing';
+	let items = $state([/* ... */]);
+</script>
+
+<ul>
+	{#each items as item (item.id)}
+		<!--
+		  delay    : jeda (ms) sebelum animasi mulai. Default 0.
+		  duration : lama animasi (ms). Default-nya BUKAN angka tetap,
+		             melainkan fungsi jarak: d => Math.sqrt(d) * 120,
+		             jadi item yang pindah lebih jauh otomatis sedikit lebih lama.
+		             Bisa kamu paksa jadi angka tetap (mis. 300) ATAU fungsi sendiri.
+		  easing   : kurva percepatan, dari 'svelte/easing'. Default cubicOut.
+		-->
+		<li animate:flip={{ delay: 0, duration: 300, easing: quintOut }}>
+			{item.text}
+		</li>
+	{/each}
+</ul>
+```
+
+`duration` boleh berupa **fungsi dari jarak tempuh** (dalam piksel) — berguna kalau kamu mau item yang melompat jauh terasa "berat", item dekat terasa "ringan":
+
+```svelte
+<!-- d = jarak (px) antara posisi lama & baru.
+     Math.min menjaga animasi tidak pernah lebih lama dari 500ms. -->
+<li animate:flip={{ duration: (d) => Math.min(500, d * 2) }}>
+	{item.text}
+</li>
+```
+
+Gabungan klasik: `transition:` untuk item yang datang/pergi, `animate:flip` untuk yang tersisa supaya tidak menyentak ke posisi baru:
+
+```svelte
+<script>
+	import { fade } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
+
+	let items = $state([
+		{ id: 1, text: 'Apel' },
+		{ id: 2, text: 'Mangga' }
+	]);
+
+	function remove(id) {
+		// menghapus 1 item: yang dihapus -> di-fade-out oleh transition,
+		// yang tersisa -> meluncur naik mengisi celah oleh animate:flip.
+		items = items.filter((i) => i.id !== id);
+	}
+</script>
+
+<ul>
+	{#each items as item (item.id)}
+		<li animate:flip={{ duration: 250 }} transition:fade>
+			{item.text}
+			<button onclick={() => remove(item.id)}>x</button>
+		</li>
+	{/each}
+</ul>
+```
+
+### Custom animate (jarang dibutuhkan, tapi tahu cara kerjanya)
+
+`flip` cuma satu implementasi; kamu bisa menulis fungsi `animate` sendiri. Tanda tangannya: `(node, { from, to }, params)`. Svelte menyodorkan dua `DOMRect`: `from` (posisi & ukuran **sebelum** pindah) dan `to` (**sesudah** pindah). Dari selisihnya kamu hitung sendiri transform-nya. Fungsi mengembalikan objek `{ delay?, duration?, easing?, css?, tick? }` — sama seperti transition. `css(t, u)` dipanggil dengan `t` berjalan `0 -> 1` (sudah lewat easing) dan `u = 1 - t`:
+
+```svelte
+<script>
+	import { cubicOut } from 'svelte/easing';
+
+	// Tiru flip + tambahkan sedikit "mengempis lalu mengembang" saat meluncur.
+	function whoosh(node, { from, to }, params = {}) {
+		// selisih posisi: ke mana node harus "berpura-pura masih berada"
+		const dx = from.left - to.left;
+		const dy = from.top - to.top;
+		const d = Math.sqrt(dx * dx + dy * dy);
+
+		return {
+			duration: params.duration ?? Math.sqrt(d) * 120,
+			easing: cubicOut,
+			// u = 1 - t. Di awal (t=0, u=1) node digeser penuh ke posisi lama;
+			// di akhir (t=1, u=0) geseran hilang -> node di posisi barunya.
+			// scale(...) menambah sentuhan: 0.92 di tengah jalan, kembali 1 di ujung.
+			css: (t, u) =>
+				'transform: translate(' + u * dx + 'px, ' + u * dy + 'px) scale(' + (1 - 0.08 * Math.sin(Math.PI * t)) + ')'
+		};
+	}
+
+	let items = $state([{ id: 1, text: 'A' }, { id: 2, text: 'B' }, { id: 3, text: 'C' }]);
+</script>
+
+<ul>
+	{#each items as item (item.id)}
+		<li animate:whoosh>{item.text}</li>
+	{/each}
+</ul>
+```
+
+## 3. Coba sendiri
+
+Klik **Acak** untuk men-sort ulang, **Tambah** untuk menyisipkan, dan **x** untuk menghapus. Perhatikan tiga hal sekaligus: item baru *fly* masuk, item yang dihapus *fade* keluar, dan item yang **tetap ada meluncur** ke posisi barunya — itulah `animate:flip` bekerja. Coba juga ubah `duration` jadi fungsi jarak dan rasakan bedanya.
+
+<Playground code={`<script>
+	import { fly } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
+	let nextId = 4;
+	let items = $state([
+		{ id: 1, text: 'Satu' },
+		{ id: 2, text: 'Dua' },
+		{ id: 3, text: 'Tiga' }
+	]);
+	function add() {
+		items = [...items, { id: nextId, text: 'Item ' + nextId }];
+		nextId++;
+	}
+	function remove(id) {
+		items = items.filter((i) => i.id !== id);
+	}
+	function shuffle() {
+		items = [...items].sort(() => Math.random() - 0.5);
+	}
+</script>
+<div style="display:flex; gap:8px; margin-bottom:12px">
+	<button onclick={add}>Tambah</button>
+	<button onclick={shuffle}>Acak</button>
+</div>
+<ul style="list-style:none; padding:0; display:flex; flex-direction:column; gap:6px">
+	{#each items as item (item.id)}
+		<li
+			animate:flip={{ duration: 350 }}
+			transition:fly={{ y: 20, duration: 300 }}
+			style="display:flex; justify-content:space-between; padding:8px 12px; background:#fde68a; border-radius:8px"
+		>
+			<span>{item.text}</span>
+			<button onclick={() => remove(item.id)}>x</button>
+		</li>
+	{/each}
+</ul>`} />
+
+## 4. Latihan
+
+<Exercise title="Daftar tugas yang bisa dinaik-turunkan">
+Buat list "to-do" sederhana di mana tiap item punya tombol **naik (^)** dan **turun (v)** untuk menukar posisinya dengan tetangganya. Saat ditukar, kedua item harus **meluncur** ke posisi barunya, bukan lompat.
+
+Syaratnya:
+
+1. `{#each}` harus pakai key (`item.id`), bukan index.
+2. Pasang `animate:flip` pada elemen `<li>` dengan `duration` sekitar 250 ms.
+3. Tombol naik menukar item dengan tetangga di atasnya; tombol turun dengan yang di bawahnya. (Abaikan tombol naik di item pertama & turun di item terakhir.)
+
+Petunjuk: untuk menukar, buat **array baru** lalu reassign ke `$state` (mis. `arr[i] = arr[i-1]` pada salinan), supaya reaktivitas terpicu.
+
+{#snippet solution()}
+
+```svelte
+<script>
+	import { flip } from 'svelte/animate';
+
+	let items = $state([
+		{ id: 1, text: 'Bangun pagi' },
+		{ id: 2, text: 'Ngoding Svelte' },
+		{ id: 3, text: 'Olahraga' }
+	]);
+
+	function move(index, dir) {
+		const target = index + dir;
+		// jaga-jaga: jangan keluar batas array
+		if (target < 0 || target >= items.length) return;
+		// salin dulu, tukar, lalu reassign -> reaktivitas jalan & FLIP terpicu
+		const next = [...items];
+		[next[index], next[target]] = [next[target], next[index]];
+		items = next;
+	}
+</script>
+
+<ul>
+	<!-- key (item.id) memberi tiap <li> identitas stabil:
+	     itulah yang dibandingkan FLIP (posisi lama vs baru). -->
+	{#each items as item, i (item.id)}
+		<li animate:flip={{ duration: 250 }}>
+			{item.text}
+			<button onclick={() => move(i, -1)} disabled={i === 0}>^</button>
+			<button onclick={() => move(i, 1)} disabled={i === items.length - 1}>v</button>
+		</li>
+	{/each}
+</ul>
+```
+
+Inti pelajarannya: `animate:flip` tidak butuh kode animasi sama sekali dari kamu. Kamu cukup **mengubah urutan array** secara reaktif, dan karena tiap `<li>` punya key yang stabil, Svelte mencocokkan node lama dengan posisi barunya lalu meluncurkannya otomatis.
+
+{/snippet}</Exercise>
+
+## 5. Tips & Pitfalls
+
+<Callout type="pitfall">
+<code>animate:</code> hanya berfungsi pada <strong>anak langsung</strong> dari blok <code>&#123;#each&#125;</code> yang <strong>memakai key</strong>, mis. <code>&#123;#each items as item (item.id)&#125;</code>. Tanpa key, Svelte mencocokkan elemen berdasarkan index — jadi tidak ada item yang dianggap "berpindah", dan FLIP tidak punya posisi lama untuk dibandingkan. Animasinya diam saja. Selalu pakai key yang <strong>stabil & unik</strong> (id dari data), <strong>bukan</strong> index array.
+</Callout>
+
+<Callout type="warning">
+<code>animate:</code> tidak terpicu saat item ditambah/dihapus — itu tugas <code>transition:</code>/<code>in:</code>/<code>out:</code>. Jangan harap <code>animate:flip</code> sendirian membuat item baru "muncul beranimasi". Untuk list yang berubah-ubah, pasang <strong>keduanya</strong> di elemen yang sama: <code>transition:fade</code> untuk datang/pergi, <code>animate:flip</code> untuk yang tersisa bergeser.
+</Callout>
+
+<Callout type="warning">
+FLIP menganimasikan lewat <code>transform: translate(...)</code>. Kalau elemen <code>&#123;#each&#125;</code> sudah punya animasi/transition CSS sendiri pada properti <code>transform</code>, keduanya bisa bertabrakan dan gerakannya patah-patah. Hindari menaruh <code>transition: transform ...</code> di CSS pada elemen yang sama dengan <code>animate:flip</code> — biarkan Svelte yang mengatur transform-nya.
+</Callout>
+
+<Callout type="tip">
+<code>duration</code> default <code>flip</code> bukan angka tetap melainkan fungsi jarak (<code>d =&gt; Math.sqrt(d) * 120</code>), jadi item yang melompat jauh otomatis sedikit lebih lama — terasa alami. Kalau kamu butuh ritme seragam (mis. demi konsistensi visual), set angka tetap seperti <code>&#123; duration: 300 &#125;</code>. Untuk kontrol penuh, berikan fungsimu sendiri <code>(d) =&gt; ...</code>.
+</Callout>
+
+<Callout type="tip">
+Hormati pengguna yang sensitif gerakan. Bungkus <code>duration</code> dengan cek <code>prefers-reduced-motion</code> (lewat <code>matchMedia('(prefers-reduced-motion: reduce)')</code>) dan set ke <code>0</code> bila aktif, supaya list tetap berfungsi tanpa gerakan yang mengganggu. Animasi yang baik adalah animasi yang bisa dimatikan.
+</Callout>
+
+## 6. Docs resmi
+
+<DocsLink href="https://svelte.dev/docs/svelte/animate" label="animate: directive — dokumentasi resmi Svelte" />
