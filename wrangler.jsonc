@@ -10,5 +10,15 @@
 	},
 	"observability": {
 		"enabled": true
+	},
+	"ai": { "binding": "AI" },
+	"vectorize": [{ "binding": "VECTORIZE", "index_name": "tanya-svelte" }],
+	// Replace "id" with the real namespace id from `wrangler kv namespace create CHAT_KV` before deploy.
+	"kv_namespaces": [{ "binding": "CHAT_KV", "id": "REPLACE_WITH_REAL_KV_ID" }],
+	"vars": {
+		"CHAT_PROVIDER": "workers-ai",
+		"CHAT_MODEL": "@cf/qwen/qwen2.5-coder-32b-instruct",
+		"EMBED_MODEL": "@cf/baai/bge-m3",
+		"CHAT_RATE_LIMIT": "40"
 	}
 }

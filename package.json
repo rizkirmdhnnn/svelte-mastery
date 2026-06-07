@@ -15,7 +15,10 @@
     "deploy": "npm run build && wrangler deploy",
     "cf:preview": "npm run build && wrangler dev",
     "prepare": "svelte-kit sync && wrangler types",
-    "check": "svelte-kit sync && wrangler types && svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-kit sync && wrangler types && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "index": "node scripts/index-content.mjs"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.7.1",
@@ -39,6 +42,7 @@
     "svelte-check": "^4.6.0",
     "typescript": "^5.7.2",
     "vite": "^8.0.16",
+    "vitest": "^3.2.6",
     "wrangler": "^4.98.0"
   }
 }
