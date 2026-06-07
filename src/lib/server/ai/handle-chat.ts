@@ -6,7 +6,7 @@ import { buildSystemPrompt, dedupeSources, OUT_OF_SCOPE_MESSAGE, type CurrentLes
 import { buildResponseStream } from '$lib/server/ai/chat-stream';
 import { checkAndIncrement } from '$lib/server/ai/ratelimit';
 import { cacheKey, getCached, putCached } from '$lib/server/ai/cache';
-import { verifyTurnstile } from '$lib/server/ai/turnstile';
+import { verifyTurnstile, type TurnstileResult } from '$lib/server/ai/turnstile';
 
 export interface HandleChatConfig {
   provider: string;
@@ -29,7 +29,7 @@ export interface HandleChatDeps {
   ip: string;
   config: HandleChatConfig;
   /** Injectable for tests; defaults to verifyTurnstile. */
-  verifyToken?: (secret: string, token: string, ip: string) => Promise<boolean>;
+  verifyToken?: (secret: string, token: string, ip: string) => Promise<TurnstileResult>;
 }
 
 interface ChatBody {
@@ -85,9 +85,11 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
   const prevUserContent = isFollowUp ? userTurns[userTurns.length - 2].content : '';
   const retrievalQuery = prevUserContent ? `${prevUserContent}\n${lastUser.content}` : lastUser.content;
 
-  // 1) Turnstile
-  const ok = await verify(config.turnstileSecret, body.turnstileToken ?? '', ip);
-  if (!ok) return json(403, { error: 'turnstile_failed' });
+  // 1) Turnstile — surface WHY it failed (Cloudflare error-codes) to the client.
+  const turnstile = await verify(config.turnstileSecret, body.turnstileToken ?? '', ip);
+  if (!turnstile.success) {
+    return json(403, { error: 'turnstile_failed', codes: turnstile.errorCodes });
+  }
 
   // 2) Rate limit
   const rl = await checkAndIncrement(platform.env.CHAT_KV, ip, config.rateLimit);

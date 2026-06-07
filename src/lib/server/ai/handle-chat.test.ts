@@ -34,7 +34,7 @@ function baseDeps(over: Partial<any> = {}) {
     platform: { env: { AI, VECTORIZE, CHAT_KV: fakeKV() }, context: { waitUntil: vi.fn() } },
     ip: '1.2.3.4',
     config: { provider: 'workers-ai', model: 'm', embedModel: '@cf/baai/bge-m3', turnstileSecret: 'sek', rateLimit: 40, relevanceFloor: 0.5 },
-    verifyToken: vi.fn().mockResolvedValue(true),
+    verifyToken: vi.fn().mockResolvedValue({ success: true, errorCodes: [] }),
     ...over
   };
 }
@@ -114,10 +114,11 @@ describe('handleChat', () => {
     expect((embedCall?.[1] as { text: string }).text).toBe('apa itu $derived\nberikan contoh kodenya');
   });
 
-  it('returns 403 when the Turnstile token fails', async () => {
-    const deps = baseDeps({ verifyToken: vi.fn().mockResolvedValue(false) });
+  it('returns 403 with the Turnstile error-codes when verification fails', async () => {
+    const deps = baseDeps({ verifyToken: vi.fn().mockResolvedValue({ success: false, errorCodes: ['timeout-or-duplicate'] }) });
     const res = await handleChat(req({ messages: [{ role: 'user', content: 'hi' }], turnstileToken: 'bad' }), deps);
     expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'turnstile_failed', codes: ['timeout-or-duplicate'] });
   });
 
   it('returns 429 with resetAt once the rate limit is exceeded', async () => {
