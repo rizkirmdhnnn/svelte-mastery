@@ -44,4 +44,11 @@ describe('chunkSvx', () => {
     expect(chunks.every((c) => c.text.trim().length > 0)).toBe(true);
     expect(chunks.some((c) => c.text.includes('ada'))).toBe(true);
   });
+
+  it('hard-splits a single oversized paragraph that has no blank lines', () => {
+    const huge = 'a'.repeat(500); // one paragraph, no \n\n boundaries to split on
+    const chunks = chunkSvx(meta, '## Besar\n' + huge, 100);
+    expect(chunks.length).toBeGreaterThan(1);
+    chunks.forEach((c) => expect(c.text.length).toBeLessThanOrEqual(100 + 60)); // + prefix headroom
+  });
 });

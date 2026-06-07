@@ -95,14 +95,32 @@ async function main() {
     process.exit(1);
   }
 
-  // Embed (batches of 50), then upsert (batches of 500).
+  // Embed in token-budget-aware batches. bge-m3 caps TOTAL tokens per request at
+  // 60k, so batch by character budget (~3 chars/token → stay well under) rather
+  // than a fixed count.
+  const MAX_BATCH_CHARS = 90000;
+  const MAX_BATCH_ITEMS = 40;
   const vectors = [];
-  for (let i = 0; i < allChunks.length; i += 50) {
-    const batch = allChunks.slice(i, i + 50);
+  let batch = [];
+  let batchChars = 0;
+  let done = 0;
+  const flushEmbed = async () => {
+    if (batch.length === 0) return;
     const embeds = await embedBatch(batch.map((c) => c.text));
     batch.forEach((c, j) => vectors.push({ id: c.id, values: embeds[j], metadata: c.metadata }));
-    console.log(`Embedded ${Math.min(i + 50, allChunks.length)}/${allChunks.length}`);
+    done += batch.length;
+    console.log(`Embedded ${done}/${allChunks.length}`);
+    batch = [];
+    batchChars = 0;
+  };
+  for (const c of allChunks) {
+    if (batch.length > 0 && (batchChars + c.text.length > MAX_BATCH_CHARS || batch.length >= MAX_BATCH_ITEMS)) {
+      await flushEmbed();
+    }
+    batch.push(c);
+    batchChars += c.text.length;
   }
+  await flushEmbed();
   for (let i = 0; i < vectors.length; i += 500) {
     await upsertBatch(vectors.slice(i, i + 500));
     console.log(`Upserted ${Math.min(i + 500, vectors.length)}/${vectors.length}`);

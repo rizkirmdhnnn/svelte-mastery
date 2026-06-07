@@ -15,14 +15,25 @@ function splitLong(text, maxChars) {
   const paras = text.split(/\n\n+/);
   const out = [];
   let buf = '';
-  for (const p of paras) {
-    if (buf && (buf.length + p.length + 2) > maxChars) {
+  const pushBuf = () => {
+    if (buf) {
       out.push(buf);
       buf = '';
     }
+  };
+  for (let p of paras) {
+    // Hard-split a single paragraph (e.g. a long code block with no blank lines)
+    // that alone exceeds maxChars — otherwise it would become one huge chunk and
+    // blow the embedding model's per-request token budget.
+    while (p.length > maxChars) {
+      pushBuf();
+      out.push(p.slice(0, maxChars));
+      p = p.slice(maxChars);
+    }
+    if (buf && buf.length + p.length + 2 > maxChars) pushBuf();
     buf = buf ? `${buf}\n\n${p}` : p;
   }
-  if (buf) out.push(buf);
+  pushBuf();
   return out;
 }
 
