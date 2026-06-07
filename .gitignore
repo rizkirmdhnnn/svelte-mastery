@@ -8,6 +8,9 @@ worker-configuration.d.ts
 .env
 .env.*
 !.env.example
+# .env.production holds ONLY the public Turnstile site key (safe to commit; it
+# ships in client HTML). NEVER put secrets here — secrets go via `wrangler secret put`.
+!.env.production
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
