@@ -2,7 +2,7 @@ import type { ChatTurn } from '$lib/chat/types';
 import { encodeServerEvent } from '$lib/chat/protocol';
 import { getProvider } from '$lib/server/ai/providers';
 import { embedQuery, queryChunks } from '$lib/server/ai/retrieval';
-import { buildSystemPrompt, dedupeSources, type CurrentLesson } from '$lib/server/ai/prompt';
+import { buildSystemPrompt, dedupeSources, OUT_OF_SCOPE_MESSAGE, type CurrentLesson } from '$lib/server/ai/prompt';
 import { buildResponseStream } from '$lib/server/ai/chat-stream';
 import { checkAndIncrement } from '$lib/server/ai/ratelimit';
 import { cacheKey, getCached, putCached } from '$lib/server/ai/cache';
@@ -14,6 +14,8 @@ export interface HandleChatConfig {
   embedModel: string;
   turnstileSecret: string;
   rateLimit: number;
+  /** Minimum top-match similarity to answer; below this the question is treated as off-materi. */
+  relevanceFloor: number;
   secrets?: Record<string, string | undefined>;
 }
 
@@ -96,6 +98,13 @@ export async function handleChat(request: Request, deps: HandleChatDeps): Promis
   const vector = await embedQuery(platform.env.AI, config.embedModel, lastUser.content);
   const chunks = await queryChunks(platform.env.VECTORIZE, vector, 5);
   const sources = dedupeSources(chunks);
+
+  // 4b) Relevance guard — if nothing in the materi is close enough, refuse the
+  // question deterministically instead of letting the model answer off-topic.
+  const topScore = chunks[0]?.score ?? 0;
+  if (topScore < config.relevanceFloor) {
+    return new Response(cachedStream(OUT_OF_SCOPE_MESSAGE, []), { headers: SSE_HEADERS });
+  }
 
   // 5) Prompt + provider stream
   const system = buildSystemPrompt({ chunks, currentLesson: body.currentLesson ?? null });

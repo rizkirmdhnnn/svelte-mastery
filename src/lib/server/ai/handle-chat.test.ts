@@ -33,7 +33,7 @@ function baseDeps(over: Partial<any> = {}) {
   return {
     platform: { env: { AI, VECTORIZE, CHAT_KV: fakeKV() }, context: { waitUntil: vi.fn() } },
     ip: '1.2.3.4',
-    config: { provider: 'workers-ai', model: 'm', embedModel: '@cf/baai/bge-m3', turnstileSecret: 'sek', rateLimit: 40 },
+    config: { provider: 'workers-ai', model: 'm', embedModel: '@cf/baai/bge-m3', turnstileSecret: 'sek', rateLimit: 40, relevanceFloor: 0.5 },
     verifyToken: vi.fn().mockResolvedValue(true),
     ...over
   };
@@ -56,6 +56,22 @@ describe('handleChat', () => {
     expect(events.some((e) => e.type === 'token')).toBe(true);
     expect(events.at(-1)).toEqual({ type: 'done' });
     expect(deps.platform.context.waitUntil).toHaveBeenCalled(); // cache write scheduled
+  });
+
+  it('refuses an off-materi question whose top similarity is below the relevance floor', async () => {
+    const deps = baseDeps();
+    // Vectorize returns a weak match (like "resep rendang" → ~0.43 against the real index).
+    deps.platform.env.VECTORIZE.query = vi.fn().mockResolvedValue({
+      count: 1,
+      matches: [{ id: 'x#0', score: 0.43, metadata: { text: 'irrelevant', slug: 'x', title: 'X', product: 'svelte', section: 'misc' } }]
+    });
+    const res = await handleChat(req({ messages: [{ role: 'user', content: 'resep rendang padang' }], turnstileToken: 'tok' }), deps);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('di luar materi'); // the canned refusal
+    // the question was embedded (1 AI.run) but the chat model was NEVER called
+    expect(deps.platform.env.AI.run.mock.calls.length).toBe(1);
+    expect(deps.platform.env.AI.run.mock.calls[0][0]).toContain('bge');
   });
 
   it('returns 403 when the Turnstile token fails', async () => {
