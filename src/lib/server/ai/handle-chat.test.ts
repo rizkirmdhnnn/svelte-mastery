@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { handleChat } from '$lib/server/ai/handle-chat';
 import { parseServerEvents } from '$lib/chat/protocol';
+import { issueSession } from '$lib/server/ai/session';
 
 function fakeKV() {
   const store = new Map<string, string>();
@@ -119,6 +120,27 @@ describe('handleChat', () => {
     const res = await handleChat(req({ messages: [{ role: 'user', content: 'hi' }], turnstileToken: 'bad' }), deps);
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: 'turnstile_failed', codes: ['timeout-or-duplicate'] });
+  });
+
+  it('skips Turnstile when a valid session token is provided', async () => {
+    const deps = baseDeps();
+    const session = await issueSession('sek', '1.2.3.4'); // matches turnstileSecret + ip in baseDeps
+    const res = await handleChat(req({ messages: [{ role: 'user', content: 'apa itu $state' }], sessionToken: session }), deps);
+    expect(res.status).toBe(200);
+    expect(deps.verifyToken).not.toHaveBeenCalled(); // Turnstile bypassed
+  });
+
+  it('returns an x-chat-session token header after a Turnstile pass', async () => {
+    const deps = baseDeps();
+    const res = await handleChat(req({ messages: [{ role: 'user', content: 'apa itu $state' }], turnstileToken: 'tok' }), deps);
+    expect(res.headers.get('x-chat-session')).toBeTruthy();
+  });
+
+  it('falls back to Turnstile when the session token is invalid', async () => {
+    const deps = baseDeps();
+    const res = await handleChat(req({ messages: [{ role: 'user', content: 'q' }], sessionToken: 'bogus.token', turnstileToken: 'tok' }), deps);
+    expect(res.status).toBe(200);
+    expect(deps.verifyToken).toHaveBeenCalled(); // invalid session → Turnstile used
   });
 
   it('returns 429 with resetAt once the rate limit is exceeded', async () => {
